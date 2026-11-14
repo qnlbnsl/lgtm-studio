@@ -13670,3 +13670,118 @@ Removing the package now would remove that coverage of the engine.
 Each journey needs an equal journey on the website before the package is removed.
 The Files tab and the Project settings screen existed only on the older page.
 They are unreachable until the units `s8-files` and `s8-psettings` merge.
+
+## 876. The live project settings screen had unsupported controls that still looked editable.
+
+The connected mock at `/studio/` showed active controls that only refused a change.
+The live build now disables these controls with the hover text, "Engine work needed".
+The standalone sample keeps its existing behaviour.
+
+## 877. A project has no configurable base branch.
+
+The engine does not expose a project base branch setting or a command to change it.
+The live base branch picker is disabled.
+
+## 878. A project lead cannot change its subscription.
+
+The engine reports the lead's account, but `configure` accepts only a model and an effort.
+The live subscription picker shows the account and is disabled.
+
+## 879. A project cannot set the permission for every agent.
+
+The engine reports each agent's permission, but has no project permission command.
+The live permission choices are disabled.
+
+## 880. A project cannot set the write-tests-first switch.
+
+The engine has no project setting or command for this switch.
+The live switch is disabled.
+
+## 881. A project cannot set the agent-review switch.
+
+The engine has no project setting or command for this switch.
+The live switch is disabled.
+
+## 882. A project cannot choose to remove agent credits when merging.
+
+The engine has no project preference for removing agent credit lines.
+The live switch is disabled.
+
+## 883. A project cannot configure or approve the assignment table.
+
+The engine has no project work-kind assignment record or commands to apply or approve it.
+The live harness, model, and effort choices are disabled for each work kind.
+The Every row picker, Apply button, and Approve button are disabled.
+
+## 884. A team cannot change its need-to-know setting.
+
+The engine has no team need-to-know record or command.
+The live team switches are disabled.
+
+## 885. A project cannot configure its task label prefix.
+
+The engine accepts labels on tasks, but exposes no project prefix setting.
+The live task label prefix field is disabled.
+
+## 886. A project cannot be deleted.
+
+The engine supports archive and restore, but has no project deletion command.
+The live Delete button is disabled.
+
+## 887. The project lead pickers did not distinguish desired and applied settings.
+
+The live project settings screen previously selected values from the roster.
+The screen now reads the lead's configuration and choices from `client.agent.configuration`.
+It displays the engine's desired values and reports the applied model and acknowledgement status separately.
+
+## 888. The engine hides the specific reason for a refused lead configuration.
+
+The `configure` planner can refuse a model or an effort that is no longer available.
+The public command error filter reduces that reason to "command refused".
+The live project settings notice displays the public reason that the engine returns.
+The browser journey checks that reason and confirms that the refused value does not persist.
+The filter remains unchanged in this migration.
+
+## 889. The existing Mocks browser journey failed intermittently during the full check.
+
+The full remote check passed 57 browser journeys and failed the existing Mocks journey.
+The failure was a missing "Editor changes saved" notice at `packages/web/e2e/support/studioMocks.ts:89`.
+The same Mocks journey passed in isolation without a code change.
+The new project settings journey passed in both its focused run and the full check.
+The cause of the intermittent Mocks failure remains unconfirmed.
+
+## 890. The project shell command has no control on the live project settings screen.
+
+The engine supports `project.preferences.set` for a project's preferred shell.
+The connected mock's project settings screen has no shell control.
+This migration does not add one.
+
+## 891. A goal update from another client replaces an unsaved goal draft without a notice.
+
+The live project settings screen resets its goal draft when the engine reports a changed goal.
+An update from another client can therefore replace an unsaved local draft.
+The screen does not warn the owner before replacing that draft.
+This behaviour remains unchanged in Round 1.
+
+## 892. The first review found unnecessary lead reads and shared settings records.
+
+The first implementation re-read the lead configuration on every roster publish.
+Those reads disabled the model and effort pickers.
+A read already in flight could suppress the read after a configuration write.
+Lead settings shared `boardAgents` with team details and could corrupt or lose those details.
+Round 1 limits refresh dependencies to the lead's identifier, model, effort, and state.
+It keeps existing choices enabled during background reads.
+It gives reads after a write their own busy key.
+It prevents older reads from overwriting a newer result.
+It stores lead settings in their own guarded collection and clears it at sign-out.
+It checks switch boundaries before slicing the copied screen.
+It checks that the final build output retains the lead loader.
+It renders configuration status in plain words.
+
+## 893. The existing oversized-state browser journey failed intermittently during the Round 1 full check.
+
+The full remote check passed 57 browser journeys and failed the existing oversized-state journey.
+The failure was a five-second timeout waiting for the fake runner to receive the permission answer at `packages/web/e2e/oversized-state.spec.ts:187`.
+The same journey passed in isolation without a code change.
+The project settings journey passed in both its focused run and the full check.
+The cause of the intermittent permission-answer failure remains unconfirmed.

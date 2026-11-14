@@ -1,4 +1,5 @@
 import { signInSource } from "./signInSource.ts"
+import { projectSettingsSource, assertProjectSettingsSource } from "./projectSettings.ts"
 import { serviceSettingsSource } from "./serviceSettings.ts"
 import { gitActionsSource } from "./gitActions.ts"
 import { harnessChoicesSource } from "./harnessChoices.ts"
@@ -82,7 +83,8 @@ export async function buildStudio(dist = defaultDist): Promise<string> {
   }
   for (const path of ["js/screens/git.js", "js/actions.js", "js/live/git.js", "js/live/board.js", "js/screens/service.js", "js/screens/auth.js", "js/dialogs.js", "js/ui.js", "js/screens/messages.js"]) {
     const target = join(dist, path)
-    writeFileSync(target, serviceSettingsSource(path, gitActionsSource(path, harnessIntegrationSource(path, signInSource(path, harnessChoicesSource(path, readFileSync(target, "utf8")))))))
+    const source = projectSettingsSource(path, serviceSettingsSource(path, gitActionsSource(path, harnessIntegrationSource(path, signInSource(path, harnessChoicesSource(path, readFileSync(target, "utf8")))))))
+    writeFileSync(target, assertProjectSettingsSource(path, source))
   }
 
   writeFileSync(join(dist, "js/workflow-contracts.js"), contracts)

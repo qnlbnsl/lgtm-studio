@@ -1,3 +1,4 @@
+import { exerciseStudioProjectSettings } from './support/studioProjectSettings.ts'
 import { exerciseStudioSettings } from './support/studioSettings.ts'
 import { exerciseStudioGit } from './support/studioGit.ts'
 import { exerciseStudioMocks } from './support/studioMocks.ts'
@@ -1111,3 +1112,5 @@ test('live website: Harnesses installs a missing harness with a fake recipe and 
 
 test('Harnesses sign-in runs a strict fake terminal and checks the added account', async ({ page }) => { test.setTimeout(90_000); await (await import('./support/studioSignIn.ts')).exerciseStudioSignIn(page) })
 test('Harnesses then project Chat keeps the composer visible', async ({ page }) => { test.setTimeout(90_000); await (await import('./support/studioSignIn.ts')).exerciseHarnessesThenChat(page) })
+
+test("studio project settings: live changes, disabled controls and archive restore", async ({ page }) => { test.setTimeout(90_000); await exerciseStudioProjectSettings(page) })
