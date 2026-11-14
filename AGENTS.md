@@ -31,23 +31,39 @@ Roles units 3, 4 and 11a remain unbuilt.
 
 ## Where the website lives
 
-The website is the connected mock in `design/mock/`, decided by the owner on
-2026-11-14. The engine serves it at the root address, `/`. An old address
-under `/studio/` is sent to the root. Build every new screen and every screen
-change there.
+There is one website. The service serves it at the root address of its
+port, which is `http://127.0.0.1:8787/` by default. There is no second page
+and no second route. The owner decided this on 2026-11-14.
 
-- The sample data in `design/mock/` stays, so the mock still opens on its own
-  with no engine.
-- Live behaviour goes in a file under `design/mock/js/live/`, with its typed
-  mapping in `packages/studio/src/`.
+Two words name two different things:
+
+- **The mock** is the design in `design/mock/`. It runs on sample data and
+  never talks to the engine. It opens on its own port, 4178, only when
+  someone serves the `design/` folder by hand. The service never serves it.
+- **The website** is the same screens wired to the engine. The package
+  `packages/studio` builds it from `design/mock/` and adds the connection.
+  The engine serves that build. A wired screen is the website, not a mock.
+
+Every new screen and every screen change is built in these places:
+
+- The screen itself goes in `design/mock/`, and it still works there on
+  sample data with no engine.
+- Its live behaviour goes in a file under `design/mock/js/live/`, with its
+  typed mapping in `packages/studio/src/`.
 - A build-time replacement under `packages/studio/scripts/` fails the build
   when the text it replaces is gone.
+- Its browser journey opens the root address of a test engine.
+
+These rules keep it one website:
+
+- Do not build a screen, or change one, in `packages/web`. That package is
+  the retired older page. The service no longer serves it. Its tests still
+  run against it until their coverage is moved, and then it is removed.
+- Do not add a second route, port, or page for the website. An old address
+  under `/studio/` is only sent to the root.
+- Do not tell anyone to open `/studio/`, in a document, a test, or a reply.
 - The visible look of an existing screen changes only with the owner's
   approval.
-- `packages/web` is the older page. The service no longer serves it, decided
-  by the owner on 2026-11-14. It receives no new screens. Its tests and
-  browser journeys still run against it, until their coverage is moved to the
-  website and the package is removed.
 
 ## Language
 
