@@ -72,6 +72,9 @@ export function CodeEditor({ doc, path, readOnly, wrap, onChange, onSave }: Code
       const lock = new cm.Compartment(), lines = new cm.Compartment()
       parts.current = { lock, wrap: lines, cm }
       const lockOf = (value: boolean) => [cm.EditorState.readOnly.of(value), cm.EditorView.editable.of(!value)]
+      // The service's browser policy applies the editor's own style element
+      // only when it carries the nonce that the page was served with.
+      const nonce = document.querySelector('meta[name="lgtm-style-nonce"]')?.getAttribute("content")
       view.current = new cm.EditorView({
         parent: host.current,
         state: cm.EditorState.create({ doc, extensions: [
@@ -82,6 +85,7 @@ export function CodeEditor({ doc, path, readOnly, wrap, onChange, onSave }: Code
             ...cm.defaultKeymap, ...cm.historyKeymap, ...cm.searchKeymap, cm.indentWithTab]),
           lock.of(lockOf(latest.current.readOnly)), lines.of(latest.current.wrap ? cm.EditorView.lineWrapping : []),
           cm.EditorView.contentAttributes.of({ "aria-label": `Contents of ${path}` }),
+          ...(nonce ? [(cm.EditorView as any).cspNonce.of(nonce)] : []),
           cm.EditorView.updateListener.of((update: any) => { if (update.docChanged) calls.current.onChange(update.state.doc.toString()) })
         ] })
       })
