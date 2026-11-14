@@ -14282,3 +14282,23 @@ The engine still checks the workspace five times inside one save.
 The same repeated workspace check is behind issue 928, and probably behind other save journeys that fail once in a full check.
 A workspace check that is done once for each request, or cached for a short time, would cut all of them.
 
+
+## 937. The owner's feedback on the "Add account" dialog.
+
+Found: 2026-11-14, by the owner, while adding a Claude Code account on the real service.
+Status: open. The owner asked for these to be noted and not fixed yet.
+
+The owner used the dialog to add an existing sign-in and reported five problems.
+
+1. The "Login folder" area is unclear. The owner said: "I don't know how I feel about it."
+2. The folder dropdown and the note "the service creates a private folder for each separate sign-in" do not appear linked. The note shows whatever the dropdown says.
+3. With "my existing sign-in" chosen, the dialog still shows a command to run. An existing sign-in needs no command.
+4. The other controls stay disabled until the first field, the name, is filled in. Nothing says that a name is needed.
+5. With a name filled in and the existing sign-in chosen, two buttons become enabled: "Sign in here" and "Add account". "Sign in here" should not be offered for an existing sign-in. "Add account" worked.
+
+The orchestrator saw two more things on the "Harnesses" page afterwards.
+
+6. The account row's "Model for new agents" picker shows raw identifiers, such as `opus` and `claude-fable-5-2`. The pickers above it show names, such as "Opus 5.5".
+7. Both accounts show "Not reported" for the five-hour and weekly usage.
+
+These belong to the overhaul recorded in `docs/features.md` under "A simpler way to set up harnesses and subscriptions".
