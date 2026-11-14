@@ -13588,3 +13588,11 @@ The public command error filter reduces that reason to "command refused".
 The live project settings notice displays the public reason that the engine returns.
 The browser journey checks that reason and confirms that the refused value does not persist.
 The filter remains unchanged in this migration.
+
+## s8-psettings-14. The existing Mocks browser journey failed intermittently during the full check.
+
+The full remote check passed 57 browser journeys and failed the existing Mocks journey.
+The failure was a missing "Editor changes saved" notice at `packages/web/e2e/support/studioMocks.ts:89`.
+The same Mocks journey passed in isolation without a code change.
+The new project settings journey passed in both its focused run and the full check.
+The cause of the intermittent Mocks failure remains unconfirmed.
