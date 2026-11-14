@@ -13369,6 +13369,26 @@ The live mapping in `packages/studio/src/mapping.ts` sets the project's creation
 The phase lengths are therefore invented, not only wrong in size.
 The fix needs the engine to record when a project enters each phase, and the page to show no length until it has one.
 
+## 847. The "Harnesses" page was hard to read as one run of text
+
+Found: 2026-11-14, by the owner on the live website.
+State: changed on the branch `area/harness-layout`, awaiting the owner's approval of the look.
+
+The owner's words: "the overall UI on this needs some segmentation so I can separate things out. It feels like a wall of text."
+Each harness is now one bordered card with a header, and three named parts inside it: "Program", "Defaults for this harness" and "Accounts".
+The long program path is folded under "Where it is installed".
+The three defaults sit side by side.
+A strip under the title names each harness with its state and jumps to its card.
+
+## 848. A reload of a live page briefly says "The service is not connected."
+
+Found: 2026-11-14, while checking the new "Harnesses" layout.
+State: open.
+
+Right after a reload of the "Harnesses" page, a notice says "The service is not connected." and the model rows say "Reading the models."
+Both clear within a few seconds, and the connection mark says "Live" throughout.
+A request is probably sent before the connection is ready.
+
 ## s7-signin-1. The sign-in terminal brief conflicts with the rule against sending login tokens to a client.
 
 The sign-in terminal brief permits command output containing a token to reach the owner's initiating connection.
@@ -13376,7 +13396,9 @@ Rule 6 in the security policy forbids sending harness login tokens to any client
 The brief also forbids weakening that rule and requires the builder to stop if the work needs an exception.
 The existing harness request handlers redact output for the owner too.
 The builder stopped before changing the application.
-The lead must resolve whether the terminal should redact all login tokens or whether the owner approves a narrowly scoped exception for this connection.
+The owner resolved this on 2026-11-14 with the words "exception granted."
+The ruling in `.foundry/ruling.md` permits output only to the initiating owner connection and retains redaction of every registered secret.
+Implementation resumed under that ruling.
 
 ## s7-signin-2. The remote test helper fails before running checks in this worker environment.
 
@@ -13390,4 +13412,4 @@ The worker did not change the system configuration or substitute local tests.
 The required local dependency installation exited with status 1.
 The package manager reported `ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK` because its store lock was on a read-only file system.
 The remote check installed its own dependencies and ran there.
-The worker left local dependency setup incomplete after the security stop.
+A sandbox escalation completed the same local installation with 299 packages afterward.
