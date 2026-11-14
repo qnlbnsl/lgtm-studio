@@ -14302,3 +14302,19 @@ The orchestrator saw two more things on the "Harnesses" page afterwards.
 7. Both accounts show "Not reported" for the five-hour and weekly usage.
 
 These belong to the overhaul recorded in `docs/features.md` under "A simpler way to set up harnesses and subscriptions".
+
+## 938. A separate sign-in cannot be chosen for a Cursor account.
+
+Found: 2026-11-14, by the owner, while adding a Cursor account on the real service.
+Status: open. The owner asked for it to be fixed later.
+
+The "Add account" dialog disables "A separate sign-in" for Cursor.
+The dialog allows it only for Claude Code, Codex and Gemini CLI, in `design/mock/js/screens/service.js`.
+The engine refuses it too, with "Separate sign-in folders are not supported by this harness.", in `packages/engine/src/accounts/loginHome.ts`.
+The cause is that those three harnesses have a variable that moves their login folder, and the engine knows none for Cursor.
+The owner's view is that every harness only needs its home folder overridden.
+Starting Cursor with a different `HOME` would give it a separate login folder.
+One cost must be settled first.
+A different `HOME` also hides the owner's Git settings, SSH keys and other tool settings from that agent, unless they are linked or copied in.
+The dialog does not say why the choice is disabled.
+This belongs to the overhaul in `docs/features.md` under "A simpler way to set up harnesses and subscriptions", and to "One agreed layout for the `~/.lgtm` folder".
