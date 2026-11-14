@@ -13476,7 +13476,7 @@ The stubs are the following controls:
 The stubs are in `packages/web/src/admin/project-settings.tsx`.
 Each one becomes a working control when its engine command exists.
 
-## 855. The "Files" editor showed only line numbers on the real service
+## 856. The "Files" editor showed only line numbers on the real service
 
 Found: 2026-11-14, on the owner's real service right after pull request 47 merged.
 State: fixed on the branch `fix/files-editor-style`.
@@ -13490,7 +13490,7 @@ The editor reads the nonce and marks its style element with it.
 Inline scripts and inline style attributes stay refused, and no `unsafe-inline` was added.
 The reviewer of pull request 47 merged it before opening a file on the real service, which is how this reached `master`.
 
-## 856. An image file can carry a registered secret to the page
+## 857. An image file can carry a registered secret to the page
 
 Found: 2026-11-14, in the review of pull request 47.
 State: open.
@@ -13500,7 +13500,7 @@ An image is sent as base64 bytes with no check, and a Scalable Vector Graphics i
 A registered secret inside such a file reaches the owner's page, which rule 6 of `SECURITY.md` forbids.
 The fix is to check the decoded text of a Scalable Vector Graphics file and to report it as private data when it changes.
 
-## 857. The "Files" tab decides the read-only base branch by name
+## 858. The "Files" tab decides the read-only base branch by name
 
 Found: 2026-11-14, in the review of pull request 47.
 State: open.
@@ -13509,10 +13509,10 @@ State: open.
 A repository whose base branch has another name can be edited from the "Files" tab.
 The check should use the repository's recorded base branch.
 
-## 858. The "Files" tab and the finished "Project settings" exist only on the older page
+## 859. The "Files" tab and the finished "Project settings" exist only on the older page
 
 Found: 2026-11-14, in the review of pull request 47.
-State: open, for the owner to rule on.
+State: the owner ruled on 2026-11-14 that the website is the connected mock; the two screens are being moved there.
 
 Pull request 47 built both screens in `packages/web`, which the service shows at `/`.
 The page the owner uses is the connected mock at `/studio/`, and it still says "Files is not connected yet".
