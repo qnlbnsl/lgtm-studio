@@ -7,7 +7,7 @@ import { signInReasons } from './signinReasons.ts'
 export type SignInItem = SignInOutput
 type Check = Extract<SignInOutput, { _tag: 'ended' }>['check']
 type Start = { kind?: 'project'; cols?: number; rows?: number; allowed?: () => boolean; accountId: string; connectionId: string; executable: string; args: ReadonlyArray<string>; cwd: string; environment: Record<string, string>; check: () => Promise<Check>; onEnd?: () => void }
-type Session = { id: string; accountId: string; connectionId: string; child: IPty; queue: SignInItem[]; bytes: number; wake?: (() => void) | undefined; kind?: 'project'; timer?: ReturnType<typeof setTimeout>; grace?: ReturnType<typeof setTimeout> | undefined; processExited: boolean; ending: boolean; done: boolean; attached: boolean; check: Start['check']; onEnd: Start['onEnd']; exited: Promise<void> }
+type Session = { id: string; accountId: string; connectionId: string; child: IPty; queue: SignInItem[]; bytes: number; paused?: boolean; wake?: (() => void) | undefined; kind?: 'project'; timer?: ReturnType<typeof setTimeout>; grace?: ReturnType<typeof setTimeout> | undefined; processExited: boolean; ending: boolean; done: boolean; attached: boolean; check: Start['check']; onEnd: Start['onEnd']; exited: Promise<void> }
 // Ephemeral only. No logger, event-store, board or alert dependency is available here.
 export class SignInSessions {
   private sessions = new Map<string, Session>()
@@ -35,34 +35,48 @@ export class SignInSessions {
       ...(input.kind === 'project' ? {} : { timer: setTimeout(() => this.finish(session, 'The sign-in reached its time limit.'), this.options.limitMs ?? 5 * 60_000) }) }
     session.timer?.unref()
     this.sessions.set(id, session)
-    child.onData(text => { if (session.ending) return; if (session.bytes + Buffer.byteLength(text) > 64 * 1024) this.finish(session, session.kind === 'project' ? 'The terminal produced too much unread output.' : 'The sign-in produced too much unread output.'); else { session.bytes += Buffer.byteLength(text); session.queue.push({ _tag: 'output', text }); session.wake?.() } })
-    child.onExit(() => { session.processExited = true; resolveExit(); this.finish(session, session.kind === 'project' ? 'The shell exited.' : 'The sign-in program exited.') })
+    child.onData(text => {
+      if (session.ending) return
+      if (session.kind !== 'project' && session.bytes + Buffer.byteLength(text) > 64 * 1024) {
+        this.finish(session, 'The sign-in produced too much unread output.'); return
+      }
+      session.bytes += Buffer.byteLength(text); session.queue.push({ _tag: 'output', text })
+      // Stop reading the PTY so the kernel applies backpressure to the shell.
+      // The queue can exceed the high mark by at most the current native chunk.
+      if (session.kind === 'project' && !session.paused && session.bytes >= 128 * 1024) { session.paused = true; child.pause() }
+      session.wake?.()
+    })
+    child.onExit(() => { session.processExited = true; if (session.kind === 'project') this.stopSessionMembers(session); resolveExit(); this.finish(session, session.kind === 'project' ? 'The shell exited.' : 'The sign-in program exited.') })
     // A start whose caller never attaches cannot leave a process behind.
     session.grace = setTimeout(() => this.finish(session, 'The terminal disconnected.'), this.options.graceMs ?? 5000)
     session.grace.unref()
     return { id, pid: child.pid }
   }
   private get(id: string, connection: string, kind?: 'project') { const s = this.sessions.get(id); const reasons = kind === 'project' ? terminalReasons : signInReasons; if (!s || s.kind !== kind) throw new Error(reasons.missing); if (s.connectionId !== connection) throw new Error(reasons.connection); return s }
+  private stopSessionMembers(s: Session) {
+    try { for (const entry of readdirSync('/proc')) {
+      if (!/^\d+$/.test(entry)) continue
+      try {
+        const stat = readFileSync('/proc/' + entry + '/stat', 'utf8')
+        const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ')
+        if (Number(fields[3]) !== s.child.pid) continue
+        const pid = Number(entry)
+        if (s.processExited && pid === s.child.pid) continue
+        // Signal the observed member, not a process-group identifier that may
+        // have been reused after the leader exited. Recheck membership first.
+        const again = readFileSync('/proc/' + entry + '/stat', 'utf8')
+        if (Number(again.slice(again.lastIndexOf(')') + 2).split(' ')[3]) === s.child.pid) process.kill(pid, 'SIGKILL')
+      } catch {}
+    } } catch {} // No /proc means there is no descendant discovery on this host.
+  }
   private finish(s: Session, reason: string) {
     if (s.ending) return
     s.ending = true; clearTimeout(s.timer); clearTimeout(s.grace); s.onEnd?.()
-    // Signal only while the PTY child is alive; an exited PID may be reused.
+    // /proc session membership survives the leader's exit. Never signal the
+    // former leader PID or its former process group after its exit callback.
+    if (s.kind === 'project') this.stopSessionMembers(s)
     if (!s.processExited) {
-      // Interactive shells give foreground and background jobs separate process
-      // groups. They still belong to the PTY child's session. Kill those groups
-      // too, while the leader is alive; never revisit an exited session ID.
-      const groups = new Set([s.child.pid])
-      if (s.kind === 'project') {
-        try { for (const entry of readdirSync('/proc')) {
-          if (!/^\d+$/.test(entry)) continue
-          try {
-            const stat = readFileSync('/proc/' + entry + '/stat', 'utf8')
-            const fields = stat.slice(stat.lastIndexOf(')') + 2).split(' ')
-            if (Number(fields[3]) === s.child.pid) groups.add(Number(fields[2]))
-          } catch {}
-        } } catch {}
-      }
-      for (const group of groups) if (group > 0) { try { process.kill(-group, 'SIGKILL') } catch {} }
+      try { process.kill(-s.child.pid, 'SIGKILL') } catch {}
       try { s.child.kill('SIGKILL') } catch {}
     }
     void s.exited.then(() => s.check()).catch(() => ({ state: 'unavailable' as const })).then(check => { s.queue.push({ _tag: 'ended', reason, check }); s.done = true; s.wake?.(); s.grace = setTimeout(() => this.sessions.delete(s.id), 5000); s.grace.unref() })
@@ -78,7 +92,7 @@ export class SignInSessions {
     if (s.attached) throw new Error(kind ? terminalReasons.stream : signInReasons.stream)
     s.attached = true; clearTimeout(s.grace); s.grace = undefined
     try { for (;;) { if (!s.queue.length) { if (s.done) return; await new Promise<void>(resolve => { s.wake = resolve }); s.wake = undefined; continue }
-      const item = s.queue.shift()!; if (item._tag === 'output') s.bytes -= Buffer.byteLength(item.text); yield item; if (item._tag === 'ended') return
+      const item = s.queue.shift()!; if (item._tag === 'output') { s.bytes -= Buffer.byteLength(item.text); if (s.paused && !s.ending && s.bytes <= 32 * 1024) { s.paused = false; s.child.resume() } } yield item; if (item._tag === 'ended') return
     } } finally { s.queue = []; s.bytes = 0; if (s.done) this.sessions.delete(id); else this.detach(id, connection) }
   }
   close() { this.closed = true; for (const s of this.sessions.values()) this.finish(s, 'The service stopped.'); this.sessions.clear() }

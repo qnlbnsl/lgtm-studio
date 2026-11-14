@@ -64,8 +64,8 @@ export function LiveTerminalTab({ s, project }) {
   useEffect(() => { if (s.conn.status === 'live') load().catch(e => setNotice(e.message)); }, [s.conn.status]);
   const worktrees = mapping.terminalWorktrees(s, project);
   const close = async item => {
-    try { if (!item.ended) await engine.request('client.terminal.close', { sessionId: item.id }); }
-    catch (e) { setNotice(e.message); return; }
+    try { if (!item.ended && s.conn.status === 'live') await engine.request('client.terminal.close', { sessionId: item.id }); }
+    catch (e) { setNotice(e.message); }
     item.cancel?.(); item.terminal.dispose(); state.sessions = state.sessions.filter(x => x !== item);
     if (state.active === item.id) state.active = state.sessions.at(-1)?.id || null;
     redraw();

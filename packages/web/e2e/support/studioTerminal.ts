@@ -13,6 +13,7 @@ import { serve } from '../../../engine/src/client/web/server.ts'
 import { engineLists } from '../../../engine/src/pieces/lists.ts'
 import { Views } from '../../../engine/src/views/Views.ts'
 import { projectView } from '../../../engine/src/project/view.ts'
+import { mintCredential } from '../../../engine/src/identity/credential.ts'
 import { makeRedactor } from '../../../engine/src/identity/redactor.ts'
 import { unusedPort } from '../../../engine/test/support/browserWeb.ts'
 import { makeFakeRunner } from '../../../engine/test/support/fakeRunner.ts'
@@ -37,7 +38,8 @@ export async function exerciseStudioTerminal(page: Page) {
     const studioRoot = await buildStudio(join(rig.root, 'studio'))
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const runner = yield* makeFakeRunner()
-      const redactor = makeRedactor({ secrets: () => [Redacted.make('registered-browser-terminal-secret')], tokenHashes: () => new Set() })
+      const token = mintCredential('shp_a_')
+      const redactor = makeRedactor({ secrets: () => [Redacted.make('registered-browser-terminal-secret')], tokenHashes: () => new Set([token.tokenHash]) })
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, redactor.layer)
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck(); yield* seedAccount('launch', 'cursor')
@@ -50,7 +52,7 @@ export async function exerciseStudioTerminal(page: Page) {
         const project = projectView(yield* (yield* Views).snapshot).projects[created.projectId]!
         const projectViewPathValue = projectView(yield* (yield* Views).snapshot).workspaces[project.worktreeId]!.path
         yield* completedSetup(project.projectId)
-        yield* appendSetup([eventOf({ _tag: 'project.WorktreeCreated', repoId, worktreeId: 'remote-terminal', branch: 'remote-terminal', path: '/unavailable/terminal', machineId: 'remote-terminal', checkout: 'worktree' })])
+        yield* appendSetup([eventOf({ _tag: 'project.WorktreeCreated', repoId, worktreeId: 'remote-terminal', branch: 'remote-terminal', path: '/unavailable/terminal', machineId: 'remote-terminal', checkout: 'main' })])
         yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
           const base = `http://127.0.0.1:${port}/`, url = base + `#/p/${project.projectId}/terminal`
@@ -65,12 +67,16 @@ export async function exerciseStudioTerminal(page: Page) {
           await page.getByRole('menuitem', { name: new RegExp(project.name) }).click()
           const input = page.locator('.xterm-helper-textarea')
           await expect(input).toBeAttached(); await expect(page.locator('.term-cwd')).toHaveText(projectViewPathValue); await input.focus()
+          await page.keyboard.type('ls'); await expect(page.locator('.xterm-rows')).toContainText('ls'); await page.keyboard.press('Control+U')
           await page.keyboard.type("printf '\\033[31mBROWSER_TERMINAL_OK\\033[0m registered-browser-terminal-secret\\n'")
           await page.keyboard.press('Enter')
           // DOM renderer text proves output was drawn, not merely received.
           await expect(page.locator('.xterm-rows')).toContainText('BROWSER_TERMINAL_OK')
           await expect(page.locator('.xterm-rows')).toContainText('[REDACTED]')
           await expect(page.locator('.xterm-rows')).not.toContainText('registered-browser-terminal-secret')
+          await page.keyboard.type("printf '\\033[38;2;255;100;0mTRUE_FORE\\033[0m \\033[48;2;12;34;56mTRUE_BACK\\033[0m\\n'"); await page.keyboard.press('Enter')
+          await expect(page.locator('.xterm-rows span').filter({ hasText: /^TRUE_FORE$/ }).first()).toHaveCSS('color', 'rgb(255, 100, 0)')
+          await expect(page.locator('.xterm-rows span').filter({ hasText: /^TRUE_BACK$/ }).first()).toHaveCSS('background-color', 'rgb(12, 34, 56)')
           const before = await page.locator('.term-status').innerText()
           await page.setViewportSize({ width: 1100, height: 740 })
           await expect(page.locator('.term-status')).not.toHaveText(before)
@@ -84,7 +90,16 @@ export async function exerciseStudioTerminal(page: Page) {
           await expect(page.locator('.term-cwd')).toHaveText(rig.work)
           await page.locator('.xterm-helper-textarea').focus(); await page.keyboard.type('pwd'); await page.keyboard.press('Enter')
           await expect(page.locator('.xterm-rows')).toContainText(rig.work)
+          // A refusal must not trap a tab in this page. Cancelling its reader
+          // still releases the engine session through the normal stream cleanup.
+          await page.evaluate(async () => {
+            const engine = await import('/js/engine.js' as string)
+            const connection = engine.connection(), request = connection.request.bind(connection)
+            connection.request = (tag: string, payload: unknown) => tag === 'client.terminal.close'
+              ? Promise.reject(new Error('Synthetic close refusal')) : request(tag, payload)
+          })
           await page.getByRole('button', { name: /^Close / }).last().click()
+          await expect(page.locator('.term')).toContainText('No sessions are open')
           await page.getByRole('button', { name: 'New session', exact: true }).click(); await expect(page.getByRole('menuitem', { name: /remote-terminal/ })).toBeDisabled(); await expect(page.getByRole('menuitem', { name: /remote-terminal/ })).toHaveAttribute('title', 'Engine work needed')
           await expect(page.locator('.term')).toContainText('Project terminals are available only on the local machine.')
           await page.goto(base + '#/settings?section=remote'); await expect(toggle).toHaveAttribute('aria-checked', 'true'); await toggle.click(); await expect(toggle).toHaveAttribute('aria-checked', 'false')

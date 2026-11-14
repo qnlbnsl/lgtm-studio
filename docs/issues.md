@@ -14014,3 +14014,52 @@ A selection made during that interval is a possible cause.
 The exact cause is not established.
 The project terminal journey passed in both its focused run and the full run.
 The full check remains a failed run.
+
+## s9-terminal-14. Large output killed the project shell.
+
+Found in review round 1.
+State: fixed.
+The sign-in unread-output limit was unsuitable for project shells.
+Project shells now pause at a high unread-output mark and resume after the reader drains the queue.
+Sign-in sessions keep their existing limit.
+A socket test reads several megabytes and runs another command in the same shell.
+
+## s9-terminal-15. Registered agent tokens delayed terminal echo.
+
+Found in review round 1.
+State: fixed.
+A generic base64 lead could remain held without further output.
+A short idle release now marks those bytes covered while retaining them for later token matching.
+Recognized secret and credential prefixes remain held without a timer.
+The engine and browser fixtures now register an agent token and a secret.
+The browser checks its typed characters before Enter.
+The documented partial-lead risk awaits the owner's ruling.
+
+## s9-terminal-16. A background job survived the shell's own exit.
+
+Found in review round 1.
+State: fixed on hosts with `/proc`.
+Cleanup now scans session members after the shell exits as well as during explicit cleanup.
+It never signals the former leader or its former group after exit.
+A socket test starts a background sleep and exits the shell.
+Hosts without `/proc` cannot discover these descendants.
+
+## s9-terminal-17. True colour used a policy-blocked style attribute.
+
+Found in review round 1.
+State: fixed.
+The renderer build now replaces its one style-attribute anchor with a style-object assignment.
+The build fails when that anchor is absent or duplicated.
+The browser journey checks true-colour foreground and background cells under the unchanged policy.
+
+## s9-terminal-18. Review found terminal settings and page cleanup gaps.
+
+Found in review round 1.
+State: fixed.
+The terminal switch now belongs to the sample Service settings screen too.
+An older client's web-settings save preserves an omitted terminal switch.
+A refused or disconnected close request no longer traps a local session tab.
+The worktree menu uses the same project and team relationships as the engine.
+Unassigned linked worktrees are left out.
+The service-credential tests now call the actual read handlers for all five requests.
+The security document states the process-discovery and terminal-control-sequence limits.

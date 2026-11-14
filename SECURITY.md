@@ -192,12 +192,24 @@ An environment entry containing any registered secret is removed too.
 At most eight project terminals may be live at once.
 A shell has no time limit.
 The service kills its live process groups on close, sign-out, switch-off, connection loss past the grace period, and engine shutdown.
-Interactive shell jobs in the same operating-system session are stopped too.
-After the shell exits, the service does not signal its former groups because identifiers may be reused.
+On Linux, the service reads `/proc` to find and kill jobs in the shell's operating-system session.
+It does this when the shell exits too.
+After the shell exits, it signals only processes still found in that session.
+It never signals the former shell process identifier or its former process group.
+Where `/proc` is absent, descendant discovery does nothing.
+On those systems, only the live shell's process group is killed.
 A descendant that starts its own operating-system session escapes this cleanup.
 Input and output are ephemeral.
 They are never stored by the service, logged, posted, sent as events, or included in snapshots or protocol logs.
-Every secret the service knows is blanked in output, including a secret split across chunks.
+Known secrets printed as an unbroken byte sequence are blanked, including when split across output chunks.
+Blanking does not recognize a secret with a terminal control sequence inserted inside it.
+A program can therefore display a known secret by inserting colour or cursor sequences into the value.
+The terminal idle release described next applies to both project and harness sign-in terminals.
+After about 30 milliseconds without output, the renderer can receive a generic one-to-three-character base64 lead.
+Those bytes stay in the redaction carry as already covered.
+A following encoded token is still matched, and its remaining characters are blanked.
+Recognized secret overlaps and credential prefixes are held without an idle timer.
+Awaiting the owner's ruling: one to three characters before an encoded token can appear if output pauses exactly there.
 A shell can print a secret the service has never seen, which appears on the initiating owner's screen.
 The shell runs as the owner and can change files with that user's permissions.
 Rule 6 remains unchanged for every other path.

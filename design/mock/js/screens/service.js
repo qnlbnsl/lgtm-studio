@@ -53,7 +53,7 @@ export function seedService(st) {
   Object.assign(st.settings, {
     notifyOn: { question: true, approval: true, merge: true, failed: true, sprint: false },
     quiet: { on: false, from: '22:00', to: '07:00', timeZone: 'UTC', failed: true },
-    defaultHarness: 'claude', defaultModel: 'Sonnet 5.5', defaultEffort: 'Medium', defaultPermission: 'Edit files without asking',
+    terminalEnabled: false, defaultHarness: 'claude', defaultModel: 'Sonnet 5.5', defaultEffort: 'Medium', defaultPermission: 'Edit files without asking',
     needToKnow: false, stallAssigned: 5, stallWorker: 10, stallLead: 20, autoNudge: true, replaceAfter: 3, capacityRetries: 12,
     workflowPath: '~/.lgtm', maxRounds: 6, testsDefault: true, reviewDefault: true,
     version: '0.9.0', commit: '55e1bbd', dataFolder: '~/.local/state/lgtm',
@@ -651,6 +651,7 @@ function Remote({ s }) {
   const fwd = live.on ? '' : `ssh -L ${f.port}:127.0.0.1:${f.port} ${master?.name.toLowerCase()}`;
   return html`<form onSubmit=${(e) => { e.preventDefault(); save(); }}>
     <div class="svc-rows">
+      <${Row} label="Project terminal" hint="Turning it on lets signed-in owner pages run shells as you on the service machine."><${Switch} on=${set.terminalEnabled === true} label="Project terminal" onChange=${(value) => setS({ terminalEnabled: value })} /><//>
       <${Row} label="Web page" hint="Turn it off to use LGTM Studio from the terminal only."><${Switch} on=${f.webEnabled} label="Web page" onChange=${(v) => setF({ ...f, webEnabled: v })} /><//>
       <${Row} label="Listens on" hint="This computer only. The service never listens on the network.">
         <span class="row" style="gap:6px"><span class="svc-fixed mono">http://127.0.0.1:</span><input class="input num-field mono" type="number" aria-label="Port" value=${f.port} onInput=${(e) => setF({ ...f, port: +e.target.value })} /></span>

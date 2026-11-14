@@ -229,6 +229,8 @@ const redactValue = (
 // What a stream item holds back: its last characters, and how many of them
 // at the start are already covered by a released replacement.
 interface Carry {
+  readonly idleTo?: number;
+  readonly idleAt?: number;
   readonly text: string;
   readonly covered: number;
 }
@@ -243,6 +245,7 @@ export const makeRedactor = (registry: {
 }): {
   readonly layer: Layer.Layer<Redactor>;
   readonly redactText: (text: string) => string;
+  readonly redactIdle: (itemId: string) => string;
   readonly redactChunk: (itemId: string, text: string, final: boolean, responsive?: boolean) => string;
 } => {
   const currentForms = (): Forms => {
@@ -280,13 +283,14 @@ export const makeRedactor = (registry: {
       longestCredentialForm,
       ...[...forms.exact, ...forms.hex, ...forms.percent].map((form) => form.length),
     );
+    let idleTo = 0;
     let cut = Math.max(0, joined.length - (window - 1));
     if (responsive) {
       // A terminal cannot wait for a whole redaction window before showing a
       // short prompt. Hold only suffixes that could still complete a secret.
       let held = 0;
-      const overlap = (text: string, form: string, lead = 0) => {
-        for (let size = Math.min(text.length, form.length - 1); size > Math.max(0, held - lead); size--) {
+      const overlap = (text: string, form: string, lead = 0, minimum = 1) => {
+        for (let size = Math.min(text.length, form.length - 1); size >= minimum && size > Math.max(0, held - lead); size--) {
           if (text.endsWith(form.slice(0, size))) { held = Math.max(held, Math.min(text.length, size + lead)); break; }
         }
       };
@@ -299,14 +303,12 @@ export const makeRedactor = (registry: {
         overlap(hexTail, hexPrefix);
         const hexAt = hexTail.indexOf(hexPrefix);
         if (hexAt >= 0) held = Math.max(held, hexTail.length - hexAt);
-        // Up to three initial base64 characters can depend on bytes before
-        // an embedded token. Keep them until its prefix can be recognised.
-        const possibleBase64Lead = /[A-Za-z0-9+/_-]{1,3}$/.exec(joined);
-        if (possibleBase64Lead) held = Math.max(held, possibleBase64Lead[0].length);
+        // One to three ambiguous characters use the generic lead below.
+        // A recognizable credential prefix stays held without an idle release.
         const candidates = ["shp_a_", ...base64Probes.map(probe => probe.run)];
         const tail = joined.slice(-longestCredentialForm);
         for (const prefix of candidates) {
-          overlap(tail, prefix, prefix === "shp_a_" ? 0 : 3);
+          overlap(tail, prefix, prefix === "shp_a_" ? 0 : 3, prefix === "shp_a_" ? 4 : 1);
           const at = tail.indexOf(prefix);
           if (at >= 0) held = Math.max(held, tail.length - Math.max(0, at - 3));
         }
@@ -322,26 +324,46 @@ export const makeRedactor = (registry: {
         }
         for (let size = 1; size <= Math.min(decoded.length, credentialLength); size++) {
           const suffix = decoded.slice(-size);
-          if ("shp_a_".startsWith(suffix) || suffix.startsWith("shp_a_")) held = Math.max(held, joined.length - starts[starts.length - size]!);
+          if (size >= 4 && ("shp_a_".startsWith(suffix) || suffix.startsWith("shp_a_"))) held = Math.max(held, joined.length - starts[starts.length - size]!);
         }
         const incompleteEscape = /%[0-9a-f]?$/i.exec(joined);
         if (incompleteEscape) held = Math.max(held, incompleteEscape[0].length);
       }
+      const strictHeld = held;
+      // Only this generic lead may be released after quiet time. Real secret
+      // overlaps and credential prefixes always retain their original hold.
+      if (registry.tokenHashes().size > 0) {
+        const possibleBase64Lead = /[A-Za-z0-9+/_-]{1,3}$/.exec(joined);
+        if (possibleBase64Lead) held = Math.max(held, possibleBase64Lead[0].length);
+      }
       cut = Math.max(0, joined.length - held);
+      idleTo = held - strictHeld;
     }
     const released = cut > carry.covered
       ? render(joined, intervals, carry.covered, cut)
       : { output: "", covered: carry.covered };
-    carries.set(itemId, { text: joined.slice(cut), covered: Math.max(0, released.covered - cut) });
+    carries.set(itemId, { text: joined.slice(cut), covered: Math.max(0, released.covered - cut), idleTo, idleAt: Date.now() + 30 });
+    return released.output;
+  };
+
+  const redactIdle = (itemId: string): string => {
+    const carry = carries.get(itemId);
+    if (!carry || !carry.idleTo || Date.now() < (carry.idleAt ?? Infinity)) return '';
+    const intervals = findMatches(carry.text, currentForms(), registry.tokenHashes());
+    const released = render(carry.text, intervals, carry.covered, Math.max(carry.covered, carry.idleTo));
+    // Keep the original bytes for a later encoded-token match, but never
+    // release these same characters again or expose the following token.
+    carries.set(itemId, { ...carry, covered: Math.max(carry.covered, released.covered, carry.idleTo), idleTo: 0 });
     return released.output;
   };
 
   const layer = Layer.succeed(Redactor, {
+    redactIdle: (itemId: string) => Effect.sync(() => redactIdle(itemId)),
     redactChunk: (itemId: string, text: string, final: boolean, responsive?: boolean) => Effect.sync(() => redactChunk(itemId, text, final, responsive)),
     redactText: (text: string) => Effect.sync(() => redactText(text)),
     redact: (event: Event) => Effect.sync(() =>
       redactValue(event, redactWith(currentForms(), registry.tokenHashes()), eventStructure) as Event),
   });
 
-  return { layer, redactText, redactChunk };
+  return { layer, redactText, redactChunk, redactIdle };
 };

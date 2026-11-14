@@ -12,6 +12,7 @@ import { randomBytes } from 'node:crypto'
 import * as Server from '../../src/api/server.ts'
 import { serve } from '../../src/client/web/server.ts'
 import { CommandHandler } from '../../src/commands/CommandHandler.ts'
+import { mintCredential } from '../../src/identity/credential.ts'
 import { makeRedactor } from '../../src/identity/redactor.ts'
 import { makeFakeRunner } from '../support/fakeRunner.ts'
 import { appendSetup, eventOf, makeFakeSecrets, makeRig, provideRig, removeRig, seedAgent } from '../support/handlerRig.ts'
@@ -20,6 +21,7 @@ import { alive, waitFor } from '../support/serviceProcess.ts'
 import { registerRebuildCheck } from '../support/rebuildCheck.ts'
 import { unusedPort } from '../support/browserWeb.ts'
 vi.mock('@lydell/node-pty', async original => { const actual = await original<typeof import('@lydell/node-pty')>(); return { ...actual, spawn: vi.fn(actual.spawn) } })
+const token = mintCredential('shp_a_')
 const known = 'registered-terminal-secret', marker = 'PRIVATE_TERMINAL_OUTPUT', keys = 'PRIVATE_TERMINAL_INPUT'
 const live = (name: string, body: () => Effect.Effect<any, any, any>) => it.live(name, () => body() as Effect.Effect<void, unknown, never>, 45000)
 const req = (client: any, operation: string, payload = {}) => client['client.terminal.' + operation]({ requestId: randomBytes(8).toString('hex'), ...payload }) as Effect.Effect<any, any>
@@ -32,7 +34,7 @@ const withServer = (body: (ctx: { client: any; socket: string; bearer: string; r
   chmodSync(rig.stateFolder, 0o700)
   const previous = { SHELL: process.env.SHELL, LGTM_TEST_TERMINAL: process.env.LGTM_TEST_TERMINAL, NORMAL_PRIVATE: process.env.NORMAL_PRIVATE }
   process.env.SHELL = '/bin/sh'; process.env.LGTM_TEST_TERMINAL = 'must-not-inherit'; process.env.NORMAL_PRIVATE = known
-  const redactor = makeRedactor({ secrets: () => [Redacted.make(known), Redacted.make(bearer)], tokenHashes: () => new Set() })
+  const redactor = makeRedactor({ secrets: () => [Redacted.make(known), Redacted.make(bearer)], tokenHashes: () => new Set([token.tokenHash]) })
   try {
     return yield* provideRig(rig, { runner: yield* makeFakeRunner(), secrets: makeFakeSecrets(), redactor: redactor.layer }, Effect.gen(function* () {
       yield* registerRebuildCheck()
@@ -64,13 +66,18 @@ live('terminal is off initially, refuses extra open fields and refuses remote wo
 })))
 live('terminal access is owner-only and isolated to the opening socket', () => withServer(({ client, socket, bearer }) => Effect.gen(function* () {
   yield* enabled(client, true)
-  const handler = yield* CommandHandler
-  for (const operation of ['open', 'write', 'resize', 'close', 'subscribe']) {
-    expect((yield* handler.execute({ _tag: 'service', service: 'roles.stallWatch' }, 'client.terminal.' + operation, { requestId: 'service-' + operation }).pipe(Effect.result))._tag).toBe('Failure')
-  }
   const { sessionId } = yield* open(client), second = yield* connect(socket, bearer)
   const agent = yield* seedAgent({ id: 'worker' }), asAgent = yield* connect(socket, agent.token)
   yield* failure(open(asAgent), 'Only the owner can run a project terminal.')
+  const handler = yield* CommandHandler
+  for (const credential of [{ _tag: 'service', service: 'roles.stallWatch' } as const, { _tag: 'agent', agentId: 'worker' } as const]) {
+    const input = { ...(yield* handler.input(credential as never)), connectionId: 'non-owner' }
+    for (const operation of ['open', 'write', 'resize', 'close', 'subscribe']) {
+      const reader = engineLists.reads['client.terminal.' + operation]!
+      const result = reader(input, { requestId: 'authority-' + operation, projectId: 'terminal-project', worktreeId: 'terminal-worktree', sessionId, text: 'exit\r', cols: 80, rows: 24 })
+      yield* failure((operation === 'subscribe' ? Stream.runDrain(result as Stream.Stream<any, any>) : result) as Effect.Effect<any, any>, 'Only the owner can run a project terminal.')
+    }
+  }
   // Opening a fresh shell is allowed for a second owner; claiming an existing ID is not.
   // A new open cannot name a session in the schema; controls below use its identifier.
   for (const other of [asAgent, second]) {
@@ -110,8 +117,10 @@ live('real sh redacts split secrets, strips private environment and leaves no du
 })))
 live('terminal refuses a ninth live shell', () => withServer(({ client }) => Effect.gen(function* () {
   yield* enabled(client, true)
-  for (let i = 0; i < 8; i++) expect((yield* open(client)).sessionId).toBeTypeOf('string')
+  const ids: string[] = []
+  for (let i = 0; i < 8; i++) ids.push((yield* open(client)).sessionId)
   yield* failure(open(client), 'Eight project terminal sessions are already open.')
+  yield* req(client, 'close', { sessionId: ids[0] }); expect((yield* open(client)).sessionId).toBeTypeOf('string')
 })))
 for (const mode of ['close', 'disable', 'disconnect', 'logout', 'shutdown'] as const) live(`terminal ${mode} kills the real shell process group`, () => Effect.gen(function* () {
   let pids: number[] = []
@@ -164,5 +173,68 @@ live('a refused output subscription cannot reset the owner stream redaction carr
   yield* waitFor('second secret chunk', () => text.includes('CARRY_DONE'))
   expect(text).toContain('[REDACTED]'); expect(text).not.toContain(known)
   expect(text).not.toContain('secret')
+  yield* req(client, 'close', { sessionId })
+})))
+
+live('several megabytes drain without ending the project shell', () => withServer(({ client }) => Effect.gen(function* () {
+  yield* enabled(client, true)
+  const { sessionId } = yield* open(client)
+  let text = '', ended = false
+  yield* output(client, sessionId).pipe(Stream.runForEach(item => Effect.sync(() => { if (item._tag === 'output') text += item.text; else ended = true })), Effect.forkScoped)
+  yield* req(client, 'write', { sessionId, text: 'stty -echo\r' }); yield* Effect.sleep(200)
+  text = ''
+  yield* req(client, 'write', { sessionId, text: "seq 1 400000; printf 'LARGE_DONE\\n'\r" })
+  yield* waitFor('large output completion', () => ended || text.includes('LARGE_DONE'), 30000)
+  expect(ended).toBe(false)
+  expect(text).toContain('400000\r\n'); expect(text.length).toBeGreaterThan(2_500_000)
+  yield* req(client, 'write', { sessionId, text: "printf 'AFTER_LARGE\\n'\r" })
+  yield* waitFor('same shell remains usable', () => text.includes('AFTER_LARGE'))
+  yield* req(client, 'close', { sessionId })
+})))
+live('typed characters echo with an agent token registered before Enter', () => withServer(({ client }) => Effect.gen(function* () {
+  yield* enabled(client, true)
+  const { sessionId } = yield* open(client)
+  let text = ''
+  yield* output(client, sessionId).pipe(Stream.runForEach(item => Effect.sync(() => { if (item._tag === 'output') text += item.text })), Effect.forkScoped)
+  yield* Effect.sleep(300); text = ''
+  yield* req(client, 'write', { sessionId, text: 'ls' })
+  yield* waitFor('typed ls echoed', () => text.includes('ls'), 500)
+  yield* req(client, 'close', { sessionId })
+})))
+live('an encoded token split after its lead remains blanked after idle release', () => withServer(({ client }) => Effect.gen(function* () {
+  yield* enabled(client, true)
+  const { sessionId } = yield* open(client)
+  let text = ''
+  yield* output(client, sessionId).pipe(Stream.runForEach(item => Effect.sync(() => { if (item._tag === 'output') text += item.text })), Effect.forkScoped)
+  yield* req(client, 'write', { sessionId, text: 'stty -echo\r' }); yield* Effect.sleep(200)
+  const encoded = Buffer.from('xy' + Redacted.value(token.token)).toString('base64')
+  text = ''
+  yield* req(client, 'write', { sessionId, text: `printf 'ENCODED_BEGIN ${encoded.slice(0, 3)}'; sleep 0.2; printf '${encoded.slice(3)}\\nENCODED_DONE\\n'\r` })
+  yield* waitFor('encoded token completion', () => text.includes('ENCODED_DONE'))
+  const between = text.split('ENCODED_BEGIN ')[1]!.split('\r')[0]!
+  expect(between.replace('[REDACTED]', '')).toBe(encoded.slice(0, 3))
+  expect(text).not.toContain(encoded.slice(3)); expect(text).not.toContain(Redacted.value(token.token))
+  yield* req(client, 'close', { sessionId })
+})))
+live('a background job is killed when the shell exits itself', () => withServer(({ client, rig }) => Effect.gen(function* () {
+  yield* enabled(client, true)
+  const { sessionId } = yield* open(client)
+  let ended = false, pid = 0
+  yield* output(client, sessionId).pipe(Stream.runForEach(item => Effect.sync(() => { if (item._tag === 'ended') ended = true })), Effect.forkScoped)
+  try {
+    yield* req(client, 'write', { sessionId, text: `sleep 300 & printf '%s' "$!" > '${join(rig.work, 'exit-job')}'; exit\r` })
+    yield* waitFor('shell exit', () => ended)
+    pid = Number(readFileSync(join(rig.work, 'exit-job'), 'utf8'))
+    yield* waitFor('background job exit', () => !alive(pid), 1000)
+  } finally { if (pid && alive(pid)) try { process.kill(pid, 'SIGKILL') } catch {} }
+})))
+live('a settings save that omits the terminal switch preserves its stored value and shell', () => withServer(({ client }) => Effect.gen(function* () {
+  yield* enabled(client, true)
+  const { sessionId } = yield* open(client)
+  yield* output(client, sessionId).pipe(Stream.runDrain, Effect.forkScoped)
+  yield* client['client.web.settings.set']({ requestId: 'old-client-save', settings: { enabled: true, port: 8787, proxyMode: false, heartbeatSeconds: 30 } })
+  const settings = yield* client['client.web.settings']({ requestId: 'read-preserved-switch' })
+  expect(settings.terminalEnabled).toBe(true)
+  yield* req(client, 'write', { sessionId, text: 'echo STILL_OPEN\r' })
   yield* req(client, 'close', { sessionId })
 })))

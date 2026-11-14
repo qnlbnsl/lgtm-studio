@@ -157,6 +157,9 @@ export const saveSettings = (patch) => run('settings', async () => {
     if (key === 'defaultEffort') lead.effort = patch[key];
     if (key === 'defaultPermission') lead.permission = permission[patch[key]];
     await request('project.settings.set', { settings: { ...service.project, lead } });
+  } else if (key === 'terminalEnabled') {
+    const { requestId, serverState, ...previous } = service.web;
+    await request('client.web.settings.set', { settings: { ...previous, terminalEnabled: patch.terminalEnabled } });
   } else if (key === 'webEnabled') {
     const { requestId, serverState, ...previous } = service.web;
     const settings = { ...previous, enabled: patch.webEnabled, port: patch.port, heartbeatSeconds: patch.checkIn, proxyMode: patch.proxyMode };
