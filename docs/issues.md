@@ -13437,3 +13437,20 @@ State: open.
 The mock's commit dialog has a "Generate" button that writes the message with a cheap model.
 No engine request writes commit text yet, as for the Git tab, so the real dialog leaves it out.
 The build loop plan places generated commit messages in Step 6.
+
+## 854. Three browser tests failed once and passed on a repeat
+
+Found: 2026-11-14, in the browser runs for the Files tab on the remote test computer.
+State: open.
+
+Each failure below happened once and passed when the same test ran again.
+None of the three tests covers the Files tab or Project settings.
+
+- `studio.spec.ts`, "live service settings": after a reload, the stall watch field `#sd-w` was empty instead of `17`.
+  The test waits for `aria-busy="false"` after each field, and that wait may pass before the save starts.
+- `studio.spec.ts`, "live website: subscriptions, notifications and service settings persist through the engine": a `toMatchObject` check failed.
+- `oversized-state.spec.ts`, case 7.14: a `toBe` check failed in one of two repeats.
+
+The first run of case 7.14 failed for a different reason, which this change fixes.
+The test read the first script file of the production build, and the editor's chunk now sorts first.
+The test now reads the script file that holds the pinger.
