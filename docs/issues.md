@@ -13546,3 +13546,13 @@ An early root folder request sent a `folder` property whose value was `undefined
 The client rejected the request with "Schema validation failed" before it reached the engine.
 The request now omits the property for the root folder.
 The browser journey checks the root entries and a changed folder before opening a child file.
+
+## s8-files-4. A large conflict comparison could hide the owner's editor.
+
+Found: 2026-11-14, while extending the Files browser journey to compare a current file with 120 lines.
+State: fixed with a bounded comparison area in the live screen.
+
+The current file initially used an unbounded preformatted block under the editor.
+That block could take the editor's available height.
+The comparison now scrolls within forty percent of the main area's height.
+The browser journey checks that both the comparison and the editor remain visible.

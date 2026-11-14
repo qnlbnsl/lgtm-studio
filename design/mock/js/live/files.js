@@ -216,7 +216,7 @@ function WorktreeFiles({ s, project, route, w, missing }) {
   else body = html`${worker?.state === 'working' && dirty && html`<p class="fx-busy"><${Icon} name="info" size=${13} />${worker.name} is working in this worktree. When you save, it is told which file you changed.</p>`}
     ${reason && html`<p class="fx-note" role="note">Read-only. ${reason}</p>`}
     <${CodeEditor} key=${w.id + ':' + sel + ':' + file.version} doc=${shown} path=${sel} wrap=${wrap} readOnly=${!!reason || model.saving || model.committing} onChange=${(text) => model.edit(text)} onSave=${() => model.save()} />
-    ${model.conflict && html`<section class="fx-note" aria-label="The file as it is now"><strong>The file as it is now</strong>
+    ${model.conflict && html`<section class="fx-note fx-current" aria-label="The file as it is now"><strong>The file as it is now</strong>
       <div class="row"><button type="button" class="btn sm" disabled=${model.saving} onClick=${() => model.takeCurrent()}>Use the current file</button><button type="button" class="btn sm" disabled=${!!reason || model.saving || model.conflict.kind !== 'text'} onClick=${() => model.save(model.conflict.version)}>Save my text over it</button></div>
       <pre>${model.conflict.kind === 'text' ? model.conflict.text : 'The current file is ' + model.conflict.kind + '.'}</pre></section>`}`;
   const main = html`<section class="fx-main" aria-label="Open file">${sel && head}${model.notice && html`<p class="fx-note" role="status">${model.notice}</p>`}${body}</section>`;

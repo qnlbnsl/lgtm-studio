@@ -90,3 +90,29 @@ it('guards the live replacements, preserves sample code and wires the style nonc
   for (const [path, input] of [['js/screens/files.js', screen], ['js/editor.js', editor], ['js/app.js', app]]) expect(() => filesSource(path!, input!.replaceAll(path === 'js/editor.js' ? 'lineNumbers(),' : path === 'js/app.js' ? "['terminal', 'files'].includes(tab)" : 'export function FilesTab({ s, project, route }) {', 'gone'))).toThrow()
   expect(screen).toContain('saveFile(wid, sel)')
 })
+
+it('does not let an older folder read overwrite the latest listing', async () => {
+  let first!: (v: any) => void; const f = fixture(); f.request.mockImplementationOnce(() => new Promise((r) => { first = r }))
+  const old = f.model.folder(''); await f.model.folder(''); first({ result: { ...listing, items: [] } }); await old
+  expect(f.model.folders[''].items[0].path).toBe('src')
+})
+it('keeps the newest selected file when an older open completes later', async () => {
+  let first!: (v: any) => void; const f = fixture(); f.request.mockImplementationOnce(() => new Promise((r) => { first = r }))
+  const old = f.model.open('old'); await f.model.open('new'); first({ result: text('old', 'old text') }); await old
+  expect(f.model.selected).toBe('new'); expect(f.model.shown()).toBe('opened\n')
+})
+it('ignores a search response for the previous query', async () => {
+  let first!: (v: any) => void; const f = fixture(); f.request.mockImplementationOnce(() => new Promise((r) => { first = r }))
+  const old = f.model.search('old'); await f.model.search('new'); first({ result: { items: [], truncated: false } }); await old
+  expect(f.model.found.paths).toEqual(['src/file.ts'])
+})
+it('does not replace the version protecting a retained draft with a fresh read', async () => {
+  const f = fixture(); await f.model.open('src/file.ts'); f.model.edit('mine'); await f.model.open('other')
+  f.request.mockResolvedValueOnce({ result: text('v2', 'outside change') }); await f.model.open('src/file.ts'); await f.model.save()
+  expect(f.request).toHaveBeenCalledWith('project.files.write', expect.objectContaining({ text: 'mine', version: 'v1' }))
+})
+it('keeps the draft while refusing to save over current private data', async () => {
+  const f = fixture(); await f.model.open('src/file.ts'); f.model.edit('mine'); f.model.conflict = text('v2', '[redacted]', false)
+  await f.model.save('v2'); expect(f.model.shown()).toBe('mine'); expect(f.model.readOnlyReason()).toContain('private data')
+  expect(f.request.mock.calls.some(([tag]: any) => tag === 'project.files.write')).toBe(false)
+})
