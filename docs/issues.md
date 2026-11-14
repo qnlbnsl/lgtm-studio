@@ -13552,6 +13552,12 @@ The assertion in `packages/web/e2e/support/studioMocks.ts:89` did not find "Edit
 The check ran before the sign-in implementation and before the required merge from the base branch.
 The chained credit check did not run in that attempt.
 
+The same journey failed once more on 2026-11-14, in the full check of the merged sign-in branch, at the same line.
+It then passed five times in a row when it ran alone.
+Both failures happened while other builders' runs shared the test computer.
+The save notice appears only after the engine saves and the page reads the mocks and the design again, and it stays for under four seconds.
+The cause is not proven. The state is open.
+
 ## 864. Opening Harnesses can discard metadata that a project's Chat still needs.
 
 The required browser regression found a second cause of the failure described in issue 845.
