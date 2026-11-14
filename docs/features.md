@@ -868,6 +868,26 @@ The service must apply the same rules to images that other clients send at full 
 common server image library, sharp, cannot read HEIC in its standard build, so the service
 needs a separate converter for it.
 
+### Safety of uploaded files, required by the owner
+
+The owner set this requirement on 2026-11-14.
+An uploaded file is untrusted data, even from a signed-in owner page, because a page or a pasted file can carry a malicious payload.
+The path of a file is: the page, then the server, then the client machine that runs the agent, then the agent's harness.
+Every step on that path must be safe on its own.
+The design must meet these points before any upload is built.
+
+- The library that parses uploads on the server must be a well-maintained one with a record of security fixes. The choice and its reasons are written down before it is used.
+- The server enforces a size limit and a count limit while the bytes arrive, not after.
+- The server never trusts the file name, the folder path or the declared type that the page sends. It gives each file its own stored name. It finds the real type from the bytes.
+- The server stores uploads outside every project folder and outside every folder it serves. It never runs an upload, and never unpacks an archive.
+- The server and the client machine treat image decoding as dangerous. Decoding and converting run with tight limits on memory, time and image size, apart from the main service process if possible.
+- A drawing in the Scalable Vector Graphics format can carry scripts. It is never shown as a live page element. It is shown as a flat picture or as a file.
+- A file served back to a page is sent with headers that stop the browser from running it or guessing its type.
+- The client machine checks a file again when the server forwards it: size, stored name and type. It does not rely on the server's checks alone.
+- The agent's harness receives a file as data in a folder made for that message. The file never lands in the worktree unless the owner asks.
+- Agents cannot upload through this path. Only the owner's signed-in page can.
+- A security review with real malicious samples is part of the work, and SECURITY.md gains a section for it.
+
 ## Pushing a finished project and opening its pull request
 
 The owner raised this on 2026-11-12 and decided its shape the same day. It is
