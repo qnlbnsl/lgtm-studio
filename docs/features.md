@@ -1093,3 +1093,12 @@ The owner asked on 2026-11-14 whether agents should run the vendor's installed p
 Today the engine runs the copy that the Agent Client Protocol adapter depends on, at the version the lockfile pins.
 A setting for each harness could offer "Bundled with LGTM Studio" and "Installed on this machine".
 The owner has not ruled on it.
+
+## Offer a sign-in that is already on the machine
+
+The owner asked for this on 2026-11-14.
+The "Harnesses" page lists an account only after someone adds it.
+A harness can already be signed in on the service's machine, in its own default folder.
+The page should notice that and offer it in one step, for example "A Claude Code sign-in was found on this machine. Use it?".
+The page must not add the account by itself, because an account lets agents run as the owner.
+The check must read only whether a sign-in exists, as "Check again" does today.
