@@ -27,9 +27,24 @@ current web page, the message board, and the foundry roles. The standing
 permission rules remain unbuilt, pending the owner's harness recordings.
 
 The owner lifted the development freeze on 2026-11-08 for the website build.
-The current mock is the reference for the page and its engine support.
-The website team reads `design/` and does not edit it.
 Roles units 3, 4 and 11a remain unbuilt.
+
+## Where the website lives
+
+The website is the connected mock in `design/mock/`, decided by the owner on
+2026-11-14. The engine serves it at `/studio/`. Build every new screen and
+every screen change there.
+
+- The sample data in `design/mock/` stays, so the mock still opens on its own
+  with no engine.
+- Live behaviour goes in a file under `design/mock/js/live/`, with its typed
+  mapping in `packages/studio/src/`.
+- A build-time replacement under `packages/studio/scripts/` fails the build
+  when the text it replaces is gone.
+- The visible look of an existing screen changes only with the owner's
+  approval.
+- `packages/web` is the older page, served at `/`. It receives no new screens.
+  Its tests and browser journeys stay until the owner retires it.
 
 ## Language
 
