@@ -40,7 +40,8 @@ const expectedCommands = [
   "debug.compare-views"
 ]
 const harnessCommands = ["client.harness.account.add", "client.harness.signin.start", "client.harness.signin.write", "client.harness.signin.resize", "client.harness.signin.stop", "client.harness.signin.subscribe", "client.harness.status", "client.harness.recipe", "client.harness.install", "client.harness.account.check"]
-const clientReads = [...harnessCommands, "client.harness.choices", "client.snapshot", "client.roster", "client.thread", "client.subscribe", "client.event", "client.sequence", "client.requests", "client.agent.configuration", "client.agent.context"]
+const terminalCommands = ["client.terminal.open", "client.terminal.write", "client.terminal.resize", "client.terminal.close", "client.terminal.subscribe"]
+const clientReads = [...terminalCommands, ...harnessCommands, "client.harness.choices", "client.snapshot", "client.roster", "client.thread", "client.subscribe", "client.event", "client.sequence", "client.requests", "client.agent.configuration", "client.agent.context"]
 
 // Row 55 names `accounts set-secret`, `accounts mark-available` and `debug.compare-views` outright
 // and says every other owner-only command is excluded too. Reading: the owner-only commands are the
@@ -54,7 +55,7 @@ const expectedWebCommands = ["client.web.settings", "client.web.settings.set"]
 const expectedWorkflowCommands = ["client.workflows.list", "client.workflows.read", "client.workflows.clone", "client.workflows.save", "client.workflows.validate", "client.workflows.delete"]
 const expectedServiceCommands = ["client.service.version", "client.service.restart"]
 const expectedApiCommands = [...expectedCommands, ...expectedWebCommands, ...expectedWorkflowCommands, ...expectedServiceCommands]
-const expectedOwnerOnly = [...harnessCommands, "client.harness.choices", "configure", "client.agent.configuration", "client.agent.context", "accounts", "accounts set-secret", "accounts mark-available", "harnesses", "debug.compare-views", "client.sequence", "client.requests", "board.peek", "board.flush",
+const expectedOwnerOnly = [...terminalCommands, ...harnessCommands, "client.harness.choices", "configure", "client.agent.configuration", "client.agent.context", "accounts", "accounts set-secret", "accounts mark-available", "harnesses", "debug.compare-views", "client.sequence", "client.requests", "board.peek", "board.flush",
   "roles.role-file.set", "roles.role-file.get", "roles.settings.get", "roles.settings.set", "roles.snooze", "roles.actions.list", "roles.record",
   "client.alerts.quiet.set", "client.alerts.carrier.enabled.set", "client.alerts.carrier.remove",
   "client.alerts.retry", "client.alerts.test", "client.alerts.prompt.dismiss",

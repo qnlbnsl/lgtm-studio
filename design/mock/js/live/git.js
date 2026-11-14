@@ -11,27 +11,38 @@ const pending = (key, value) => { S().ui.gitPending ||= {}; S().ui.gitPending[ke
 export async function run(key, work) {
   if (busy(key)) return false;
   pending(key, true);
-  const state = S();
+  const generation = sessionGeneration;
+  const current = () => generation === sessionGeneration;
   try { await work(); return true; }
-  catch (e) { if (state === S() && S().session.status === 'in') act.toast(e.message || 'The service did not complete the request.', 'error'); return false; }
-  finally { if (state === S()) pending(key, false); }
+  catch (e) { if (current() && S().session.status === 'in') act.toast(e.message || 'The service did not complete the request.', 'error'); return false; }
+  finally { if (current()) pending(key, false); }
 }
 const request = (tag, payload = {}) => engine.request(tag, payload);
-const settingsPatch = (patch) => engineWrite({ settings: { ...S().settings, ...patch } });
+const draftValues = () => Object.fromEntries([...settingsDrafts].map(([key, draft]) => [key, draft.value]));
+const settingsPatch = (patch) => engineWrite({ settings: { ...S().settings, ...patch, ...draftValues() } });
+let sessionGeneration = 0;
+let settingsQueue = { items: [], running: false };
+const settingsDrafts = new Map();
 let service;
 let accounts;
 let statuses;
 let subscriptionsLoaded = false;
 let screen;
 let revision = 0;
+let serviceRead = 0;
 let refreshTimer;
 let retryPending;
 // A connection snapshot can replace the skeletons. Keep already-read detail while refreshing.
 export function observe(patch) {
   if (patch.session && patch.session.status !== 'in') {
+    sessionGeneration++;
+    for (const item of settingsQueue.items) for (const done of item.done) done(false);
+    settingsQueue = { items: [], running: false }; settingsDrafts.clear();
+    S().ui.gitPending = {};
     service = accounts = statuses = retryPending = undefined; subscriptionsLoaded = false; S().ui.serviceReady = false; revision++; clearTimeout(refreshTimer);
     Object.assign(patch, { notifications: [], settings: { ntfyServer: '', ntfyTopic: '', ntfyToken: '', tokenSet: false, ntfyEnabled: false, email: {}, notifyOn: {}, quiet: {} } });
   }
+  if (patch.settings && S().session.status === 'in') patch.settings = { ...patch.settings, ...draftValues() };
   if (patch.worktrees) patch.worktrees = patch.worktrees.map((w) => ({ ...w, ...(S().worktrees?.find((x) => x.id === w.id && x.folder === w.folder && x.branch === w.branch) || {}), ...Object.fromEntries(Object.entries(w).filter(([k]) => !['files', 'commits', 'ahead', 'behind', 'merge'].includes(k))) }));
   if (patch.subscriptions && subscriptionsLoaded) patch.subscriptions = S().subscriptions;
   if (screen && (patch.conn?.status === 'live' || patch.projects)) {
@@ -49,15 +60,16 @@ export function openScreen(name, project) {
 async function refreshScreen() {
   if (!mapping || !screen || S().session.status !== 'in') return;
   if (screen.name === 'git') return refreshGit(screen.project);
-  if (busy('read-service')) { clearTimeout(refreshTimer); refreshTimer = setTimeout(refreshScreen, 200); return; }
+  if (busy('settings') || busy('read-service')) { clearTimeout(refreshTimer); refreshTimer = setTimeout(refreshScreen, 200); return; }
   return run('read-service', () => loadService(screen?.name));
 }
 async function loadService(name, refreshHarnesses = false) {
-  const version = revision;
+  const version = revision, readVersion = ++serviceRead;
+  const currentRead = () => version === revision && readVersion === serviceRead && S().session.status === 'in';
   if (name === 'notifications' || name === 'phone-offer') {
     const settings = await request('client.alerts.settings');
     if (name === 'phone-offer') {
-      if (version === revision && S().session.status === 'in') {
+      if (currentRead()) {
         settingsPatch(mapping.mapAlertSettings(settings));
         engineWrite({ phoneOffer: mapping.mapPhoneOffer(settings) });
       }
@@ -67,7 +79,7 @@ async function loadService(name, refreshHarnesses = false) {
     for (;;) { const page = await request('client.alerts.list', { after, limit: 200 }); items.push(...page.items); if (page.next === undefined || page.next <= after) break; after = page.next; }
     const requests = []; after = 0;
     for (;;) { const page = await request('client.requests', { after, limit: 200 }); requests.push(...page.items); if (page.next === undefined || page.next <= after) break; after = page.next; }
-    if (version !== revision || S().session.status !== 'in') return;
+    if (!currentRead()) return;
     settingsPatch(mapping.mapAlertSettings(settings));
     engineWrite({ notifications: mapping.mapAlerts(items, S().agents, requests), phoneOffer: mapping.mapPhoneOffer(settings) });
     return;
@@ -76,20 +88,21 @@ async function loadService(name, refreshHarnesses = false) {
     request('accounts', { operation: 'list' }), request('harnesses', { operation: 'list' }), request('project.settings'),
     request('roles.settings.get'), request('client.web.settings'), request('roles.role-file.get'), request('client.snapshot')
   ]);
-  if (version !== revision || S().session.status !== 'in') return;
-  service = { harnesses: harnessReply.harnesses, project: project.settings, roles: roles.settings, web, roleFile: roleFile.file };
-  accounts = accountReply.accounts; statuses = snapshot.accounts;
+  if (!currentRead()) return;
   const installationReply = await request('client.harness.status', { refresh: refreshHarnesses });
   const recipes = await Promise.all(installationReply.harnesses.map(async (row) => {
     try { return (await request('client.harness.recipe', { harnessId: row.harnessId })).recipe; } catch { return null; }
   }));
-  if (version !== revision || S().session.status !== 'in') return;
+  if (!currentRead()) return;
+  service = { harnesses: harnessReply.harnesses, project: project.settings, roles: roles.settings, web, roleFile: roleFile.file };
+  accounts = accountReply.accounts; statuses = snapshot.accounts;
   Object.keys(HARNESSES).forEach((k) => { delete HARNESSES[k]; });
   Object.assign(HARNESSES, mapping.mapHarnesses(service.harnesses));
   Object.assign(HARNESSES, mapping.mapInstalledHarnesses(HARNESSES, installationReply.harnesses, recipes));
   settingsPatch(mapping.mapServiceSettings(service.project, service.harnesses, service.roles, service.web, service.roleFile));
   engineWrite({ subscriptions: mapping.mapAccounts(accounts, statuses, service.harnesses, service.project) });
   subscriptionsLoaded = true; S().ui.serviceReady = true; notify();
+  return true;
 }
 export const refreshAccounts = () => loadService('subscriptions');
 export const accountAction = (id, operation, patch = {}) => run('subscriptions', async () => {
@@ -139,7 +152,41 @@ export const accountModel = (harness, model) => run('subscriptions', async () =>
   await request('harnesses', { operation: 'set', harness: { ...h, defaultModel: model } }); await loadService('subscriptions');
 });
 export const markAvailable = (id) => run('subscriptions', async () => { await request('accounts mark-available', { accountId: id }); await loadService('subscriptions'); });
-export const saveSettings = (patch) => run('settings', async () => {
+// Retain edits immediately. Only unsent values of the same field coalesce;
+// each write waits for the preceding write and its complete readback.
+export const saveSettings = (patch) => {
+  const queue = settingsQueue, key = Object.keys(patch)[0], edit = {};
+  for (const [field, value] of Object.entries(patch)) settingsDrafts.set(field, { value, edit });
+  settingsPatch(patch);
+  const previous = queue.items.find(item => item.key === key);
+  if (previous) queue.items.splice(queue.items.indexOf(previous), 1);
+  return new Promise(resolve => {
+    queue.items.push({ key, patch: { ...patch }, edit, done: [...(previous?.done || []), resolve] });
+    if (!queue.running) void drainSettings(queue);
+  });
+};
+async function drainSettings(queue) {
+  queue.running = true; pending('settings', true);
+  const connection = engine.connection();
+  const current = () => queue === settingsQueue && connection === engine.connection() && S().session.status === 'in';
+  try {
+    while (queue.items.length && current()) {
+      const item = queue.items.shift(); let saved = false;
+      try { revision++; await writeSettings(item.patch, current); saved = current(); }
+      catch (e) { if (current()) act.toast(e.message || 'The service did not complete the request.', 'error'); }
+      if (current()) {
+        for (const field of Object.keys(item.patch)) if (settingsDrafts.get(field)?.edit === item.edit) settingsDrafts.delete(field);
+        if (service) settingsPatch(mapping.mapServiceSettings(service.project, service.harnesses, service.roles, service.web, service.roleFile));
+      }
+      for (const done of item.done) done(saved);
+    }
+  } finally {
+    for (const item of queue.items.splice(0)) for (const done of item.done) done(false);
+    queue.running = false;
+    if (queue === settingsQueue) pending('settings', false);
+  }
+}
+async function writeSettings(patch, current) {
   if (!service) throw new Error('Wait for the service settings to load.');
   const key = Object.keys(patch)[0];
   const limits = { stallWorker: 'stallMinutes', capacityBackoff: 'capacityBackoffMinutes', capacityRetries: 'capacityRetries', crashRetries: 'crashRetries', teamIdle: 'teamIdleMinutes' };
@@ -157,14 +204,19 @@ export const saveSettings = (patch) => run('settings', async () => {
     if (key === 'defaultEffort') lead.effort = patch[key];
     if (key === 'defaultPermission') lead.permission = permission[patch[key]];
     await request('project.settings.set', { settings: { ...service.project, lead } });
+  } else if (key === 'terminalEnabled') {
+    const { requestId, serverState, ...previous } = service.web;
+    await request('client.web.settings.set', { settings: { ...previous, terminalEnabled: patch.terminalEnabled } });
   } else if (key === 'webEnabled') {
     const { requestId, serverState, ...previous } = service.web;
     const settings = { ...previous, enabled: patch.webEnabled, port: patch.port, heartbeatSeconds: patch.checkIn, proxyMode: patch.proxyMode };
     if (patch.publicAddress) settings.publicAddress = patch.publicAddress; else delete settings.publicAddress;
     await request('client.web.settings.set', { settings });
   } else { refuse(); return; }
-  await loadService('settings');
-});
+  // Navigation can invalidate a read already in flight. Finish a current
+  // readback before the next queued write spreads these service records.
+  while (current() && !await loadService('settings')) {}
+}
 export const saveCarrier = (form) => run('notifications', async () => {
   const carrier = form.server ? { _tag: 'ntfy', server: form.server, topic: form.topic } : { _tag: 'none' };
   await request('client.alerts.carrier.set', { carrier });

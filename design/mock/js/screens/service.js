@@ -2,7 +2,7 @@ import * as liveGit from '../live/git.js';
 import * as signInUi from '../live/signin.js';
 // The service pages: Machines, Harnesses, Notifications and Service settings,
 // plus one project's Settings tab and the Add repository dialog.
-import { html, useState, useEffect, Icon, cx, update, store, go, href, ago, clock, dayLabel, useNow, uid, plural, MIN, HOUR, DAY, live, refuse } from '../lib.js';
+import { html, useState, useEffect, useRef, Icon, cx, update, store, go, href, ago, clock, dayLabel, useNow, uid, plural, MIN, HOUR, DAY, live, refuse } from '../lib.js';
 import {
   HARNESSES, PERMISSION_MODES, KIND_LABEL, byId, projectOf, repoOf, agentOf, teamsOf, teamName, agentsOfTeam, agentsOfProject,
   machineOf, subOf, subLabel, agentStatus, routeForAgent, routeForRequest, openRequests, hasEffort, harnessOfModel, WORK_KINDS, proposeAssignment,
@@ -53,7 +53,7 @@ export function seedService(st) {
   Object.assign(st.settings, {
     notifyOn: { question: true, approval: true, merge: true, failed: true, sprint: false },
     quiet: { on: false, from: '22:00', to: '07:00', timeZone: 'UTC', failed: true },
-    defaultHarness: 'claude', defaultModel: 'Sonnet 5.5', defaultEffort: 'Medium', defaultPermission: 'Edit files without asking',
+    terminalEnabled: false, defaultHarness: 'claude', defaultModel: 'Sonnet 5.5', defaultEffort: 'Medium', defaultPermission: 'Edit files without asking',
     needToKnow: false, stallAssigned: 5, stallWorker: 10, stallLead: 20, autoNudge: true, replaceAfter: 3, capacityRetries: 12,
     workflowPath: '~/.lgtm', maxRounds: 6, testsDefault: true, reviewDefault: true,
     version: '0.9.0', commit: '55e1bbd', dataFolder: '~/.local/state/lgtm',
@@ -98,8 +98,11 @@ function Row({ label, hint, children, id, top }) {
   </div>`;
 }
 function Num({ id, value, unit, min = 0, max = 999, onChange }) {
-  return html`<span class="row" style="gap:6px"><input id=${id} class="input num-field" type="number" inputmode="numeric" min=${min} max=${max} value=${value ?? ''}
-    onInput=${(e) => { const v = +e.target.value; if (e.target.value !== '' && v >= min && v <= max) onChange(v); }} />${unit && html`<span class="muted">${unit}</span>`}</span>`;
+  const editing = useRef(false), [draft, setDraft] = useState(String(value ?? ''));
+  return html`<span class="row" style="gap:6px"><input id=${id} class="input num-field" type="number" inputmode="numeric" min=${min} max=${max} value=${editing.current ? draft : value ?? ''}
+    onFocus=${() => { editing.current = true; setDraft(String(value ?? '')); }}
+    onBlur=${() => { editing.current = false; setDraft(String(value ?? '')); }}
+    onInput=${(e) => { setDraft(e.target.value); const v = +e.target.value; if (e.target.value !== '' && v >= min && v <= max) onChange(v); }} />${unit && html`<span class="muted">${unit}</span>`}</span>`;
 }
 function Section({ title, sub, children, action }) {
   return html`<section class="svc-section"><div class="section-head"><h2>${title}</h2>${sub && html`<span class="faint" style="font-size:var(--text-sm)">${sub}</span>`}<span class="grow"></span>${action}</div>${children}</section>`;
@@ -339,7 +342,7 @@ export function Harnesses({ s }) {
       return html`<a key=${hid} class="svc-jump-item" href=${'#harness-' + hid} onClick=${(e) => { e.preventDefault(); document.getElementById('harness-' + hid)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
         <i class=${cx('dot', !h.installed ? 'waiting' : n ? 'working' : 'idle')}></i><b>${h.name}</b><span class="muted">${!h.installed ? 'Not installed' : n ? plural(n, 'account') : 'No account'}</span></a>`; })}</nav>`}
     ${live.on && (liveGit.busy('subscriptions') || liveGit.busy('settings')) && html`<span role="status">Saving…</span>`}
-    <fieldset disabled=${live.on && (liveGit.busy('subscriptions') || liveGit.busy('settings') || liveGit.busy('read-service'))} style="border:0;padding:0;margin:0;min-width:0" aria-busy=${live.on && liveGit.busy('read-service')}><div data-main>
+    <fieldset disabled=${live.on && liveGit.busy('subscriptions')} style="border:0;padding:0;margin:0;min-width:0" aria-busy=${live.on && liveGit.busy('read-service')}><div data-main>
     ${(!live.on || s.ui.serviceReady) && html`<div class="svc-card svc-card-defaults"><${Section} title="Defaults for new project leads"><${HarnessDefaults} s=${s} /><//></div>`}
     ${(live.on && !s.ui.serviceReady ? [] : Object.entries(HARNESSES)).map(([hid, h]) => { const list = s.subscriptions.filter((x) => x.harness === hid);
       const save = (patch) => { if (live.on) return liveGit.harnessSetting(hid, patch); update(() => Object.assign(h, patch)); markSaved(); };
@@ -651,6 +654,7 @@ function Remote({ s }) {
   const fwd = live.on ? '' : `ssh -L ${f.port}:127.0.0.1:${f.port} ${master?.name.toLowerCase()}`;
   return html`<form onSubmit=${(e) => { e.preventDefault(); save(); }}>
     <div class="svc-rows">
+      <${Row} label="Project terminal" hint="Turning it on lets signed-in owner pages run shells as you on the service machine."><${Switch} on=${set.terminalEnabled === true} label="Project terminal" onChange=${(value) => setS({ terminalEnabled: value })} /><//>
       <${Row} label="Web page" hint="Turn it off to use LGTM Studio from the terminal only."><${Switch} on=${f.webEnabled} label="Web page" onChange=${(v) => setF({ ...f, webEnabled: v })} /><//>
       <${Row} label="Listens on" hint="This computer only. The service never listens on the network.">
         <span class="row" style="gap:6px"><span class="svc-fixed mono">http://127.0.0.1:</span><input class="input num-field mono" type="number" aria-label="Port" value=${f.port} onInput=${(e) => setF({ ...f, port: +e.target.value })} /></span>
@@ -760,7 +764,7 @@ export function ServiceSettings({ s, route }) {
       <a class="nav-item" href=${href('/notifications')}><${Icon} name="smartphone" size=${15} /><span>Notifications</span><${Icon} name="arrow-up-right" size=${12} class="faint" /></a></nav>
     <div class="svc-pane" data-main>
       <div class="page-head"><h1 class="page-title">${cur[1]}</h1><span class="sub">${cur[4]}</span><${Saved} s=${s} /></div>
-      <fieldset disabled=${live.on && (liveGit.busy('settings') || liveGit.busy('read-service'))} aria-busy=${live.on && (liveGit.busy('settings') || liveGit.busy('read-service'))} style="border:0;padding:0;margin:0;min-width:0">${live.on && liveGit.busy('settings') && html`<span role="status">Saving…</span>`}${(!live.on || s.ui.serviceReady || cur[0] === 'appearance') && html`<${Body} key=${cur[0] + (live.on ? String(s.settings.port ?? '') : '')} s=${s} />`}</fieldset>
+      <fieldset aria-busy=${live.on && (liveGit.busy('settings') || liveGit.busy('read-service'))} style="border:0;padding:0;margin:0;min-width:0">${live.on && liveGit.busy('settings') && html`<span role="status">Saving…</span>`}${(!live.on || s.ui.serviceReady || cur[0] === 'appearance') && html`<${Body} key=${cur[0]} s=${s} />`}</fieldset>
     </div>
   </div></div>`;
 }

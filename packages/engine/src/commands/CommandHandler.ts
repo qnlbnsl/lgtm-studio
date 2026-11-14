@@ -1,4 +1,4 @@
-import { closeSignIns } from "../harnesses/signinRequests.ts";
+import { closeSignIns, setTerminalSwitch } from "../harnesses/signinRequests.ts";
 import { serviceRestartPending, completeServiceRestart } from "../client/serviceControl.ts"
 import { recoverInstalls } from "../harnesses/lifecycle.ts";
 import { acceptCache, type CacheTarget } from "./cache.ts";
@@ -120,6 +120,7 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
       return yield* restore(Fiber.join(fiber));
     }));
     const runtime: Runtime = { ...configuration, lists, sql, log, runner, secrets, views };
+    setTerminalSwitch(log, ((yield* views.snapshot).client as { webSettings?: { terminalEnabled?: boolean } } | undefined)?.webSettings?.terminalEnabled === true);
     yield* Effect.addFinalizer(() => Effect.sync(() => closeSignIns(log)));
     // Fix round 1, N-1: the first start loads the harness defaults.
     yield* loadFirstDefaults(runtime);
@@ -468,7 +469,7 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
       });
       const finish = (outcome: Effect.Success<ReturnType<typeof prepare>>, step: Step) => Effect.gen(function* () {
         if (outcome.failure !== undefined) return yield* outcome.failure;
-        if (name === "client.web.settings.set") yield* webSettingsCommitted(views);
+        if (name === "client.web.settings.set") { setTerminalSwitch(log, ((yield* views.snapshot).client as { webSettings?: { terminalEnabled?: boolean } } | undefined)?.webSettings?.terminalEnabled === true); yield* webSettingsCommitted(views); }
         if ("restartAccepted" in outcome && outcome.restartAccepted) yield* completeServiceRestart(
           { runtime, actor: { _tag: "owner" }, snapshot: yield* views.snapshot },
           (agentId) => executeMutation({ _tag: "owner" }, "stop", { requestId: randomUUID(), agentId }),

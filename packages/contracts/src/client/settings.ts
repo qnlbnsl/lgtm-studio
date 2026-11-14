@@ -17,6 +17,7 @@ export const DisplaySettings = Schema.Struct({
 })
 export const displaySettingsError = "Displays require a different HTTPS hostname and a different loopback listener port."
 export const WebSettings = Schema.Struct({
+  terminalEnabled: Schema.optionalKey(Schema.Boolean),
   enabled: Schema.Boolean,
   port: Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 65535 })),
   heartbeatSeconds: Schema.Int.check(Schema.isGreaterThan(0)),

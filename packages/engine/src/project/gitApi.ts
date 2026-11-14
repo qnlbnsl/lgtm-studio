@@ -41,7 +41,7 @@ export const repositoryPath = (input: Input, id: string) => Effect.gen(function*
   yield* safePath(input, repository.path); yield* safePath(input, location.path)
   return { repository, location }
 })
-export const workspaceReference = (input: Input, raw: Record<string, unknown>) => Effect.gen(function* () {
+export const workspaceReference = (input: Input, raw: Record<string, unknown>, options: { ownerMain?: boolean } = {}) => Effect.gen(function* () {
   const view = projectView(input.snapshot)
   const workspace = own(view.workspaces, raw.worktreeId as string)
   if (workspace === undefined) return yield* refused("registered workspace not found")
@@ -50,7 +50,7 @@ export const workspaceReference = (input: Input, raw: Record<string, unknown>) =
     const id = raw.projectId as string
     const project = own(view.projects, id)
     if (project === undefined || !canReadProject(input.snapshot, input.actor, id) || project.repoId !== workspace.repoId
-      || !(project.worktreeId === workspace.worktreeId || Object.values(view.teams).some((team) => team.projectId === id && (team.worktreeId === workspace.worktreeId || team.worktreeId === workspace.parentId && workspace.checkout === "worktree")))) {
+      || !(project.worktreeId === workspace.worktreeId || options.ownerMain === true && input.actor._tag === "owner" && workspace.checkout === "main" || Object.values(view.teams).some((team) => team.projectId === id && (team.worktreeId === workspace.worktreeId || team.worktreeId === workspace.parentId && workspace.checkout === "worktree")))) {
       return yield* refused("project is unavailable to this caller")
     }
   }

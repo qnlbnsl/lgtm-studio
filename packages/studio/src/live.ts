@@ -1,3 +1,4 @@
+import * as terminalMapping from './terminal.ts'
 // The live website's entry point. The build bundles this file, with the connection and the
 // mapping, as live.js beside the website's own files. It loads the website's mount() at run
 // time from js/app.js, so the screens stay plain JavaScript with no build step.
@@ -25,5 +26,7 @@ const projectSettingsModule = new URL(/* @vite-ignore */ "./js/live/project-sett
 
 const filesModule = new URL(/* @vite-ignore */ "./js/live/files.js", import.meta.url).href
 ;(await import(/* @vite-ignore */ filesModule)).setMapping(filesMapping)
+const terminalModule = new URL(/* @vite-ignore */ "./js/live/terminal.js", import.meta.url).href
+;(await import(/* @vite-ignore */ terminalModule)).setMapping(terminalMapping)
 const element = document.getElementById("app")
 if (element !== null) mount(element, { connection: engineConnection(), mode: "live" })

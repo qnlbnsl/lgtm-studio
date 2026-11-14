@@ -70,6 +70,7 @@ export interface StoreRequest {
   readonly heldBy: string | null
 }
 export interface StoreWorktree {
+  readonly checkout?: "main" | "worktree"
   readonly id: string; readonly repo: string; readonly kind: "base" | "project" | "team" | "agent"; readonly branch: string
   readonly parent: string | null; readonly parentId: string | null; readonly machine: string; readonly folder: string
   readonly files: ReadonlyArray<never>; readonly commits: ReadonlyArray<never>; readonly ahead: number; readonly behind: number
@@ -157,7 +158,7 @@ export function mapRepository(repo: EngineRepository, workspaces: ReadonlyArray<
 
 export function mapWorktree(row: EngineWorkspace, workspaces: ReadonlyArray<EngineWorkspace>, projects: ReadonlyArray<EngineProject>, teams: ReadonlyArray<EngineTeam> = []): StoreWorktree {
   return {
-    id: row.worktreeId, repo: row.repoId, branch: row.branch, machine: row.machineId,
+    id: row.worktreeId, repo: row.repoId, branch: row.branch, machine: row.machineId, ...(row.checkout ? { checkout: row.checkout } : {}),
     folder: row.path, files: [], commits: [], ahead: 0, behind: 0, merge: null,
     ...workspaceIdentity(row, workspaces, projects, teams)
   }

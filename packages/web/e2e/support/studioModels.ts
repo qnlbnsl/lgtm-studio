@@ -60,9 +60,29 @@ export async function exerciseStudioModels(page: Page) {
           await expect(page.getByText('Reading the models.', { exact: true }).first()).toBeVisible()
           releaseFirst()
           await expect(page.locator('#df-model option[value="first-reported"]')).toHaveCount(1)
+          // Hold the first write long enough for the next edits to overlap it.
+          await page.evaluate(async () => {
+            const engine = await import('/js/engine.js' as string)
+            const connection = engine.connection(), request = connection.request.bind(connection)
+            connection.request = async (tag: string, payload: unknown) => {
+              if (tag === 'roles.settings.set') await new Promise(resolve => setTimeout(resolve, 300))
+              return request(tag, payload)
+            }
+            location.hash = '/settings?section=stall-watch'
+          })
+          await page.locator('#sd-a').fill('7')
+          await page.locator('#sd-w').fill('17')
+          await page.evaluate(() => { location.hash = '/settings?section=defaults' })
           await harnesses.getByRole('button', { name: 'empty', exact: true }).click()
           await expect(page.getByText('This harness did not report model choices.', { exact: true }).first()).toBeVisible()
           await expect(page.locator('#df-model')).toHaveCount(0)
+          await expect(page.locator('.svc-pane fieldset')).toHaveAttribute('aria-busy', 'false')
+          await page.reload()
+          await expect(harnesses.getByRole('button', { name: 'empty', exact: true })).toHaveAttribute('aria-pressed', 'true')
+          await page.evaluate(() => { location.hash = '/settings?section=stall-watch' })
+          await expect(page.locator('#sd-a')).toHaveValue('7')
+          await expect(page.locator('#sd-w')).toHaveValue('17')
+          await page.evaluate(() => { location.hash = '/settings?section=defaults' })
           await harnesses.getByRole('button', { name: 'no-account', exact: true }).click()
           await expect(page.getByText('No account is registered for this harness.', { exact: true }).first()).toBeVisible()
           await expect(page.locator('#df-model')).toHaveCount(0)

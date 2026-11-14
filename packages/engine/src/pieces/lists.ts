@@ -1,3 +1,4 @@
+import { terminalReads } from '../harnesses/terminalRequests.ts'
 import { signInReads } from "../harnesses/signinRequests.ts";
 import { serviceControlReads, serviceControlPlanners } from "../client/serviceControl.ts"
 import { workflowReads } from "../workflows/commands.ts";
@@ -77,7 +78,7 @@ export const engineLists: EngineLists = {
   // Build these tables on first use after the cyclic modules initialize.
   // Cache the complete maps so every consumer keeps the same registrations.
   get planners() { return plannerTable ??= { ...planners, ...serviceControlPlanners, ...alertPlanners, ...carrierPlanners, ...boardPlanners, ...projectPlanners, ...creationPlanners, ...gitPlanners, ...mockPlanners, ...setupPlanners, ...designPlanners }; },
-  get reads() { return readTable ??= { ...reads, ...signInReads, ...serviceControlReads, ...workflowReads, ...alertReads, ...boardReads, ...projectReads, ...gitReads, ...mockReads, ...setupReads, ...designReads, "project.placement.preview": previewProjectPlacement }; },
+  get reads() { return readTable ??= { ...reads, ...signInReads, ...terminalReads, ...serviceControlReads, ...workflowReads, ...alertReads, ...boardReads, ...projectReads, ...gitReads, ...mockReads, ...setupReads, ...designReads, "project.placement.preview": previewProjectPlacement }; },
   // The tables and reactors import engine services in this same module graph.
   // Resolve their values when used, after module initialization has completed.
   get views() { return pieceViews; },

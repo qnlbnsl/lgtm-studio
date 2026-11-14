@@ -1,0 +1,12 @@
+export { Terminal } from '@xterm/xterm'
+export function terminalSize(width: number, height: number, cellWidth: number, cellHeight: number) {
+  return { cols: Math.min(240, Math.max(20, Math.floor(width / Math.max(1, cellWidth)))), rows: Math.min(100, Math.max(5, Math.floor(height / Math.max(1, cellHeight)))) }
+}
+interface Worktree { id: string; repo: string; project?: string | null; machine: string; checkout?: string; parentId?: string | null }
+export function terminalWorktrees<W extends Worktree>(state: { worktrees?: ReadonlyArray<W>; teams?: ReadonlyArray<{ project: string; worktree?: string }> }, project: { id: string; repo: string; worktree?: string }) {
+  return (state.worktrees ?? []).filter(w => w.repo === project.repo && (w.id === project.worktree || w.checkout === 'main'
+    || state.teams?.some(t => t.project === project.id && (t.worktree === w.id || t.worktree === w.parentId && w.checkout === 'worktree'))))
+}
+export function terminalState(enabled: boolean, connection: string, machine: string) {
+  return !enabled ? 'off' : connection !== 'live' ? 'offline' : machine !== 'local' ? 'remote' : 'ready'
+}

@@ -458,6 +458,9 @@ importers:
       '@lgtm/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@xterm/xterm':
+        specifier: ^6.0.0
+        version: 6.0.0
       effect:
         specifier: 4.0.5
         version: 4.0.5
@@ -1228,6 +1231,9 @@ packages:
 
   '@vitest/spy@5.0.5':
     resolution: {integrity: sha512-lwJRExuH417257Q5wv9QYugN9IMJkoxcrKrYxGPQkBzl7wlNpTUxD/5yNX4ESKVUIShKPgkGchYPFMWOOk0wzw==}
+
+  '@xterm/xterm@6.0.0':
+    resolution: {integrity: sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==}
 
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
@@ -2747,6 +2753,8 @@ snapshots:
       vite: 8.3.4(@types/node@26.6.6)
 
   '@vitest/spy@5.0.5': {}
+
+  '@xterm/xterm@6.0.0': {}
 
   accepts@2.0.0:
     dependencies:

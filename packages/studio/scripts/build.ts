@@ -1,3 +1,4 @@
+import { terminalSource, xtermSource } from './terminalSource.ts'
 import { signInSource } from "./signInSource.ts"
 import { projectSettingsSource, assertProjectSettingsSource } from "./projectSettings.ts"
 
@@ -94,17 +95,31 @@ export async function buildStudio(dist = defaultDist): Promise<string> {
     writeFileSync(target, filesSource(path, readFileSync(target, "utf8")))
   }
 
+  for (const path of ['js/app.js', 'js/screens/terminal.js', 'js/screens/service.js', 'js/live/git.js']) {
+    const target = join(dist, path)
+    writeFileSync(target, terminalSource(path, readFileSync(target, 'utf8')))
+  }
+  cpSync(join(root, 'node_modules/@xterm/xterm/css/xterm.css'), join(dist, 'css/xterm.css'))
+  mkdirSync(join(dist, 'licenses'), { recursive: true })
+  cpSync(join(root, 'node_modules/@xterm/xterm/LICENSE'), join(dist, 'licenses/xterm.txt'))
   writeFileSync(join(dist, "js/workflow-contracts.js"), contracts)
-  const { page, theme } = rewriteIndex(filesSource("index.html", readFileSync(join(mock, "index.html"), "utf8")))
+  const { page, theme } = rewriteIndex(terminalSource("index.html", filesSource("index.html", readFileSync(join(mock, "index.html"), "utf8"))))
   writeFileSync(join(dist, "index.html"), page)
   writeFileSync(join(dist, "theme.js"), theme)
+  let rendererPatched = false
   await build({
     configFile: false, root, logLevel: "warn",
+    plugins: [{ name: 'terminal-style-nonce', transform(source, id) {
+      if (!id.includes('@xterm/xterm/lib/xterm.mjs')) return
+      rendererPatched = true
+      return { code: xtermSource(source), map: null }
+    } }],
     build: {
       outDir: dist, emptyOutDir: false, target: "esnext", modulePreload: false, copyPublicDir: false,
       rolldownOptions: { input: join(root, "src", "live.ts"), output: { entryFileNames: "live.js", chunkFileNames: "live-[name].js" } }
     }
   })
+  if (!rendererPatched) throw new Error('The terminal renderer nonce integration was not applied')
   assertNoLinks(dist)
   return dist
 }

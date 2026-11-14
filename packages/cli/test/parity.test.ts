@@ -77,6 +77,11 @@ for (const { command, words, form } of invocations) {
       start: { name: "Parity agent", role: "worker", harness: "fake", account: { _tag: "any" }, permission: "ask", folder: root.work, groups: ["review"], model: "small", effort: "low", prompt: "Check parity." },
       configure: { agentId: "member", model: "small", effort: "low" },
       "client.harness.account.add": { harnessId: "fake", name: "Owner account", folder: "separate" },
+      "client.terminal.open": { projectId: "project", worktreeId: "workspace", cols: 80, rows: 24 },
+      "client.terminal.write": { sessionId: "terminal", text: "pwd\r" },
+      "client.terminal.resize": { sessionId: "terminal", cols: 100, rows: 30 },
+      "client.terminal.close": { sessionId: "terminal" },
+      "client.terminal.subscribe": { sessionId: "terminal" },
       "client.harness.signin.start": { accountId: "account" },
       "client.harness.signin.write": { sessionId: "signin", text: "y" },
       "client.harness.signin.resize": { sessionId: "signin", cols: 80, rows: 24 },
@@ -219,6 +224,7 @@ for (const { command, words, form } of invocations) {
         "client.service.version": { ...base, version: "0.0.1", commit: "abc123", dataFolder: root.work, checkout: root.work, comparison: "unchecked", updateCommands: [] },
         "client.service.restart": { ...base, restarting: true },
         "client.harness.account.add": { ...base, account: { id: "account", harness: "fake", displayName: "Owner account", home: "/tmp/account" } },
+        "client.terminal.open": { ...base, sessionId: "terminal" },
         "client.harness.signin.start": { ...base, sessionId: "signin" },
         "client.harness.status": { ...base, harnesses: [{ harnessId: "fake", installed: false }] },
         "client.harness.recipe": { ...base, recipe: { harnessId: "fake", name: "Fixture", automatic: true, packages: ["fixture@1.2.3"], registry: "https://example.test", source: "https://example.test/install", commands: ["fixed fixture command"], signInCommand: "fixture login", signInArguments: ["login"] } },
@@ -310,7 +316,7 @@ for (const { command, words, form } of invocations) {
         "roles.actions.list": { ...base, items: [] },
         "roles.record": { ...base, sequence: 101 },
       };
-      if (frame.tag === "client.harness.signin.subscribe") {
+      if (frame.tag === "client.harness.signin.subscribe" || frame.tag === "client.terminal.subscribe") {
         chunk(socket, frame, [{ _tag: "output", text: "Private terminal output" }]); succeed(socket, frame, undefined);
       } else if (frame.tag === "subscribe" || frame.tag === "client.subscribe") {
         chunk(socket, frame, [{ sequence: 101, eventId: "parity-event", occurredAt: 1_800_000_000_000,

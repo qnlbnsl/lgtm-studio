@@ -1,3 +1,4 @@
+import { exerciseStudioTerminal } from './support/studioTerminal.ts'
 import { exerciseStudioProjectSettings } from './support/studioProjectSettings.ts'
 
 import { exerciseStudioFiles } from './support/studioFiles.ts'
@@ -1118,3 +1119,5 @@ test('Harnesses then project Chat keeps the composer visible', async ({ page }) 
 test("studio project settings: live changes, disabled controls and archive restore", async ({ page }) => { test.setTimeout(90_000); await exerciseStudioProjectSettings(page) })
 
 test("studio files: engine tree, editor policy, save conflicts and one-file commit", async ({ page }) => exerciseStudioFiles(page))
+
+test('studio terminal: real shell, private output and renderer policy', async ({ page }) => exerciseStudioTerminal(page))
