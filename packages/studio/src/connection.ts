@@ -9,7 +9,7 @@
 // Step 3 of .plans/plans/connect-mock/plan.md replaces this file when the contract moves to
 // gRPC. The reconnection loop follows packages/web/src/watchSituation.ts.
 import { connect, type Client, type ClientEnvelope } from "@lgtm/client/browser"
-import { displayedState, type ClientSnapshot, type EventSequence, type RequestId } from "@lgtm/contracts"
+import { displayedState, type ClientSnapshot, type EventSequence, type RequestId, type SignInOutput } from "@lgtm/contracts"
 import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
 import * as board from "./board.ts"
@@ -51,6 +51,7 @@ export interface LiveConnection {
   call(tag: string, payload: unknown): void
   push(kind: string, payload: unknown): void
   request(tag: string, payload: object): Promise<unknown>
+  signInOutput?(sessionId: string, receive: (item: SignInOutput) => void, failed: () => void): () => void
   open(write: Write): void
   signIn(password: string): Promise<"in" | "rejected" | "unavailable">
   signOut(): Promise<void>
@@ -290,6 +291,17 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
     board, mocks,
     call() {},
     push() {},
+    signInOutput(sessionId, receive, failed) {
+      const client = activeClient
+      if (!client || closed || controller?.signal.aborted) { failed(); return () => {} }
+      const abort = new AbortController(), outer = controller?.signal
+      const cancel = () => abort.abort()
+      outer?.addEventListener('abort', cancel, { once: true })
+      const program = client['client.harness.signin.subscribe']({ requestId: requestId(), sessionId }).pipe(
+        Stream.runForEach(item => Effect.sync(() => { if (!abort.signal.aborted) receive(item) })))
+      void Effect.runPromise(program, { signal: abort.signal }).catch(() => { if (!abort.signal.aborted) failed() }).finally(() => outer?.removeEventListener('abort', cancel))
+      return cancel
+    },
     async request(tag, payload) {
       const client = activeClient
       if (tag === "display.open" || tag === "display.close") {

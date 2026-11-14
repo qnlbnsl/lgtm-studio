@@ -51,6 +51,9 @@ const codexLayout = (
     readonly variables: Readonly<Record<string, string>>; readonly homePath?: string;
   },
 ) => Effect.gen(function* () {
+  // An explicitly paired home and CODEX_HOME is a direct account home.
+  // Legacy accounts retain the copied shared-home overlay behavior.
+  if (input.homePath !== undefined && input.variables.CODEX_HOME === input.homePath) return { mode: "direct" as const, sharedHomePath: input.homePath, effectiveHomePath: input.homePath, continuationKey: `codex:home:${input.homePath}` };
   const instance = decodeInstance(input.accountId);
   if (instance._tag === "None") return yield* Effect.fail(new ShadowHomeFailed());
   const layout = yield* resolveManagedCodexHomeLayout(input.stateFolder, instance.value, {

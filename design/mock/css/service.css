@@ -214,3 +214,22 @@
   .svc-lead { grid-template-columns: minmax(0, 1fr); }
   .svc-assign .select { height: 32px; font-size: var(--text-md); }
 }
+
+/* The private sign-in panel sits beside either account dialog. */
+.dialog.signin-wide { width: min(1320px, calc(100vw - 32px)); max-width: none; }
+.dialog.signin-wide .dialog-body { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(680px, 1.8fr); column-gap: 24px; align-content: start; }
+.dialog.signin-wide .dialog-body > * { grid-column: 1; min-width: 0; }
+.dialog.signin-wide .dialog-body > .signin-terminal { grid-column: 2; grid-row: 1 / span 20; }
+.signin-terminal { overflow-x: auto; border: 1px solid var(--color-line); border-radius: 8px; padding: 14px; min-width: 0; align-self: start; }
+.signin-terminal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.signin-output { box-sizing: border-box; width: 100%; min-height: 280px; max-height: 420px; min-width: calc(80ch + 26px); overflow: auto; white-space: pre; font-family: var(--font-mono, monospace); font-size: 13px; line-height: 1.5; padding: 12px; background: var(--color-term-bg); color: var(--color-term-text); border: 1px solid var(--color-line); }
+.signin-terminal textarea { width: 100%; resize: none; }
+.signin-link { display: flex; gap: 10px; align-items: start; margin: 10px 0; }
+.signin-link a { overflow-wrap: anywhere; min-width: 0; flex: 1; text-decoration: underline; }
+.signin-folders { margin: 12px 0; padding: 12px; border: 1px solid var(--color-line); border-radius: 6px; }
+.signin-folders label { display: flex; gap: 8px; align-items: center; margin: 8px 0; }
+@media (max-width: 1100px) {
+  .dialog.signin-wide .dialog-body { display: block; }
+  .signin-terminal { margin-top: 20px; }
+  .signin-output { width: 100%; }
+}

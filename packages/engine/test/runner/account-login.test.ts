@@ -143,9 +143,9 @@ const refusedStart = (harnessId: string, account: ReturnType<typeof accountFor>,
     return result._tag === "Failure" ? { tag: result.failure._tag, reason: result.failure.reason } : undefined;
   }));
 
-live("A9 F-1 unmapped home: an account `home` on a harness with no home variable (the test harness, gemini, cursor, a custom id that runs a Claude adapter) refuses the start with a fixed reason naming the field and the harness, and spawns nothing (catches a runner that drops the field and runs on another login)", () =>
+live("A9 F-1 unmapped home: an account `home` on a harness with no home variable (the test harness, cursor, a custom id that runs a Claude adapter) refuses the start with a fixed reason naming the field and the harness, and spawns nothing (catches a runner that drops the field and runs on another login)", () =>
   Effect.gen(function* () {
-    for (const id of ["first", "gemini", "cursor", "custom-claude"]) {
+    for (const id of ["first", "cursor", "custom-claude"]) {
       const echo = echoFile(rig);
       const outcome = yield* refusedStart(id, { ...accountFor(id, { turns: [] }, echo), home: join(rig.root, "somewhere") });
       expect(outcome, `${id} was started with an account home it cannot apply`).toEqual({ tag: "RunnerRejected", reason: `account home is not supported by harness ${id}` });
@@ -190,3 +190,26 @@ live("A9 F-3 spawn: a CLAUDE_CONFIG_DIR given as a secret reference is compared 
       expect(peekEcho(echo)).toBeUndefined();
     }
   }));
+
+live("Gemini account homes set GEMINI_CLI_HOME while preserving the service HOME", () =>
+  withAcpRunner(rig, {}, ({ runner }) => Effect.gen(function* () {
+    const echo = echoFile(rig), home = join(rig.root, "gemini-separate");
+    const account = { ...accountFor("gemini", { turns: [] }, echo), home };
+    const spawn = yield* spawnFor(rig, harnessFor("gemini", writeFakeAdapter(rig)), account);
+    yield* runner.start(spawn.input);
+    const seen = yield* readEcho(echo);
+    expect(seen.env.GEMINI_CLI_HOME).toBe(home);
+    expect(seen.env.HOME).toBe(serviceEnvironment(rig).HOME);
+  })));
+
+live("A managed Codex account uses its explicit CODEX_HOME directly, preserving its own sign-in and the service HOME", () =>
+  withAcpRunner(rig, {}, ({ runner }) => Effect.gen(function* () {
+    const echo = echoFile(rig), home = join(rig.root, "codex-managed");
+    const base = accountFor("codex", { turns: [] }, echo);
+    const account = { ...base, id: "account-managed" as typeof base.id, home, environment: { ...base.environment, CODEX_HOME: home } };
+    const spawn = yield* spawnFor(rig, harnessFor("codex", writeFakeAdapter(rig)), account);
+    yield* runner.start(spawn.input);
+    const seen = yield* readEcho(echo);
+    expect(seen.env.CODEX_HOME).toBe(home);
+    expect(seen.env.HOME).toBe(serviceEnvironment(rig).HOME);
+  })));

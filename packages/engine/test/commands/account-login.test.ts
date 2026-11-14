@@ -39,7 +39,7 @@ it.effect("A9 conflict: catches an account whose `home` and explicit CLAUDE_CONF
         expect(added?.reason).toContain(variable);
         // The same folder is accepted, with a trailing slash too.
         success(yield* call(ownerCredential, "accounts", { operation: "add", account: account(`${harness}-same`, harness, { home: "/srv/login-a", environment: { [variable]: "/srv/login-a/" } }) }));
-        success(yield* call(ownerCredential, "accounts", { operation: "add", account: account(`${harness}-plain`, harness, { home: "/srv/login-a" }) }));
+        yield* appendSetup([eventOf({ _tag: "AccountChanged", accountId: `${harness}-plain`, account: account(`${harness}-plain`, harness, { home: "/srv/login-a" }) })]);
         const set = failureOf(yield* call(ownerCredential, "accounts", { operation: "set", account: { ...clash, id: `${harness}-plain` } }));
         expect(set?.reason).toContain(variable);
       }
@@ -76,12 +76,12 @@ it.effect("A9 conflict: catches set-secret naming the login variable of an accou
 // Fix round 2, F-1: an account whose `home` or `secret` the harness has no
 // variable for is refused at add, set and set-secret, with a fixed reason that
 // names the field and the harness.
-it.effect("A9 F-1 unmapped fields: catches an account `home` on a harness with no home variable, or a `secret` on one with no key variable, being stored by add or set (the test harness, a custom id that runs a Claude adapter, gemini and cursor for home)", () =>
+it.effect("A9 F-1 unmapped fields: catches an account `home` on a harness with no home variable, or a `secret` on one with no key variable, being stored by add or set (the test harness, a custom id that runs a Claude adapter, cursor for home)", () =>
   Effect.gen(function* () {
     const fakes = { runner: yield* makeFakeRunner(), secrets: makeFakeSecrets() };
     yield* provideRig(rig, fakes, Effect.gen(function* () {
       yield* registerRebuildCheck();
-      for (const id of ["first", "custom-claude", "gemini", "cursor"]) {
+      for (const id of ["first", "custom-claude", "cursor"]) {
         const added = failureOf(yield* call(ownerCredential, "accounts", { operation: "add", account: account(`${id}-home`, id, { home: "/srv/login-a" }) }));
         expect(added?.reason, id).toBe(`account home is not supported by harness ${id}`);
       }
@@ -90,7 +90,7 @@ it.effect("A9 F-1 unmapped fields: catches an account `home` on a harness with n
         expect(added?.reason, id).toBe(`account secret is not supported by harness ${id}`);
       }
       // Mapped fields are accepted.
-      for (const [id, extra] of [["gemini", { secret: "secret:some-key" }], ["cursor", { secret: "secret:some-key" }], ["claude", { home: "/srv/login-a", secret: "secret:some-key" }], ["codex", { home: "/srv/login-a", secret: "secret:some-key" }]] as const) {
+      for (const [id, extra] of [["gemini", { home: "/srv/gemini-home", secret: "secret:some-key" }], ["cursor", { secret: "secret:some-key" }], ["claude", { home: "/srv/login-a", secret: "secret:some-key" }], ["codex", { home: "/srv/login-a", secret: "secret:some-key" }]] as const) {
         success(yield* call(ownerCredential, "accounts", { operation: "add", account: account(`${id}-ok`, id, extra) }));
       }
       success(yield* call(ownerCredential, "accounts", { operation: "add", account: account("first-plain", "first", {}) }));
@@ -149,3 +149,14 @@ it.effect("A9 F-3 effective values: catches a comparison of the unresolved refer
       expect(JSON.stringify(yield* readLog).includes(planted)).toBe(false);
     }));
   }).pipe(Effect.orDie));
+
+it.effect("review 1: legacy shared default folders permit edits until their effective folder changes", () => Effect.gen(function* () {
+  yield* provideRig(rig, { runner: yield* makeFakeRunner(), secrets: makeFakeSecrets() }, Effect.gen(function* () {
+    yield* registerRebuildCheck();
+    yield* appendSetup(['a', 'b'].map(id => eventOf({ _tag: 'AccountChanged', accountId: id, account: account(id, 'claude', {}) })));
+    success(yield* call(ownerCredential, 'accounts', { operation: 'set', account: account('a', 'claude', { displayName: 'Renamed', enabled: false }) }));
+    success(yield* call(ownerCredential, 'accounts', { operation: 'set', account: account('a', 'claude', { home: '/srv/new' }) }));
+    expect(failureOf(yield* call(ownerCredential, 'accounts', { operation: 'set', account: account('a', 'claude', {}) }))?.reason).toBe('Two accounts cannot share one login folder.');
+    expect(failureOf(yield* call(ownerCredential, 'accounts', { operation: 'add', account: account('c', 'claude', {}) }))?.reason).toBe('Two accounts cannot share one login folder.');
+  }));
+}).pipe(Effect.orDie));

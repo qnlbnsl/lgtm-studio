@@ -134,7 +134,7 @@ it.live("refuses an unavailable named account even when another account and prov
   yield* provideRig(rig, { runner, secrets }, Effect.gen(function* () {
     const request = yield* setup()
     yield* harness("claude"); yield* account("named", "claude"); yield* key("named", "OPENAI_API_KEY")
-    yield* account("other", "claude"); yield* key("other", "ANTHROPIC_API_KEY")
+    yield* account("other", "claude", { home: join(rig.home, "other") }); yield* key("other", "ANTHROPIC_API_KEY")
     yield* harness("cursor"); yield* account("cursor", "cursor"); yield* key("cursor", "CURSOR_API_KEY")
     success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "zsh",
       lead: { harness: "claude", account: { _tag: "named", accountId: "named" }, permission: "ask" } } }))
@@ -148,8 +148,8 @@ it.live("skips an unready earlier account without changing normal account order"
     const request = yield* setup()
     yield* harness("claude")
     yield* account("a-unready", "claude"); yield* key("a-unready", "CURSOR_API_KEY")
-    yield* account("b-ready", "claude"); yield* key("b-ready", "ANTHROPIC_API_KEY")
-    yield* account("c-ready", "claude"); yield* key("c-ready", "ANTHROPIC_API_KEY")
+    yield* account("b-ready", "claude", { home: join(rig.home, "b-ready") }); yield* key("b-ready", "ANTHROPIC_API_KEY")
+    yield* account("c-ready", "claude", { home: join(rig.home, "c-ready") }); yield* key("c-ready", "ANTHROPIC_API_KEY")
     success(yield* call(owner, "project.create", request))
     yield* selected(runner, "claude", "b-ready")
   }))
