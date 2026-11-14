@@ -14055,13 +14055,14 @@ A socket test reads several megabytes and runs another command in the same shell
 ## 920. Registered agent tokens delayed terminal echo.
 
 Found in review round 1.
-State: fixed.
-A generic base64 lead could remain held without further output.
-A short idle release now marks those bytes covered while retaining them for later token matching.
-Recognized secret and credential prefixes remain held without a timer.
-The engine and browser fixtures now register an agent token and a secret.
-The browser checks its typed characters before Enter.
-The documented partial-lead risk awaits the owner's ruling.
+State: fixed by the owner's ruling of 2026-11-14.
+The first idle release fixed only the generic lead.
+Review round 2 found that secret-form and credential-prefix holds still delayed typed characters.
+The owner then removed blanking from both owner terminal streams.
+Terminal output now reaches its opening connection unchanged, without a hold or idle timer.
+The engine and browser tests check `ls` with a registered secret starting with `s`.
+They check `chmod 777` before Enter too.
+Every other caller of the redactor keeps its existing behavior.
 
 ## 921. A background job survived the shell's own exit.
 
@@ -14100,7 +14101,9 @@ The socket test expected all three generic lead characters to appear during a ti
 The loaded worker sometimes received the remaining token before processing its idle tick.
 The redactor then blanked a character that the test expected to see.
 That behavior exposed less text than the permitted lead.
-The test now waits for the reader to observe the idle release before allowing the shell to print the remaining token.
+The round-1 test waited for the reader to observe the idle release before allowing the shell to print the remaining token.
+The owner's ruling of 2026-11-14 then removed terminal blanking and its idle release.
+The replacement regression requires the full encoded value to arrive unchanged.
 
 ## 925. A completed first URL escape lost its credential-prefix hold.
 
@@ -14110,8 +14113,10 @@ The idle-lead classification treated a short decoded prefix as ambiguous even wh
 A split after the completed first escape could discard the percent sign from the matching carry.
 The encoded credential could then escape blanking.
 Any decoded credential-prefix overlap containing an escape now keeps its original strict hold.
-The existing regression checks every split of the mixed escaped form.
-The idle tests also cover completed escapes before the full prefix arrives.
+The round-1 regression checked every split of the mixed escaped form.
+The owner's ruling of 2026-11-14 then removed the terminal-only responsive path and its idle tests.
+The general redactor still protects stored events, logs, and agent-facing streams.
+Its existing tests remain unchanged.
 
 ## 926. The full review check timed out on Mocks and Files save completion.
 
@@ -14163,3 +14168,94 @@ The busy flags were cleared only while the page was signed in.
 A sign-out during a save could therefore leave the editor busy after the next sign-in.
 The flags are now always cleared.
 The engine still starts about eleven Git processes for each folder listing, which stays open as a cost.
+
+The separate full browser run during round 2 reproduced both failures.
+Its result was 60 passed and two failed in 10.0 minutes.
+The Mocks journey again missed its save confirmation.
+The Files journey again retained its busy state beyond five seconds.
+The project terminal, harness sign-in, and service-settings journeys passed.
+Both unchanged failing journeys passed in a serial focused rerun in 35.2 seconds.
+Their assertions and deadlines remain unchanged.
+The credits check passed after that rerun.
+The full browser run remains failed.
+
+## 929. Secret-form and credential-probe overlaps still delayed echo.
+
+Found in review round 2, finding 1.
+State: fixed by the owner's ruling of 2026-11-14.
+A strict suffix hold could delay the last character of `ls` or `chmod 777` indefinitely.
+It could also withhold the end of a terminal device query.
+The owner decided to remove blanking from project and harness sign-in terminal output.
+Printed secrets therefore appear on the opening owner's screen and in scrollback kept by the owner's tools.
+Terminal output remains excluded from storage, logs, tracing, errors, other subscribers, and agent streams.
+The redactor's terminal-only responsive mode, idle release, and carry use were removed.
+The existing general redactor tests remain unchanged.
+
+## 930. A paused pseudo-terminal could lose its final output on exit.
+
+Found in review round 2, finding 3.
+State: fixed.
+The native library closes an unread socket 200 milliseconds after the child exits.
+Its public exit event arrives after that close.
+A paused project terminal now watches the pinned Unix library's native exit indicator every 15 milliseconds.
+Native exit resumes reading and drains the finite tail before the public exit ends the stream.
+An unexpected library indicator refuses a project shell instead of silently losing the tail.
+A regression covers the earlier native exit boundary.
+A real shell regression pauses a slow reader and receives `END-MARK` after 200,000 lines.
+
+## 931. A single cleanup scan could miss a fork or run after identifier reuse.
+
+Found in review round 2, finding 4.
+State: fixed within the documented five-pass bound.
+Cleanup repeats until a scan finds no session member or five passes finish.
+Natural exit starts cleanup once.
+An empty session causes no signal.
+A reappearing former leader identifier prevents signalling its new session.
+Regressions cover continuous forks, identifier reuse, an empty session, and absent `/proc`.
+A process that leaves the session with `setsid` survives.
+Cleanup cannot discover descendants without `/proc`.
+
+## 932. Settings checks stopped disabling inputs and external changes appeared unsaved.
+
+Found in review round 2, finding 6.
+State: fixed.
+Workflow checks and service restarts disable the Service settings and Harnesses inputs again.
+Ordinary queued saves and background reloads may keep those inputs enabled.
+The Remote access form overlays only fields the owner actually edited.
+Untouched fields refresh from the store without creating an unsaved change.
+A real pending edit survives a refresh of other fields.
+Unit regressions verify that Save sends refreshed values rather than older copies.
+
+## 933. A refused duplicate reader disconnected a live session.
+
+Found in review round 2, outside its original findings.
+State: fixed.
+A refused subscription used to start the active reader's disconnect timer.
+Stream cleanup now detaches only a subscription that acquired the reader.
+Both project and sign-in socket regressions keep their original reader alive beyond the grace period.
+
+## 934. Random bearer forms made terminal socket tests intermittent.
+
+Found in review round 2, finding 2.
+State: fixed.
+The terminal fixtures use fixed synthetic bearers.
+The registered project secret deliberately starts with `s`.
+The owner's decision to remove terminal blanking removes the dependency on secret-form prefixes.
+The browser echo assertion now checks the active prompt line rather than any row.
+
+## 935. The round-2 full check found a startup timeout and an obsolete sign-in assertion.
+
+Found in the full remote check of `e763c06` during review round 2.
+State: the assertion is fixed; the startup timeout remains unresolved under issue 360.
+Typechecking passed.
+The unit result was 595 passed files and two failed files.
+The test result was 9,036 passed, two failed, and two skipped.
+The concurrent-service contest timed out while waiting for its surviving service to answer.
+This repeats the symptom already recorded in issue 360.
+The sign-in application programming interface test still expected the former secret blanking.
+Its assertion now requires the registered secret to reach the opening owner unchanged.
+Its storage and log privacy assertions remain in place.
+The corrected sign-in file and the unchanged service-start file passed all ten tests in a focused rerun.
+No service-start assertion or deadline changed.
+The full command stopped before browser tests and credits because its unit stage failed.
+The original full check remains a failed run.

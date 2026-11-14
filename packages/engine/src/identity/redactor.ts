@@ -229,8 +229,6 @@ const redactValue = (
 // What a stream item holds back: its last characters, and how many of them
 // at the start are already covered by a released replacement.
 interface Carry {
-  readonly idleTo?: number;
-  readonly idleAt?: number;
   readonly text: string;
   readonly covered: number;
 }
@@ -245,8 +243,7 @@ export const makeRedactor = (registry: {
 }): {
   readonly layer: Layer.Layer<Redactor>;
   readonly redactText: (text: string) => string;
-  readonly redactIdle: (itemId: string) => string;
-  readonly redactChunk: (itemId: string, text: string, final: boolean, responsive?: boolean) => string;
+  readonly redactChunk: (itemId: string, text: string, final: boolean) => string;
 } => {
   const currentForms = (): Forms => {
     const exact = new Set<string>();
@@ -270,7 +267,7 @@ export const makeRedactor = (registry: {
   // much of it is already covered. The carry never exceeds (window - 1)
   // characters, however many matches arrive (fix round 1, ruling 5).
   const carries = new Map<string, Carry>();
-  const redactChunk = (itemId: string, text: string, final: boolean, responsive?: boolean): string => {
+  const redactChunk = (itemId: string, text: string, final: boolean): string => {
     const carry = carries.get(itemId) ?? { text: "", covered: 0 };
     const joined = carry.text + text;
     const forms = currentForms();
@@ -283,88 +280,20 @@ export const makeRedactor = (registry: {
       longestCredentialForm,
       ...[...forms.exact, ...forms.hex, ...forms.percent].map((form) => form.length),
     );
-    let idleTo = 0;
-    let cut = Math.max(0, joined.length - (window - 1));
-    if (responsive) {
-      // A terminal cannot wait for a whole redaction window before showing a
-      // short prompt. Hold only suffixes that could still complete a secret.
-      let held = 0;
-      const overlap = (text: string, form: string, lead = 0, minimum = 1) => {
-        for (let size = Math.min(text.length, form.length - 1); size >= minimum && size > Math.max(0, held - lead); size--) {
-          if (text.endsWith(form.slice(0, size))) { held = Math.max(held, Math.min(text.length, size + lead)); break; }
-        }
-      };
-      for (const form of forms.exact) overlap(joined, form);
-      const hexText = foldHex(joined), percentText = foldEscapes(joined);
-      for (const form of forms.hex) overlap(hexText, form);
-      for (const form of forms.percent) overlap(percentText, form);
-      if (registry.tokenHashes().size > 0) {
-        const hexTail = foldHex(joined.slice(-longestCredentialForm));
-        overlap(hexTail, hexPrefix);
-        const hexAt = hexTail.indexOf(hexPrefix);
-        if (hexAt >= 0) held = Math.max(held, hexTail.length - hexAt);
-        // One to three ambiguous characters use the generic lead below.
-        // A recognizable credential prefix stays held without an idle release.
-        const candidates = ["shp_a_", ...base64Probes.map(probe => probe.run)];
-        const tail = joined.slice(-longestCredentialForm);
-        for (const prefix of candidates) {
-          overlap(tail, prefix, prefix === "shp_a_" ? 0 : 3, prefix === "shp_a_" ? 4 : 1);
-          const at = tail.indexOf(prefix);
-          if (at >= 0) held = Math.max(held, tail.length - Math.max(0, at - 3));
-        }
-        // Mixed URL escapes are also recognized by the hash-based matcher.
-        let decoded = "";
-        const starts: number[] = [];
-        const base = Math.max(0, joined.length - longestCredentialForm);
-        for (let at = base; at < joined.length;) {
-          if (/^%[0-9a-f]?$/i.test(joined.slice(at))) break;
-          starts.push(at);
-          if (joined[at] === "%" && /^[0-9a-f]{2}$/i.test(joined.slice(at + 1, at + 3))) { decoded += String.fromCharCode(parseInt(joined.slice(at + 1, at + 3), 16)); at += 3; }
-          else { decoded += joined[at]; at++; }
-        }
-        for (let size = 1; size <= Math.min(decoded.length, credentialLength); size++) {
-          const suffix = decoded.slice(-size);
-          const start = starts[starts.length - size]!;
-          if ((size >= 4 || joined.slice(start).includes('%')) && ("shp_a_".startsWith(suffix) || suffix.startsWith("shp_a_"))) held = Math.max(held, joined.length - start);
-        }
-        const incompleteEscape = /%[0-9a-f]?$/i.exec(joined);
-        if (incompleteEscape) held = Math.max(held, incompleteEscape[0].length);
-      }
-      const strictHeld = held;
-      // Only this generic lead may be released after quiet time. Real secret
-      // overlaps and credential prefixes always retain their original hold.
-      if (registry.tokenHashes().size > 0) {
-        const possibleBase64Lead = /[A-Za-z0-9+/_-]{1,3}$/.exec(joined);
-        if (possibleBase64Lead) held = Math.max(held, possibleBase64Lead[0].length);
-      }
-      cut = Math.max(0, joined.length - held);
-      idleTo = held - strictHeld;
-    }
+    const cut = Math.max(0, joined.length - (window - 1));
     const released = cut > carry.covered
       ? render(joined, intervals, carry.covered, cut)
       : { output: "", covered: carry.covered };
-    carries.set(itemId, { text: joined.slice(cut), covered: Math.max(0, released.covered - cut), idleTo, idleAt: Date.now() + 30 });
-    return released.output;
-  };
-
-  const redactIdle = (itemId: string): string => {
-    const carry = carries.get(itemId);
-    if (!carry || !carry.idleTo || Date.now() < (carry.idleAt ?? Infinity)) return '';
-    const intervals = findMatches(carry.text, currentForms(), registry.tokenHashes());
-    const released = render(carry.text, intervals, carry.covered, Math.max(carry.covered, carry.idleTo));
-    // Keep the original bytes for a later encoded-token match, but never
-    // release these same characters again or expose the following token.
-    carries.set(itemId, { ...carry, covered: Math.max(carry.covered, released.covered, carry.idleTo), idleTo: 0 });
+    carries.set(itemId, { text: joined.slice(cut), covered: Math.max(0, released.covered - cut) });
     return released.output;
   };
 
   const layer = Layer.succeed(Redactor, {
-    redactIdle: (itemId: string) => Effect.sync(() => redactIdle(itemId)),
-    redactChunk: (itemId: string, text: string, final: boolean, responsive?: boolean) => Effect.sync(() => redactChunk(itemId, text, final, responsive)),
+    redactChunk: (itemId: string, text: string, final: boolean) => Effect.sync(() => redactChunk(itemId, text, final)),
     redactText: (text: string) => Effect.sync(() => redactText(text)),
     redact: (event: Event) => Effect.sync(() =>
       redactValue(event, redactWith(currentForms(), registry.tokenHashes()), eventStructure) as Event),
   });
 
-  return { layer, redactText, redactChunk, redactIdle };
+  return { layer, redactText, redactChunk };
 };

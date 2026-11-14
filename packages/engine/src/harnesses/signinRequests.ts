@@ -16,7 +16,6 @@ import { harnessLogin, homeConflict, loginRefusal } from '../runner/harnesses.ts
 import { buildBaseEnvironment } from '../runner/baseEnvironment.ts'
 import { accountReadiness } from '../project/leadDefaults.ts'
 import { embeddedHarnessPrograms } from './programs.ts'
-import type { Redactor } from '../log/Redactor.ts'
 import { SignInSessions } from './signinSessions.ts'
 import { signInReasons } from './signinReasons.ts'
 const instances = new WeakMap<object, SignInSessions>()
@@ -110,20 +109,14 @@ const control = (method: 'write' | 'resize' | 'stop') => (input: Input, p: Recor
 })
 export const terminalOutput = (input: Input, p: Record<string, unknown>, kind?: 'project') => Stream.unwrap(Effect.gen(function* () {
   const connection = yield* Effect.try({ try: () => { if (kind && input.actor._tag !== 'owner') throw refused(terminalReasons.owner); return owner(input) }, catch: e => e as ReturnType<typeof refused> })
-  const redactor: Pick<Redactor["Service"], "redactChunk" | "redactText" | "redactIdle"> = input.runtime.log.redactor ?? { redactText: input.runtime.log.redactText }
-  // A refused or duplicate subscriber must never flush the active reader's carry.
-  const manager = sessions(input), id = p.sessionId as string, key = (kind ? 'terminal:' : 'signin:') + id + ':' + randomUUID()
-  const source = Stream.fromAsyncIterable(manager.output(id, connection, kind), kind ? e => refused(e instanceof Error && Object.values(terminalReasons).includes(e.message as never) ? e.message : terminalReasons.failed) : failure)
-  const withIdle = redactor.redactIdle ? Stream.merge(source, Stream.tick(15).pipe(Stream.map(() => ({ _tag: 'idle' as const }))), { haltStrategy: 'left' }) : source
-  return withIdle.pipe(
-    Stream.mapEffect(item => Effect.gen(function* () {
-      if (item._tag === 'idle') { const text = yield* redactor.redactIdle!(key); return text ? [{ _tag: 'output' as const, text }] : [] }
-      if (item._tag === 'output') return [{ ...item, text: yield* (redactor.redactChunk ? redactor.redactChunk(key, item.text, false, true) : input.runtime.log.redactText(item.text)) }]
-      const text = yield* (redactor.redactChunk ? redactor.redactChunk(key, '', true, true) : Effect.succeed(''))
-      return [{ _tag: 'output' as const, text }, item]
-    })),
-    Stream.flatMap(items => Stream.fromArray(items)),
-    Stream.ensuring(Effect.sync(() => manager.detach(id, connection)).pipe(Effect.andThen(redactor.redactChunk ? redactor.redactChunk(key, '', true, true).pipe(Effect.asVoid) : Effect.void)))
+  // Owner-authorized PTY output is ephemeral and goes byte for byte to its
+  // opening connection. It must never pass through logging or stored events.
+  const manager = sessions(input), id = p.sessionId as string
+  let attached = false
+  return Stream.fromAsyncIterable(manager.output(id, connection, kind, () => { attached = true }), kind ? e => refused(e instanceof Error && Object.values(terminalReasons).includes(e.message as never) ? e.message : terminalReasons.failed) : failure).pipe(
+    // Async-generator return can wait behind a pending next(). Detach on
+    // interruption too, but only if this subscription acquired the reader.
+    Stream.ensuring(Effect.sync(() => { if (attached) manager.detach(id, connection) }))
   )
 }))
 export const signInReads = {

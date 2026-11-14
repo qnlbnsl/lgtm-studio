@@ -155,7 +155,8 @@ An enabled terminal uses the registered local worktree folder and the service's 
 The xterm.js renderer handles colours, cursor movement, and full-screen programs.
 The build adds the page's style nonce before the renderer attaches its style elements.
 The content security policy is unchanged.
-Known secrets are blanked in the private output stream.
+Output reaches only the opening owner connection unchanged, under the owner's ruling of 2026-11-14.
+A printed secret appears on the owner's screen and in any scrollback the owner's tools keep.
 The service stores neither output nor input.
 Sessions end when the page reloads, its connection grace period expires, the owner signs out, the switch turns off, or the service stops.
 Remote shells, agent terminal watching, agent terminal takeover, and session reconnection need engine support.

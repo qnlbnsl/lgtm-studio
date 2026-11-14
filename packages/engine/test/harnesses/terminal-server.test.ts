@@ -5,7 +5,7 @@ import { expect, it } from '@effect/vitest'
 import * as Effect from 'effect/Effect'
 import * as Stream from 'effect/Stream'
 import * as Redacted from 'effect/Redacted'
-import * as Logger from 'effect/Logger'
+import { withPtyPrivacy } from '../support/ptyPrivacy.ts'
 import { chmodSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomBytes } from 'node:crypto'
@@ -22,7 +22,7 @@ import { registerRebuildCheck } from '../support/rebuildCheck.ts'
 import { unusedPort } from '../support/browserWeb.ts'
 vi.mock('@lydell/node-pty', async original => { const actual = await original<typeof import('@lydell/node-pty')>(); return { ...actual, spawn: vi.fn(actual.spawn) } })
 const token = mintCredential('shp_a_')
-const known = 'registered-terminal-secret', marker = 'PRIVATE_TERMINAL_OUTPUT', keys = 'PRIVATE_TERMINAL_INPUT'
+const known = 'sk-registered-terminal-secret', marker = 'PRIVATE_TERMINAL_OUTPUT', keys = 'PRIVATE_TERMINAL_INPUT'
 const live = (name: string, body: () => Effect.Effect<any, any, any>) => it.live(name, () => body() as Effect.Effect<void, unknown, never>, 45000)
 const req = (client: any, operation: string, payload = {}) => client['client.terminal.' + operation]({ requestId: randomBytes(8).toString('hex'), ...payload }) as Effect.Effect<any, any>
 const output = (client: any, sessionId: string) => client['client.terminal.subscribe']({ requestId: randomBytes(8).toString('hex'), sessionId }) as Stream.Stream<any, any>
@@ -30,7 +30,9 @@ const open = (client: any, extra = {}) => req(client, 'open', { projectId: 'term
 const failure = (effect: Effect.Effect<any, any>, reason: string) => effect.pipe(Effect.result, Effect.map(r => expect(r).toMatchObject({ _tag: 'Failure', failure: { reason } })))
 const enabled = (client: any, value: boolean) => client['client.web.settings.set']({ requestId: randomBytes(8).toString('hex'), settings: { enabled: true, port: 8787, proxyMode: false, heartbeatSeconds: 25, terminalEnabled: value } }) as Effect.Effect<any, any>
 const withServer = (body: (ctx: { client: any; socket: string; bearer: string; rig: ReturnType<typeof makeRig> }) => Effect.Effect<any, any, any>) => Effect.gen(function* () {
-  const rig = makeRig(), bearer = randomBytes(32).toString('base64url'), socket = join(rig.stateFolder, 'terminal.sock')
+  // Fixed synthetic credentials make output expectations independent of randomness.
+  // In particular the registered sk- secret must not delay the final s in ls.
+  const rig = makeRig(), bearer = 'fixed-owner-terminal-bearer-0123456789', socket = join(rig.stateFolder, 'terminal.sock')
   chmodSync(rig.stateFolder, 0o700)
   const previous = { SHELL: process.env.SHELL, LGTM_TEST_TERMINAL: process.env.LGTM_TEST_TERMINAL, NORMAL_PRIVATE: process.env.NORMAL_PRIVATE }
   process.env.SHELL = '/bin/sh'; process.env.LGTM_TEST_TERMINAL = 'must-not-inherit'; process.env.NORMAL_PRIVATE = known
@@ -89,32 +91,30 @@ live('terminal access is owner-only and isolated to the opening socket', () => w
   }
   yield* req(client, 'close', { sessionId })
 })))
-live('real sh redacts split secrets, strips private environment and leaves no durable or protocol logs', () => withServer(({ client }) => Effect.gen(function* () {
-  const diagnostics: string[] = []
-  yield* Effect.gen(function* () {
-    yield* enabled(client, true)
-    const { sessionId } = yield* open(client)
-    let text = ''
-    yield* output(client, sessionId).pipe(Stream.runForEach(item => Effect.sync(() => { if (item._tag === 'output') text += item.text })), Effect.forkScoped)
-    // Disable terminal echo so the assertion checks the child output as well as input privacy.
-    yield* req(client, 'write', { sessionId, text: 'stty -echo\r' }); yield* Effect.sleep(100)
-    yield* req(client, 'write', { sessionId, text: `printf '${marker} '; printf 'registered-terminal-'; sleep 0.1; printf 'secret\\n'; printf '${keys}\\n'; env; printf 'ENV_DONE\\n'\r` })
-    yield* waitFor('shell output', () => text.includes('ENV_DONE'))
-    expect(text).toContain(marker); expect(text).toContain('[REDACTED]'); expect(text).not.toContain(known)
-    expect(text).not.toMatch(/\bLGTM_[A-Za-z0-9_]*=/); expect(text).not.toContain('LGTM_TEST_TERMINAL='); expect(text).not.toContain('NORMAL_PRIVATE=')
-    yield* req(client, 'resize', { sessionId, cols: 100, rows: 30 })
-    yield* req(client, 'close', { sessionId })
-    const input = yield* (yield* CommandHandler).input({ _tag: 'owner' })
-    const tables = yield* input.runtime.sql<{ name: string }>`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`
-    for (const { name } of tables) {
-      const data = JSON.stringify(yield* input.runtime.sql.unsafe('SELECT * FROM "' + name.replaceAll('"', '""') + '"'))
-      expect(data).not.toContain(marker); expect(data).not.toContain(keys)
-    }
-    const snapshot = JSON.stringify(yield* input.runtime.views.snapshot)
-    expect(snapshot).not.toContain(marker); expect(snapshot).not.toContain(keys)
-  }).pipe(Effect.provide(Logger.layer([Logger.make(options => { diagnostics.push(Logger.formatJson.log(options)) })])))
-  expect(diagnostics.join('')).not.toContain(marker); expect(diagnostics.join('')).not.toContain(keys)
-})))
+live('real sh delivers split secrets unchanged only to its opener, strips private environment and leaves no durable or protocol logs', () => withPtyPrivacy(withServer(({ client, socket, bearer }) => Effect.gen(function* () {
+  yield* enabled(client, true)
+  const { sessionId } = yield* open(client)
+  let text = ''
+  yield* output(client, sessionId).pipe(Stream.runForEach(item => Effect.sync(() => { if (item._tag === 'output') text += item.text })), Effect.forkScoped)
+  // Disable terminal echo so the assertion checks the child output as well as input privacy.
+  yield* req(client, 'write', { sessionId, text: 'stty -echo\r' }); yield* Effect.sleep(100)
+  yield* req(client, 'write', { sessionId, text: `printf '${marker} '; printf 'sk-registered-terminal-'; sleep 0.1; printf 'secret\\n'; printf '${keys}\\n'; env; printf 'ENV_DONE\\n'\r` })
+  yield* waitFor('shell output', () => text.includes('ENV_DONE'))
+  expect(text).toContain(marker + ' ' + known); expect(text).not.toContain('[REDACTED]')
+  const other = yield* connect(socket, bearer)
+  yield* failure(output(other, sessionId).pipe(Stream.runDrain), 'This terminal belongs to another connection.')
+  expect(text).not.toMatch(/\bLGTM_[A-Za-z0-9_]*=/); expect(text).not.toContain('LGTM_TEST_TERMINAL='); expect(text).not.toContain('NORMAL_PRIVATE=')
+  yield* req(client, 'resize', { sessionId, cols: 100, rows: 30 })
+  yield* req(client, 'close', { sessionId })
+  const input = yield* (yield* CommandHandler).input({ _tag: 'owner' })
+  const tables = yield* input.runtime.sql<{ name: string }>`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'`
+  for (const { name } of tables) {
+    const data = JSON.stringify(yield* input.runtime.sql.unsafe('SELECT * FROM "' + name.replaceAll('"', '""') + '"'))
+    expect(data).not.toContain(marker); expect(data).not.toContain(keys); expect(data).not.toContain(known)
+  }
+  const snapshot = JSON.stringify(yield* input.runtime.views.snapshot)
+  expect(snapshot).not.toContain(marker); expect(snapshot).not.toContain(keys); expect(snapshot).not.toContain(known)
+})), [marker, keys, known]))
 live('terminal refuses a ninth live shell', () => withServer(({ client }) => Effect.gen(function* () {
   yield* enabled(client, true)
   const ids: string[] = []
@@ -159,20 +159,21 @@ live('a project terminal can open its repository main checkout but not a differe
   yield* failure(open(client, { worktreeId: 'other-worktree' }), 'The project worktree is unavailable.')
 })))
 
-live('a refused output subscription cannot reset the owner stream redaction carry', () => withServer(({ client, socket, bearer }) => Effect.gen(function* () {
+live('a refused duplicate output subscription does not disconnect the real reader', () => withServer(({ client, socket, bearer }) => Effect.gen(function* () {
   yield* enabled(client, true)
   const { sessionId } = yield* open(client)
   let text = ''
   yield* output(client, sessionId).pipe(Stream.runForEach(item => Effect.sync(() => { if (item._tag === 'output') text += item.text })), Effect.forkScoped)
   yield* req(client, 'write', { sessionId, text: 'stty -echo\r' }); yield* Effect.sleep(100)
-  yield* req(client, 'write', { sessionId, text: "printf 'CARRY_READY registered-terminal-'; sleep 0.6; printf 'secret\\nCARRY_DONE\\n'\r" })
+  yield* req(client, 'write', { sessionId, text: "printf 'CARRY_READY sk-registered-terminal-'; sleep 0.6; printf 'secret\\nCARRY_DONE\\n'\r" })
   yield* waitFor('first secret chunk', () => text.includes('CARRY_READY '))
   const second = yield* connect(socket, bearer)
   yield* failure(output(second, sessionId).pipe(Stream.runDrain), 'This terminal belongs to another connection.')
   yield* failure(output(client, sessionId).pipe(Stream.runDrain), 'This terminal already has an output stream.')
   yield* waitFor('second secret chunk', () => text.includes('CARRY_DONE'))
-  expect(text).toContain('[REDACTED]'); expect(text).not.toContain(known)
-  expect(text).not.toContain('secret')
+  yield* Effect.sleep(5500)
+  yield* req(client, 'write', { sessionId, text: "printf 'AFTER_DUPLICATE\\n'\r" })
+  yield* waitFor('reader survives duplicate beyond the grace period', () => text.includes('AFTER_DUPLICATE'))
   yield* req(client, 'close', { sessionId })
 })))
 
@@ -197,11 +198,15 @@ live('typed characters echo with an agent token registered before Enter', () => 
   let text = ''
   yield* output(client, sessionId).pipe(Stream.runForEach(item => Effect.sync(() => { if (item._tag === 'output') text += item.text })), Effect.forkScoped)
   yield* Effect.sleep(300); text = ''
-  yield* req(client, 'write', { sessionId, text: 'ls' })
-  yield* waitFor('typed ls echoed', () => text.includes('ls'), 500)
+  for (const typed of ['ls', 'chmod 777']) {
+    text = ''
+    yield* req(client, 'write', { sessionId, text: typed })
+    yield* waitFor('typed characters echoed before Enter', () => text.includes(typed), 500)
+    yield* req(client, 'write', { sessionId, text: '\x15' })
+  }
   yield* req(client, 'close', { sessionId })
 })))
-live('an encoded token split after its lead remains blanked after idle release', () => withServer(({ client }) => Effect.gen(function* () {
+live('raw and encoded registered tokens and control sequences reach the opener unchanged', () => withServer(({ client }) => Effect.gen(function* () {
   yield* enabled(client, true)
   const { sessionId } = yield* open(client)
   let text = ''
@@ -209,16 +214,15 @@ live('an encoded token split after its lead remains blanked after idle release',
   yield* req(client, 'write', { sessionId, text: 'stty -echo\r' }); yield* Effect.sleep(200)
   const encoded = Buffer.from('xy' + Redacted.value(token.token)).toString('base64')
   text = ''
-  // Wait in the shell until this reader has observed the idle release. A
-  // timed sleep can finish before a loaded test worker processes its ticks.
+  // A shell-side handshake proves the first bytes are delivered without a hold.
   yield* req(client, 'write', { sessionId, text: `printf 'ENCODED_BEGIN ${encoded.slice(0, 3)}'; read terminal_continue; printf '${encoded.slice(3)}\\nENCODED_DONE\\n'\r` })
-  yield* waitFor('encoded lead idle release', () => text.includes('ENCODED_BEGIN ' + encoded.slice(0, 3)))
-  yield* Effect.sleep(50)
+  yield* waitFor('encoded lead arrives without further output', () => text.includes('ENCODED_BEGIN ' + encoded.slice(0, 3)), 500)
   yield* req(client, 'write', { sessionId, text: '\r' })
   yield* waitFor('encoded token completion', () => text.includes('ENCODED_DONE'))
-  const between = text.split('ENCODED_BEGIN ')[1]!.split('\r')[0]!
-  expect(between.replace('[REDACTED]', '')).toBe(encoded.slice(0, 3))
-  expect(text).not.toContain(encoded.slice(3)); expect(text).not.toContain(Redacted.value(token.token))
+  expect(text).toContain(encoded)
+  const raw = Redacted.value(token.token)
+  yield* req(client, 'write', { sessionId, text: `printf '${raw}\\000é🤖\\033[c'; read terminal_continue\r` })
+  yield* waitFor('raw token and complete device query', () => text.includes(raw + '\x00é🤖\x1b[c'), 500)
   yield* req(client, 'close', { sessionId })
 })))
 live('a background job is killed when the shell exits itself', () => withServer(({ client, rig }) => Effect.gen(function* () {
