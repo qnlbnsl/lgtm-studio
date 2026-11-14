@@ -10,13 +10,24 @@ const result = (reply) => {
   if (!reply || !('result' in reply)) throw new Error('The service returned no usable file record.');
   return reply.result;
 };
-const parentOf = (path) => path.split('/').slice(0, -1).join('/');
-// A model belongs to one mounted worktree and signed-in session. Drafts retain their
-// opened version, including when the owner navigates away and returns to a file.
+const draftsByWorktree = new Map();
+export function observe(patch) {
+  if (!['out', 'expired', 'rejected', 'logout-unconfirmed'].includes(patch.session?.status)) return;
+  for (const drafts of draftsByWorktree.values()) drafts.clear();
+  draftsByWorktree.clear();
+}
+const draftsFor = (id) => {
+  if (!draftsByWorktree.has(id)) draftsByWorktree.set(id, new Map());
+  return draftsByWorktree.get(id);
+};
+// Drafts outlive mounted views and retain the version that the owner opened.
 export function createFilesModel(context, changed, valid = () => true) {
-  let opening = 0, searching = 0;
+  let opening = 0, searching = 0, closed = false;
+  let refreshing = null, requested = false, lastRefresh = -Infinity, timer, wake;
+  const active = () => !closed && valid();
   const m = {
-    context, folders: {}, drafts: new Map(), selected: null, opened: null, found: null,
+    context, folders: {}, openFolders: new Set(), drafts: draftsFor(context.worktreeId), selected: null, opened: null, found: null,
+    editorRevision: 0, currentUnavailable: null,
     searching: false, saving: false, committing: false, conflict: null, notice: '',
     shown() { return m.drafts.get(m.selected)?.text ?? (m.opened?.file?.kind === 'text' ? m.opened.file.text : ''); },
     dirty() { return m.drafts.has(m.selected); },
@@ -29,14 +40,14 @@ export function createFilesModel(context, changed, valid = () => true) {
       changed();
     },
     async folder(folder) {
-      if (!context.online || context.machine !== 'local' || !valid()) return;
+      if (!context.online || context.machine !== 'local' || !active()) return;
       const slot = { ...(m.folders[folder] || {}), loading: true };
       m.folders[folder] = slot; changed();
       try {
         const listing = mapping.mapListing(result(await engine.request('project.files.list', { worktreeId: context.worktreeId, ...(folder ? { folder } : {}) })));
-        if (valid() && m.folders[folder] === slot) m.folders[folder] = listing;
-      } catch (e) { if (valid() && m.folders[folder] === slot) m.folders[folder] = { error: e.message }; }
-      finally { if (valid()) changed(); }
+        if (active() && m.folders[folder] === slot) m.folders[folder] = listing;
+      } catch (e) { if (active() && m.folders[folder] === slot) m.folders[folder] = { ...slot, loading: false, error: e.message }; }
+      finally { if (active()) changed(); }
     },
     async search(query) {
       const turn = ++searching;
@@ -44,72 +55,100 @@ export function createFilesModel(context, changed, valid = () => true) {
       if (!query.trim() || !context.online || context.machine !== 'local') return;
       try {
         const reply = await engine.request('project.context.search', { projectId: context.projectId, worktreeId: context.worktreeId, query, scope: 'files', limit: 40 });
-        if (valid() && turn === searching) m.found = mapping.searchPaths(result(reply));
-      } catch (e) { if (valid() && turn === searching) { m.found = { paths: [], error: e.message }; m.notice = e.message; } }
-      finally { if (valid() && turn === searching) { m.searching = false; changed(); } }
+        if (active() && turn === searching) m.found = mapping.searchPaths(result(reply));
+      } catch (e) { if (active() && turn === searching) { m.found = { paths: [], error: e.message }; m.notice = e.message; } }
+      finally { if (active() && turn === searching) { m.searching = false; changed(); } }
     },
     async open(path) {
       const turn = ++opening;
-      m.selected = path; m.conflict = null; m.notice = ''; m.opened = path ? { loading: true } : null; changed();
+      m.selected = path; m.conflict = null; m.currentUnavailable = null; m.notice = ''; m.opened = path ? { loading: true } : null; changed();
       if (!path || !context.online || context.machine !== 'local') return;
       try {
         const file = result(await engine.request('project.files.read', { worktreeId: context.worktreeId, path }));
-        if (valid() && turn === opening) {
+        if (active() && turn === opening) {
           // Retain the original version until a save can check it. A fresh read must
           // never silently authorize replacing somebody else's change with a draft.
           const draft = m.drafts.get(path);
           m.opened = { file: draft?.file || file };
         }
-      } catch (e) { if (valid() && turn === opening) m.opened = { error: e.message }; }
-      finally { if (valid() && turn === opening) changed(); }
+      } catch (e) {
+        if (active() && turn === opening) {
+          const draft = m.drafts.get(path);
+          m.opened = draft ? { file: draft.file } : { error: e.message };
+          if (draft) m.currentUnavailable = e.message;
+        }
+      }
+      finally { if (active() && turn === opening) changed(); }
     },
     takeCurrent() {
       if (!m.conflict || m.saving) return;
-      m.drafts.delete(m.selected); m.opened = { file: m.conflict }; m.conflict = null; m.notice = ''; changed();
+      m.drafts.delete(m.selected); m.opened = { file: m.conflict }; m.conflict = null; m.currentUnavailable = null; m.editorRevision++; m.notice = ''; changed();
+    },
+    discardDraft() {
+      if (m.saving || !m.currentUnavailable) return;
+      m.drafts.delete(m.selected); m.opened = { error: m.currentUnavailable };
+      m.currentUnavailable = null; m.conflict = null; m.notice = ''; changed();
     },
     async save(version) {
-      if (m.saving || m.committing || !m.dirty() || m.readOnlyReason() || !valid()) return;
+      if (m.saving || m.committing || !m.dirty() || m.readOnlyReason() || !active()) return;
       const path = m.selected, file = m.opened.file, text = m.shown(), draft = m.drafts.get(path);
       m.saving = true; m.notice = ''; changed();
       try {
         const saved = result(await engine.request('project.files.write', { projectId: context.projectId, worktreeId: context.worktreeId, path, version: version || file.version, text }));
-        if (!valid()) return;
+        if (!active()) return;
         if (m.drafts.get(path) === draft) m.drafts.delete(path);
-        if (m.selected === path) { m.opened = { file: { ...file, text, version: saved.version, size: new TextEncoder().encode(text).length } }; m.conflict = null; }
+        if (m.selected === path) { m.opened = { file: { ...file, text, version: saved.version, size: new TextEncoder().encode(text).length } }; m.conflict = null; m.currentUnavailable = null; }
         m.notice = `Saved ${path.split('/').pop()}.${saved.told ? ` ${saved.told} working agent${saved.told === 1 ? ' was' : 's were'} told which file you changed.` : ''}`;
         await m.refreshFolders(path);
       } catch (e) {
-        if (!valid()) return;
+        if (!active()) return;
         m.notice = e.message;
         if (e.message?.startsWith('the file changed since you opened it')) {
           try {
             const current = result(await engine.request('project.files.read', { worktreeId: context.worktreeId, path }));
-            if (valid() && m.selected === path) {
+            if (active() && m.selected === path) {
               m.conflict = current;
               m.notice = 'The file changed since you opened it. Your text is kept. Compare it with the current file below.';
             }
-          } catch (readError) { if (valid()) m.notice = readError.message; }
+          } catch (readError) { if (active() && m.selected === path) { m.currentUnavailable = readError.message; m.notice = readError.message; } }
         }
-      } finally { if (valid()) { m.saving = false; changed(); } }
+      } finally { if (active()) { m.saving = false; changed(); } }
     },
-    async refreshFolders(path) {
-      // Reload only already-read folders. This updates ancestor change dots too.
-      const parents = new Set(['', parentOf(path)]);
-      let folder = parentOf(path);
-      while (folder) { parents.add(folder); folder = parentOf(folder); }
-      await Promise.all([...parents].filter((p) => m.folders[p]).map((p) => m.folder(p)));
+    refreshFolders() { return m.refresh(); },
+    refresh() {
+      if (!active() || !context.online || context.machine !== 'local') return Promise.resolve();
+      requested = true;
+      if (refreshing) return refreshing;
+      refreshing = (async () => {
+        while (requested && active() && context.online && context.machine === 'local') {
+          requested = false;
+          const delay = Math.max(0, lastRefresh + 1000 - Date.now());
+          if (delay) await new Promise((resolve) => { wake = resolve; timer = setTimeout(resolve, delay); });
+          // Events during the interval belong to this trailing refresh.
+          requested = false;
+          if (!active() || !context.online || context.machine !== 'local') break;
+          lastRefresh = Date.now();
+          const visible = [...m.openFolders].filter((path) => {
+            const parts = path.split('/');
+            return parts.every((_, i) => i === 0 || m.openFolders.has(parts.slice(0, i).join('/')));
+          });
+          await Promise.all(['', ...visible].map((folder) => m.folder(folder)));
+        }
+      })().finally(() => { refreshing = null; });
+      return refreshing;
     },
+    close() { closed = true; clearTimeout(timer); wake?.(); },
     async commit(message) {
-      if (m.committing || m.saving || m.dirty() || m.readOnlyReason() || !m.selected || !message.trim() || !valid()) return false;
+      if (m.committing || m.saving || m.dirty() || m.readOnlyReason() || !m.selected || !message.trim() || !active()) return false;
       const path = m.selected;
       m.committing = true; m.notice = ''; changed();
       try {
         const saved = result(await engine.request('project.commit', { worktreeId: context.worktreeId, projectId: context.projectId, path, message: message.trim() }));
-        if (!valid()) return false;
+        if (!active()) return false;
         m.notice = `Committed ${path.split('/').pop()} as ${saved.head.slice(0, 7)}.`;
         await m.refreshFolders(path); return true;
-      } catch (e) { if (valid()) m.notice = e.message; return false; }
-      finally { if (valid()) { m.committing = false; changed(); } }
+      } catch (e) { if (active()) m.notice = e.message; return false; }
+      finally { if (active()) { m.committing = false; changed(); } }
     },
   };
   return m;
@@ -121,9 +160,9 @@ const ICON = { md: 'file-text', css: 'palette', svg: 'image', png: 'image', zip:
 const ltr = (t) => '\u200e' + (t || '');
 function Tree({ model, folder = '', depth = 0, open, toggle, pick }) {
   const state = model.folders[folder];
-  if (!state || state.loading) return html`<li class="fx-note" role="status">Loading…</li>`;
-  if (state.error) return html`<li class="fx-note" role="alert">${state.error} <button class="btn sm" onClick=${() => model.folder(folder)}>Retry</button></li>`;
-  return html`${state.items.map((entry) => entry.kind === 'folder' ? html`<li key=${entry.path} role="treeitem" aria-label=${entry.name} aria-expanded=${open.has(entry.path)}>
+  if (!state || (state.loading && !state.items)) return html`<li class="fx-note" role="status">Loading…</li>`;
+  const error = state.error && html`<li class="fx-note" role="alert">${state.error} <button class="btn sm" onClick=${() => model.folder(folder)}>Retry</button></li>`;
+  return html`${error}${(state.items || []).map((entry) => entry.kind === 'folder' ? html`<li key=${entry.path} role="treeitem" aria-label=${entry.name} aria-expanded=${open.has(entry.path)}>
     <button type="button" class="fx-row dir" aria-label=${entry.name} style=${`--d:${depth}`} onClick=${() => toggle(entry.path)}>
       <${Icon} name="chevron-right" size=${13} class="fx-chev" /><${Icon} name="folder" size=${14} class="faint" /><span class="truncate">${entry.name}</span>${entry.change && html`<i class="fx-dot" title="Has changes"></i>`}</button>
     ${open.has(entry.path) && html`<ul role="group"><${Tree} model=${model} folder=${entry.path} depth=${depth + 1} open=${open} toggle=${toggle} pick=${pick} /></ul>`}</li>`
@@ -131,7 +170,7 @@ function Tree({ model, folder = '', depth = 0, open, toggle, pick }) {
     <button type="button" class=${cx('fx-row', model.selected === entry.path && 'on')} aria-label=${entry.name} style=${`--d:${depth}`} onClick=${() => pick(entry.path)}>
       <span class="fx-chev"></span><${Icon} name=${ICON[extOf(entry.path)] || 'file'} size=${14} class="faint" /><span class="truncate">${entry.name}</span>
       ${model.drafts.has(entry.path) && html`<i class="fx-unsaved" title="Not saved"></i>`}${entry.status && html`<span class=${cx('fx-st', STATUS[entry.status][0])} title=${STATUS[entry.status][1]}>${entry.status}</span>`}</button></li>`)}
-    ${!state.items.length && html`<li class="fx-note">Empty</li>`}${state.truncated && html`<li class="fx-note">Some entries are not shown.</li>`}`;
+    ${state.items && !state.items.length && html`<li class="fx-note">Empty</li>`}${state.truncated && html`<li class="fx-note">Some entries are not shown.</li>`}`;
 }
 function CommitFile({ model, w, close }) {
   const [message, setMessage] = useState('');
@@ -139,7 +178,7 @@ function CommitFile({ model, w, close }) {
   const disabled = model.committing || !!model.readOnlyReason();
   return html`<${Dialog} title=${'Commit ' + model.selected.split('/').pop()} size="narrow" onClose=${() => { if (!model.committing) close(); }} onSubmit=${submit}
     foot=${html`<button type="button" class="btn" disabled=${model.committing} onClick=${close}>Cancel</button><button type="submit" class="btn primary" disabled=${disabled || !message.trim()}><${Icon} name="check" size=${14} />${model.committing ? 'Committing…' : 'Commit'}</button>`}>
-    <div class="field"><div class="row"><label for="fx-live-commit-msg" class="grow">Commit message</label><span title="Engine work needed" data-tip="Engine work needed"><button type="button" class="btn sm ghost" disabled title="Engine work needed"><${Icon} name="sparkles" size=${13} />Generate</button></span></div>
+    <div class="field"><div class="row"><label for="fx-live-commit-msg" class="grow">Commit message</label><span><button type="button" class="btn sm ghost" disabled title="Engine work needed"><${Icon} name="sparkles" size=${13} />Generate</button></span></div>
       <textarea id="fx-live-commit-msg" class="textarea" rows="3" autofocus value=${message} disabled=${disabled} maxLength=${8192} onInput=${(e) => setMessage(e.target.value)} onKeyDown=${(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); void submit(); } }}></textarea></div>
     <p class="muted fx-commit-note">Only <span class="mono">${model.selected}</span> is committed, to <span class="mono">${w.branch}</span>, as you. Other staged files stay staged. For anything bigger, ask the project lead.</p>
     ${model.notice && html`<p role="status">${model.notice}</p>`}
@@ -157,17 +196,20 @@ function WorktreeFiles({ s, project, route, w, missing }) {
   const remote = w.machine !== 'local';
   const [, bump] = useState(0), alive = useRef(true);
   const context = useMemo(() => ({ worktreeId: w.id, projectId: project.id, kind: w.kind, machine: w.machine, online: !offline }), [w.id]);
-  Object.assign(context, { online: !offline, kind: w.kind, machine: w.machine });
+  Object.assign(context, { projectId: project.id, online: !offline, kind: w.kind, machine: w.machine });
   const model = useMemo(() => createFilesModel(context, () => bump((n) => n + 1), () => alive.current && store.state === s && s.session.status === 'in'), [w.id]);
   const [open, setOpen] = useState(() => new Set()), [query, setQuery] = useState(''), [wrapPref, setWrap] = useState(null), [committing, setCommitting] = useState(false);
-  const wrap = wrapPref ?? phone, sel = route.query.get('f') || (phone ? null : 'README.md');
-  useEffect(() => { alive.current = true; return () => { alive.current = false; model.drafts.clear(); }; }, []);
+  const wrap = wrapPref ?? phone, sel = route.query.get('f') || (!phone && model.folders['']?.items?.some((entry) => entry.path === 'README.md' && entry.kind === 'file') ? 'README.md' : null);
+  model.openFolders = open;
+  useEffect(() => { alive.current = true; return () => { alive.current = false; model.close(); }; }, []);
   useEffect(() => {
     if (offline || remote) return;
-    void model.folder('');
-    const refresh = () => { for (const folder of Object.keys(model.folders)) void model.folder(folder); };
-    addEventListener('focus', refresh); return () => removeEventListener('focus', refresh);
+    void model.refresh();
   }, [offline, remote, s.boardRevision]);
+  useEffect(() => {
+    const refresh = () => { void model.refresh(); };
+    addEventListener('focus', refresh); return () => removeEventListener('focus', refresh);
+  }, [model]);
   useEffect(() => {
     void model.open(sel);
     if (!sel || offline || remote) return;
@@ -177,7 +219,7 @@ function WorktreeFiles({ s, project, route, w, missing }) {
   }, [sel, offline, remote]);
   useEffect(() => { const timer = setTimeout(() => model.search(query), 150); return () => clearTimeout(timer); }, [query, offline]);
   const pick = (path) => { if (!model.saving && !model.committing) go(`/p/${project.id}/files?f=${encodeURIComponent(path)}`); };
-  const toggle = (path) => { setOpen((o) => { const next = new Set(o); next.has(path) ? next.delete(path) : next.add(path); return next; }); if (!model.folders[path]) void model.folder(path); };
+  const toggle = (path) => { if (!open.has(path)) void model.folder(path); setOpen((o) => { const next = new Set(o); next.has(path) ? next.delete(path) : next.add(path); return next; }); };
   const file = model.opened?.file, textFile = file?.kind === 'text', shown = model.shown(), dirty = model.dirty(), reason = model.readOnlyReason();
   const lines = textFile ? shown.replace(/\n$/, '').split('\n').length : 0;
   const change = Object.values(model.folders).flatMap((f) => f.items || []).find((f) => f.path === sel)?.status;
@@ -212,10 +254,11 @@ function WorktreeFiles({ s, project, route, w, missing }) {
   else if (model.opened?.loading || !model.opened) body = html`<div class="fx-state" role="status"><${Icon} name="loader-circle" size=${18} class="spin faint" /><span>Reading from ${machine.name}…</span></div>`;
   else if (model.opened.error) body = html`<div class="fx-state" role="alert"><strong>${model.opened.error}</strong><span class="mono">${sel}</span><button class="btn" onClick=${() => model.open(sel)}>Retry</button></div>`;
   else if (file.kind === 'image') body = html`<div class="fx-pic"><img src=${image} alt=${sel} /></div>`;
-  else if (file.kind === 'binary' || file.kind === 'large') body = html`<div class="fx-state"><${Icon} name=${file.kind === 'binary' ? 'archive' : 'file-text'} size=${20} class="faint" /><strong>${file.kind === 'binary' ? 'Binary file' : 'Too large to show'} · ${fileSize(file.size)}</strong><span>${file.kind === 'binary' ? 'It cannot be read here.' : 'Files over 512 KB are not shown here.'}</span><span title="Engine work needed" data-tip="Engine work needed"><button type="button" class="btn" disabled title="Engine work needed">Download</button></span></div>`;
+  else if (file.kind === 'binary' || file.kind === 'large') body = html`<div class="fx-state"><${Icon} name=${file.kind === 'binary' ? 'archive' : 'file-text'} size=${20} class="faint" /><strong>${file.kind === 'binary' ? 'Binary file' : 'Too large to show'} · ${fileSize(file.size)}</strong><span>${file.kind === 'binary' ? 'It cannot be read here.' : 'Files over 512 KB are not shown here.'}</span><span><button type="button" class="btn" disabled title="Engine work needed">Download</button></span></div>`;
   else body = html`${worker?.state === 'working' && dirty && html`<p class="fx-busy"><${Icon} name="info" size=${13} />${worker.name} is working in this worktree. When you save, it is told which file you changed.</p>`}
     ${reason && html`<p class="fx-note" role="note">Read-only. ${reason}</p>`}
-    <${CodeEditor} key=${w.id + ':' + sel + ':' + file.version} doc=${shown} path=${sel} wrap=${wrap} readOnly=${!!reason || model.saving || model.committing} onChange=${(text) => model.edit(text)} onSave=${() => model.save()} />
+    <${CodeEditor} key=${w.id + ':' + sel + ':' + model.editorRevision} doc=${shown} path=${sel} wrap=${wrap} readOnly=${!!reason} busy=${model.saving || model.committing} onChange=${(text) => model.edit(text)} onSave=${() => model.save()} />
+    ${model.currentUnavailable && html`<section class="fx-note" role="alert"><p>${model.currentUnavailable} Your text is kept.</p><button type="button" class="btn sm" disabled=${model.saving} onClick=${() => model.discardDraft()}>Discard my text</button></section>`}
     ${model.conflict && html`<section class="fx-note fx-current" aria-label="The file as it is now"><strong>The file as it is now</strong>
       <div class="row"><button type="button" class="btn sm" disabled=${model.saving} onClick=${() => model.takeCurrent()}>Use the current file</button><button type="button" class="btn sm" disabled=${!!reason || model.saving || model.conflict.kind !== 'text'} onClick=${() => model.save(model.conflict.version)}>Save my text over it</button></div>
       <pre>${model.conflict.kind === 'text' ? model.conflict.text : 'The current file is ' + model.conflict.kind + '.'}</pre></section>`}`;

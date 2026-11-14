@@ -69,6 +69,11 @@ export async function exerciseStudioFiles(page: Page) {
           const url = `http://127.0.0.1:${port}/studio/#/p/${project.projectId}/files`
           await page.goto(url); await page.locator('#login-password').fill(password); await page.getByRole('button', { name: 'Sign in', exact: true }).click()
           await expect(page.locator('.tree-row.project')).toBeVisible(); await page.goto(url)
+          await page.evaluate(async (moduleUrl) => {
+            const engine = await import(moduleUrl), connection = engine.connection(), request = connection.request.bind(connection)
+            ;(window as any).fileRequests = []
+            connection.request = (tag: string, payload: any) => { if (tag.startsWith('project.files.') || tag === 'project.context.search') (window as any).fileRequests.push({ tag, payload }); return request(tag, payload) }
+          }, new URL('./js/engine.js', url.split('#')[0]).href)
           const editor = page.getByRole('textbox', { name: 'Contents of README.md', exact: true })
           await expect(editor).toContainText('The file text must sit beside the line numbers.')
           await expect(page.locator('.cm-lineNumbers')).toContainText('1')
@@ -96,9 +101,15 @@ export async function exerciseStudioFiles(page: Page) {
           const contents = page.getByRole('textbox', { name: 'Contents of src/file.ts', exact: true })
           await expect(contents).toContainText('count = 2')
           const type = async (value: string) => { await contents.fill(value); await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled() }
-          await type('export const count = 3;'); await contents.press('Control+s')
+          await type('export const count = 3;')
+          const cursor = await contents.evaluate((node) => { (window as any).editorBeforeSave = node; const selection = getSelection(); return { anchor: selection?.anchorOffset, focus: selection?.focusOffset } })
+          await contents.press('Control+s')
+          await expect(page.locator('.fx')).toHaveAttribute('aria-busy', 'false')
+          expect(await contents.evaluate((node) => ({ same: node === (window as any).editorBeforeSave, focused: document.activeElement === node, anchor: getSelection()?.anchorOffset, focus: getSelection()?.focusOffset }))).toEqual({ same: true, focused: true, ...cursor })
           await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled(); expect(readFileSync(join(workspace.path, 'src/file.ts'), 'utf8')).toBe('export const count = 3;')
-          await type('export const count = 4;'); writeFileSync(join(workspace.path, 'src/file.ts'), 'Changed outside the page.\n'.repeat(120))
+          await page.keyboard.press('ArrowLeft'); await page.keyboard.press('Backspace'); await page.keyboard.type('4')
+          await expect(contents).toContainText('count = 4'); await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeEnabled()
+          writeFileSync(join(workspace.path, 'src/file.ts'), 'Changed outside the page.\n'.repeat(120))
           await page.getByRole('button', { name: 'Save', exact: true }).click()
           const conflict = page.getByRole('region', { name: 'The file as it is now' })
           await expect(conflict).toContainText('Changed outside the page.'); await expect(contents).toContainText('count = 4')
@@ -125,8 +136,12 @@ export async function exerciseStudioFiles(page: Page) {
           // The worktree selector is shared by the project's tabs.
           await page.getByRole('button', { name: 'Inspecting: the worktree whose code you look at', exact: true }).click(); await page.getByRole('menuitemradio', { name: /^main/ }).click()
           await open('README.md'); await expect(page.locator('.fx-note')).toContainText('base branch is read-only')
+          await expect(page.getByRole('textbox', { name: 'Contents of README.md', exact: true })).toHaveAttribute('contenteditable', 'false')
+          await expect(page.getByRole('button', { name: 'Save', exact: true })).toHaveCount(0)
           await page.getByRole('button', { name: 'Inspecting: the worktree whose code you look at', exact: true }).click(); await page.getByRole('menuitemradio', { name: /remote-files/ }).click()
           await expect(page.locator('.fx-state')).toContainText('awaiting machine support')
+          await page.evaluate(() => dispatchEvent(new Event('focus')))
+          expect(await page.evaluate(() => (window as any).fileRequests.filter((request: any) => request.payload?.worktreeId === 'remote-files'))).toEqual([])
           const lib = new URL('./js/lib.js', url.split('#')[0]).href
           const connection = new URL('./js/engine.js', url.split('#')[0]).href
           // Use the real connection's close to prevent reconnecting while proving the

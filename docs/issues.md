@@ -13573,3 +13573,48 @@ All three unchanged journeys passed when run together with one worker, with a to
 The separate credit check passed before that rerun.
 The full check remains a failed run.
 The underlying cause of these intermittent failures is not established.
+
+## s8-files-6. File conflict detection depends on an English engine refusal.
+
+Found: 2026-11-14, in the first review of the connected Files screen.
+State: open.
+
+The Files screen recognizes a stale version by matching the engine's English refusal sentence.
+A change to that sentence could prevent the comparison controls from appearing.
+
+## s8-files-7. A file absent from a loaded listing can lack change controls.
+
+Found: 2026-11-14, in the first review of the connected Files screen.
+State: open.
+
+The Commit control and the file's change badge depend on the file appearing in a loaded folder listing.
+The engine limits a folder listing to 500 entries.
+A file beyond that limit may have no Commit control or change badge when opened through search or a direct address.
+
+## s8-files-8. The Files offline state has only a forced-store browser check.
+
+Found: 2026-11-14, in the first review of the connected Files screen.
+State: open.
+
+The browser journey checks the Files offline state by closing the connection and forcing the store's connection status.
+It does not test the transition caused by an actual network interruption.
+
+## s8-files-9. Image Blob address revocation has no test.
+
+Found: 2026-11-14, in the first review of the connected Files screen.
+State: open.
+
+The Files screen revokes an image's Blob address when the image changes or the view unmounts.
+No test verifies that revocation.
+
+## s8-files-10. A temporary save lock blurred the file editor.
+
+Found: 2026-11-14, while strengthening the Files browser journey for the first review.
+State: fixed in the engine build's editor integration.
+
+Removing the version from the editor key preserved the editor node after saving.
+Temporarily disabling the editor's editable element still removed its focus.
+The engine build now blocks edits during a request through the editor's state lock while keeping the element focusable.
+The browser journey checks the same editor node after Control+S.
+It also checks the focus and cursor position after the save.
+It types the next change through the keyboard without refilling the editor.
