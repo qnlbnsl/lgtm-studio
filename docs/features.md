@@ -579,6 +579,21 @@ The full design is in
   project's load spreads across machines. How a client machine proves who it is
   needs the owner's word, because the login rule is one user, one password and no
   pairing.
+- **The server does no machine work itself** (the owner's direction, 2026-11-14;
+  not designed). The owner described the split in more detail.
+  - The server holds the event log, the board and the website. It runs no agent
+    and no command on a machine.
+  - A client is the program that runs agents, shells and Git commands on one
+    machine.
+  - A client opens the connection to the server and takes its commands over it.
+    The client knows the server's address. The server does not need to know
+    where a client is, so it can run in the cloud.
+  - On one machine, starting the server in client mode also starts a client, so
+    a single-machine setup still needs one command.
+  - More machines are added by starting more clients.
+  - Still to decide: how a client proves who it is to the server, what a client
+    may refuse, and what happens to its agents when the connection drops.
+  - The owner sees this as a project to run inside LGTM Studio.
 
 ## 10. Design and mock modes
 
