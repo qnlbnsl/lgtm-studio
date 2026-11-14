@@ -21,7 +21,7 @@
 # node_modules directories are not copied code and need no rows.
 # Every problem is printed to standard error with the path it concerns. The
 # exit status is 1 when there is any problem and 0 when there is none.
-
+ 
 if [ "$#" -gt 0 ]; then
   root=$1
 else
