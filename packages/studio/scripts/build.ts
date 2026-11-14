@@ -1,10 +1,13 @@
 import { signInSource } from "./signInSource.ts"
+import { projectSettingsSource, assertProjectSettingsSource } from "./projectSettings.ts"
+
+import { filesSource } from "./filesSource.ts"
 import { serviceSettingsSource } from "./serviceSettings.ts"
 import { gitActionsSource } from "./gitActions.ts"
 import { harnessChoicesSource } from "./harnessChoices.ts"
 import { mockControlsSource } from "./mockControlsSource.ts"
 import { harnessIntegrationSource } from "./harnessIntegration.ts"
-// Builds the live website into packages/studio/dist, which the engine serves at /studio/.
+// Builds the live website into packages/studio/dist, which the engine serves as the website.
 //
 // 1. It copies the website from design/mock. The folders that are links there, fonts and
 //    vendor/*, are copied as real files, because the engine's static server refuses any
@@ -82,11 +85,17 @@ export async function buildStudio(dist = defaultDist): Promise<string> {
   }
   for (const path of ["js/screens/git.js", "js/actions.js", "js/live/git.js", "js/live/board.js", "js/screens/service.js", "js/screens/auth.js", "js/dialogs.js", "js/ui.js", "js/screens/messages.js"]) {
     const target = join(dist, path)
-    writeFileSync(target, serviceSettingsSource(path, gitActionsSource(path, harnessIntegrationSource(path, signInSource(path, harnessChoicesSource(path, readFileSync(target, "utf8")))))))
+    const source = projectSettingsSource(path, serviceSettingsSource(path, gitActionsSource(path, harnessIntegrationSource(path, signInSource(path, harnessChoicesSource(path, readFileSync(target, "utf8")))))))
+    writeFileSync(target, assertProjectSettingsSource(path, source))
+  }
+
+  for (const path of ["js/app.js", "js/screens/files.js", "js/editor.js", "js/ui.js"]) {
+    const target = join(dist, path)
+    writeFileSync(target, filesSource(path, readFileSync(target, "utf8")))
   }
 
   writeFileSync(join(dist, "js/workflow-contracts.js"), contracts)
-  const { page, theme } = rewriteIndex(readFileSync(join(mock, "index.html"), "utf8"))
+  const { page, theme } = rewriteIndex(filesSource("index.html", readFileSync(join(mock, "index.html"), "utf8")))
   writeFileSync(join(dist, "index.html"), page)
   writeFileSync(join(dist, "theme.js"), theme)
   await build({

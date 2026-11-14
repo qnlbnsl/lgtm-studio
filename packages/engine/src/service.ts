@@ -170,8 +170,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
     return yield* Effect.gen(function* () {
       if (debug) yield* Effect.logInfo("debug RPC group enabled");
       yield* listener.install(yield* application({ ownerCredential, debug, lists }));
-      const web = yield* serveWeb({ password: webPassword, lists, staticRoot: fileURLToPath(new URL("../../web/dist", import.meta.url)),
-        studioRoot: fileURLToPath(new URL("../../studio/dist", import.meta.url)),
+      const web = yield* serveWeb({ password: webPassword, lists, staticRoot: fileURLToPath(new URL("../../studio/dist", import.meta.url)),
         registerSecret: (secret) => { explicitSecrets.push(secret); } });
       yield* Effect.addFinalizer(() => web.close);
       yield* (yield* Restart.Restart).recover;

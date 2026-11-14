@@ -60,7 +60,7 @@ export function update(fn) {
 export const ENGINE_OWNED = new Set([
   'session', 'conn', 'owner', 'machines', 'subscriptions', 'repos', 'projects', 'teams', 'agents', 'epics', 'sprints', 'tasks',
   'machineDetails', 'phoneOffer', 'accountLimits', 'threads', 'pending',
-  'boardUnread', 'boardRevision', 'boardDetails', 'taskDetails', 'setupData', 'boardAgents', 'requests', 'channels', 'posts', 'worktrees', 'workflow', 'mocks', 'design', 'notifications', 'settings',
+  'boardUnread', 'boardRevision', 'boardDetails', 'taskDetails', 'setupData', 'boardAgents', 'projectLeadSettings', 'requests', 'channels', 'posts', 'worktrees', 'workflow', 'mocks', 'design', 'notifications', 'settings',
 ]);
 export const live = { on: false, refusedTurn: false, onRefuse: null };
 let engineWriting = false;

@@ -39,7 +39,9 @@ describe("logout confirmation (findings 1 and 8)", () => {
   for (const result of [204, 403, 500, "network"] as const) it(`clears every mapped collection after real logout with ${result}`, async () => {
     const h = harness({ logout: result })
     await vi.waitFor(() => expect(h.state.projects?.length).toBe(2))
+    ;(h.state as any).projectLeadSettings = { lead: { model: "private setting" } }
     await h.connection.signOut()
+    expect((h.state as any).projectLeadSettings).toEqual({})
     expect(h.posts).toContain("/api/logout")
     for (const key of ["machines", "subscriptions", "repos", "projects", "teams", "agents", "requests", "worktrees", "sprints", "tasks"] as const) expect(h.state[key], key).toEqual([])
     expect(h.state.owner).toEqual({ name: "Owner", initials: "O" })

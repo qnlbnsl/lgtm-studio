@@ -396,7 +396,7 @@ function mountLive(el) {
   for (const key of Object.keys(state.settings)) state.settings[key] = typeof state.settings[key] === 'boolean' || typeof state.settings[key] === 'number' ? null : typeof state.settings[key] === 'string' ? '' : {};
   state.settings.quiet = { on: null, from: '', to: '', failed: null };
   seedTerminal(state);
-  Object.assign(state, { worktrees: [], gitUi: {}, boardRead: {}, boardUnread: {}, boardRevision: 0, boardDetails: {}, taskDetails: {}, setupData: null, boardAgents: {}, notifications: [], phoneOffer: null, workflow: {}, mocks: {}, design: {}, machineDetails: null });
+  Object.assign(state, { worktrees: [], gitUi: {}, boardRead: {}, boardUnread: {}, boardRevision: 0, boardDetails: {}, taskDetails: {}, setupData: null, boardAgents: {}, projectLeadSettings: {}, notifications: [], phoneOffer: null, workflow: {}, mocks: {}, design: {}, machineDetails: null });
   store.state = guardStore(state);
   act.applyPrefs();
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', act.applyPrefs);

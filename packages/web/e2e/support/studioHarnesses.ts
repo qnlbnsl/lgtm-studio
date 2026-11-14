@@ -30,8 +30,7 @@ export async function exerciseStudioHarnesses(page: Page) {
   const errors: string[] = []
   page.on("pageerror", (error) => errors.push(error.message))
   try {
-    const studioRoot = await buildStudio(join(rig.root, "studio")), staticRoot = join(rig.root, "web")
-    mkdirSync(staticRoot); writeFileSync(join(staticRoot, "index.html"), "<title>Test</title>")
+    const studioRoot = await buildStudio(join(rig.root, "studio"))
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const runner = yield* makeFakeRunner()
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, Layer.succeed(Redactor, { redact: (e) => Effect.succeed(e), redactText: (s) => Effect.succeed(s) }))
@@ -39,9 +38,9 @@ export async function exerciseStudioHarnesses(page: Page) {
         yield* registerRebuildCheck()
         yield* completedSetup()
         yield* appendSetup([eventOf({ _tag: "HarnessChanged", harness: harnessSettings("fixture", { adapterPath: executable, models: [], efforts: [] }) })])
-        yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
+        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
-          const root = `http://127.0.0.1:${port}/studio/`
+          const root = `http://127.0.0.1:${port}/`
           await page.goto(root)
           await page.locator("#login-password").fill(password)
           await page.getByRole("button", { name: "Sign in", exact: true }).click()

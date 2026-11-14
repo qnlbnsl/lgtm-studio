@@ -28,8 +28,9 @@ export async function exerciseStudioNotifications(page: Page) {
   page.on('pageerror', (error) => errors.push(error.message))
   try {
     const studioRoot = await buildStudio(join(rig.root, 'studio'))
-    const staticRoot = join(rig.root, 'sample')
-    cpSync(resolve('design/mock'), staticRoot, { recursive: true, dereference: true })
+    // The untouched sample mock sits in a subfolder of the website, so one server shows both.
+    const sampleRoot = join(studioRoot, 'standalone-sample')
+    cpSync(resolve('design/mock'), sampleRoot, { recursive: true, dereference: true })
     const port = await unusedPort()
     mkdirSync('.foundry', { recursive: true })
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
@@ -40,22 +41,22 @@ export async function exerciseStudioNotifications(page: Page) {
       yield* Effect.scoped(Effect.gen(function* () {
         const project = yield* decisionSetup()
         yield* completedSetup(project.projectId)
-        yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists: engineLists,
+        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists,
           settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
           const origin = `http://127.0.0.1:${port}`
           await page.setViewportSize({ width: 1440, height: 2400 })
-          await page.goto(`${origin}/#/notifications`)
+          await page.goto(`${origin}/standalone-sample/index.html#/notifications`)
           await expect(page.getByRole('heading', { name: 'Notifications', exact: true })).toBeVisible()
           await expect(page.locator('#em-host')).toBeVisible()
           await expect(page.getByText('Sprint alerts stay here until you dismiss them.', { exact: true })).toBeVisible()
           await expect(page.locator('#q-zone')).toHaveValue('UTC')
           await page.screenshot({ path: '.foundry/notifications-sample.png', fullPage: true })
-          await page.goto(`${origin}/studio/#/notifications`)
+          await page.goto(`${origin}/#/notifications`)
           await page.locator('#login-password').fill(password)
           await page.getByRole('button', { name: 'Sign in', exact: true }).click()
           await expect(page.getByRole('button', { name: 'Log out', exact: true })).toBeVisible()
-          await page.goto(`${origin}/studio/#/notifications`)
+          await page.goto(`${origin}/#/notifications`)
           await expect(page.getByRole('heading', { name: 'Notifications', exact: true })).toBeVisible()
           for (const label of ['An account needs your attention', 'Something else needs your attention', 'The web server goes down', 'A board post needs your reply', 'An agent has not answered your post', 'An agent has stalled', 'A worker needs replacement', 'Work takes longer than expected', 'A permission rule is used for the first time']) {
             await expect(page.getByRole('switch', { name: label, exact: true })).toBeVisible()

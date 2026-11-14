@@ -25,8 +25,7 @@ async function withPage(page: Page, journey: (root: string) => Promise<void>) {
   const base = fixtureHarnessPrograms({ home: rig.home, executable: process.execPath, script, id: 'claude', name: 'Claude Code' })
   const harnessPrograms = { ...base, recipe: (id: string) => { const r = base.recipe(id); return r ? { ...r, signInArguments: [script] } : undefined } }
   try {
-    const studioRoot = await buildStudio(join(rig.root, 'studio')), staticRoot = join(rig.root, 'web')
-    mkdirSync(staticRoot); writeFileSync(join(staticRoot, 'index.html'), '<title>Test</title>')
+    const studioRoot = await buildStudio(join(rig.root, 'studio'))
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const runner = yield* makeFakeRunner()
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, Layer.succeed(Redactor, { redact: e => Effect.succeed(e), redactText: s => Effect.succeed(s) }))
@@ -41,9 +40,9 @@ async function withPage(page: Page, journey: (root: string) => Promise<void>) {
         ])
         yield* completedSetup('setup-history-project', rig.work)
         yield* appendSetup([eventOf({ _tag: 'HarnessChanged', harness: harnessSettings('claude', { adapterPath: process.execPath, models: [], efforts: [] }) })])
-        yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
+        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
-          const root = `http://127.0.0.1:${port}/studio/`
+          const root = `http://127.0.0.1:${port}/`
           await page.setViewportSize({ width: 1600, height: 1000 }); await page.goto(root)
           await page.locator('#login-password').fill(password)
           await page.getByRole('button', { name: 'Sign in', exact: true }).click()

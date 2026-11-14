@@ -13513,7 +13513,7 @@ The check should use the repository's recorded base branch.
 ## 859. The "Files" tab and the finished "Project settings" exist only on the older page
 
 Found: 2026-11-14, in the review of pull request 47.
-State: the owner ruled on 2026-11-14 that the website is the connected mock; the two screens are being moved there.
+State: fixed on 2026-11-14. Both screens are on the website, which the service now serves at the root address.
 
 Pull request 47 built both screens in `packages/web`, which the service shows at `/`.
 The page the owner uses is the connected mock at `/studio/`, and it still says "Files is not connected yet".
@@ -13655,3 +13655,271 @@ The security section now states the configured executable exception and the limi
 The terminal help explains the connection boundary and the shell history risk.
 The mock exports account refresh directly instead of relying on build injection.
 This supersedes the fixture workaround recorded in 868.
+
+## 875. The older page's code and tests remain after the service stopped serving it.
+
+Found: 2026-11-14, when the owner asked for one website and not two.
+Status: open.
+
+The service now serves only the website built from `design/mock/`, at the root address.
+An old address under `/studio/` is sent to the root.
+The package `packages/web` is no longer served to anyone.
+Its source and its tests are still in the repository.
+Many browser journeys still drive the engine through the older page.
+Removing the package now would remove that coverage of the engine.
+Each journey needs an equal journey on the website before the package is removed.
+The Files tab and the Project settings screen existed only on the older page.
+Both screens are now on the website, from the units `s8-files` and `s8-psettings`.
+
+## 876. The live project settings screen had unsupported controls that still looked editable.
+
+The connected mock at `/studio/` showed active controls that only refused a change.
+The live build now disables these controls with the hover text, "Engine work needed".
+The standalone sample keeps its existing behaviour.
+
+## 877. A project has no configurable base branch.
+
+The engine does not expose a project base branch setting or a command to change it.
+The live base branch picker is disabled.
+
+## 878. A project lead cannot change its subscription.
+
+The engine reports the lead's account, but `configure` accepts only a model and an effort.
+The live subscription picker shows the account and is disabled.
+
+## 879. A project cannot set the permission for every agent.
+
+The engine reports each agent's permission, but has no project permission command.
+The live permission choices are disabled.
+
+## 880. A project cannot set the write-tests-first switch.
+
+The engine has no project setting or command for this switch.
+The live switch is disabled.
+
+## 881. A project cannot set the agent-review switch.
+
+The engine has no project setting or command for this switch.
+The live switch is disabled.
+
+## 882. A project cannot choose to remove agent credits when merging.
+
+The engine has no project preference for removing agent credit lines.
+The live switch is disabled.
+
+## 883. A project cannot configure or approve the assignment table.
+
+The engine has no project work-kind assignment record or commands to apply or approve it.
+The live harness, model, and effort choices are disabled for each work kind.
+The Every row picker, Apply button, and Approve button are disabled.
+
+## 884. A team cannot change its need-to-know setting.
+
+The engine has no team need-to-know record or command.
+The live team switches are disabled.
+
+## 885. A project cannot configure its task label prefix.
+
+The engine accepts labels on tasks, but exposes no project prefix setting.
+The live task label prefix field is disabled.
+
+## 886. A project cannot be deleted.
+
+The engine supports archive and restore, but has no project deletion command.
+The live Delete button is disabled.
+
+## 887. The project lead pickers did not distinguish desired and applied settings.
+
+The live project settings screen previously selected values from the roster.
+The screen now reads the lead's configuration and choices from `client.agent.configuration`.
+It displays the engine's desired values and reports the applied model and acknowledgement status separately.
+
+## 888. The engine hides the specific reason for a refused lead configuration.
+
+The `configure` planner can refuse a model or an effort that is no longer available.
+The public command error filter reduces that reason to "command refused".
+The live project settings notice displays the public reason that the engine returns.
+The browser journey checks that reason and confirms that the refused value does not persist.
+The filter remains unchanged in this migration.
+
+## 889. The existing Mocks browser journey failed intermittently during the full check.
+
+The full remote check passed 57 browser journeys and failed the existing Mocks journey.
+The failure was a missing "Editor changes saved" notice at `packages/web/e2e/support/studioMocks.ts:89`.
+The same Mocks journey passed in isolation without a code change.
+The new project settings journey passed in both its focused run and the full check.
+The cause of the intermittent Mocks failure remains unconfirmed.
+
+## 890. The project shell command has no control on the live project settings screen.
+
+The engine supports `project.preferences.set` for a project's preferred shell.
+The connected mock's project settings screen has no shell control.
+This migration does not add one.
+
+## 891. A goal update from another client replaces an unsaved goal draft without a notice.
+
+The live project settings screen resets its goal draft when the engine reports a changed goal.
+An update from another client can therefore replace an unsaved local draft.
+The screen does not warn the owner before replacing that draft.
+This behaviour remains unchanged in Round 1.
+
+## 892. The first review found unnecessary lead reads and shared settings records.
+
+The first implementation re-read the lead configuration on every roster publish.
+Those reads disabled the model and effort pickers.
+A read already in flight could suppress the read after a configuration write.
+Lead settings shared `boardAgents` with team details and could corrupt or lose those details.
+Round 1 limits refresh dependencies to the lead's identifier, model, effort, and state.
+It keeps existing choices enabled during background reads.
+It gives reads after a write their own busy key.
+It prevents older reads from overwriting a newer result.
+It stores lead settings in their own guarded collection and clears it at sign-out.
+It checks switch boundaries before slicing the copied screen.
+It checks that the final build output retains the lead loader.
+It renders configuration status in plain words.
+
+## 893. The existing oversized-state browser journey failed intermittently during the Round 1 full check.
+
+The full remote check passed 57 browser journeys and failed the existing oversized-state journey.
+The failure was a five-second timeout waiting for the fake runner to receive the permission answer at `packages/web/e2e/oversized-state.spec.ts:187`.
+The same journey passed in isolation without a code change.
+The project settings journey passed in both its focused run and the full check.
+The cause of the intermittent permission-answer failure remains unconfirmed.
+
+The Files screen is now connected on `worker/s8-files`.
+The older page remains in place, as the owner required.
+
+## 894. The live Files screen cannot download a file.
+
+Found: 2026-11-14, while connecting the Files screen at `/studio/`.
+State: the Download controls are disabled with the explanation "Engine work needed".
+
+The engine can return bounded text and image previews.
+It has no authenticated download operation for a binary file or a file over the preview limit.
+The menu and the preview notice keep their Download controls disabled until that operation exists.
+
+## 895. The live Files screen cannot generate a commit message.
+
+Found: 2026-11-14, while connecting the Files screen at `/studio/`.
+State: the Generate control is disabled with the explanation "Engine work needed".
+
+The engine has no operation that writes a commit message from a file's changes.
+The owner can write a message and commit the open file through `project.commit`.
+
+## 896. A root folder request must omit the optional folder field.
+
+Found: 2026-11-14, in the new Files browser journey through the real engine.
+State: fixed in the Files connection.
+
+An early root folder request sent a `folder` property whose value was `undefined`.
+The client rejected the request with "Schema validation failed" before it reached the engine.
+The request now omits the property for the root folder.
+The browser journey checks the root entries and a changed folder before opening a child file.
+
+## 897. A large conflict comparison could hide the owner's editor.
+
+Found: 2026-11-14, while extending the Files browser journey to compare a current file with 120 lines.
+State: fixed with a bounded comparison area in the live screen.
+
+The current file initially used an unbounded preformatted block under the editor.
+That block could take the editor's available height.
+The comparison now scrolls within forty percent of the main area's height.
+The browser journey checks that both the comparison and the editor remain visible.
+
+## 898. Three existing browser journeys failed in the full run and passed unchanged in isolation.
+
+Found: 2026-11-14, in the final remote check for the Files migration.
+State: open.
+
+The full check passed all 580 Vitest files, with 8,799 tests passed and two tests skipped.
+The browser suite passed 55 journeys and failed three journeys.
+The new Files journey passed in that run.
+The Mocks journey did not see the "Editor changes saved" notice within five seconds at `studioMocks.ts:89`.
+The subscriptions and service-settings journey did not see "No unsaved changes." after saving the heartbeat at `studioService.ts:75`.
+The service-settings journey read two reviewers after saving four reviewers at `studioSettings.ts:65`.
+Issue 727 records the same heartbeat save symptom in an earlier full check.
+All three unchanged journeys passed when run together with one worker, with a total of three passed in 23.7 seconds.
+The separate credit check passed before that rerun.
+The full check remains a failed run.
+The underlying cause of these intermittent failures is not established.
+
+## 899. File conflict detection depends on an English engine refusal.
+
+Found: 2026-11-14, in the first review of the connected Files screen.
+State: open.
+
+The Files screen recognizes a stale version by matching the engine's English refusal sentence.
+A change to that sentence could prevent the comparison controls from appearing.
+
+## 900. A file absent from a loaded listing can lack change controls.
+
+Found: 2026-11-14, in the first review of the connected Files screen.
+State: open.
+
+The Commit control and the file's change badge depend on the file appearing in a loaded folder listing.
+The engine limits a folder listing to 500 entries.
+A file beyond that limit may have no Commit control or change badge when opened through search or a direct address.
+
+## 901. The Files offline state has only a forced-store browser check.
+
+Found: 2026-11-14, in the first review of the connected Files screen.
+State: open.
+
+The browser journey checks the Files offline state by closing the connection and forcing the store's connection status.
+It does not test the transition caused by an actual network interruption.
+
+## 902. Image Blob address revocation has no test.
+
+Found: 2026-11-14, in the first review of the connected Files screen.
+State: open.
+
+The Files screen revokes an image's Blob address when the image changes or the view unmounts.
+No test verifies that revocation.
+
+## 903. A temporary save lock blurred the file editor.
+
+Found: 2026-11-14, while strengthening the Files browser journey for the first review.
+State: fixed in the engine build's editor integration.
+
+Removing the version from the editor key preserved the editor node after saving.
+Temporarily disabling the editor's editable element still removed its focus.
+The engine build now blocks edits during a request through the editor's state lock while keeping the element focusable.
+The browser journey checks the same editor node after Control+S.
+It also checks the focus and cursor position after the save.
+It types the next change through the keyboard without refilling the editor.
+
+## 904. The full Files journey exceeded its commit-dialog assertion budget.
+
+Found: 2026-11-14, in the round 1 remote check.
+State: the journey now waits for the engine's commit acknowledgement before checking the closed dialog.
+
+The full check passed all 581 unit test files.
+The browser suite passed 57 journeys and failed the Files journey at its five-second dialog assertion.
+The failure snapshot showed the committed-file notice.
+The snapshot's page tree no longer contained the dialog.
+The Files model waits for its coalesced listing refresh before closing the dialog.
+The journey now allows fifteen seconds for the commit acknowledgement.
+It still checks the closed dialog after that acknowledgement.
+It still checks the real Git commit's file list.
+The exact source of the delay in the full run is not established.
+The focused Files journey passed after this change, with one journey passed in 22.8 seconds.
+The separate credit check passed.
+The full check remains a failed run.
+
+## 905. A stall-watch timer field came back empty after a reload in one full run.
+
+Found: 2026-11-14, in the full check of `area/studio-default` at `cfcc4de`.
+Status: open.
+
+The full check ran alone on the test computer.
+It passed 591 unit test files and 60 of 61 browser journeys.
+The journey "live service settings: timers, nudges, workflow folder, review defaults and upkeep" failed at `studioSettings.ts:51`.
+After a reload, the field `sd-a` held its saved value 7.
+The field `sd-w` was empty, where 17 was expected.
+The same journey then passed 6 of 6 times when run alone.
+The cause is not known.
+Issues 727, 863, 889, 893 and 898 record similar single failures of save journeys in full runs.
+Load alone does not explain this one, because nothing else was running.
+One possible cause is a save of one field that overwrites the save of the field before it.
+That cause has not been tested.
+An owner who types quickly across these fields might lose one value in the same way.

@@ -33,3 +33,13 @@ for (const path of ["/../outside.txt", "/%2e%2e/outside.txt", "/%2e%2e%2foutside
     expect(reply.body.includes(marker), "static response escaped its build folder").toBe(false);
   })));
 }
+
+// The website once lived at /studio/. An old address must reach the root, and the reply must never
+// name a place taken from the request, or a crafted link could send the browser to another site.
+for (const path of ["/studio", "/studio/", "/studio/index.html", "/studio//elsewhere.example/", "/studio/%5celsewhere.example", "/studio/?next=https://elsewhere.example"]) {
+  it(`old website address ${path}: is sent to the fixed root and nowhere else`, async () => withWeb((ctx) => Effect.gen(function* () {
+    const reply = yield* Effect.promise(() => http(ctx, path, { headers: { Origin: undefined } }));
+    expect(reply.status).toBe(308);
+    expect(reply.headers.location).toBe("/");
+  })));
+}
