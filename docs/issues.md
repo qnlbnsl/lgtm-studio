@@ -13556,3 +13556,20 @@ The current file initially used an unbounded preformatted block under the editor
 That block could take the editor's available height.
 The comparison now scrolls within forty percent of the main area's height.
 The browser journey checks that both the comparison and the editor remain visible.
+
+## s8-files-5. Three existing browser journeys failed in the full run and passed unchanged in isolation.
+
+Found: 2026-11-14, in the final remote check for the Files migration.
+State: open.
+
+The full check passed all 580 Vitest files, with 8,799 tests passed and two tests skipped.
+The browser suite passed 55 journeys and failed three journeys.
+The new Files journey passed in that run.
+The Mocks journey did not see the "Editor changes saved" notice within five seconds at `studioMocks.ts:89`.
+The subscriptions and service-settings journey did not see "No unsaved changes." after saving the heartbeat at `studioService.ts:75`.
+The service-settings journey read two reviewers after saving four reviewers at `studioSettings.ts:65`.
+Issue 727 records the same heartbeat save symptom in an earlier full check.
+All three unchanged journeys passed when run together with one worker, with a total of three passed in 23.7 seconds.
+The separate credit check passed before that rerun.
+The full check remains a failed run.
+The underlying cause of these intermittent failures is not established.
