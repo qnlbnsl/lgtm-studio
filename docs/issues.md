@@ -13624,3 +13624,11 @@ It stores lead settings in their own guarded collection and clears it at sign-ou
 It checks switch boundaries before slicing the copied screen.
 It checks that the final build output retains the lead loader.
 It renders configuration status in plain words.
+
+## s8-psettings-18. The existing oversized-state browser journey failed intermittently during the Round 1 full check.
+
+The full remote check passed 57 browser journeys and failed the existing oversized-state journey.
+The failure was a five-second timeout waiting for the fake runner to receive the permission answer at `packages/web/e2e/oversized-state.spec.ts:187`.
+The same journey passed in isolation without a code change.
+The project settings journey passed in both its focused run and the full check.
+The cause of the intermittent permission-answer failure remains unconfirmed.
