@@ -13353,7 +13353,8 @@ The error stopped the page from drawing, so every project tab kept showing the "
 The snapshot mapping already put subscriptions on the machine `local`, so the fault appeared only after a visit to "Harnesses".
 `mapAccounts` in `packages/studio/src/git.ts` now puts each account on the machine `local` as well.
 The test in `packages/studio/test/git.test.ts` had pinned the empty machine name, and it now expects `local`.
-No browser journey opens a project chat after the "Harnesses" page, so the journeys did not catch it.
+The original browser journeys did not open a project chat after the "Harnesses" page.
+The s7-signin journey now covers that navigation and checks the composer.
 
 The numbers 843 and 844 are used by entries that another session holds uncommitted in the main checkout.
 
@@ -13517,3 +13518,140 @@ State: the owner ruled on 2026-11-14 that the website is the connected mock; the
 Pull request 47 built both screens in `packages/web`, which the service shows at `/`.
 The page the owner uses is the connected mock at `/studio/`, and it still says "Files is not connected yet".
 The three file commands are in the engine, so the connected mock can use them.
+
+## 860. The sign-in terminal brief conflicts with the rule against sending login tokens to a client.
+
+The sign-in terminal brief permits command output containing a token to reach the owner's initiating connection.
+Rule 6 in the security policy forbids sending harness login tokens to any client.
+The brief also forbids weakening that rule and requires the builder to stop if the work needs an exception.
+The existing harness request handlers redact output for the owner too.
+The builder stopped before changing the application.
+The owner resolved this on 2026-11-14 with the words "exception granted."
+The ruling in `.foundry/ruling.md` permits output only to the initiating owner connection and retains redaction of every registered secret.
+Implementation resumed under that ruling.
+
+## 861. The remote test helper fails before running checks in this worker environment.
+
+The required remote check exited with status 255 before running a test.
+Secure Shell rejected `/etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf` with `Bad owner or permissions`.
+Running the same helper with sandbox escalation reached the remote computer and started the required check.
+The worker did not change the system configuration or substitute local tests.
+
+## 862. The sandbox cannot open the local package store operation lock.
+
+The required local dependency installation exited with status 1.
+The package manager reported `ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK` because its store lock was on a read-only file system.
+The remote check installed its own dependencies and ran there.
+A sandbox escalation completed the same local installation with 299 packages afterward.
+
+## 863. The baseline Mocks browser journey did not see its editor-save confirmation.
+
+The baseline check passed 577 test files with 8,720 tests passed and two skipped.
+The browser stage passed 56 journeys and failed the existing Mocks journey.
+The assertion in `packages/web/e2e/support/studioMocks.ts:89` did not find "Editor changes saved" within five seconds.
+The check ran before the sign-in implementation and before the required merge from the base branch.
+The chained credit check did not run in that attempt.
+
+The same journey failed once more on 2026-11-14, in the full check of the merged sign-in branch, at the same line.
+It then passed five times in a row when it ran alone.
+Both failures happened while other builders' runs shared the test computer.
+The save notice appears only after the engine saves and the page reads the mocks and the design again, and it stays for under four seconds.
+The cause is not proven. The state is open.
+
+## 864. Opening Harnesses can discard metadata that a project's Chat still needs.
+
+The required browser regression found a second cause of the failure described in issue 845.
+The Harnesses read cleared every harness name before replacing configured harnesses.
+An agent using a harness absent from that response then lost the metadata its Chat view needs.
+The live build now retains metadata for harnesses used by current agents.
+The new browser journey opens Harnesses and then checks the project lead's composer.
+
+## 865. Cursor has no established variable for isolating its login credentials.
+
+Cursor documents `CURSOR_CONFIG_DIR` for its configuration.
+Its authentication documentation does not establish that this moves login credentials.
+The existing adapter also replaces that configuration directory with its own temporary tool configuration.
+The account creation request therefore refuses a second Cursor account with a fixed reason.
+A separate Cursor sign-in remains unavailable until the credential isolation can be established.
+
+## 866. Sign-in registration depended on the module import order.
+
+The first full implementation check found that two plain Node.js import orders could reach the sign-in table before its initialization.
+The same cycle could omit the six new handlers from the test loader's table.
+The registration now happens in the engine's existing delayed read-table getter.
+The import-order tests and the command-table completeness test cover the correction.
+
+## 867. A finished sign-in retained its disconnect listener.
+
+A focused cleanup assertion found one abort listener after the session ended.
+Repeated sign-ins on one connection could retain unnecessary session closures.
+The session now removes its listener when it begins ending.
+The test checks that no abort listener remains after the fake program exits.
+
+## 868. The older service browser fixture cannot create a separate login folder.
+
+The full browser run passed 58 journeys and failed the service-settings journey while adding its account.
+That journey used a synthetic harness with no shipped sign-in recipe or documented home variable.
+Its second account therefore cannot use the new separate-folder choice.
+The fixture now supplies a fake Claude program and adds a Claude account through the real engine.
+The journey still covers account settings, notifications, removal, and persistence.
+
+## 869. A newly added account could appear before its action cache was refreshed.
+
+The updated service journey found that a newly added row could change its action menu while the owner clicked it.
+The dialog had inserted the account reply before the older service cache finished its next read.
+Account creation now awaits a fresh service read before it closes the dialog or starts sign-in.
+That read also fills the cache used by account actions.
+The build checks the refresh export's replacement marker.
+
+## 870. The removal confirmation used a shadowed sign-in name.
+
+The service journey reached removal after the account-cache correction.
+Its existing local sign-in action shadowed the new imported namespace.
+That caused the folder-label call in the live removal confirmation to fail.
+The import now uses a distinct namespace name.
+The same journey verifies that the account can be removed afterward.
+
+## 871. The review found account compatibility and folder admission regressions.
+
+Existing accounts sharing a default folder could not be renamed or disabled.
+Account editing now checks folder uniqueness only when the effective folder changes.
+The account-login fixture again uses `/srv/login-a` for both historical accounts.
+It seeds the second account as historical data because new duplicate accounts are refused.
+Custom harnesses can again add default accounts without a shipped sign-in recipe.
+The older browser journey again uses `first`.
+The dialog offers separate folders only for the three harnesses with documented isolation.
+The existing-sign-in choice stores no folder and creates nothing.
+Advanced folders require an existing folder or an existing parent owned by the service user.
+Writable folders are refused.
+
+## 872. Account creation could leave folders and duplicate accounts behind.
+
+An append failure left a newly created login folder on disk.
+Schema errors escaped as defects.
+Retries minted another account.
+Account creation now cleans newly created empty directories after failure.
+Existing directories and nonempty directories are preserved.
+Schema errors become a fixed refusal.
+The durable receipt returns the original account on retries, including after restart.
+
+## 873. A missing native package could prevent engine startup.
+
+The sign-in module imported the native pseudo-terminal package at module load.
+A missing platform package therefore stopped unrelated service work.
+The package is now loaded inside the asynchronous start operation.
+A load failure returns a fixed refusal.
+The real service startup test blocks that package deliberately.
+The session manager also avoids signaling a group after its child exits.
+A process identifier can otherwise refer to an unrelated process later.
+
+## 874. The review found missing server coverage and inaccurate descriptions.
+
+The previous privacy tests bypassed the real remote procedure layer.
+New tests use authenticated sockets, the application access gate, and the production redactor.
+They cover connection isolation, socket closure, engine shutdown, resource limits, and a final symbolic link.
+The fake prompt ends with punctuation so redaction can release it without retaining a possible secret prefix.
+The security section now states the configured executable exception and the limits of process group termination.
+The terminal help explains the connection boundary and the shell history risk.
+The mock exports account refresh directly instead of relying on build injection.
+This supersedes the fixture workaround recorded in 868.

@@ -10,6 +10,12 @@ export type CommandName = Rpc.Tag<RpcGroup.Rpcs<typeof CommandsRpcGroup>> | "cli
 export const commandNames: ReadonlyArray<CommandName> = [...CommandsRpcGroup.requests.keys()] as Array<CommandName>
 
 const summaries: Record<CommandName, string> = {
+  "client.harness.account.add": "Add an account using an existing, managed separate, or advanced login folder.",
+  "client.harness.signin.start": "Run the account sign-in in a private owner terminal session.",
+  "client.harness.signin.write": "Send keys on the initiating connection. Standalone invocations open a new connection and cannot control an existing session. --text puts keys in shell history.",
+  "client.harness.signin.resize": "Resize the initiating owner terminal session. Standalone invocations open a new connection and cannot control an existing session.",
+  "client.harness.signin.stop": "Stop the sign-in process group and check local sign-in. Standalone invocations open a new connection and cannot control an existing session.",
+  "client.harness.signin.subscribe": "Read ephemeral sign-in output only on the initiating connection. Standalone invocations open a new connection and cannot control an existing session.",
   "client.service.version": "Read the running version and optionally compare the tracked remote branch over HTTPS without downloading code.",
   "client.service.restart": "Confirm sign-out of every page and stop running agents, then restart the service with its original arguments and environment.",
   "client.harness.status": "Read each harness's installed program, path and version.",

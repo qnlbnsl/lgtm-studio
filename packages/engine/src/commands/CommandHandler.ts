@@ -1,3 +1,4 @@
+import { closeSignIns } from "../harnesses/signinRequests.ts";
 import { serviceRestartPending, completeServiceRestart } from "../client/serviceControl.ts"
 import { recoverInstalls } from "../harnesses/lifecycle.ts";
 import { acceptCache, type CacheTarget } from "./cache.ts";
@@ -101,7 +102,7 @@ const replyFor = (snapshot: Snapshot, name: string, requestId: RequestId, envelo
   return { reply };
 };
 
-export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "pluginRoot" | "harnessDefaults" | "harnessPrograms"> & { readonly capacityHoldCondition?: import("../routing/deliveries.ts").CapacityHoldCondition }, lists: EngineLists = engineLists) =>
+export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "pluginRoot" | "harnessDefaults" | "harnessPrograms" | "credentials"> & { readonly capacityHoldCondition?: import("../routing/deliveries.ts").CapacityHoldCondition }, lists: EngineLists = engineLists) =>
   Layer.effect(CommandHandler, Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient;
     const log = yield* EventLog;
@@ -119,6 +120,7 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
       return yield* restore(Fiber.join(fiber));
     }));
     const runtime: Runtime = { ...configuration, lists, sql, log, runner, secrets, views };
+    yield* Effect.addFinalizer(() => Effect.sync(() => closeSignIns(log)));
     // Fix round 1, N-1: the first start loads the harness defaults.
     yield* loadFirstDefaults(runtime);
     yield* recoverInstalls(runtime);
@@ -249,7 +251,7 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
       if (Option.isSome(recovery) && !(yield* recovery.value.ready)) return yield* refused("recovering");
       const actor = yield* resolveCredential(credential, name);
       const rpc = lists.commands.requests.get(name);
-      if (rpc === undefined || RpcSchema.isStreamSchema(rpc.successSchema) || !lists.access[name]?.includes(actor._tag)) return yield* refused();
+      if (rpc === undefined || RpcSchema.isStreamSchema(rpc.successSchema) || !lists.access[name]?.includes(actor._tag)) return yield* refused(name.startsWith("client.harness.signin.") ? "Only the owner can run a sign-in session." : "command refused");
       const payload = yield* Effect.try({
         try: () => Schema.decodeUnknownSync(Schema.toType(rpc.payloadSchema))(rawPayload) as Record<string, unknown>,
         catch: () => refused(),

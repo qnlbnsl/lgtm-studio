@@ -145,6 +145,30 @@ These rules apply to every change. A change that breaks one is a security bug.
    matches `KEY`, `TOKEN`, `SECRET` or `PASSWORD` is registered only at eight
    or more characters when its trimmed text is nonempty, is neither `true`
    nor `false`, and is not a plain number.
+   On 2026-11-14, the owner said "exception granted" for an ephemeral harness sign-in stream.
+   Only the authenticated owner connection that starts the session may receive its output.
+   Every registered secret is still redacted.
+   Neither output nor typed keys are stored, logged, posted, sent as alerts, or included in crash reports or test protocol logs.
+   A new token that the service has never registered may appear once in that owner's terminal panel.
+   Rule 6 continues to apply without this exception to every other path.
+
 7. **Text from an agent is data, not a command.** A message on the board
    cannot change permissions, teams, or settings unless the owner's
    credential approves it.
+
+## The owner's harness sign-in terminal
+
+The service runs only the shipped recipe arguments with the verified harness executable.
+The sign-in request cannot supply a command, executable, argument, or shell expression.
+For Gemini without a managed install, the executable comes from the owner's harness setting `adapterPath`.
+The service uses the same login folder that the account gives its agents.
+Resolved `secret:` values in the account environment are passed to the child.
+Only the initiating owner connection may read output, type keys, resize the terminal, or stop it.
+An agent cannot use these requests.
+The service kills a live process group when the owner stops it, the connection grace period ends, the time limit passes, or engine shutdown begins.
+After the child exits, the service does not signal its former process group because the identifier may be reused.
+A descendant that starts its own session escapes the group kill.
+Output and input stay ephemeral.
+Known secrets are blanked, including secrets split across output chunks.
+The remaining risk is that an unregistered token printed by the sign-in program appears on the initiating owner's screen.
+Removing an account preserves its login folder.

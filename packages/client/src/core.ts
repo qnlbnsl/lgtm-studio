@@ -192,17 +192,18 @@ export const connectWith = (options: CoreConnectOptions): Effect.Effect<Client, 
           ),
           reads.release
         ).pipe(Effect.catchIf(
-          (error) => (isTransport(error) || error instanceof ClientError) && attempt < attempts,
+          (error) => (isTransport(error) || error instanceof ClientError) && attempt < ((tag.startsWith("client.harness.signin.") || tag === "client.harness.account.add") ? 1 : attempts),
           () => pause(attempt).pipe(Effect.andThen(() => run(attempt + 1, retryPayload(tag, request))))
         ))
       return run(1, payload)
     }
 
     const subscribe = (tag: string, success: Schema.Top) => (payload: any, callOptions?: any): Stream.Stream<unknown, unknown> => Stream.suspend(() => {
+      const transport = tag.startsWith("client.harness.signin.") ? reads : streams
       let after = payload.after
       let first = true
       const from = (failures: number): Stream.Stream<unknown, unknown> => Stream.unwrap(
-        streams.ensure.pipe(Effect.map((connection) => {
+        transport.ensure.pipe(Effect.map((connection) => {
           const request = first ? payload : { ...payload, requestId: globalThis.crypto.randomUUID(), after }
           first = false
           return ((connection.client as any)[tag](request, callOptions) as Stream.Stream<any, unknown>).pipe(
@@ -242,13 +243,13 @@ export const connectWith = (options: CoreConnectOptions): Effect.Effect<Client, 
               )
             }),
             Stream.tap((item) => Effect.sync(() => { after = item.sequence; failures = 0 })),
-            Stream.tapError((error) => isTransport(error) ? streams.drop(connection) : Effect.void),
-            Stream.ensuring(streams.release(connection))
+            Stream.tapError((error) => isTransport(error) ? transport.drop(connection) : Effect.void),
+            Stream.ensuring(transport.release(connection))
           )
         }))
       ).pipe(Stream.catchIf(
         (error) => isTransport(error) || error instanceof ClientError,
-        (error) => failures + 1 >= attempts ? Stream.fail(error) : Stream.fromEffect(pause(failures + 1)).pipe(
+        (error) => failures + 1 >= ((tag.startsWith("client.harness.signin.") || tag === "client.harness.account.add") ? 1 : attempts) ? Stream.fail(error) : Stream.fromEffect(pause(failures + 1)).pipe(
           Stream.drain, Stream.concat(Stream.suspend(() => from(failures + 1)))
         )
       ))

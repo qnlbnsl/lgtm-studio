@@ -88,13 +88,13 @@ const pieceFollowers = (lists: EngineLists) => Layer.effectDiscard(Effect.gen(fu
   }
 }));
 
-const handlerServices = (configuration: Pick<Runtime, "home" | "stateFolder" | "pluginRoot" | "harnessDefaults" | "harnessPrograms">, lists: EngineLists) =>
+const handlerServices = (configuration: Pick<Runtime, "home" | "stateFolder" | "pluginRoot" | "harnessDefaults" | "harnessPrograms" | "credentials">, lists: EngineLists) =>
   pieceFollowers(lists).pipe(Layer.provideMerge(CommandHandler.layer({ ...configuration,
     capacityHoldCondition: (id, snapshot) => withinCapacityLimit(snapshot, id, capacityHoldCount(snapshot, id)),
   }, lists)));
 
 // Importing this module never starts the CLI or changes the process environment.
-export const buildServices = (configuration: Pick<Runtime, "home" | "stateFolder" | "pluginRoot" | "harnessDefaults" | "harnessPrograms">, lists: EngineLists = engineLists) =>
+export const buildServices = (configuration: Pick<Runtime, "home" | "stateFolder" | "pluginRoot" | "harnessDefaults" | "harnessPrograms" | "credentials">, lists: EngineLists = engineLists) =>
   handlerServices(configuration, lists).pipe(Layer.provideMerge(baseServices(lists)));
 
 const program = (inheritedToken: string | undefined, webPassword: Redacted.Redacted<string> | undefined) => Effect.scoped(Effect.gen(function* () {
@@ -153,7 +153,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
     });
     const managedRoot = userHarnessPrefix(process.env.HOME ?? folder);
     const harnessPath = (process.env.PATH ?? "").split(delimiter).filter((path) => isAbsolute(path) && resolve(path) !== managedRoot && !resolve(path).startsWith(managedRoot + "/")).join(delimiter);
-    const configuration = { home: process.env.HOME ?? folder, stateFolder: folder, pluginRoot: fileURLToPath(new URL("../../..", import.meta.url)),
+    const configuration = { credentials, home: process.env.HOME ?? folder, stateFolder: folder, pluginRoot: fileURLToPath(new URL("../../..", import.meta.url)),
       harnessDefaults: installedHarnessDefaults(harnessPath),
       harnessPrograms: makeHarnessPrograms({ home: process.env.HOME ?? folder, path: harnessPath, stateFolder: folder, credentials }) };
     const base = baseServices(lists);

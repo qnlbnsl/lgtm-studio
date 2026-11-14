@@ -30,3 +30,5 @@ export * from "./harnessInstallation.ts"
 
 export * from "./workflows.ts"
 export * from "./workflowCommands.ts"
+
+export { SignInOutput, SignInCheck } from "./harnessSignIn.ts"

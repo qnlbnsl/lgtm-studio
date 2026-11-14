@@ -1,4 +1,4 @@
-import type { Event, ClientStreamItem } from "@lgtm/contracts";
+import type { Event, ClientStreamItem, SignInOutput } from "@lgtm/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
 import type { Input } from "../commands/internal.ts";
@@ -19,7 +19,7 @@ export { agentReadReply } from "../client/reads/index.ts";
 
 export interface ReadReply { readonly reply: Record<string, unknown>; readonly marks?: ReadonlyArray<Event>; readonly deliveries?: ReadonlyArray<import("../routing/pieceDelivery.ts").DeliveryRequest>; readonly sideRows?: import("../log/EventLog.ts").SideRows }
 export type ReadHandler = (input: Input, payload: Record<string, unknown>) =>
-  Effect.Effect<ReadReply, any, any> | Stream.Stream<ClientStreamItem, any, any>;
+  Effect.Effect<ReadReply, any, any> | Stream.Stream<ClientStreamItem | SignInOutput, any, any>;
 export const reads = {
   ...harnessReads,
   ...clientReads,

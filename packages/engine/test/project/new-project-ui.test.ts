@@ -157,9 +157,10 @@ live("reads durable unfinished intent after lost write and writer restart, retai
   yield* provideRestart(rig, runner.layer, Effect.gen(function* () {
     yield* recover
     const api = yield* connected(); activeClient = api
-    success(yield* call(owner, "accounts", { operation: "add", account: { id: "other", harness: "cursor", enabled: true } }))
-    success(yield* call(owner, "accounts set-secret", { accountId: "other", name: "CURSOR_API_KEY", nonce: freshRequest(), value: Redacted.make("synthetic-other-project-readiness") }))
-    yield* api["project.settings.set"]({ requestId: freshRequest(), settings: { workspaceFolder: rig.root, shell: "bash", lead: { harness: pending.lead.harness,
+    success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("claude", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }] }) }))
+    success(yield* call(owner, "accounts", { operation: "add", account: { id: "other", harness: "claude", enabled: true } }))
+    success(yield* call(owner, "accounts set-secret", { accountId: "other", name: "ANTHROPIC_API_KEY", nonce: freshRequest(), value: Redacted.make("synthetic-other-project-readiness") }))
+    yield* api["project.settings.set"]({ requestId: freshRequest(), settings: { workspaceFolder: rig.root, shell: "bash", lead: { harness: "claude" as never,
       account: { _tag: "named", accountId: "other" as never }, permission: "ask" } } })
     session.correctRefusal(); expect(session.getSnapshot().attempt).toBe(frozen)
     yield* promise(() => session.refresh()); expect(session.getSnapshot().pending[0]?.lead).toEqual(pending.lead)

@@ -21,6 +21,7 @@
     "@lgtm/t3-effect-acp": "workspace:*",
     "@lgtm/t3-node-sqlite": "workspace:*",
     "@lgtm/t3-provider-instance": "workspace:*",
+    "@lydell/node-pty": "1.2.0-beta.15",
     "effect": "catalog:",
     "nodemailer": "10.5.0",
     "parse5": "8.1.0",
