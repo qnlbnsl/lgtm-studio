@@ -10,7 +10,7 @@ import { readPreference } from "./preferences.ts"
 
 export function rememberedTab(projectId: string, teamId?: string): WorkspaceTab {
   const value = readPreference(`lgtm-tab:${scopeKey(projectId, teamId)}`)
-  return value === "chat" || value === "git" || value === "terminal" || value === "settings" || value === "tasks" && teamId !== undefined
+  return value === "chat" || value === "git" || value === "files" || value === "terminal" || value === "settings" || value === "tasks" && teamId !== undefined
     ? value : teamId === undefined ? "board" : "chat"
 }
 export function NavigationTree({ route, attentionOnly }: { readonly route: ShellRoute; readonly attentionOnly: boolean }) {

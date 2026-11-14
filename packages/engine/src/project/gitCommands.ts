@@ -8,6 +8,8 @@ import { callerKey } from "../identity/caller.ts"
 import { own, projectKey, projectView } from "./view.ts"
 import { reviewPlanners, reviewReads } from "./gitReview.ts"
 import { saveMockEditor } from "./mockEditor.ts"
+import { fileReads, writeFile } from "./files.ts"
+import { safePath } from "./gitApi.ts"
 
 type Raw = Record<string, unknown>
 const workspaceRead = (run: (git: GitService, path: string, raw: Raw, agentRead: boolean) => GitOperation<unknown>): ReadHandler =>
@@ -42,6 +44,7 @@ const discover: ReadHandler = (input, raw) => withGit(input, (git) => Effect.gen
 }))
 export const gitReads = {
   ...reviewReads,
+  ...fileReads,
   "project.repository.discover": discover,
   "project.branches": repositoryRead((git, path) => git.branches(path)),
   "project.checkouts": repositoryRead((git, path) => git.worktrees(path)),
@@ -60,6 +63,7 @@ export const gitReads = {
 } satisfies Record<string, ReadHandler>
 export const gitPlanners = {
   "project.mocks.editor.save": saveMockEditor,
+  "project.files.write": writeFile,
   ...reviewPlanners,
   "project.stage": mutate((git, path, raw) => git.stage(path, raw.path as string)),
   "project.unstage": mutate((git, path, raw) => git.unstage(path, raw.path as string)),
@@ -69,7 +73,8 @@ export const gitPlanners = {
   "project.commit": mutate((git, path, raw, input) => Effect.gen(function* () {
     const attempt = own(projectView(input.snapshot).gitAttempts, projectKey(callerKey(input.actor), raw.requestId as string))
     if (attempt !== undefined && JSON.stringify(yield* gitCall(git.mutationIdentity(path))) !== JSON.stringify(attempt.before)) return yield* refused("Git: stale_state")
-    return { head: yield* gitCall(git.commit(path, raw.message as string)) }
+    if (raw.path !== undefined) yield* safePath(input, raw.path as string)
+    return { head: yield* gitCall(git.commit(path, raw.message as string, raw.path as string | undefined)) }
   })),
   "project.fetch": mutate((git, path) => git.fetch(path)),
   "project.pull": mutate((git, path) => git.pull(path)),

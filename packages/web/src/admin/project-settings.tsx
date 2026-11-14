@@ -1,9 +1,13 @@
-import { useEffect, useRef, useState, type FormEvent } from "react"
-import { Project, type RequestId } from "@lgtm/contracts"
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react"
+import { Project, permissionLevels, type AgentChoices, type AgentConfiguration, type AgentId, type EventSequence, type RequestId } from "@lgtm/contracts"
+import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import type { Client } from "@lgtm/client/browser"
 import { useMutationDisabled, useShellData } from "../data/ShellDataProvider.tsx"
 import { shellHref, type ShellRoute } from "../routes.ts"
+import { teamAgents } from "../shell/model.ts"
+import { withClient } from "../thread/client.ts"
+import { beforeRequest, durableRefusal } from "../thread/requestOutcome.ts"
 import { visibleText } from "../thread/text.tsx"
 import { commandOutcome, requestId, useAdminApi } from "./api.ts"
 import { AdminConfirm } from "./confirm.tsx"
@@ -110,8 +114,6 @@ function ProjectSettings({ route }: { readonly route: Route }) {
   return <section className="admin-page" aria-label="Project settings">
     <div className="admin-page-top"><h2>Project settings</h2><div className="admin-actions">
       <button disabled={busy} onClick={() => { void load(); data.retry() }}>Refresh project settings</button>
-      {project && (project.archivedAt !== undefined ? <button className="admin-primary" disabled={locked} onClick={() => { void write({ kind: "restore" }) }}>Restore</button>
-        : <button disabled={locked} onClick={() => setConfirmArchive(true)}>Archive</button>)}
     </div></div>
     {message && <p role="status">{message}</p>}
     {offline && <p className="admin-note">Reconnect before changing project settings.</p>}
@@ -120,7 +122,6 @@ function ProjectSettings({ route }: { readonly route: Route }) {
     {uncertain && <div className="admin-actions"><p>The previous action still needs confirmation.</p><button disabled={busy || offline || !data.complete} onClick={() => { void write() }}>Retry same action</button></div>}
     {project === undefined ? <p role="status">{data.complete ? "Project not found." : "Loading project settings…"}</p> : <>
       {project.archiving && <p className="admin-warning">Archiving is unfinished. Some agents may already be stopped. Restore is unavailable until archiving finishes.</p>}
-      {project.archiving && !uncertain && <button disabled={busy || offline || !data.complete} onClick={() => { void write({ kind: "archive" }) }}>Retry archive</button>}
       {project.archivedAt !== undefined && <p>Archived {new Date(project.archivedAt).toLocaleString()}. All projects still lists it.</p>}
       <section className="admin-settings-section"><h3>Project</h3>
         <form aria-label="Rename project" key={`name-${project.name}`} onSubmit={(event) => save(event, "rename")}>
@@ -129,14 +130,26 @@ function ProjectSettings({ route }: { readonly route: Route }) {
         <form aria-label="Project goal" key={`goal-${project.goal}`} onSubmit={(event) => save(event, "goal")}>
           <fieldset disabled={locked}><label>Goal<textarea name="goal" defaultValue={project.goal} maxLength={8192} /></label><div><button type="submit">Save goal</button></div></fieldset>
         </form>
+        <Stub><label>Task label prefix<input aria-label="Task label prefix" disabled placeholder="Not set" /></label></Stub>
       </section>
-      <section className="admin-settings-section"><h3>Where this project runs</h3>
+      <section className="admin-settings-section"><h3>Repository and machine</h3>
         <dl className="admin-facts"><dt>Repository</dt><dd>{visibleText(repository?.name ?? "Repository unavailable")}</dd>
-          <dt>Branch</dt><dd><code>{visibleText(workspace?.branch ?? "Branch unavailable")}</code></dd>
+          <dt>Base branch</dt><dd><Stub><select aria-label="Base branch" disabled><option>Repository default</option></select></Stub></dd>
+          <dt>Project branch</dt><dd><code>{visibleText(workspace?.branch ?? "Branch unavailable")}</code></dd>
           <dt>Checkout</dt><dd>{workspace?.checkout === "main" ? "Main checkout" : workspace?.checkout === "worktree" ? "Project worktree" : "Checkout type unavailable"}</dd>
           <dt>Folder</dt><dd><code>{visibleText(workspace?.path ?? "Folder unavailable")}</code></dd>
           <dt>Machine</dt><dd>{project.machineId === "local" ? "This computer" : visibleText(project.machineId)} · <a href={`${shellHref({ page: "service", service: "machines" })}?project=${encodeURIComponent(project.projectId)}`}>Change placement</a></dd>
         </dl>
+        <Stub><label>Lead subscription<select aria-label="Lead subscription" disabled>
+          <option>{visibleText(data.snapshot?.agents.find((agent) => agent.agentId === project.leadAgentId)?.account ?? "Current account")}</option>
+        </select></label></Stub>
+        <LeadConfiguration key={project.leadAgentId} agentId={project.leadAgentId} sequence={data.snapshot?.sequence}
+          disabled={offline || !data.complete || project.archiving === true} />
+      </section>
+      <AgentRules projectId={project.projectId} />
+      <Assignment />
+      <section className="admin-settings-section" aria-label="Teams"><h3>Teams</h3>
+        <TeamsTable projectId={project.projectId} />
       </section>
       <section className="admin-settings-section"><h3>Terminal</h3>
         <label>Preferred shell<select aria-label="Preferred shell" disabled={locked} value={project.shell ?? "default"} onChange={(event) => { void write({ kind: "shell", shell: event.currentTarget.value }) }}>
@@ -144,10 +157,153 @@ function ProjectSettings({ route }: { readonly route: Route }) {
           <option value="default">Machine default</option><option value="bash">Bash</option><option value="zsh">Zsh</option>
         </select></label><p className="admin-note">Used for new terminal sessions in this project’s worktree.</p>
       </section>
+      <section className="admin-settings-section" aria-label="Archive or delete"><h3>Archive or delete</h3>
+        {project.archivedAt !== undefined
+          ? <div className="admin-actions"><button className="admin-primary" disabled={locked} onClick={() => { void write({ kind: "restore" }) }}>Restore</button>
+            <p className="admin-note">The project returns to the sidebar. Its agents stay stopped.</p></div>
+          : <div className="admin-actions"><button disabled={locked} onClick={() => setConfirmArchive(true)}>Archive</button>
+            {project.archiving && !uncertain && <button disabled={busy || offline || !data.complete} onClick={() => { void write({ kind: "archive" }) }}>Retry archive</button>}
+            <p className="admin-note">Archiving stops the project’s agents and hides it. Nothing is deleted.</p></div>}
+        <div className="admin-actions"><Stub><button className="admin-danger" disabled>Delete</button></Stub>
+          <p className="admin-note">Deleting removes the project’s agents, threads, worktrees and branch.</p></div>
+      </section>
     </>}
     {confirmArchive && <AdminConfirm title="Archive this project?" confirm="Archive" busy={busy} disabled={offline || !data.complete} onCancel={() => setConfirmArchive(false)} onConfirm={() => { void write({ kind: "archive" }) }}>
       <p>LGTM Studio stops the project’s agents before archiving it. The sidebar and Home leave it out. All projects still lists it.</p>
       <p>Restoring the project does not resume its agents.</p>
     </AdminConfirm>}
+  </section>
+}
+
+// The project lead's model and effort. Choices come from the engine for this
+// agent; a change is the ordinary `configure` command with its own identity.
+// A lost acknowledgement keeps that identity so the same change can be replayed.
+type LeadAttempt = { readonly requestId: RequestId; readonly model?: string; readonly effort?: string; readonly after: EventSequence | undefined; readonly status: "sending" | "uncertain" }
+function LeadConfiguration({ agentId, sequence, disabled }: { readonly agentId: AgentId; readonly sequence: number | undefined; readonly disabled: boolean }) {
+  const [facts, setFacts] = useState<{ readonly configuration: AgentConfiguration; readonly choices: AgentChoices }>()
+  const [available, setAvailable] = useState<boolean>()
+  const [attempt, setAttempt] = useState<LeadAttempt>()
+  const [note, setNote] = useState("")
+  const [refresh, setRefresh] = useState(0)
+  const life = useRef<AbortController | undefined>(undefined)
+  useEffect(() => { const controller = new AbortController(); life.current = controller; return () => controller.abort() }, [])
+  useEffect(() => {
+    const controller = new AbortController()
+    void withClient((client) => client["client.agent.configuration"]({ requestId: requestId(), agentId }), controller.signal).then((reply) => {
+      if (controller.signal.aborted) return
+      setFacts({ configuration: reply.configuration, choices: { models: reply.models, efforts: reply.efforts } })
+      setAvailable(true)
+    }).catch(() => { if (!controller.signal.aborted) setAvailable(false) })
+    return () => controller.abort()
+  }, [agentId, sequence, refresh])
+  const send = async (change: Omit<LeadAttempt, "status" | "after"> & { readonly after?: EventSequence | undefined }, replay: boolean) => {
+    const signal = life.current?.signal
+    if (signal === undefined || signal.aborted) return
+    const after = replay ? change.after : await beforeRequest(signal)
+    if (signal.aborted) return
+    const pending: LeadAttempt = { ...change, after, status: "sending" }
+    setAttempt(pending); setNote("")
+    const payload = { requestId: pending.requestId, agentId, ...(pending.model === undefined ? {} : { model: pending.model }), ...(pending.effort === undefined ? {} : { effort: pending.effort }) }
+    try {
+      const result = await withClient((client) => Effect.result(client.configure(payload)), signal)
+      if (signal.aborted) return
+      if (result._tag === "Success") { setAttempt(undefined); setNote("Lead setting recorded. It applies when the engine acknowledges it.") }
+      else {
+        const reason = await durableRefusal("configure", pending.requestId, after, signal)
+        if (signal.aborted) return
+        if (reason === undefined) { setAttempt({ ...pending, status: "uncertain" }); setNote("Could not confirm the lead setting. Retry the same change to recover its result.") }
+        else { setAttempt(undefined); setNote(`The engine refused this setting: ${visibleText(reason)}. Choose another setting.`) }
+      }
+    } catch {
+      if (!signal.aborted) { setAttempt({ ...pending, status: "uncertain" }); setNote("Could not confirm the lead setting. Retry the same change to recover its result.") }
+    } finally { if (!signal.aborted) setRefresh((value) => value + 1) }
+  }
+  const choose = (axis: "model" | "effort", value: string) => {
+    if (disabled || attempt !== undefined || facts === undefined) return
+    if (value === facts.configuration.desired[axis]) return
+    if (!facts.choices[axis === "model" ? "models" : "efforts"].options.some((option) => option.id === value)) return
+    void send({ requestId: requestId(), [axis]: value }, false)
+  }
+  const locked = disabled || attempt !== undefined || available !== true
+  const picker = (axis: "model" | "effort") => {
+    const list = facts?.choices[axis === "model" ? "models" : "efforts"]
+    const value = facts?.configuration.desired[axis] ?? ""
+    const label = axis === "model" ? "Lead model" : "Lead effort"
+    return <label>{label}<select aria-label={label} disabled={locked || !list?.options.length} value={value} onChange={(event) => choose(axis, event.currentTarget.value)}>
+      {(value === "" || !list?.options.some((option) => option.id === value)) && <option value={value}>{value === "" ? "Not chosen" : visibleText(value)}</option>}
+      {list?.options.map((option) => <option key={option.id} value={option.id}>{visibleText(option.label ?? option.id)}</option>)}
+    </select></label>
+  }
+  return <div className="admin-lead" aria-label="Project lead configuration">
+    {picker("model")}
+    {facts && facts.choices.efforts.options.length > 0 ? picker("effort") : facts && <p className="admin-note">This model has no effort setting.</p>}
+    {available === false && <p className="admin-note">The lead’s model choices are unavailable.</p>}
+    {facts && <p className="admin-note">Configuration: {facts.configuration.status}{facts.configuration.applied?.model !== undefined ? ` · applied ${visibleText(facts.configuration.applied.model)}` : ""}</p>}
+    {attempt?.status === "sending" && <p role="status">Saving the lead setting…</p>}
+    {note && <p role="status">{note}</p>}
+    {attempt?.status === "uncertain" && <button disabled={disabled} onClick={() => { void send(attempt, true) }}>Retry same lead change</button>}
+  </div>
+}
+
+function TeamsTable({ projectId }: { readonly projectId: Project["projectId"] }) {
+  const data = useShellData()
+  const teams = data.navigation?.teams.filter((team) => team.projectId === projectId) ?? []
+  if (teams.length === 0) return <p className="admin-note">No teams</p>
+  return <div className="admin-table-wrap"><table className="admin-table">
+    <thead><tr><th>Team</th><th>Agents</th><th>Branch</th><th>Need-to-know</th></tr></thead>
+    <tbody>{teams.map((team) => {
+      const branch = data.navigation?.workspaces.find((row) => row.worktreeId === team.worktreeId)?.branch
+      return <tr key={team.teamId}>
+        <td><a href={shellHref({ page: "project", projectId, teamId: team.teamId, tab: "chat" })}>{visibleText(team.name)}</a></td>
+        <td>{teamAgents(team, data.snapshot).length}</td>
+        <td><code>{visibleText(branch ?? "Branch unavailable")}</code></td>
+        <td><Stub><input type="checkbox" aria-label={`Need-to-know for ${team.name}`} disabled /></Stub></td>
+      </tr>
+    })}</tbody>
+  </table></div>
+}
+
+// A control the mock shows but the engine cannot serve yet. It is drawn
+// disabled, and hovering it says why. See docs/issues.md issue 855.
+export const engineWorkNeeded = "Engine work needed"
+function Stub({ children }: { readonly children: ReactNode }) {
+  return <span className="admin-stub" title={engineWorkNeeded}>{children}</span>
+}
+
+function AgentRules({ projectId }: { readonly projectId: Project["projectId"] }) {
+  const data = useShellData()
+  const ids = new Set(data.navigation?.agents.filter((agent) => agent.projectId === projectId).map((agent) => agent.agentId) ?? [])
+  const agents = data.snapshot?.agents.filter((agent) => ids.has(agent.agentId)) ?? []
+  const levels = [...new Set(agents.map((agent) => agent.permission))]
+  const current = levels.length === 1 ? levels[0] : undefined
+  const switches = [
+    ["Write tests first", "Tests are written before the code, and they must fail first."],
+    ["Agent review", "Reviewers score each change in rounds before it reaches you."],
+    ["Remove agent credits when merging", "Strips the co-author lines agents add to their commits."]
+  ] as const
+  return <section className="admin-settings-section" aria-label="Agents"><h3>Agents</h3>
+    <p className="admin-note">{agents.length === 1 ? "1 agent" : `${agents.length} agents`} in this project.</p>
+    <Stub><label>Permission<select key={current ?? ""} aria-label="Permission" disabled defaultValue={current ?? ""}>
+      {current === undefined && <option value="">{agents.length === 0 ? "No agents" : "The agents differ"}</option>}
+      {permissionLevels.map((level) => <option key={level} value={level}>{level}</option>)}
+    </select></label></Stub>
+    {switches.map(([label, hint]) => <div key={label}><Stub><label className="admin-check"><input type="checkbox" disabled />{label}</label></Stub>
+      <p className="admin-note">{hint}</p></div>)}
+  </section>
+}
+
+const workKinds = ["Plan", "Build", "Review", "Test"] as const
+function Assignment() {
+  return <section className="admin-settings-section" aria-label="Assignment">
+    <div className="admin-actions"><h3>Assignment</h3><Stub><button disabled>Approve</button></Stub></div>
+    <p className="admin-note">The project lead proposes a harness, model and effort for each kind of work, and you approve it.</p>
+    <div className="admin-table-wrap"><table className="admin-table">
+      <thead><tr><th>Work</th><th>Harness</th><th>Model</th><th>Effort</th></tr></thead>
+      <tbody>{workKinds.map((kind) => <tr key={kind}><td>{kind}</td>
+        {(["harness", "model", "effort"] as const).map((axis) => <td key={axis}><Stub><select aria-label={`${kind} ${axis}`} disabled><option>Not set</option></select></Stub></td>)}
+      </tr>)}</tbody>
+    </table></div>
+    <div className="admin-actions"><Stub><label className="admin-check">Every row<select aria-label="Every row" disabled><option>Not set</option></select></label></Stub>
+      <Stub><button disabled>Apply</button></Stub></div>
   </section>
 }

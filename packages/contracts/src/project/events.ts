@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema"
 import { GitAttempt, GitEvidence, GitMainReview } from "./git.ts"
-import { CreationFolderIdentity, OwnerTaskNotification, Project, ProjectCreation, ProjectId, ProjectName, ProjectSettings, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskId, TaskState, Team, Workspace } from "./schema.ts"
+import { CreationFolderIdentity, FileSaveNotice, OwnerTaskNotification, Project, ProjectCreation, ProjectId, ProjectName, ProjectSettings, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskId, TaskState, Team, Workspace } from "./schema.ts"
 
 import { ProjectMockEvent } from "./mocks.ts"
 import { ProjectDesignEvent } from "./design.ts"
@@ -39,6 +39,7 @@ export const ProjectEvent = Schema.Union([
   Schema.TaggedStruct("project.SprintCompleted", { projectId: ProjectId, sprintId: SprintId, completion: ProjectName, evidence: ProjectText }),
   Schema.TaggedStruct("project.TaskAdded", Task.fields),
   Schema.TaggedStruct("project.OwnerTaskNotificationPlanned", OwnerTaskNotification.fields),
+  Schema.TaggedStruct("project.FileSaveNoticePlanned", FileSaveNotice.fields),
   Schema.TaggedStruct("project.TaskChanged", { projectId: ProjectId, taskId: TaskId,
     state: Schema.optionalKey(TaskState), title: Schema.optionalKey(ProjectName), owner: Schema.optionalKey(Task.fields.owner),
     teamId: Schema.optionalKey(Task.fields.teamId), sprintId: Schema.optionalKey(SprintId), worktreeId: Schema.optionalKey(Task.fields.worktreeId),

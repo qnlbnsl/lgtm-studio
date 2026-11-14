@@ -49,6 +49,7 @@ export const eventStructure: RedactionStructure = { taggedFields: {
   HarnessInstallFinished: { harnessId: identity, operationRequestId: identity, state: identity },
   QuestionAsked: requestLinks, PermissionRequested: requestLinks,
   "project.OwnerTaskNotificationPlanned": { notificationId: identity, projectId: identity, taskId: identity, targetAgentId: identity },
+  "project.FileSaveNoticePlanned": { noticeId: identity, projectId: identity, worktreeId: identity, targetAgentId: identity },
   "project.DesignRecorded": { projectId: identity, revisionId: identity, fileFingerprint: identity, tokensFingerprint: identity,
     design: { fields: { repoId: identity, worktreeId: identity, components: { elements: { fields: { componentId: identity, fingerprint: identity } } } } } },
   "project.SetupCompleted": { projectId: identity },

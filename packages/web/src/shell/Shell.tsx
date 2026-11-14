@@ -18,6 +18,7 @@ import { parseShellRoute, scopeKey, shellHref, type ShellRoute, type WorkspaceTa
 import { Machines } from "../admin/machines.tsx"
 import { Subscriptions } from "../admin/subscriptions.tsx"
 import { ProjectSettingsPage } from "../admin/project-settings.tsx"
+import { FilesPage } from "../files/FilesPage.tsx"
 import { HomePage } from "../pages/HomePage.tsx"
 import { ProjectPage } from "../pages/ProjectPage.tsx"
 import { RepositoryPage, RepositoryTabs } from "../pages/RepositoryPage.tsx"
@@ -37,7 +38,7 @@ import { QuickSwitcher } from "./QuickSwitcher.tsx"
 
 const serviceNames = { alerts: "Notifications", machines: "Machines", subscriptions: "Subscriptions", settings: "Service settings" } as const
 const serviceIcons: Record<keyof typeof serviceNames, IconName> = { alerts: "phone", machines: "machines", subscriptions: "subscriptions", settings: "settings" }
-const tabNames: Record<WorkspaceTab, string> = { board: "Board", chat: "Chat", terminal: "Terminal", git: "Git", mocks: "Mocks", settings: "Project settings", tasks: "Tasks" }
+const tabNames: Record<WorkspaceTab, string> = { board: "Board", chat: "Chat", terminal: "Terminal", git: "Git", files: "Files", mocks: "Mocks", settings: "Project settings", tasks: "Tasks" }
 
 function OverflowRow({ children, inert = false }: { readonly children: ReactNode; readonly inert?: boolean }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -342,7 +343,7 @@ export function Shell({ onSessionExpired, onLogout, logoutBusy, message }: {
         const current = tabs.indexOf(document.activeElement as HTMLAnchorElement)
         const next = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : (current + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length
         event.preventDefault(); tabs[next]?.click(); tabs[next]?.focus()
-      }}>{(["board", ...(hasScreens || route.page === "project" && route.tab === "mocks" ? ["mocks" as const] : []), "chat", "terminal", "git", "settings", ...(scope.team ? ["tasks" as const] : [])] as const).map((tab) => {
+      }}>{(["board", ...(hasScreens || route.page === "project" && route.tab === "mocks" ? ["mocks" as const] : []), "chat", "terminal", "git", "files", "settings", ...(scope.team ? ["tasks" as const] : [])] as const).map((tab) => {
         const selected = route.page === "thread" ? tab === "chat" : route.page === "project" ? route.tab === tab : tab === "board"
         const target = tab === "chat" && dockEligible && scope.team === undefined && dockAgentId !== undefined ? { page: "thread" as const, agentId: dockAgentId } : projectRoute(tab)
         return <a key={tab} role="tab" aria-selected={selected} tabIndex={selected ? 0 : -1} href={shellHref(target)}>{tabNames[tab]}</a>
@@ -377,6 +378,11 @@ export function Shell({ onSessionExpired, onLogout, logoutBusy, message }: {
           : route.page === "project" && route.tab === "mocks" ? <ProjectMocksPage projectId={route.projectId} approvals={approvals} />
           : route.page === "project" && route.tab === "settings" ? <ProjectSettingsPage route={route} />
           : route.page === "project" && (route.tab === "board" || route.tab === "tasks") ? <ProjectPage route={route} {...(hasScreens === undefined ? {} : { hasScreens })} />
+          : route.page === "project" && route.tab === "files" && scope.project && scope.inspectedWorkspace ? <FilesPage
+            project={scope.project} workspace={scope.inspectedWorkspace} file={route.file} agents={data.snapshot?.agents ?? []}
+            onOpen={(file) => { const { file: _file, ...rest } = route; navigate(file === undefined ? rest : { ...rest, file }) }}
+            gitHref={shellHref({ page: "project", projectId: route.projectId, tab: "git", ...(route.teamId === undefined ? {} : { teamId: route.teamId }), ...(route.workspaceId === undefined ? {} : { workspaceId: route.workspaceId }) })}
+            mutationDisabled={mutationDisabled} connection={data.connection} onSessionExpired={expireSession} />
           : route.page === "project" && route.tab === "git" && scope.repository && scope.assignedWorkspace && scope.inspectedWorkspace && data.navigation ? <GitPage
             repository={scope.repository} projects={data.navigation.projects} teams={data.navigation.teams} workspaces={data.navigation.workspaces}
             assignedWorkspaceId={scope.assignedWorkspace.worktreeId} inspectedWorkspaceId={scope.inspectedWorkspace.worktreeId}

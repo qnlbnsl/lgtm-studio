@@ -3,7 +3,9 @@ import { isAbsolute, relative, resolve, extname } from "node:path";
 import * as Effect from "effect/Effect";
 import * as HttpServerResponse from "effect/http/HttpServerResponse";
 
-const policy = "default-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+// Images may also come from blob URLs: the Files tab shows a worktree's image
+// from bytes it read through the client API, never from a repository URL.
+const policy = "default-src 'self'; script-src 'self'; img-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
 const types: Record<string, string> = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".ico": "image/x-icon", ".woff2": "font/woff2" };
 export const staticResponse = (root: string, raw: string, head: boolean, displayOrigin?: string) => Effect.promise(async () => {
   try {

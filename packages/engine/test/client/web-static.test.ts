@@ -11,7 +11,7 @@ it("5.10 static policy: catches weakening the browser policy or serving inline s
   for (const path of ["/", "/index.html", "/app.js"]) {
     const reply = yield* Effect.promise(() => http(ctx, path, { headers: { Origin: undefined } }));
     expect(reply.status).toBe(200);
-    expect(reply.headers["content-security-policy"]).toBe("default-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+    expect(reply.headers["content-security-policy"]).toBe("default-src 'self'; script-src 'self'; img-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
     if (path !== "/app.js") expect(reply.body).not.toMatch(/<script(?![^>]*\bsrc=)[^>]*>[\s\S]*?\S[\s\S]*?<\/script>/i);
   }
 })));

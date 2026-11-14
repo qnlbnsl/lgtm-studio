@@ -72,8 +72,8 @@ where the code lives in LGTM Studio, and where the licence text is.
   packages listed in third_party/codemirror/README.md
   Copyright (C) 2018-2024 Marijn Haverbeke and others. MIT License.
   In LGTM Studio: third_party/codemirror/codemirror.bundle.js, one unchanged
-  bundle of those packages, loaded only by the web mock in design/mock/ as the
-  Files tab's editor. No production code uses it.
+  bundle of those packages. The web mock in design/mock/ and the web page's
+  Files tab (packages/web/src/files/editor.tsx) load it as the file editor.
   The versions, build command and checksum are listed in
   third_party/codemirror/README.md.
   Licence texts, one for each package: third_party/codemirror/LICENSE.

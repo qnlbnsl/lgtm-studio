@@ -29,7 +29,7 @@ it("persists display configuration through existing settings and adds only its e
   yield* setSettings(configured)
   expect(yield* readSettings).toMatchObject({ display: configured.display })
   const reply = yield* Effect.promise(() => http(ctx, "/", { headers: { Origin: undefined } }))
-  expect(reply.headers["content-security-policy"]).toBe("default-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; frame-src https://display.example")
+  expect(reply.headers["content-security-policy"]).toBe("default-src 'self'; script-src 'self'; img-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; frame-src https://display.example")
   expect(reply.headers["access-control-allow-origin"]).toBeUndefined()
   for (const display of [{ ...configured.display, port: ctx.settings.port }, { ...configured.display, publicAddress: "https://127.0.0.1" }]) {
     expect((yield* call(ownerCredential, "client.web.settings.set", { settings: { ...configured, display } }))._tag).toBe("Failure")

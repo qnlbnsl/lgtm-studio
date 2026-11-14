@@ -13388,3 +13388,90 @@ State: open.
 Right after a reload of the "Harnesses" page, a notice says "The service is not connected." and the model rows say "Reading the models."
 Both clear within a few seconds, and the connection mark says "Live" throughout.
 A request is probably sent before the connection is ready.
+
+## 849. The Files tab shows text files up to 512 kilobytes, not 1 megabyte
+
+Found: 2026-11-14, while building the Files tab on the branch `area/files-settings`.
+State: open.
+
+`docs/features.md` says a file over 1 megabyte is not returned as text.
+The service's WebSocket accepts messages of at most 1 mebibyte (`packages/engine/src/client/web/server.ts`).
+A save sends the whole text in one message, and a read reply escapes the text as JSON.
+The built limit is therefore 512 kilobytes, set by `fileTextLimit` in `packages/contracts/src/project/git.ts`.
+A larger text file shows "Too large to show".
+Raising the limit needs replies and saves that are split across messages, or a larger message limit.
+
+## 850. The Files tab cannot download a binary or large file
+
+Found: 2026-11-14, while building the Files tab.
+State: open.
+
+`docs/features.md` says the client offers a binary or large file as a download, which the service streams from the machine.
+No client request returns a file's bytes, so the tab only names the file's kind and size.
+A download needs a streamed request with the same path checks as `project.files.read`.
+
+## 851. The Files tab reads only worktrees on this computer
+
+Found: 2026-11-14, while building the Files tab.
+State: open.
+
+Every Git and file request refuses a workspace whose machine is not `local` (`packages/engine/src/project/gitApi.ts`).
+The tab therefore says "Files on this machine are awaiting machine support" for a worktree on another machine.
+This lifts when machine pairing lands, as it does for the Git tab.
+
+## 852. Saving a file in the Files tab works only on Linux
+
+Found: 2026-11-14, while building the Files tab.
+State: open.
+
+The save shares the checkout file replacement in `packages/engine/src/project/git/replace.ts` with the mock editor.
+It pins each folder through `/proc/self/fd`, which exists only on Linux, and refuses on other systems.
+A save on macOS is therefore refused, and the page shows the refusal.
+A macOS version needs another way to pin the folders, such as `openat` through a native helper.
+
+## 853. The Files tab's commit has no generated message
+
+Found: 2026-11-14, while building the Files tab.
+State: open.
+
+The mock's commit dialog has a "Generate" button that writes the message with a cheap model.
+No engine request writes commit text yet, as for the Git tab, so the real dialog leaves it out.
+The build loop plan places generated commit messages in Step 6.
+
+## 854. Three browser tests failed once and passed on a repeat
+
+Found: 2026-11-14, in the browser runs for the Files tab on the remote test computer.
+State: open.
+
+Each failure below happened once and passed when the same test ran again.
+None of the three tests covers the Files tab or Project settings.
+
+- `studio.spec.ts`, "live service settings": after a reload, the stall watch field `#sd-w` was empty instead of `17`.
+  The test waits for `aria-busy="false"` after each field, and that wait may pass before the save starts.
+- `studio.spec.ts`, "live website: subscriptions, notifications and service settings persist through the engine": a `toMatchObject` check failed.
+- `oversized-state.spec.ts`, case 7.14: a `toBe` check failed in one of two repeats.
+
+The first run of case 7.14 failed for a different reason, which this change fixes.
+The test read the first script file of the production build, and the editor's chunk now sorts first.
+The test now reads the script file that holds the pinger.
+
+## 855. Project settings shows controls that the engine cannot serve yet
+
+Found: 2026-11-14, while finishing the Project settings tab.
+State: open.
+
+The owner asked for the mock's full Project settings page, with stubs where the engine has no support.
+Each stub is drawn disabled, and hovering it says "Engine work needed".
+The stubs are the following controls:
+
+- The task label prefix. `Project` has no prefix field.
+- The base branch. No setting stores it, and the engine merges only into `main` or `master`.
+- The lead subscription. The `configure` command changes only the model and the effort.
+- The permission for every agent in the project. Permission is set only when an agent starts.
+- The switches "Write tests first", "Agent review", and "Remove agent credits when merging".
+- The assignment table, with its "Every row" picker and its Approve button.
+- The need-to-know switch for each team.
+- The Delete button. The engine has no command that deletes a project.
+
+The stubs are in `packages/web/src/admin/project-settings.tsx`.
+Each one becomes a working control when its engine command exists.

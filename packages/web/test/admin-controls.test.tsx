@@ -289,3 +289,89 @@ it("preserves account environment and secret references when renaming and wipes 
   await settle(() => expect(set).toHaveBeenCalledTimes(1))
   expect(set.mock.calls[0]![0]).toEqual(expect.objectContaining({ operation: "set", account: { ...account, displayName: "Renamed" } }))
 })
+
+const leadReply = (model: string) => Effect.succeed({ requestId: "reply", agentId: "lead",
+  configuration: { desired: { model, effort: "high" }, status: "applied" },
+  models: { source: "configured", options: [{ id: "small", label: "Small model" }, { id: "large", label: "Large model" }] },
+  efforts: { source: "configured", options: [{ id: "low" }, { id: "high" }] } })
+const choose = async (element: HTMLElement, label: string, value: string) => {
+  const select = element.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!
+  await act(async () => { select.value = value; select.dispatchEvent(new Event("change", { bubbles: true })) })
+}
+
+it("changes the project lead's model with the configure command", async () => {
+  let model = "small"
+  const configure = vi.fn((payload: { model?: string }) => { model = payload.model ?? model; return ack() })
+  mock.client = { "client.agent.configuration": () => leadReply(model), configure, "client.sequence": () => Effect.succeed({ requestId: "x", sequence: 7 }) }
+  const { element } = await render(<ProjectSettingsPage route={{ page: "project", projectId: project.projectId, tab: "settings" }} />)
+  await settle(() => expect(element.querySelector<HTMLSelectElement>('select[aria-label="Lead model"]')!.disabled).toBe(false))
+  expect(element.querySelector<HTMLSelectElement>('select[aria-label="Lead effort"]')!.value).toBe("high")
+  await choose(element, "Lead model", "large")
+  await settle(() => expect(element.textContent).toContain("Lead setting recorded"))
+  expect(configure).toHaveBeenCalledTimes(1)
+  expect(configure.mock.calls[0]![0]).toEqual(expect.objectContaining({ agentId: "lead", model: "large" }))
+  expect(configure.mock.calls[0]![0]).not.toHaveProperty("effort")
+  await settle(() => expect(element.querySelector<HTMLSelectElement>('select[aria-label="Lead model"]')!.value).toBe("large"))
+})
+
+it("replays an unconfirmed lead change with the same request identity", async () => {
+  const configure = vi.fn().mockReturnValueOnce(Effect.fail(new Error("socket closed"))).mockReturnValueOnce(ack())
+  mock.client = { "client.agent.configuration": () => leadReply("small"), configure }
+  const { element } = await render(<ProjectSettingsPage route={{ page: "project", projectId: project.projectId, tab: "settings" }} />)
+  await settle(() => expect(element.querySelector<HTMLSelectElement>('select[aria-label="Lead model"]')!.disabled).toBe(false))
+  await choose(element, "Lead model", "large")
+  await settle(() => expect(button(element, "Retry same lead change")).toBeDefined())
+  expect(element.querySelector<HTMLSelectElement>('select[aria-label="Lead model"]')!.disabled).toBe(true)
+  await click(element, "Retry same lead change")
+  await settle(() => expect(element.textContent).toContain("Lead setting recorded"))
+  expect(configure.mock.calls[0]![0]).toEqual(configure.mock.calls[1]![0])
+})
+
+it("keeps the lead pickers disabled while offline", async () => {
+  mock.disabled = true
+  mock.client = { "client.agent.configuration": () => leadReply("small") }
+  const { element } = await render(<ProjectSettingsPage route={{ page: "project", projectId: project.projectId, tab: "settings" }} />)
+  await settle(() => expect(element.querySelector<HTMLSelectElement>('select[aria-label="Lead model"]')!.value).toBe("small"))
+  expect(element.querySelector<HTMLSelectElement>('select[aria-label="Lead model"]')!.disabled).toBe(true)
+})
+
+it("lists the project's teams with their agents and branches", async () => {
+  const data = baseData()
+  const team = { projectId: "project", teamId: "builders", name: "Builders <b>", worktreeId: "inspected", group: "group-builders" }
+  mock.data = { ...data, navigation: { ...data.navigation!, teams: [team, { ...team, projectId: "elsewhere", teamId: "other", name: "Other team" }] },
+    snapshot: { ...snapshot, agents: [{ agentId: "builder", groups: ["group-builders"] }, { agentId: "lead", groups: [] }] } } as unknown as ShellData
+  const { element } = await render(<ProjectSettingsPage route={{ page: "project", projectId: project.projectId, tab: "settings" }} />)
+  const table = element.querySelector('section[aria-label="Teams"] table')!
+  const rows = [...table.querySelectorAll("tbody tr")]
+  expect(rows).toHaveLength(1)
+  expect(rows[0]!.textContent).toContain("Builders <b>")
+  expect(rows[0]!.querySelector("b")).toBeNull()
+  expect(rows[0]!.querySelectorAll("td")[1]!.textContent).toBe("1")
+  expect(rows[0]!.textContent).toContain("other")
+  expect(rows[0]!.querySelector("a")!.getAttribute("href")).toBe("/#/project/project/team/builders/chat")
+})
+
+it("says when the project has no teams and keeps archive and delete in their own section", async () => {
+  const { element } = await render(<ProjectSettingsPage route={{ page: "project", projectId: project.projectId, tab: "settings" }} />)
+  expect(element.querySelector('section[aria-label="Teams"]')!.textContent).toContain("No teams")
+  const archive = element.querySelector('section[aria-label="Archive or delete"]')!
+  expect([...archive.querySelectorAll("button")].map((row) => row.textContent)).toContain("Archive")
+  expect(element.querySelector(".admin-page-top")!.textContent).not.toContain("Archive")
+})
+
+it("draws every control the engine cannot serve yet as disabled, and says so on hover", async () => {
+  const data = baseData()
+  const team = { projectId: "project", teamId: "builders", name: "Builders", worktreeId: "inspected", group: "group-builders" }
+  mock.data = { ...data, navigation: { ...data.navigation!, teams: [team] } } as unknown as ShellData
+  const { element } = await render(<ProjectSettingsPage route={{ page: "project", projectId: project.projectId, tab: "settings" }} />)
+  const stubs = [...element.querySelectorAll<HTMLElement>(".admin-stub")]
+  const names = stubs.map((stub) => stub.querySelector("[aria-label]")?.getAttribute("aria-label") ?? stub.textContent?.trim())
+  expect(names).toEqual(["Task label prefix", "Base branch", "Lead subscription", "Permission", "Write tests first", "Agent review",
+    "Remove agent credits when merging", "Approve", "Plan harness", "Plan model", "Plan effort", "Build harness", "Build model", "Build effort",
+    "Review harness", "Review model", "Review effort", "Test harness", "Test model", "Test effort", "Every row", "Apply",
+    "Need-to-know for Builders", "Delete"])
+  for (const stub of stubs) {
+    expect(stub.title).toBe("Engine work needed")
+    for (const control of stub.querySelectorAll<HTMLInputElement>("input, select, button")) expect(control.disabled).toBe(true)
+  }
+})

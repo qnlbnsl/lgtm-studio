@@ -52,8 +52,12 @@ test("7.14 production state markers recover once over a 500-kbit/s link while li
     // changing the protocol, mocking time, or instrumenting application code.
     await build({ configFile: false, root: new URL("..", import.meta.url).pathname, logLevel: "silent",
       build: { outDir: staticRoot, minify: false } })
-    const asset = readdirSync(join(staticRoot, "assets")).find((name) => name.endsWith(".js"))!
-    const source = readFileSync(join(staticRoot, "assets", asset), "utf8")
+    // The page has more than one script file since the Files tab's editor
+    // became its own chunk, so the pinger is found in whichever file holds it.
+    const pinger = "let lastSeen = clock.currentTimeMillisUnsafe()"
+    const asset = readdirSync(join(staticRoot, "assets")).filter((name) => name.endsWith(".js"))
+      .find((name) => readFileSync(join(staticRoot, "assets", name), "utf8").includes(pinger)) ?? ""
+    const source = asset === "" ? "" : readFileSync(join(staticRoot, "assets", asset), "utf8")
     const pingerLine = source.split("\n").findIndex((line) => line.includes("let lastSeen = clock.currentTimeMillisUnsafe()"))
     expect(pingerLine, "the installed Effect pinger must be observable in the production artifact").toBeGreaterThan(0)
     const debuggerSession = await page.context().newCDPSession(page)

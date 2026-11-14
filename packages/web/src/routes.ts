@@ -1,13 +1,13 @@
 import type { AgentId, ProjectId, RepositoryId, SprintId, TaskId, TeamId, WorkspaceId } from "@lgtm/contracts"
 
-export const workspaceTabs = ["board", "mocks", "chat", "terminal", "git", "settings", "tasks"] as const
+export const workspaceTabs = ["board", "mocks", "chat", "terminal", "git", "files", "settings", "tasks"] as const
 export type WorkspaceTab = typeof workspaceTabs[number]
 export type ServicePage = "alerts" | "machines" | "subscriptions" | "settings"
 export type ShellRoute =
   | { readonly page: "home" }
   | { readonly page: "service"; readonly service: ServicePage }
   | { readonly page: "repository"; readonly repoId: RepositoryId; readonly tab?: "projects" | "design" }
-  | { readonly page: "project"; readonly projectId: ProjectId; readonly teamId?: TeamId; readonly tab: WorkspaceTab; readonly workspaceId?: WorkspaceId }
+  | { readonly page: "project"; readonly projectId: ProjectId; readonly teamId?: TeamId; readonly tab: WorkspaceTab; readonly workspaceId?: WorkspaceId; readonly file?: string }
   | { readonly page: "sprint"; readonly projectId: ProjectId; readonly sprintId: SprintId }
   | { readonly page: "task"; readonly projectId: ProjectId; readonly taskId: TaskId }
   | { readonly page: "thread"; readonly agentId: AgentId; readonly subject?: string }
@@ -49,8 +49,12 @@ export function parseShellRoute(href: string): ShellRoute {
     const tab = parts[teamId === undefined ? 2 : 4] ?? "board"
     if (parts.length > (teamId === undefined ? 3 : 5) || !workspaceTabs.includes(tab as WorkspaceTab) || (tab === "tasks" && teamId === undefined)) return { page: "invalid" }
     const workspaceId = route.searchParams.get("workspace")
+    // The Files tab's open file. A path is display data until the engine checks it.
+    const file = tab === "files" ? route.searchParams.get("file") : null
+    if (file !== null && (file === "" || /[\p{Cc}]/u.test(file))) return { page: "invalid" }
     return { page: "project", projectId, tab: tab as WorkspaceTab, ...(teamId === undefined ? {} : { teamId }),
-      ...(workspaceId === null ? {} : { workspaceId: identifier(encodeURIComponent(workspaceId)) as WorkspaceId }) }
+      ...(workspaceId === null ? {} : { workspaceId: identifier(encodeURIComponent(workspaceId)) as WorkspaceId }),
+      ...(file === null ? {} : { file }) }
   } catch { return { page: "invalid" } }
 }
 
@@ -64,7 +68,10 @@ export function shellHref(route: ShellRoute): string {
     case "thread": return `/#/thread/${encode(route.agentId)}${route.subject === undefined ? "" : `?subject=${encode(route.subject)}`}`
     case "sprint": return `/#/project/${encode(route.projectId)}/sprint/${encode(route.sprintId)}`
     case "task": return `/#/project/${encode(route.projectId)}/task/${encode(route.taskId)}`
-    case "project": return `/#/project/${encode(route.projectId)}${route.teamId === undefined ? "" : `/team/${encode(route.teamId)}`}/${route.tab}${route.workspaceId === undefined ? "" : `?workspace=${encode(route.workspaceId)}`}`
+    case "project": {
+      const query = [...(route.workspaceId === undefined ? [] : [`workspace=${encode(route.workspaceId)}`]), ...(route.file === undefined || route.tab !== "files" ? [] : [`file=${encode(route.file)}`])]
+      return `/#/project/${encode(route.projectId)}${route.teamId === undefined ? "" : `/team/${encode(route.teamId)}`}/${route.tab}${query.length ? `?${query.join("&")}` : ""}`
+    }
   }
 }
 

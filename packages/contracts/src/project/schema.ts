@@ -102,3 +102,10 @@ export const OwnerTaskNotification = Schema.Struct({
   notificationId: TaskNotificationId, projectId: ProjectId, taskId: TaskId, targetAgentId: AgentId
 })
 export type OwnerTaskNotification = typeof OwnerTaskNotification.Type & { readonly deliveryId?: typeof DeliveryId.Type }
+// The owner saved a file in a worktree while one of its agents was working.
+// The durable intent is the reach proof for the single notice delivery.
+export const FileSaveNoticeId = Schema.NonEmptyString.pipe(Schema.brand("FileSaveNoticeId"))
+export const FileSaveNotice = Schema.Struct({
+  noticeId: FileSaveNoticeId, projectId: ProjectId, worktreeId: WorkspaceId, path: ProjectPath, targetAgentId: AgentId
+})
+export type FileSaveNotice = typeof FileSaveNotice.Type & { readonly deliveryId?: typeof DeliveryId.Type }

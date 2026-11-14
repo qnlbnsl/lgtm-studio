@@ -105,6 +105,7 @@ const samples: Record<string, (a: string, n: string) => Record<string, unknown>>
   "project.TaskChanged": () => ({ projectId: "project-one", taskId: "project-task", state: "active" }),
   "project.OwnerTaskNotificationPlanned": () => ({ notificationId: "owner-task-notice", projectId: "project-one", taskId: "project-task", targetAgentId: "agent-self" }),
   "project.TaskNoted": () => ({ projectId: "project-one", taskId: "project-task", title: "Note", detail: "Private project history" }),
+  "project.FileSaveNoticePlanned": () => ({ noticeId: "file-save-notice", projectId: "project-one", worktreeId: "project-workspace", path: "src/app.ts", targetAgentId: "agent-self" }),
   AgentStarted: (a) => ({ agentId: a, name: `n-${a}`, role: "worker", groups: [], parent: parents[a] === undefined ? owner : { _tag: "agent", agentId: parents[a] }, harness: "first", account: "primary", permission: "ask", folder: "/tmp", runMode: "acp" }),
   AgentStartFailed: (a) => ({ agentId: a, reason: "agent start failed" }),
   SessionOpened: (a, n) => ({ agentId: a, session: { _tag: "acp", sessionId: `s-${n}` }, protocolVersion: 2, reloadable: true }),
