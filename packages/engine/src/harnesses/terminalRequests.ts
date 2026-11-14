@@ -29,7 +29,7 @@ const open = (input: Input, p: Record<string, unknown>) => Effect.gen(function* 
   const environment: Record<string, string> = {}
   for (const [name, value] of Object.entries(process.env)) {
     if (name.startsWith('LGTM_') || value === undefined) continue
-    // The same registry that protects output removes every known secret value,
+    // The log redactor registry removes every known secret value,
     // including a value embedded in an otherwise ordinary environment entry.
     if ((yield* input.runtime.log.redactText(value)) === value) environment[name] = value
   }

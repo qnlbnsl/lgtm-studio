@@ -437,7 +437,8 @@ Machine coordination remains planned.
   The connected website provides owner-only shells in registered local worktrees.
   Service settings has a stored switch that starts off.
   The renderer supports colours, cursor movement, full-screen programs, and resizing.
-  Known secrets are blanked, and the service never stores input or output.
+  Output reaches only the opening owner connection unchanged, under the owner's ruling of 2026-11-14.
+  The service never stores or logs input or output.
   At most eight sessions may be open.
   Reloading the page or losing its connection ends its sessions.
   Reconnecting to an old shell and taking over an agent terminal remain planned.

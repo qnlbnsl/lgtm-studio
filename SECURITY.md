@@ -145,12 +145,12 @@ These rules apply to every change. A change that breaks one is a security bug.
    matches `KEY`, `TOKEN`, `SECRET` or `PASSWORD` is registered only at eight
    or more characters when its trimmed text is nonempty, is neither `true`
    nor `false`, and is not a plain number.
-   On 2026-11-14, the owner said "exception granted" for an ephemeral harness sign-in stream.
-   Only the authenticated owner connection that starts the session may receive its output.
-   Every registered secret is still redacted.
-   Neither output nor typed keys are stored, logged, posted, sent as alerts, or included in crash reports or test protocol logs.
-   A new token that the service has never registered may appear once in that owner's terminal panel.
-   On 2026-11-14, the owner also granted the project terminal exception described below.
+   On 2026-11-14, the owner authorized ephemeral output for the project terminal and the harness sign-in terminal.
+   The owner ruled: "what you echo on terminal is none of our business. just keep it away from log. if they use tmux or something and it hold this in the buffer then that is not on us."
+   Only the authenticated owner connection that opens a session may receive its output.
+   Both terminals send the program's output byte for byte, with no redaction, hold, or idle timer.
+   Neither output nor typed keys are stored, logged, traced, posted, sent as alerts, or included in error messages, crash reports, snapshots, or protocol logs.
+   A secret printed in either terminal appears on the owner's screen and in any scrollback the owner's own tools keep.
    Rule 6 continues to apply without these exceptions to every other path.
 
 7. **Text from an agent is data, not a command.** A message on the board
@@ -165,13 +165,15 @@ For Gemini without a managed install, the executable comes from the owner's harn
 The service uses the same login folder that the account gives its agents.
 Resolved `secret:` values in the account environment are passed to the child.
 Only the initiating owner connection may read output, type keys, resize the terminal, or stop it.
-An agent cannot use these requests.
+Agent and service credentials cannot use these requests.
 The service kills a live process group when the owner stops it, the connection grace period ends, the time limit passes, or engine shutdown begins.
 After the child exits, the service does not signal its former process group because the identifier may be reused.
 A descendant that starts its own session escapes the group kill.
 Output and input stay ephemeral.
-Known secrets are blanked, including secrets split across output chunks.
-The remaining risk is that an unregistered token printed by the sign-in program appears on the initiating owner's screen.
+The owner's ruling of 2026-11-14 applies to this stream too.
+The program's output reaches the opening connection byte for byte, with no redaction, hold, or idle timer.
+Neither output nor input is stored, logged, traced, posted, sent to other subscribers or agents, or included in errors or snapshots.
+A secret printed here appears on the owner's screen and in any scrollback the owner's own tools keep.
 Removing an account preserves its login folder.
 
 ## The owner's project terminal
@@ -198,18 +200,16 @@ After the shell exits, it signals only processes still found in that session.
 It never signals the former shell process identifier or its former process group.
 Where `/proc` is absent, descendant discovery does nothing.
 On those systems, only the live shell's process group is killed.
-A descendant that starts its own operating-system session escapes this cleanup.
+A descendant that calls `setsid` to leave the shell's operating-system session survives this cleanup.
+The scan stops when no member is found or after five passes.
+A process that continues to fork beyond that bound may survive.
+If the former leader's process identifier exists again after exit, discovery stops without signalling that new session.
 Input and output are ephemeral.
 They are never stored by the service, logged, posted, sent as events, or included in snapshots or protocol logs.
-Known secrets printed as an unbroken byte sequence are blanked, including when split across output chunks.
-Blanking does not recognize a secret with a terminal control sequence inserted inside it.
-A program can therefore display a known secret by inserting colour or cursor sequences into the value.
-The terminal idle release described next applies to both project and harness sign-in terminals.
-After about 30 milliseconds without output, the renderer can receive a generic one-to-three-character base64 lead.
-Those bytes stay in the redaction carry as already covered.
-A following encoded token is still matched, and its remaining characters are blanked.
-Recognized secret overlaps and credential prefixes are held without an idle timer.
-Awaiting the owner's ruling: one to three characters before an encoded token can appear if output pauses exactly there.
-A shell can print a secret the service has never seen, which appears on the initiating owner's screen.
+The owner's ruling of 2026-11-14 covers both this stream and the harness sign-in stream.
+The program's output reaches the opening connection byte for byte, with no redaction, hold, or idle timer.
+The output never goes to another subscriber or agent.
+Neither output nor typed keys are traced or included in an error message.
+A secret printed in the terminal appears on the owner's screen and in any scrollback the owner's own tools keep.
 The shell runs as the owner and can change files with that user's permissions.
 Rule 6 remains unchanged for every other path.

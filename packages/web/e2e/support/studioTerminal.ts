@@ -39,7 +39,7 @@ export async function exerciseStudioTerminal(page: Page) {
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const runner = yield* makeFakeRunner()
       const token = mintCredential('shp_a_')
-      const redactor = makeRedactor({ secrets: () => [Redacted.make('registered-browser-terminal-secret')], tokenHashes: () => new Set([token.tokenHash]) })
+      const redactor = makeRedactor({ secrets: () => [Redacted.make('sk-registered-browser-terminal-secret')], tokenHashes: () => new Set([token.tokenHash]) })
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, redactor.layer)
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck(); yield* seedAccount('launch', 'cursor')
@@ -67,13 +67,21 @@ export async function exerciseStudioTerminal(page: Page) {
           await page.getByRole('menuitem', { name: new RegExp(project.name) }).click()
           const input = page.locator('.xterm-helper-textarea')
           await expect(input).toBeAttached(); await expect(page.locator('.term-cwd')).toHaveText(projectViewPathValue); await input.focus()
-          await page.keyboard.type('ls'); await expect(page.locator('.xterm-rows')).toContainText('ls'); await page.keyboard.press('Control+U')
-          await page.keyboard.type("printf '\\033[31mBROWSER_TERMINAL_OK\\033[0m registered-browser-terminal-secret\\n'")
+          const prompt = page.locator('.xterm-rows > div').filter({ has: page.locator('.xterm-cursor') })
+          await expect(prompt).toHaveText(/\S/)
+          const prefix = (await prompt.textContent())!.trimEnd().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+          for (const typed of ['ls', 'chmod 777']) {
+            await page.keyboard.type(typed)
+            await expect(prompt).toHaveText(new RegExp('^' + prefix + '\\s*' + typed + '\\s*$'))
+            await page.keyboard.press('Control+U')
+            await expect(prompt).toHaveText(new RegExp('^' + prefix + '\\s*$'))
+          }
+          await page.keyboard.type("printf '\\033[31mBROWSER_TERMINAL_OK\\033[0m sk-registered-browser-terminal-secret\\n'")
           await page.keyboard.press('Enter')
           // DOM renderer text proves output was drawn, not merely received.
           await expect(page.locator('.xterm-rows')).toContainText('BROWSER_TERMINAL_OK')
-          await expect(page.locator('.xterm-rows')).toContainText('[REDACTED]')
-          await expect(page.locator('.xterm-rows')).not.toContainText('registered-browser-terminal-secret')
+          await expect(page.locator('.xterm-rows')).toContainText('sk-registered-browser-terminal-secret')
+          await expect(page.locator('.xterm-rows')).not.toContainText('[REDACTED]')
           await page.keyboard.type("printf '\\033[38;2;255;100;0mTRUE_FORE\\033[0m \\033[48;2;12;34;56mTRUE_BACK\\033[0m\\n'"); await page.keyboard.press('Enter')
           await expect(page.locator('.xterm-rows span').filter({ hasText: /^TRUE_FORE$/ }).first()).toHaveCSS('color', 'rgb(255, 100, 0)')
           await expect(page.locator('.xterm-rows span').filter({ hasText: /^TRUE_BACK$/ }).first()).toHaveCSS('background-color', 'rgb(12, 34, 56)')

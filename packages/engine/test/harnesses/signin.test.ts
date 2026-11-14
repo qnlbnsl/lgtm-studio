@@ -68,28 +68,6 @@ it('stops the process group on timeout, owner stop and disconnection after the g
     sessions.close()
   }
 })
-it('redacts split registered tokens while releasing ordinary terminal prompts immediately', async () => {
-  const { makeRedactor } = await import('../../src/identity/redactor.ts')
-  const Redacted = await import('effect/Redacted')
-  const redactor = makeRedactor({ secrets: () => [Redacted.make('known-secret-token')], tokenHashes: () => new Set() })
-  expect(redactor.redactChunk('terminal', 'Press y: ', false, true)).toBe('Press y: ')
-  const first = redactor.redactChunk('terminal', 'known-secret-', false, true)
-  const last = redactor.redactChunk('terminal', 'token done', true, true)
-  expect(first + last).toBe('[REDACTED] done')
-})
-it('redacts registered credentials at every split in the responsive terminal stream', async () => {
-  const { makeRedactor } = await import('../../src/identity/redactor.ts')
-  const { mintCredential, sha256Hex } = await import('../../src/identity/credential.ts')
-  const Redacted = await import('effect/Redacted')
-  const token = Redacted.value(mintCredential('shp_a_').token)
-  const encoded = [token, Buffer.from(token).toString('hex').toUpperCase(), Buffer.from(token).toString('base64'), Buffer.from('x' + token + 'zz').toString('base64'), Buffer.from('xx' + token + 'z').toString('base64url'), [...token].map((ch, i) => i % 2 ? ch : '%' + ch.charCodeAt(0).toString(16).toUpperCase()).join('')]
-  for (const hashOnly of [false, true]) for (const form of encoded) for (let at = 1; at < form.length; at++) {
-    const r = makeRedactor({ secrets: () => hashOnly ? [] : [Redacted.make(token)], tokenHashes: () => new Set(hashOnly ? [sha256Hex(token)] : []) })
-    const actual = r.redactChunk('s', form.slice(0, at), false, true) + r.redactChunk('s', form.slice(at), true, true)
-    expect(actual === r.redactText(form), `${hashOnly ? 'hash' : 'exact'} form ${encoded.indexOf(form)} split ${at}`).toBe(true)
-  }
-})
-
 it('review 3: existing sign-in stores no home and creates no default folder', async () => {
   const home = root()
   expect(await prepareAccountHome({ home, harness: 'claude', id: 'a', choice: 'existing', accounts: [] })).toBeUndefined()
