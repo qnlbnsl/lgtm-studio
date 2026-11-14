@@ -1,7 +1,7 @@
 import { projectRefusalReasons } from "../project/errors.ts";
 // Connection assembly pattern: T3 Code apps/server/src/ws.ts, lines
 // 3293-3330, 3360-3367 and 3374-3385 (MIT licence). No source code is copied.
-import { signInReasons } from "../harnesses/signinSessions.ts";
+import { signInReasons } from "../harnesses/signinReasons.ts";
 import { folderReasons } from "../accounts/loginHome.ts";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";

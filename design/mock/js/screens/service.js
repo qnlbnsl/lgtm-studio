@@ -374,7 +374,8 @@ function AddSubscription({ s, d }) {
   const [name, setName] = useState(''), [home, setHome] = useState(''), [machine, setMachine] = useState('studio');
   const [recipe, setRecipe] = useState(live.on ? null : h.recipe), [result, setResult] = useState(null), [step, setStep] = useState(h.installed ? 'account' : 'install');
   const [pending, setPending] = useState(false), [error, setError] = useState(''), [account, setAccount] = useState(null);
-  const [folder, setFolder] = useState(s.subscriptions.some(x => x.harness === harness) ? 'separate' : 'existing');
+  const separateSupported = ['claude', 'codex', 'gemini'].includes(harness);
+  const [folder, setFolder] = useState(separateSupported && s.subscriptions.some(x => x.harness === harness && !x.home) ? 'separate' : 'existing');
   const terminal = signInUi.useSignIn();
   const close = () => { terminal.stop(); act.closeDialog(); };
   useEffect(() => { if (live.on && step === 'install') liveGit.harnessRecipe(harness).then(setRecipe).catch((e) => setError(e.message)); }, [harness]);
@@ -399,7 +400,7 @@ function AddSubscription({ s, d }) {
       ${!live.on && html`<div class="field"><label for="as-machine">Machine</label><select id="as-machine" class="select" value=${machine} onChange=${(e) => setMachine(e.target.value)}>${s.machines.map((x) => html`<option value=${x.id} disabled=${x.status !== 'online'}>${x.name}${x.status !== 'online' ? ' (offline)' : ''}</option>`)}</select></div>`}
       <fieldset class="signin-folders" disabled=${!!account || pending}><legend>Login folder</legend>
         <label><input type="radio" name="as-folder" value="existing" checked=${folder === 'existing'} onChange=${() => setFolder('existing')} />Use my existing sign-in</label>
-        <label><input type="radio" name="as-folder" value="separate" checked=${folder === 'separate'} onChange=${() => setFolder('separate')} />A separate sign-in</label>
+        <label><input type="radio" name="as-folder" value="separate" disabled=${!separateSupported} checked=${folder === 'separate'} onChange=${() => setFolder('separate')} />A separate sign-in</label>
         <p class="hint">The service creates a private folder for each separate sign-in.</p>
         <details><summary>Advanced login folder</summary><label><input type="radio" name="as-folder" checked=${folder === 'advanced'} onChange=${() => setFolder('advanced')} />Use an absolute folder</label><input id="as-home" aria-label="Absolute login folder" class="input mono" value=${home} onInput=${(e) => { setFolder('advanced'); setHome(e.target.value); }} /></details>
       </fieldset>

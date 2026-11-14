@@ -13476,3 +13476,47 @@ Its existing local sign-in action shadowed the new imported namespace.
 That caused the folder-label call in the live removal confirmation to fail.
 The import now uses a distinct namespace name.
 The same journey verifies that the account can be removed afterward.
+
+## s7-signin-12. The review found account compatibility and folder admission regressions.
+
+Existing accounts sharing a default folder could not be renamed or disabled.
+Account editing now checks folder uniqueness only when the effective folder changes.
+The account-login fixture again uses `/srv/login-a` for both historical accounts.
+It seeds the second account as historical data because new duplicate accounts are refused.
+Custom harnesses can again add default accounts without a shipped sign-in recipe.
+The older browser journey again uses `first`.
+The dialog offers separate folders only for the three harnesses with documented isolation.
+The existing-sign-in choice stores no folder and creates nothing.
+Advanced folders require an existing folder or an existing parent owned by the service user.
+Writable folders are refused.
+
+## s7-signin-13. Account creation could leave folders and duplicate accounts behind.
+
+An append failure left a newly created login folder on disk.
+Schema errors escaped as defects.
+Retries minted another account.
+Account creation now cleans newly created empty directories after failure.
+Existing directories and nonempty directories are preserved.
+Schema errors become a fixed refusal.
+The durable receipt returns the original account on retries, including after restart.
+
+## s7-signin-14. A missing native package could prevent engine startup.
+
+The sign-in module imported the native pseudo-terminal package at module load.
+A missing platform package therefore stopped unrelated service work.
+The package is now loaded inside the asynchronous start operation.
+A load failure returns a fixed refusal.
+The real service startup test blocks that package deliberately.
+The session manager also avoids signaling a group after its child exits.
+A process identifier can otherwise refer to an unrelated process later.
+
+## s7-signin-15. The review found missing server coverage and inaccurate descriptions.
+
+The previous privacy tests bypassed the real remote procedure layer.
+New tests use authenticated sockets, the application access gate, and the production redactor.
+They cover connection isolation, socket closure, engine shutdown, resource limits, and a final symbolic link.
+The fake prompt ends with punctuation so redaction can release it without retaining a possible secret prefix.
+The security section now states the configured executable exception and the limits of process group termination.
+The terminal help explains the connection boundary and the shell history risk.
+The mock exports account refresh directly instead of relying on build injection.
+This supersedes the fixture workaround recorded in s7-signin-9.

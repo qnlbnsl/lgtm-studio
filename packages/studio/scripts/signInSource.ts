@@ -3,9 +3,6 @@ export function signInSource(path: string, source: string): string {
   if (path === 'js/live/git.js') {
     const reset = 'Object.keys(HARNESSES).forEach((k) => { delete HARNESSES[k]; });'
     if (!source.includes(reset)) throw new Error(`Chat harness metadata no longer matches ${path}`)
-    const accountRefresh = "export const accountAction =";
-    if (!source.includes(accountRefresh)) throw new Error(`Sign-in account refresh no longer matches ${path}`)
-    source = source.replace(accountRefresh, "export const refreshAccounts = () => loadService('subscriptions');\n" + accountRefresh)
     return source.replace(reset, "Object.keys(HARNESSES).forEach((k) => { if (!(S().agents || []).some(a => a.harness === k)) delete HARNESSES[k]; });")
   }
   if (path !== 'js/screens/service.js') return source

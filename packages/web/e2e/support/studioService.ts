@@ -37,7 +37,7 @@ export async function exerciseStudioService(page: Page, origin: string) {
 
   await page.goto(`${root}#/harnesses`)
   await expect(page.locator('#df-model')).toHaveValue('test-model')
-  await page.getByRole('group', { name: 'Harness', exact: true }).getByRole('button', { name: 'Claude Code', exact: true }).click()
+  await page.getByRole('group', { name: 'Harness', exact: true }).getByRole('button', { name: 'first', exact: true }).click()
   await page.getByRole('group', { name: 'Effort', exact: true }).getByRole('button', { name: 'high', exact: true }).click()
   await page.locator('#df-model').selectOption('other-model')
   await expect(page.getByText('Saving…', { exact: true })).toHaveCount(0)
@@ -117,7 +117,7 @@ export async function exerciseStudioService(page: Page, origin: string) {
   await renamed.getByRole('button', { name: 'Actions for Renamed account', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Remove', exact: true }).click()
   await expect(page.getByRole('dialog')).toContainText('Its login folder is kept:')
-  await expect(page.getByRole('dialog')).toContainText('/.claude')
+  await expect(page.getByRole('dialog')).toContainText('the harness default folder')
   await page.getByRole('dialog').getByRole('button', { name: 'Remove subscription', exact: true }).click()
   await expect(renamed).toHaveCount(0)
 }

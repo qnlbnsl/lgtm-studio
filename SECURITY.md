@@ -159,11 +159,15 @@ These rules apply to every change. A change that breaks one is a security bug.
 ## The owner's harness sign-in terminal
 
 The service runs only the shipped recipe arguments with the verified harness executable.
-The page cannot supply a command, executable, argument, or shell expression.
+The sign-in request cannot supply a command, executable, argument, or shell expression.
+For Gemini without a managed install, the executable comes from the owner's harness setting `adapterPath`.
 The service uses the same login folder that the account gives its agents.
+Resolved `secret:` values in the account environment are passed to the child.
 Only the initiating owner connection may read output, type keys, resize the terminal, or stop it.
 An agent cannot use these requests.
-The service kills the process group when the command exits, the owner stops it, the connection grace period ends, or the time limit passes.
+The service kills a live process group when the owner stops it, the connection grace period ends, the time limit passes, or engine shutdown begins.
+After the child exits, the service does not signal its former process group because the identifier may be reused.
+A descendant that starts its own session escapes the group kill.
 Output and input stay ephemeral.
 Known secrets are blanked, including secrets split across output chunks.
 The remaining risk is that an unregistered token printed by the sign-in program appears on the initiating owner's screen.

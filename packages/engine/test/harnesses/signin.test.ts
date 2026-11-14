@@ -32,12 +32,12 @@ it('runs a strict PTY fake, accepts only its connection, writes only the private
   const script = join(home, 'signin.cjs')
   writeFileSync(script, `if(!process.stdin.isTTY||!process.stdout.isTTY)process.exit(88);process.stdout.write('SIGNIN_MARKER_CODE https://example.test/login\\r\\nPress y');process.stdin.setRawMode(true);process.stdin.once('data',()=>{require('node:fs').writeFileSync(require('node:path').join(process.env.CLAUDE_CONFIG_DIR,'.credentials.json'),'credential-marker');process.exit(0)});`)
   const sessions = new SignInSessions({ graceMs: 30, limitMs: 3000 })
-  const s = sessions.start({ accountId: 'a', connectionId: 'owner-one', executable: process.execPath, args: [script], cwd: home, environment: { HOME: home, CLAUDE_CONFIG_DIR: folder }, check: async () => ({ state: 'local-credential' }) })
+  const s = await sessions.start({ accountId: 'a', connectionId: 'owner-one', executable: process.execPath, args: [script], cwd: home, environment: { HOME: home, CLAUDE_CONFIG_DIR: folder }, check: async () => ({ state: 'local-credential' }) })
   await expect(sessions.output(s.id, 'owner-two').next()).rejects.toThrow('This sign-in belongs to another connection.')
   expect(() => sessions.resize(s.id, 'owner-two', 80, 24)).toThrow('This sign-in belongs to another connection.')
   expect(() => sessions.stop(s.id, 'owner-two')).toThrow('This sign-in belongs to another connection.')
   expect(() => sessions.write(s.id, 'owner-two', 'y')).toThrow('This sign-in belongs to another connection.')
-  expect(() => sessions.start({ accountId: 'a', connectionId: 'owner-one', executable: process.execPath, args: [script], cwd: home, environment: {}, check: async () => ({ state: 'signed-out' }) })).toThrow('A sign-in is already running for this account.')
+  await expect(sessions.start({ accountId: 'a', connectionId: 'owner-one', executable: process.execPath, args: [script], cwd: home, environment: {}, check: async () => ({ state: 'signed-out' }) })).rejects.toThrow('A sign-in is already running for this account.')
   let text = '', result: unknown
   for await (const item of sessions.output(s.id, 'owner-one')) {
     if (item._tag === 'output') { text += item.text; if (text.includes('Press y')) sessions.write(s.id, 'owner-one', 'y') }
@@ -54,7 +54,7 @@ it('stops the process group on timeout, owner stop and disconnection after the g
     const home = root(), pidfile = join(home, 'child'), script = join(home, 'wait.cjs')
     writeFileSync(script, `const c=require('node:child_process').spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});require('node:fs').writeFileSync(${JSON.stringify(pidfile)},String(c.pid));process.stdout.write('ready');setInterval(()=>{},1000)`)
     const sessions = new SignInSessions({ graceMs: 30, limitMs: 200 })
-    const s = sessions.start({ accountId: 'a', connectionId: 'one', executable: process.execPath, args: [script], cwd: home, environment: {}, check: async () => ({ state: 'signed-out' }) })
+    const s = await sessions.start({ accountId: 'a', connectionId: 'one', executable: process.execPath, args: [script], cwd: home, environment: {}, check: async () => ({ state: 'signed-out' }) })
     for await (const item of sessions.output(s.id, 'one')) {
       if (item._tag === 'output' && item.text.includes('ready')) { if (mode === 'stop') sessions.stop(s.id, 'one'); if (mode === 'disconnect') sessions.disconnect('one') }
     }
@@ -108,6 +108,7 @@ it('review 8: advanced folders refuse writable permissions and missing parents',
   await expect(prepareAccountHome({ home, harness: 'claude', id: 'a', choice: 'advanced', advanced: folder, accounts: [] })).rejects.toThrow('The login folder must be owned by you')
   await expect(prepareAccountHome({ home, harness: 'claude', id: 'a', choice: 'advanced', advanced: join(home, 'missing', 'child'), accounts: [] })).rejects.toThrow('The login folder must be owned by you')
   expect(existsSync(join(home, 'missing'))).toBe(false)
+  await expect(prepareAccountHome({ home, harness: 'claude', id: 'a', choice: 'advanced', advanced: join(home, 'foreign-parent'), accounts: [], uid: () => -1 })).rejects.toThrow('The login folder must be owned by you')
   expect(await prepareAccountHome({ home, harness: 'claude', id: 'a', choice: 'advanced', advanced: join(home, 'allowed'), accounts: [] })).toBe(join(home, 'allowed'))
 })
 it('review 5: refuses a real symbolic link at the final advanced component', async () => {

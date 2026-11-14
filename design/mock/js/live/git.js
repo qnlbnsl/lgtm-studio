@@ -91,6 +91,7 @@ async function loadService(name, refreshHarnesses = false) {
   engineWrite({ subscriptions: mapping.mapAccounts(accounts, statuses, service.harnesses, service.project) });
   subscriptionsLoaded = true; S().ui.serviceReady = true; notify();
 }
+export const refreshAccounts = () => loadService('subscriptions');
 export const accountAction = (id, operation, patch = {}) => run('subscriptions', async () => {
   const account = accounts?.find((a) => a.id === id);
   if (!account) throw new Error('Refresh subscriptions before changing this account.');

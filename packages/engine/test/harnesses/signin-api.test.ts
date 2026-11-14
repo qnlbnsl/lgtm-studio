@@ -3,7 +3,7 @@ import * as Effect from 'effect/Effect'
 import * as Stream from 'effect/Stream'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
-import { writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs'
+import { writeFileSync, readFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { getEventListeners } from 'node:events'
 import { LogWriteFailed } from '../../src/log/EventLog.ts'
@@ -92,6 +92,10 @@ it.live('review 7: failed appends remove only newly created folders', () => Effe
     const result = yield* signInReads['client.harness.account.add'](yield* handler.input({ _tag: 'owner' }), { requestId: 'failure', harnessId: 'claude', name: 'Test', folder: 'separate' }).pipe(Effect.result)
     expect(result._tag).toBe('Failure')
     expect(existsSync(join(rig.home, '.lgtm/accounts/claude')) ? readdirSync(join(rig.home, '.lgtm/accounts/claude')) : []).toEqual([])
+    const existing = join(rig.home, 'existing'); mkdirSync(existing, { mode: 0o700 })
+    writeFileSync(join(existing, 'keep'), 'preexisting')
+    expect((yield* signInReads['client.harness.account.add'](yield* handler.input({ _tag: 'owner' }), { requestId: 'existing-failure', harnessId: 'claude', name: 'Test', folder: 'advanced', home: existing }).pipe(Effect.result))._tag).toBe('Failure')
+    expect(readFileSync(join(existing, 'keep'), 'utf8')).toBe('preexisting')
   }))
 }))
 it.live('review 7: schema failures are fixed refusals without orphan folders', () => Effect.gen(function* () {

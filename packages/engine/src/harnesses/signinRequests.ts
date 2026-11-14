@@ -16,7 +16,8 @@ import { buildBaseEnvironment } from '../runner/baseEnvironment.ts'
 import { accountReadiness } from '../project/leadDefaults.ts'
 import { embeddedHarnessPrograms } from './programs.ts'
 import type { Redactor } from '../log/Redactor.ts'
-import { SignInSessions, signInReasons } from './signinSessions.ts'
+import { SignInSessions } from './signinSessions.ts'
+import { signInReasons } from './signinReasons.ts'
 const instances = new WeakMap<object, SignInSessions>()
 const known = new Set<string>([...Object.values(signInReasons), ...Object.values(folderReasons)])
 const failure = (e: unknown) => refused(e instanceof Error && known.has(e.message) ? e.message : signInReasons.failed)
@@ -87,7 +88,7 @@ const start = (input: Input, p: Record<string, unknown>) => Effect.gen(function*
   if (account.harness === 'cursor') environment.NO_OPEN_BROWSER = '1'
   if (input.runtime.credentials) yield* input.runtime.credentials.open(credentialSourceFor({ harnessId: account.harness, home: input.runtime.home, variables: environment })).pipe(Effect.mapError(() => refused(signInReasons.failed)))
   const manager = sessions(input), disconnected = () => manager.disconnect(connection)
-  const session = yield* Effect.try({ try: () => manager.start({ accountId: account.id, connectionId: connection, executable: installation.path!, args: recipe.signInArguments, cwd: input.runtime.home, environment,
+  const session = yield* Effect.tryPromise({ try: () => manager.start({ accountId: account.id, connectionId: connection, executable: installation.path!, args: recipe.signInArguments, cwd: input.runtime.home, environment,
     onEnd: () => input.connectionSignal?.removeEventListener('abort', disconnected),
     check: () => Effect.runPromise(Effect.gen(function* () { const current = (yield* input.runtime.views.snapshot).accounts[account.id]; return { state: current && harness ? yield* accountReadiness(input, harness, current) : 'unavailable' } as const })) }), catch: failure })
   input.connectionSignal?.addEventListener('abort', disconnected, { once: true })
