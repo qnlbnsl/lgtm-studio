@@ -13905,3 +13905,21 @@ The exact source of the delay in the full run is not established.
 The focused Files journey passed after this change, with one journey passed in 22.8 seconds.
 The separate credit check passed.
 The full check remains a failed run.
+
+## 905. A stall-watch timer field came back empty after a reload in one full run.
+
+Found: 2026-11-14, in the full check of `area/studio-default` at `cfcc4de`.
+Status: open.
+
+The full check ran alone on the test computer.
+It passed 591 unit test files and 60 of 61 browser journeys.
+The journey "live service settings: timers, nudges, workflow folder, review defaults and upkeep" failed at `studioSettings.ts:51`.
+After a reload, the field `sd-a` held its saved value 7.
+The field `sd-w` was empty, where 17 was expected.
+The same journey then passed 6 of 6 times when run alone.
+The cause is not known.
+Issues 727, 863, 889, 893 and 898 record similar single failures of save journeys in full runs.
+Load alone does not explain this one, because nothing else was running.
+One possible cause is a save of one field that overwrites the save of the field before it.
+That cause has not been tested.
+An owner who types quickly across these fields might lose one value in the same way.
