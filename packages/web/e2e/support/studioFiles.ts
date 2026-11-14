@@ -124,7 +124,11 @@ export async function exerciseStudioFiles(page: Page) {
           await expect(page.getByRole('dialog').getByRole('button', { name: 'Generate', exact: true })).toBeDisabled()
           await expect(page.getByRole('dialog').getByRole('button', { name: 'Generate', exact: true })).toHaveAttribute('title', 'Engine work needed')
           await page.getByRole('textbox', { name: 'Commit message', exact: true }).fill('Commit the open file')
-          await page.getByRole('dialog').getByRole('button', { name: 'Commit', exact: true }).click(); await expect(page.getByRole('dialog')).toHaveCount(0)
+          await page.getByRole('dialog').getByRole('button', { name: 'Commit', exact: true }).click()
+          // Git and the coalesced listing refresh can outlast a rendering assertion.
+          // Wait for the engine's acknowledgement before checking the closed dialog.
+          await expect(page.locator('.fx-main [role="status"]')).toContainText('Committed file.ts as', { timeout: 15_000 })
+          await expect(page.getByRole('dialog')).toHaveCount(0)
           expect(git(workspace.path, 'show', '--format=', '--name-only', 'HEAD')).toBe('src/file.ts'); expect(git(workspace.path, 'diff', '--cached', '--name-only')).toBe('other.txt')
           const open = async (path: string) => { await page.goto(url + '?f=' + encodeURIComponent(path)) }
           await open('image.svg'); await expect(page.locator('.fx-pic img')).toBeVisible(); expect(await page.locator('.fx-pic img').evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth > 0)).toBe(true)

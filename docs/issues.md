@@ -13618,3 +13618,21 @@ The engine build now blocks edits during a request through the editor's state lo
 The browser journey checks the same editor node after Control+S.
 It also checks the focus and cursor position after the save.
 It types the next change through the keyboard without refilling the editor.
+
+## s8-files-11. The full Files journey exceeded its commit-dialog assertion budget.
+
+Found: 2026-11-14, in the round 1 remote check.
+State: the journey now waits for the engine's commit acknowledgement before checking the closed dialog.
+
+The full check passed all 581 unit test files.
+The browser suite passed 57 journeys and failed the Files journey at its five-second dialog assertion.
+The failure snapshot showed the committed-file notice.
+The snapshot's page tree no longer contained the dialog.
+The Files model waits for its coalesced listing refresh before closing the dialog.
+The journey now allows fifteen seconds for the commit acknowledgement.
+It still checks the closed dialog after that acknowledgement.
+It still checks the real Git commit's file list.
+The exact source of the delay in the full run is not established.
+The focused Files journey passed after this change, with one journey passed in 22.8 seconds.
+The separate credit check passed.
+The full check remains a failed run.
