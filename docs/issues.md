@@ -13923,3 +13923,18 @@ Load alone does not explain this one, because nothing else was running.
 One possible cause is a save of one field that overwrites the save of the field before it.
 That cause has not been tested.
 An owner who types quickly across these fields might lose one value in the same way.
+
+## 927. The public repository had no licence.
+
+Found: 2026-11-14, when the owner asked which licence requires credit.
+Status: fixed by adding the GNU Affero General Public License, version 3 only.
+
+The repository on GitHub is public.
+It had no licence file, and `README.md` said that a licence had not been chosen.
+Without a licence, nobody had permission to use, change or share the code.
+The owner chose the GNU Affero General Public License on 2026-11-14.
+The root `LICENSE` file now holds its text, and every package names it.
+Two matters stay open.
+The name "LGTM Studio" is not a registered trademark.
+There is no contributor agreement, so a contribution from another person would limit the owner's freedom to offer other licence terms later.
+
