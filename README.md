@@ -74,7 +74,7 @@ From the repository root, select Node.js and install the dependencies:
 ```sh
 nvm use
 pnpm install --frozen-lockfile
-pnpm --filter @lgtm/web build
+pnpm --filter @lgtm/studio build
 ```
 
 Start the service with a web password in its environment:
@@ -95,11 +95,9 @@ Set `LGTM_HOME` on the service and command processes to use another folder.
 The service continues running after the launching terminal closes.
 The terminal thread viewer is available through `./bin/lgtm view`.
 
-The rebuilt website, made from the mock in `design/mock/`, is served at `/studio/`.
-Build it once from the repository root with `pnpm --filter @lgtm/studio build`.
-Then open `http://127.0.0.1:8787/studio/` and sign in with the same web password.
-It shows the engine's real records, but its actions are not connected to the engine yet.
-See [design/mock/README.md](design/mock/README.md) for what it does and does not do.
+The website is built from the mock in `design/mock/` by the package `packages/studio`.
+An old address under `/studio/` is sent to the root.
+See [design/mock/README.md](design/mock/README.md) for what the website does and does not do.
 
 The service command also works without a web password.
 In that case, the authenticated Unix socket is available and the web server

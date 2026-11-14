@@ -33,7 +33,7 @@ export async function exerciseStudioGit(page: Page) {
     writeFileSync(join(rig.work, 'file.txt'), 'base\n'); commit(rig.work, 'Initial')
     const remote = join(rig.root, 'remote'); mkdirSync(remote); git(remote, 'init', '--bare')
     git(rig.work, 'remote', 'add', 'origin', remote); git(rig.work, 'push', '-u', 'origin', 'main')
-    const studioRoot = await buildStudio(join(rig.root, 'studio')), staticRoot = join(rig.root, 'web'); mkdirSync(staticRoot); writeFileSync(join(staticRoot, 'index.html'), '<title>Test</title>')
+    const studioRoot = await buildStudio(join(rig.root, 'studio'))
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const runner = yield* makeFakeRunner()
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, Layer.succeed(Redactor, { redact: (e) => Effect.succeed(e), redactText: (s) => Effect.succeed(s) }))
@@ -56,9 +56,9 @@ export async function exerciseStudioGit(page: Page) {
         writeFileSync(join(builderPath, 'builder.txt'), 'Builder change\n'); commit(builderPath, 'Builder contribution')
         writeFileSync(join(teamPath, 'team.txt'), 'Team change\n'); commit(teamPath, 'Team contribution')
         writeFileSync(join(source.path, 'file.txt'), 'browser change\n'); writeFileSync(join(source.path, 'discard.txt'), 'remove me\n')
-        yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
+        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
-          const url = `http://127.0.0.1:${port}/studio/#/p/${encodeURIComponent(project.projectId)}/git`
+          const url = `http://127.0.0.1:${port}/#/p/${encodeURIComponent(project.projectId)}/git`
           await page.goto(url); await page.locator('#login-password').fill(password); await page.getByRole('button', { name: 'Sign in', exact: true }).click(); await expect(page.locator('.tree-row.project')).toBeVisible(); await page.goto(url)
           const refresh = async () => { await page.getByRole('button', { name: 'Refresh Git', exact: true }).click(); await expect(page.locator('.git')).toHaveAttribute('aria-busy', 'false') }
           const fileButton = (name: string) => page.getByRole('button', { name, exact: true, includeHidden: true })

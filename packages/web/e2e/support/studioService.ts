@@ -1,7 +1,7 @@
 import { expect, type Page } from '@playwright/test'
 // All requests go through the real engine. The notification carrier is loopback only.
 export async function exerciseStudioService(page: Page, origin: string) {
-  const root = `${origin}/studio/`
+  const root = `${origin}/`
   page.setDefaultTimeout(15_000)
   await page.setViewportSize({ width: 1600, height: 1000 })
   await page.goto(`${root}#/subscriptions`)

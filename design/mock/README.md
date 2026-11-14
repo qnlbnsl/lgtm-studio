@@ -28,7 +28,7 @@ resets everything.
 
 The same files also run as the live website, which reads the engine's real records.
 The package `packages/studio` copies this folder, adds the connection to the engine, and
-the engine serves the result at `/studio/`.
+the engine serves the result as the website, at the root address.
 The build generates the workflow validator and default in this folder.
 The mock still opens on its sample data.
 
@@ -39,10 +39,10 @@ pnpm --filter @lgtm/studio build
 ```
 
 Then start the engine with a web password, as the root `README.md` describes, and open
-`http://127.0.0.1:8787/studio/`.
+`http://127.0.0.1:8787/`.
 The page asks for the web password, and it shows the engine's repositories, projects,
 teams, agents and open requests after you sign in.
-The current web page stays at `http://127.0.0.1:8787/`.
+An old address under `/studio/` is sent to the root.
 
 In live mode the page has no "Mock controls" button and no sample data.
 Actions that change something are not connected to the engine yet.

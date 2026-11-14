@@ -32,8 +32,9 @@ Roles units 3, 4 and 11a remain unbuilt.
 ## Where the website lives
 
 The website is the connected mock in `design/mock/`, decided by the owner on
-2026-11-14. The engine serves it at `/studio/`. Build every new screen and
-every screen change there.
+2026-11-14. The engine serves it at the root address, `/`. An old address
+under `/studio/` is sent to the root. Build every new screen and every screen
+change there.
 
 - The sample data in `design/mock/` stays, so the mock still opens on its own
   with no engine.
@@ -43,8 +44,10 @@ every screen change there.
   when the text it replaces is gone.
 - The visible look of an existing screen changes only with the owner's
   approval.
-- `packages/web` is the older page, served at `/`. It receives no new screens.
-  Its tests and browser journeys stay until the owner retires it.
+- `packages/web` is the older page. The service no longer serves it, decided
+  by the owner on 2026-11-14. It receives no new screens. Its tests and
+  browser journeys still run against it, until their coverage is moved to the
+  website and the package is removed.
 
 ## Language
 

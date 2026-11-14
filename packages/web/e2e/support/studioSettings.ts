@@ -23,8 +23,6 @@ export async function exerciseStudioSettings(page: Page) {
   process.env.LGTM_HOME = rig.stateFolder
   const password = randomBytes(32).toString('base64url')
   const workflowFolder = join(rig.home, 'owner-workflows'); mkdirSync(workflowFolder)
-  const staticRoot = join(rig.root, 'static'); mkdirSync(staticRoot)
-  writeFileSync(join(staticRoot, 'index.html'), '<title>Test service</title>')
   const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message))
   try {
     const studioRoot = await buildStudio(join(rig.root, 'studio')), port = await unusedPort()
@@ -35,9 +33,9 @@ export async function exerciseStudioSettings(page: Page) {
         yield* registerRebuildCheck()
         const project = yield* decisionSetup(); yield* completedSetup(project.projectId)
         success(yield* call(ownerCredential, 'project.settings.set', { settings: { workspaceFolder: rig.work, shell: '/bin/sh' } }))
-        yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
+        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
-          const root = `http://127.0.0.1:${port}/studio/`
+          const root = `http://127.0.0.1:${port}/`
           await page.goto(root)
           await page.locator('#login-password').fill(password)
           await page.getByRole('button', { name: 'Sign in', exact: true }).click()

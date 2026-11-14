@@ -13655,3 +13655,18 @@ The security section now states the configured executable exception and the limi
 The terminal help explains the connection boundary and the shell history risk.
 The mock exports account refresh directly instead of relying on build injection.
 This supersedes the fixture workaround recorded in 868.
+
+## 875. The older page's code and tests remain after the service stopped serving it.
+
+Found: 2026-11-14, when the owner asked for one website and not two.
+Status: open.
+
+The service now serves only the website built from `design/mock/`, at the root address.
+An old address under `/studio/` is sent to the root.
+The package `packages/web` is no longer served to anyone.
+Its source and its tests are still in the repository.
+Many browser journeys still drive the engine through the older page.
+Removing the package now would remove that coverage of the engine.
+Each journey needs an equal journey on the website before the package is removed.
+The Files tab and the Project settings screen existed only on the older page.
+They are unreachable until the units `s8-files` and `s8-psettings` merge.

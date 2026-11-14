@@ -17,7 +17,7 @@ const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'"
 const updateCommands = (branch: string, remote: string, ref: string) => [
   'git status --short', `git switch -- ${quote(branch)}`, `git fetch -- ${quote(remote)} ${quote(ref)}`,
   'git log --oneline HEAD..FETCH_HEAD', 'git merge --ff-only FETCH_HEAD',
-  'pnpm install --frozen-lockfile', 'pnpm --filter @lgtm/web build', 'pnpm --filter @lgtm/studio build',
+  'pnpm install --frozen-lockfile', 'pnpm --filter @lgtm/studio build',
   `./bin/lgtm client service restart --input '{"confirmed":true}'`,
 ]
 // The request supplies no command, remote, reference, environment, or path.

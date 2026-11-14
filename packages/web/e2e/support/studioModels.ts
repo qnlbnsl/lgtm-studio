@@ -25,8 +25,7 @@ export async function exerciseStudioModels(page: Page) {
   process.env.LGTM_HOME = rig.stateFolder
   const password = randomBytes(32).toString('base64url'), port = await unusedPort()
   try {
-    const studioRoot = await buildStudio(join(rig.root, 'studio')), staticRoot = join(rig.root, 'web')
-    mkdirSync(staticRoot); writeFileSync(join(staticRoot, 'index.html'), '<title>Test</title>')
+    const studioRoot = await buildStudio(join(rig.root, 'studio'))
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const runner = yield* makeFakeRunner()
       runner.script('discover', ({ harness: settings, account }) => {
@@ -44,9 +43,9 @@ export async function exerciseStudioModels(page: Page) {
         }
         yield* appendSetup([eventOf({ _tag: 'AccountChanged', accountId: 'first-alternate', account: { id: 'first-alternate', harness: 'first', displayName: 'first-alternate', enabled: true } })])
         success(yield* call(ownerCredential, 'project.settings.set', { settings: { workspaceFolder: rig.root, shell: 'sh', lead: { harness: 'first', account: { _tag: 'any' }, permission: 'ask' } } }))
-        yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
+        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
-          const url = `http://127.0.0.1:${port}/studio/#/harnesses`
+          const url = `http://127.0.0.1:${port}/#/harnesses`
           await page.goto(url)
           await page.locator('#login-password').fill(password)
           await page.getByRole('button', { name: 'Sign in', exact: true }).click()
@@ -67,7 +66,7 @@ export async function exerciseStudioModels(page: Page) {
           await harnesses.getByRole('button', { name: 'no-account', exact: true }).click()
           await expect(page.getByText('No account is registered for this harness.', { exact: true }).first()).toBeVisible()
           await expect(page.locator('#df-model')).toHaveCount(0)
-          await page.goto(`http://127.0.0.1:${port}/studio/#/subscriptions`)
+          await page.goto(`http://127.0.0.1:${port}/#/subscriptions`)
           await expect(page.getByRole('combobox', { name: 'Model for new agents on first-alternate', exact: true }).locator('option[value="alternate-only"]')).toHaveCount(1)
           await expect(page.getByRole('combobox', { name: 'Model for new agents on first-account', exact: true }).locator('option[value="alternate-only"]')).toHaveCount(0)
         })

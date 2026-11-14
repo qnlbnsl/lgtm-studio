@@ -4,7 +4,7 @@ import { gitActionsSource } from "./gitActions.ts"
 import { harnessChoicesSource } from "./harnessChoices.ts"
 import { mockControlsSource } from "./mockControlsSource.ts"
 import { harnessIntegrationSource } from "./harnessIntegration.ts"
-// Builds the live website into packages/studio/dist, which the engine serves at /studio/.
+// Builds the live website into packages/studio/dist, which the engine serves as the website.
 //
 // 1. It copies the website from design/mock. The folders that are links there, fonts and
 //    vendor/*, are copied as real files, because the engine's static server refuses any

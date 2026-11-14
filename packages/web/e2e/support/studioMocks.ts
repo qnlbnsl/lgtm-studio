@@ -33,8 +33,7 @@ export async function exerciseStudioMocks(page: Page) {
   } }
   await page.setViewportSize({ width: 1600, height: 1000 })
   try {
-    const studioRoot = await buildStudio(join(rig.root, "studio")), staticRoot = join(rig.root, "web")
-    mkdirSync(staticRoot); writeFileSync(join(staticRoot, "index.html"), "<title>Test</title>")
+    const studioRoot = await buildStudio(join(rig.root, "studio"))
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const runner = yield* makeFakeRunner()
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, Layer.succeed(Redactor, { redact: (e) => Effect.succeed(e), redactText: (s) => Effect.succeed(s) }))
@@ -46,9 +45,9 @@ export async function exerciseStudioMocks(page: Page) {
         writeFileSync(join(rig.work, "mocks/layout.pen"), original)
         const designRevision = success(yield* call(ownerCredential, "project.design.record", { projectId: "project", design: { repoId: f.repoId, worktreeId: "workspace", file: "mocks/layout.pen", components: [] } })).revisionId
         const revisionId = success(yield* call(ownerCredential, "project.mocks.record", { projectId: "project", expectedRevision: f.revisionId, bundle: { ...screenBundle(), designRevision } })).revisionId
-        yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
+        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
-          const origin = `http://127.0.0.1:${port}/studio/`, screen = origin + "#/p/project/mocks/screen/home"
+          const origin = `http://127.0.0.1:${port}/`, screen = origin + "#/p/project/mocks/screen/home"
           await page.goto(screen); await page.locator("#login-password").fill(password)
           await page.getByRole("button", { name: "Sign in", exact: true }).click()
           await expect(page.locator("#login-password")).toHaveCount(0)

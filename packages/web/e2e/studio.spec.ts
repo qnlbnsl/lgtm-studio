@@ -3,7 +3,7 @@ import { exerciseStudioGit } from './support/studioGit.ts'
 import { exerciseStudioMocks } from './support/studioMocks.ts'
 import { exerciseStudioService } from './support/studioService.ts'
 test("studio mocks: owner feedback, approval, seen versions and editor saves", async ({ page }) => exerciseStudioMocks(page))
-// The live website from packages/studio, served by the real engine at /studio/, on a real
+// The live website from packages/studio, served by the real engine at the root, on a real
 // project log. Only the harness runner is fake. The current page stays at /.
 import { completedSetup } from "./support/completedSetup.ts"
 import { execFileSync } from "node:child_process"
@@ -37,9 +37,6 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
   const previousHome = process.env.LGTM_HOME
   process.env.LGTM_HOME = rig.stateFolder
   const password = randomBytes(32).toString("base64url")
-  const staticRoot = join(rig.root, "page")
-  mkdirSync(staticRoot)
-  writeFileSync(join(staticRoot, "index.html"), "<!doctype html><title>Current page</title><main>Current page</main>")
   const errors: string[] = []
   const violations: string[] = []
   const timings: string[] = []
@@ -85,15 +82,13 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
           incarnation: runner.callsOf("prompt").filter((c) => c.input.agentId === input.agentId).at(-1)?.input.incarnation ?? incarnationOf(project.worker.token) }))
         const questionId = success(yield* call(project.leadCredential, "ask", { title: "Choose the release branch", text: "Which branch should the release use?", recommendation: "Keep one branch", proposedAnswer: "Use trunk" })).questionId
         yield* appendSetup([eventOf({ _tag: "PermissionRequested", agentId: project.leadId, permissionRequestId: "studio-permission", holder: { _tag: "owner" }, deliveryId: `seed-turn-${project.leadId}`, toolCallId: "studio-check", description: "Run Studio checks", options: [{ id: "harness-once", name: "Run once", kind: "allow_once", level: "ask", persistent: false }, { id: "harness-never", name: "Refuse this check", kind: "reject_once", level: "read-only", persistent: false }], settingsWrite: false, toolKind: "execute", toolInput: { command: "pnpm test studio" } })])
-        yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists: engineLists,
+        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists,
           settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
           const origin = `http://127.0.0.1:${port}`
-          // The current page keeps working at the root, and /studio is sent to /studio/.
-          await page.goto(origin)
-          await expect(page).toHaveTitle("Current page")
-          await page.goto(`${origin}/studio`)
-          await expect(page).toHaveURL(`${origin}/studio/`)
+          // The website is at the root, and an old /studio address is sent there with its screen kept.
+          await page.goto(`${origin}/#/home`)
+          await expect(page).toHaveURL(`${origin}/#/home`)
 
           // A signed-out visitor sees the Login page, and a wrong password is refused.
           await expect(page.locator("#login-password")).toBeVisible()
@@ -127,7 +122,7 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
           await expect(page.locator('.rq-table')).toContainText('Run once')
 
           // A worker's thread is writable for the owner. The engine drives pending state.
-          await page.goto(`${origin}/studio/#/p/${project.projectId}/chat/${project.workerId}`)
+          await page.goto(`${origin}/#/p/${project.projectId}/chat/${project.workerId}`)
           const thread = page.locator('.chat-main')
           const composer = thread.locator('textarea')
           await expect(thread.locator('.ctxuse')).toHaveText('25%')
@@ -186,7 +181,7 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
           await expect(thread.locator('.thread')).toContainText('Screen implemented.')
 
           // The project's lead and its team come from the engine.
-          await page.goto(`${origin}/studio/#/p/${encodeURIComponent(project.projectId)}/agents`)
+          await page.goto(`${origin}/#/p/${encodeURIComponent(project.projectId)}/agents`)
           await expect(page.locator(".main")).toContainText("Build")
           await expect(page.locator(".main")).toContainText("Project lead")
           await expect(page.locator(".topbar")).toContainText("Project")
@@ -199,7 +194,7 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
         yield* appendSetup([eventOf({ _tag: "PermissionRequested", agentId: project.workerId, permissionRequestId: "studio-thread-permission", holder: { _tag: "owner" }, deliveryId: "thread-permission-delivery", toolCallId: "thread-tool", description: "Check the thread options", options: Array.from({ length: 10 }, (_, i) => ({ id: `thread-option-${i}`, name: i === 9 ? "Harness persistent allow" : `Harness option ${i}`, kind: i === 9 ? "allow_always" : "reject_once", level: i === 9 ? "ask" : "read-only", persistent: i === 9 })), settingsWrite: false, toolInput: { command: "pnpm test thread" } })])
         yield* Effect.promise(async () => {
           const origin = `http://127.0.0.1:${port}`
-          await page.goto(`${origin}/studio/#/p/${project.projectId}/chat/${project.workerId}`)
+          await page.goto(`${origin}/#/p/${project.projectId}/chat/${project.workerId}`)
           const thread = page.locator('.chat-main')
           // The compact card renders the full source, with a proposed answer from the engine.
           await expect(thread.locator(`#req-${workerQuestion}`)).toContainText('Use the existing adapter?')
@@ -216,7 +211,7 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
         yield* appendSetup([eventOf({ _tag: 'roles.StallSeen', agentId: project.workerId, noticeRecipient: 'owner', triggerSequence: 1, sourceSequence: 1, occurrence: 1, notice: 'sent' })])
         yield* Effect.promise(async () => {
           const origin = `http://127.0.0.1:${port}`
-          await page.goto(`${origin}/studio/#/p/${project.projectId}/agents`)
+          await page.goto(`${origin}/#/p/${project.projectId}/agents`)
           await expect(page.getByRole('region', { name: 'Blocked', exact: true })).toContainText('name-one-worker')
           await expect(page.locator('.ag-row').filter({ hasText: 'name-one-worker' })).toContainText('TASK-1')
           await expect(page.locator('.ag-row').filter({ hasText: 'name-one-worker' }).locator('.ctx')).toContainText('25%')
@@ -252,7 +247,7 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
         // A failed start is a roster record and produces a Home row, without a merge request.
         yield* appendSetup([eventOf({ _tag: 'AgentStartFailed', agentId: project.workerId, reason: 'not-signed-in' })])
         yield* Effect.promise(async () => {
-          await page.goto(`http://127.0.0.1:${port}/studio/#/home`)
+          await page.goto(`http://127.0.0.1:${port}/#/home`)
           await expect(page.locator('.rq-table')).toContainText('name-one-worker failed to start')
           await page.getByRole('button', { name: 'Show name-one-worker failed to start', exact: true }).click()
           await expect(page.locator('.rq-detail')).toContainText('Not signed in')
@@ -272,10 +267,10 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
         yield* Effect.promise(async () => {
           const origin = `http://127.0.0.1:${port}`
           const sidebar = page.locator(".sidebar")
-          await page.goto(`${origin}/studio/#/p/${encodeURIComponent(project.projectId)}/board`)
+          await page.goto(`${origin}/#/p/${encodeURIComponent(project.projectId)}/board`)
           await expect(page.locator(".main")).toContainText("Pushed sprint")
           await expect.poll(() => timings.some((line) => line.includes("first pushed update") && line.includes("after the engine recorded it"))).toBe(true)
-          await page.goto(`${origin}/studio/#/home`)
+          await page.goto(`${origin}/#/home`)
 
           // A reload keeps the session, which is the engine's cookie.
           await page.reload()
@@ -309,9 +304,6 @@ test("live projects and board: signs in through the engine, shows its real recor
   const previousHome = process.env.LGTM_HOME
   process.env.LGTM_HOME = rig.stateFolder
   const password = randomBytes(32).toString("base64url")
-  const staticRoot = join(rig.root, "page")
-  mkdirSync(staticRoot)
-  writeFileSync(join(staticRoot, "index.html"), "<!doctype html><title>Current page</title><main>Current page</main>")
   const errors: string[] = []
   let expectedDisplayRefusal = false
   let displayProxy: Awaited<ReturnType<typeof httpsProxy>> | undefined
@@ -385,14 +377,12 @@ test("live projects and board: signs in through the engine, shows its real recor
         success(yield* call(project.workerCredential, "board.post", { channelId, text: "Engine board post", to: [{ _tag: "owner" }], reply: "none" }))
         yield* completedSetup(project.projectId)
         success(yield* call(ownerCredential, "client.web.settings.set", { settings: webSettings }))
-        yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists: engineLists, registerSecret: () => {} })
+        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, registerSecret: () => {} })
         yield* Effect.promise(async () => {
           const origin = `http://127.0.0.1:${port}`
-          // The current page keeps working at the root, and /studio is sent to /studio/.
-          await page.goto(origin)
-          await expect(page).toHaveTitle("Current page")
-          await page.goto(`${origin}/studio`)
-          await expect(page).toHaveURL(`${origin}/studio/`)
+          // The website is at the root, and an old /studio address is sent there with its screen kept.
+          await page.goto(`${origin}/#/home`)
+          await expect(page).toHaveURL(`${origin}/#/home`)
 
           // A signed-out visitor sees the Login page, and a wrong password is refused.
           await expect(page.locator("#login-password")).toBeVisible()
@@ -426,7 +416,7 @@ test("live projects and board: signs in through the engine, shows its real recor
           expect(sent.join("\n")).not.toContain("context.search")
 
           // Mock data is fetched when its tab opens, with no sample thumbnails.
-          await page.goto(`${origin}/studio/#/p/${project.projectId}/mocks`)
+          await page.goto(`${origin}/#/p/${project.projectId}/mocks`)
           await expect(page.locator(".mk-screens")).toContainText("Engine requests screen")
           await expect(page.locator(".mk-screens")).toContainText(mockRevision.revisionId)
           await expect(page.locator(".mk-mini")).toBeEmpty()
@@ -474,11 +464,11 @@ test("live projects and board: signs in through the engine, shows its real recor
           await expect(page.locator(".wf-status")).toContainText("Approved")
           await page.reload()
           await expect(page.locator(".wf-status")).toContainText("Approved")
-          await page.goto(`${origin}/studio/#/p/${project.projectId}/board`)
+          await page.goto(`${origin}/#/p/${project.projectId}/board`)
           await page.reload()
           await expect(page.getByRole("tab", { name: "Mocks", exact: true })).toBeVisible()
 
-          await page.goto(`${origin}/studio/#/r/${project.repoId}/design`)
+          await page.goto(`${origin}/#/r/${project.repoId}/design`)
           await expect(page.locator(".dz-file")).toContainText("studio-design.pen")
           await expect(page.locator(".dz-file")).toContainText("Owner")
           await expect(page.locator(".dz-canvas")).toContainText("No flows")
@@ -514,7 +504,7 @@ test("live projects and board: signs in through the engine, shows its real recor
           writeFileSync(join(rig.work, "studio-design.pen"), "Registered design bytes")
 
           // The project's lead and its team come from the engine.
-          await page.goto(`${origin}/studio/#/p/${encodeURIComponent(project.projectId)}/agents`)
+          await page.goto(`${origin}/#/p/${encodeURIComponent(project.projectId)}/agents`)
           await expect(page.locator(".main")).toContainText("Build")
           await expect(page.locator(".main")).toContainText("Project lead")
           await expect(page.locator(".topbar")).toContainText("Project")
@@ -526,12 +516,12 @@ test("live projects and board: signs in through the engine, shows its real recor
         yield* Effect.promise(async () => {
           const origin = `http://127.0.0.1:${port}`
           const sidebar = page.locator(".sidebar")
-          await page.goto(`${origin}/studio/#/p/${encodeURIComponent(project.projectId)}/board`)
+          await page.goto(`${origin}/#/p/${encodeURIComponent(project.projectId)}/board`)
           await expect(page.locator(".main")).toContainText("Pushed sprint")
           await expect(page.locator('[aria-label="Backlog"] .sprint-card')).toHaveCount(0)
           await expect(page.locator('[aria-label="Planned"]')).toContainText("Pushed sprint")
           await expect(page.locator('[aria-label="In progress"]')).toContainText("Sprint")
-          await page.goto(`${origin}/studio/#/p/${project.projectId}/sprint/${project.sprintId}`)
+          await page.goto(`${origin}/#/p/${project.projectId}/sprint/${project.sprintId}`)
           await expect(page.locator(".tk")).toContainText("Engine task")
           await page.getByRole("button", { name: "Add task", exact: true }).click()
           await page.getByRole("textbox", { name: "Task title" }).fill("Owner added task")
@@ -542,15 +532,15 @@ test("live projects and board: signs in through the engine, shows its real recor
           await expect(page.locator(".main")).toContainText(rig.work)
           await expect(page.locator(".timeline")).toContainText("Recorded note")
           await expect(page.locator(".main")).toContainText(rig.work)
-          await page.goto(`${origin}/studio/#/p/${project.projectId}/team/${project.team.teamId}`)
+          await page.goto(`${origin}/#/p/${project.projectId}/team/${project.team.teamId}`)
           await expect(page.getByRole("link", { name: "Team channel", exact: true })).toBeVisible()
           await expect(page.locator(".main")).toContainText("Owner added task")
-          await page.goto(`${origin}/studio/#/r/${project.repoId}`)
+          await page.goto(`${origin}/#/r/${project.repoId}`)
           await expect(page.locator(".repo-facts")).toContainText(rig.work)
           await expect(page.locator(".repo-facts dt").filter({ hasText: "Remote" }).locator("+ dd")).toBeEmpty()
           await expect(page.locator(".repo-desc p")).toHaveCount(0)
           await expect(page.locator(".main .table")).toContainText("Project")
-          await page.goto(`${origin}/studio/#/p/${project.projectId}/messages/waiting`)
+          await page.goto(`${origin}/#/p/${project.projectId}/messages/waiting`)
           await expect(page.locator(".ch-row").filter({ hasText: "project-updates" }).locator(".count.info")).toHaveText("1")
           await page.locator(".ch-row").filter({ hasText: "project-updates" }).click()
           await expect(page.locator(".mb-stream")).toContainText("Engine board post")
@@ -575,7 +565,7 @@ test("live projects and board: signs in through the engine, shows its real recor
           await thread.getByRole("button", { name: "Post", exact: true }).click()
           await expect(thread).toContainText("Owner thread reply")
           await page.getByRole("button", { name: "Close thread", exact: true }).click()
-          await page.goto(`${origin}/studio/#/p/${project.projectId}/settings`)
+          await page.goto(`${origin}/#/p/${project.projectId}/settings`)
           await page.locator("#ps-goal").fill("An edited engine goal")
           await page.getByRole("button", { name: "Save goal", exact: true }).click()
           await expect(page.getByRole("button", { name: "Save goal", exact: true })).toHaveCount(0)
@@ -590,7 +580,7 @@ test("live projects and board: signs in through the engine, shows its real recor
           await page.getByRole("button", { name: "Archive", exact: true }).click()
           await page.getByRole("dialog").getByRole("button", { name: "Archive project", exact: true }).click()
           await expect(page).toHaveURL(new RegExp("#/r/"))
-          await page.goto(`${origin}/studio/#/projects`)
+          await page.goto(`${origin}/#/projects`)
           await page.getByRole("button", { name: /^Archived/ }).click()
           await expect(page.locator(".main .table")).toContainText("Renamed project")
           await page.keyboard.press("Control+k")
@@ -599,7 +589,7 @@ test("live projects and board: signs in through the engine, shows its real recor
           await page.keyboard.press("Escape")
           await page.getByRole("button", { name: "Restore", exact: true }).click()
           await expect(page.getByRole("button", { name: "Restore", exact: true })).toHaveCount(0)
-          await page.goto(`${origin}/studio/#/machines`)
+          await page.goto(`${origin}/#/machines`)
           await expect(page.locator(".svc-machines tbody > tr")).toHaveCount(1)
           const machine = page.locator(".svc-machines tbody > tr").first()
           await expect(machine).toContainText("local")
@@ -636,7 +626,7 @@ test("live projects and board: signs in through the engine, shows its real recor
           await page.locator("#ar-path").fill(additionalRepo)
           await page.getByRole("dialog").getByRole("button", { name: "Add repository", exact: true }).click()
           await expect(sidebar.locator(".tree-row.repo").filter({ hasText: "additional-repository" })).toBeVisible()
-          await page.goto(`${origin}/studio/#/projects`)
+          await page.goto(`${origin}/#/projects`)
           await page.locator(".main").getByRole("button", { name: "New project", exact: true }).click()
           await expect(page.locator("#np-machine option")).toHaveCount(1)
           await page.locator("#np-repo").selectOption({ label: "additional-repository" })
@@ -658,7 +648,7 @@ test("live projects and board: signs in through the engine, shows its real recor
           await expect(page.locator(".topbar")).toContainText("Nested board")
           await expect(sidebar.locator(".tree-row.repo").filter({ hasText: "browser-new-repository" })).toBeVisible()
           await expect.poll(() => timings.some((line) => line.includes("first pushed update") && line.includes("after the engine recorded it"))).toBe(true)
-          await page.goto(`${origin}/studio/#/home`)
+          await page.goto(`${origin}/#/home`)
 
           // A reload keeps the session, which is the engine's cookie.
           await page.reload()
@@ -740,8 +730,7 @@ test("live first run: saves settings, registers the existing folder and creates 
   try {
     execFileSync("git", ["-C", rig.work, "init", "-b", "main"], { stdio: "ignore" })
     execFileSync("git", ["-C", rig.work, "-c", "user.name=Owner", "-c", "user.email=owner@example.test", "commit", "--allow-empty", "-m", "Initial"], { stdio: "ignore" })
-    const studioRoot = await buildStudio(join(rig.root, "studio")), staticRoot = join(rig.root, "old-page"), port = await unusedPort()
-    mkdirSync(staticRoot); writeFileSync(join(staticRoot, "index.html"), "<!doctype html><title>Old page</title>")
+    const studioRoot = await buildStudio(join(rig.root, "studio")), port = await unusedPort()
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const runner = yield* makeFakeRunner()
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, Layer.succeed(Redactor, {
@@ -754,11 +743,11 @@ test("live first run: saves settings, registers the existing folder and creates 
           adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }]
         }) }))
         success(yield* call(ownerCredential, "accounts set-secret", { accountId: "setup-ready", name: "CURSOR_API_KEY", nonce: "studio-setup", value: Redacted.make("synthetic-studio-setup-key") }))
-        yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists: engineLists,
+        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists,
           settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
           const origin = `http://127.0.0.1:${port}`
-          await page.goto(`${origin}/studio/`)
+          await page.goto(`${origin}/`)
           await page.locator("#login-password").fill(password)
           await page.getByRole("button", { name: "Sign in", exact: true }).click()
           await expect(page.getByRole("heading", { name: "Connect a subscription", exact: true })).toBeVisible()
@@ -802,9 +791,6 @@ test("live website: subscriptions, notifications and service settings persist th
   const previousHome = process.env.LGTM_HOME
   process.env.LGTM_HOME = rig.stateFolder
   const password = randomBytes(32).toString("base64url")
-  const staticRoot = join(rig.root, "page")
-  mkdirSync(staticRoot)
-  writeFileSync(join(staticRoot, "index.html"), "<!doctype html><title>Current page</title><main>Current page</main>")
   const errors: string[] = []
   const violations: string[] = []
   const timings: string[] = []
@@ -835,15 +821,13 @@ test("live website: subscriptions, notifications and service settings persist th
         success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: harnessSettings('first', { models: ['test-model', 'other-model'], efforts: ['high'], defaultModel: 'test-model', defaultEffort: 'high' }) }))
         success(yield* call(ownerCredential, 'project.settings.set', { settings: { workspaceFolder: rig.work, shell: 'zsh', lead: { harness: 'first', account: { _tag: 'any' }, permission: 'ask', model: 'test-model', effort: 'high' } } }))
         yield* completedSetup(project.projectId)
-        yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists: engineLists,
+        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists,
           settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
           const origin = `http://127.0.0.1:${port}`
-          // The current page keeps working at the root, and /studio is sent to /studio/.
-          await page.goto(origin)
-          await expect(page).toHaveTitle("Current page")
-          await page.goto(`${origin}/studio`)
-          await expect(page).toHaveURL(`${origin}/studio/`)
+          // The website is at the root, and an old /studio address is sent there with its screen kept.
+          await page.goto(`${origin}/#/home`)
+          await expect(page).toHaveURL(`${origin}/#/home`)
 
           // A signed-out visitor sees the Login page, and a wrong password is refused.
           await expect(page.locator("#login-password")).toBeVisible()
@@ -860,7 +844,7 @@ test("live website: subscriptions, notifications and service settings persist th
           for (const word of ["Maya Okafor", "lgtm-studio", "Agent console", "Workstation"]) await expect(page.locator("body")).not.toContainText(word)
 
           // The project's lead and its team come from the engine.
-          await page.goto(`${origin}/studio/#/p/${encodeURIComponent(project.projectId)}/agents`)
+          await page.goto(`${origin}/#/p/${encodeURIComponent(project.projectId)}/agents`)
           await expect(page.locator(".main")).toContainText("Build")
           await expect(page.locator(".main")).toContainText("Project lead")
           await expect(page.locator(".topbar")).toContainText("Project")
@@ -874,13 +858,13 @@ test("live website: subscriptions, notifications and service settings persist th
         yield* Effect.promise(async () => {
           const origin = `http://127.0.0.1:${port}`
           const sidebar = page.locator(".sidebar")
-          await page.goto(`${origin}/studio/#/p/${encodeURIComponent(project.projectId)}/board`)
+          await page.goto(`${origin}/#/p/${encodeURIComponent(project.projectId)}/board`)
           await expect(page.locator(".main")).toContainText("Pushed sprint")
           await expect.poll(() => timings.some((line) => line.includes("first pushed update") && line.includes("after the engine recorded it"))).toBe(true)
-          await page.goto(`${origin}/studio/#/home`)
+          await page.goto(`${origin}/#/home`)
 
           await exerciseStudioService(page, origin)
-          await page.goto(`${origin}/studio/#/home`)
+          await page.goto(`${origin}/#/home`)
 
           // A reload keeps the session, which is the engine's cookie.
           await page.reload()
@@ -925,8 +909,7 @@ test("live messages: a new project has General and Leads and accepts an owner po
   try {
     execFileSync("git", ["-C", rig.work, "init", "-b", "main"], { stdio: "ignore" })
     execFileSync("git", ["-C", rig.work, "-c", "user.name=Owner", "-c", "user.email=owner@example.test", "commit", "--allow-empty", "-m", "Initial"], { stdio: "ignore" })
-    const studioRoot = await buildStudio(join(rig.root, "studio")), staticRoot = join(rig.root, "old-page"), port = await unusedPort()
-    mkdirSync(staticRoot); writeFileSync(join(staticRoot, "index.html"), "<!doctype html><title>Old page</title>")
+    const studioRoot = await buildStudio(join(rig.root, "studio")), port = await unusedPort()
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const runner = yield* makeFakeRunner()
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, Layer.succeed(Redactor, {
@@ -939,11 +922,11 @@ test("live messages: a new project has General and Leads and accepts an owner po
           adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }]
         }) }))
         success(yield* call(ownerCredential, "accounts set-secret", { accountId: "setup-ready", name: "CURSOR_API_KEY", nonce: "studio-setup", value: Redacted.make("synthetic-studio-setup-key") }))
-        yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists: engineLists,
+        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists,
           settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
           const origin = `http://127.0.0.1:${port}`
-          await page.goto(`${origin}/studio/`)
+          await page.goto(`${origin}/`)
           await page.locator("#login-password").fill(password)
           await page.getByRole("button", { name: "Sign in", exact: true }).click()
           await expect(page.getByRole("heading", { name: "Connect a subscription", exact: true })).toBeVisible()
@@ -1003,7 +986,6 @@ test('live website: Service settings discovers models when the default harness c
 test('workflows: sees default phases, clones, edits and saves across reload with a read-only default', async ({ page }) => {
   test.setTimeout(90_000)
   const rig = makeRig(), password = randomBytes(32).toString('base64url')
-  const staticRoot = join(rig.root, 'page'); mkdirSync(staticRoot); writeFileSync(join(staticRoot, 'index.html'), '<title>Test</title>')
   try {
     const studioRoot = await buildStudio(join(rig.root, 'studio')), port = await unusedPort()
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
@@ -1014,9 +996,9 @@ test('workflows: sees default phases, clones, edits and saves across reload with
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck()
         const project = yield* decisionSetup(); yield* completedSetup(project.projectId)
-        yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
+        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
-          await page.goto(`http://127.0.0.1:${port}/studio/`)
+          await page.goto(`http://127.0.0.1:${port}/`)
           await page.locator('#login-password').fill(password)
           await page.getByRole('button', { name: 'Sign in', exact: true }).click()
           await page.locator('.sidebar').getByRole('link', { name: 'Workflows', exact: true }).click()
