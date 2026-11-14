@@ -14003,17 +14003,27 @@ The test first failed with an unblanked suffix.
 ## s9-terminal-13. The model-discovery journey intermittently loses a harness selection.
 
 Found in the full remote check during the project terminal work.
-State: unresolved.
+State: fixed in review round 1.
 The full check passed all 594 unit test files.
 It passed 61 browser journeys and failed the model-discovery journey.
 The failed assertion expected the empty harness's model-choice explanation.
 The browser snapshot still showed the first harness selected.
 The focused rerun passed one journey in 3.0 seconds.
-The settings action currently ignores a new action while its settings request is pending.
-A selection made during that interval is a possible cause.
-The exact cause is not established.
+The review identified a save guard that discarded pending changes.
+It also identified a second background reload that disabled a control after it became enabled.
+An older reload could overwrite the cached records used by a later save.
+The settings action now queues writes through their complete readback.
+Unsent changes to one field keep the latest value.
+Pending edits are retained across background reads.
+Background reads no longer disable the settings inputs.
+Only the latest reload may publish its results.
+A readback invalidated by navigation is repeated before the next queued write.
+This also addresses the Service settings race identified as issue 905 in the fix brief.
+The new unit regressions reproduced the dropped-edit and stale-read behavior before the fix.
+The browser journey changes two fields and then a harness before reloading.
+All ten serial repetitions passed after the fix.
 The project terminal journey passed in both its focused run and the full run.
-The full check remains a failed run.
+The original full check remains a failed historical run.
 
 ## s9-terminal-14. Large output killed the project shell.
 
