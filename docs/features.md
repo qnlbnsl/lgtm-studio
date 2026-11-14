@@ -1140,3 +1140,22 @@ The design should say what each folder holds, which files are secret, and what a
 The owner said on 2026-11-14 that the current build loop is not good enough and needs a better way.
 No replacement has been designed.
 The owner wants the Terminal finished first.
+
+## A full-size OpenPencil editor beside the chat
+
+The owner asked for this on 2026-11-14.
+In edit mode on the Mocks screen, the OpenPencil editor sits in a small area.
+A maximize button should let the editor fill the page, with all of OpenPencil's own tools.
+The chat stays open at the side while the editor is maximized.
+The button returns the screen to its normal layout when it is pressed again.
+This changes the look of an existing screen, so it needs the owner's approval of a mock first.
+
+## Click an object in a mock to refer to it in the chat
+
+The owner asked for this on 2026-11-14.
+In view mode on the Mocks screen, the owner should be able to click one object in a mock.
+The click puts a reference to that object into the chat composer.
+The agent that receives the message then knows exactly which object the owner means.
+Still to decide: what the reference carries, for example the object's identifier, its name, its screen and the mock revision.
+Still to decide: how the reference looks in the composer and in the sent message.
+The section "Files and images sent with a message" above covers a related need.
