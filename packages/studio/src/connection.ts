@@ -12,6 +12,7 @@ import { connect, type Client, type ClientEnvelope } from "@lgtm/client/browser"
 import { displayedState, type ClientSnapshot, type EventSequence, type RequestId } from "@lgtm/contracts"
 import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
+import type { mapLeadSettings } from "./projectSettings.ts"
 import * as board from "./board.ts"
 import { mapAlerts } from "./git.ts"
 import * as Redacted from "effect/Redacted"
@@ -33,6 +34,7 @@ export interface StorePatch extends Partial<EngineRecords> {
   readonly posts?: ReadonlyArray<ReturnType<typeof board.mapPost>>
   readonly taskDetails?: object
   readonly boardAgents?: object
+  readonly projectLeadSettings?: Readonly<Record<string, ReturnType<typeof mapLeadSettings> | null>>
   readonly setupData?: object | null
   readonly notifications?: ReturnType<typeof mapAlerts>
   readonly accountLimits?: Readonly<Record<string, number | null>>
@@ -134,7 +136,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
   }
   const setSession = (status: SessionStatus) => write({ session: { status, firstRun: false } })
   // Records leave the browser when the session ends, so no signed-out page keeps them.
-  const forget = () => { retryIds.clear(); accountLimits = {}; write({ ...emptyRecords, notifications: [], accountLimits, owner: mapOwner(undefined), channels: [], posts: [], taskDetails: {}, boardAgents: {}, setupData: null, mocks: {}, design: {}, machineDetails: null, boardUnread: {}, boardRevision: 0, boardDetails: {} }) }
+  const forget = () => { retryIds.clear(); accountLimits = {}; write({ ...emptyRecords, notifications: [], accountLimits, owner: mapOwner(undefined), channels: [], posts: [], taskDetails: {}, boardAgents: {}, projectLeadSettings: {}, setupData: null, mocks: {}, design: {}, machineDetails: null, boardUnread: {}, boardRevision: 0, boardDetails: {} }) }
 
   const post = async (path: string, body?: unknown): Promise<number | undefined> => {
     try {

@@ -9,6 +9,7 @@ import * as SqliteClient from '../../../../third_party/t3code/node-sqlite/src/no
 import { buildServices } from '../../../engine/src/service.ts'
 import { serve } from '../../../engine/src/client/web/server.ts'
 import { engineLists } from '../../../engine/src/pieces/lists.ts'
+import { refused, type Input } from '../../../engine/src/commands/internal.ts'
 import { Redactor } from '../../../engine/src/log/Redactor.ts'
 import { unusedPort } from '../../../engine/test/support/browserWeb.ts'
 import { makeFakeRunner } from '../../../engine/test/support/fakeRunner.ts'
@@ -22,6 +23,11 @@ export async function exerciseStudioProjectSettings(page: Page) {
   const rig = makeRig(), previous = process.env.LGTM_HOME
   process.env.LGTM_HOME = rig.stateFolder
   const password = randomBytes(32).toString('base64url')
+  let refuseModel = false
+  const lists = { ...engineLists, planners: { ...engineLists.planners,
+    configure: (input: Input, payload: Record<string, unknown>) => refuseModel
+      ? Effect.fail(refused()) : engineLists.planners.configure!(input, payload)
+  } }
   const staticRoot = join(rig.root, 'static'); mkdirSync(staticRoot)
   writeFileSync(join(staticRoot, 'index.html'), '<title>Test service</title>')
   const errors: string[] = []; page.on('pageerror', (error) => errors.push(error.message))
@@ -35,12 +41,11 @@ export async function exerciseStudioProjectSettings(page: Page) {
         yield* registerRebuildCheck()
         const project = yield* decisionSetup(); yield* completedSetup(project.projectId)
         success(yield* call(ownerCredential, 'project.settings.set', { settings: { workspaceFolder: rig.work, shell: '/bin/sh' } }))
-        let refuseModel = false
         runner.script('choices', () => Effect.promise(async () => {
-          return { models: { source: 'negotiated' as const, options: refuseModel ? [] : [{ id: 'test-model', label: 'Engine model' }, { id: 'other-model', label: 'Other engine model' }] },
+          return { models: { source: 'negotiated' as const, options: [{ id: 'test-model', label: 'Engine model' }, { id: 'other-model', label: 'Other engine model' }] },
             efforts: { source: 'negotiated' as const, options: [{ id: 'high', label: 'High' }, { id: 'low', label: 'Low' }] } }
         }))
-        yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
+        yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
           const root = `http://127.0.0.1:${port}/studio/`
           await page.goto(root)
@@ -92,11 +97,13 @@ export async function exerciseStudioProjectSettings(page: Page) {
           await expect(page.locator('#ps-goal')).toHaveValue('A goal saved through the live settings screen')
           await expect(model).toHaveValue('other-model')
           await expect(effort).toHaveValue('low')
-          // The choices changed after the page read them. The engine exposes its public refusal reason.
+          // Refuse the write while keeping the same choices available on readback.
           refuseModel = true
           await model.selectOption('test-model')
           await expect(page.locator('.toasts')).toContainText('command refused')
-          await expect(screen).toContainText('This harness did not report model choices.')
+          await expect(model).toBeEnabled()
+          await expect(model).toHaveValue('other-model')
+          await expect(model.locator('option')).toContainText(['Engine model', 'Other engine model'])
           refuseModel = false
           await page.reload()
           await expect(model).toHaveValue('other-model')
@@ -111,7 +118,7 @@ export async function exerciseStudioProjectSettings(page: Page) {
           await expect.poll(() => page.evaluate(() => (window as any).settingsPolicyViolations || [])).toEqual([])
           expect(errors).toEqual([])
         })
-      }).pipe(Effect.provide(buildServices(rig).pipe(Layer.provide(dependencies))), Effect.provide(runner.layer)))
+      }).pipe(Effect.provide(buildServices(rig, lists).pipe(Layer.provide(dependencies))), Effect.provide(runner.layer)))
     })).pipe(Effect.provide(SqliteClient.layer({ filename: rig.database, readerWorker: true }))))
   } finally { if (previous === undefined) delete process.env.LGTM_HOME; else process.env.LGTM_HOME = previous; removeRig(rig) }
 }

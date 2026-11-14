@@ -12,7 +12,7 @@ const report = { configuration: { desired: { model: 'desired', effort: 'low' }, 
   models: { source: 'negotiated', options: [{ id: 'desired', label: 'Reported model' }, { id: 'next' }] },
   efforts: { source: 'negotiated', options: [{ id: 'low', label: 'Low' }] } } satisfies AgentChoices & { configuration: AgentConfiguration }
 it('maps desired lead settings, exact engine choices and pending acknowledgement separately', () => {
-  expect(mapping.mapLeadSettings(report)).toEqual({ model: 'desired', effort: 'low', applied: report.configuration.applied, status: 'pending', reason: '',
+  expect(mapping.mapLeadSettings(report)).toEqual({ model: 'desired', effort: 'low', applied: report.configuration.applied, status: 'pending', statusLabel: 'Waiting for the agent', reason: '',
     models: [{ id: 'desired', label: 'Reported model' }, { id: 'next', label: 'next' }], efforts: [{ id: 'low', label: 'Low' }], modelReason: '', effortReason: '' })
   expect(mapping.mapLeadSettings({ ...report, configuration: { desired: {}, status: 'unavailable' }, models: { source: 'unavailable', options: [], reason: 'Sign in first' } }))
     .toMatchObject({ model: '', effort: '', models: [], modelReason: 'Sign in first' })
@@ -41,7 +41,7 @@ beforeAll(async () => {
 afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); lib.live.on = false; engine.setConnection(null) })
 function setup(request: (tag: string, payload: any) => Promise<unknown>) {
   vi.useFakeTimers(); lib.live.on = true
-  lib.store.state = lib.guardStore({ session: { status: 'in' }, ui: {}, toasts: [], boardAgents: {}, projects: [{ id: 'project', name: 'Original', goal: 'Original goal', lead: 'lead' }], agents: [{ id: 'lead', model: 'old', effort: 'high' }] })
+  lib.store.state = lib.guardStore({ session: { status: 'in' }, ui: {}, toasts: [], boardAgents: {}, projectLeadSettings: {}, projects: [{ id: 'project', name: 'Original', goal: 'Original goal', lead: 'lead' }], agents: [{ id: 'lead', model: 'old', effort: 'high' }] })
   engine.setConnection({ request })
 }
 for (const [label, tag, key, action] of [
@@ -68,16 +68,16 @@ for (const [label, tag, key, action] of [
   expect(lib.store.state.ui.boardBusy[key]).toBeUndefined()
   expect(JSON.stringify([lib.store.state.projects, lib.store.state.agents])).toBe(before)
   if (refused) expect(lib.store.state.toasts.at(-1)).toMatchObject({ text: 'The engine refused this specific change', tone: 'error' })
-  else if (tag === 'configure') expect(lib.store.state.boardAgents.lead.settings).toMatchObject({ model: 'desired', status: 'pending' })
+  else if (tag === 'configure') expect(lib.store.state.projectLeadSettings.lead).toMatchObject({ model: 'desired', status: 'pending' })
 })
 it('a lead read arriving after sign-out cannot restore private settings', async () => {
   let finish!: (value: unknown) => void
   const held = new Promise((resolve) => { finish = resolve })
   setup(() => held)
   const pending = actions.loadLead('lead')
-  lib.engineWrite({ session: { status: 'out' }, boardAgents: {} })
+  lib.engineWrite({ session: { status: 'out' }, boardAgents: {}, projectLeadSettings: {} })
   finish(report); await pending
-  expect(lib.store.state.boardAgents).toEqual({})
+  expect(lib.store.state.projectLeadSettings).toEqual({})
 })
 
 it('draws every unsupported setting disabled with its hover reason, while keeping facts and teams', async () => {
@@ -88,7 +88,7 @@ it('draws every unsupported setting disabled with its hover reason, while keepin
   const board = await import('../src/board.ts')
   const liveBoard = await import('../../../design/mock/js/live/board.js' as string)
   const { engineSnapshot } = await import('./fixtures.ts')
-  const state: any = { ...board.mapBoardRecords(engineSnapshot, mapSnapshot(engineSnapshot, 1)), ui: {}, settings: {}, boardAgents: { 'ag-lead': { settings: mapping.mapLeadSettings(report), models: report.models.options, efforts: report.efforts.options } }, sprints: [], tasks: [], requests: [] }
+  const state: any = { ...board.mapBoardRecords(engineSnapshot, mapSnapshot(engineSnapshot, 1)), ui: {}, settings: {}, projectLeadSettings: { 'ag-lead': mapping.mapLeadSettings(report) }, boardAgents: { 'ag-lead': { settings: mapping.mapLeadSettings(report), models: report.models.options, efforts: report.efforts.options } }, sprints: [], tasks: [], requests: [] }
   const source = projectSettingsSource('js/screens/service.js', current()).replace(/^import[\s\S]*?from ['"][^'"\n]+['"];$/gm, '').replace(/export /g, '')
   const context = { ...lib, ...data, ...ui, useEffect() {}, registerDialog() {}, act: {}, board: liveBoard, liveGit: {}, mocks: {}, projectSettings: actions }
   const Component = new Function(...Object.keys(context), source + '\nreturn ProjectSettings;')(...Object.values(context))

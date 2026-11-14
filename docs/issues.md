@@ -13596,3 +13596,31 @@ The failure was a missing "Editor changes saved" notice at `packages/web/e2e/sup
 The same Mocks journey passed in isolation without a code change.
 The new project settings journey passed in both its focused run and the full check.
 The cause of the intermittent Mocks failure remains unconfirmed.
+
+## s8-psettings-15. The project shell command has no control on the live project settings screen.
+
+The engine supports `project.preferences.set` for a project's preferred shell.
+The connected mock's project settings screen has no shell control.
+This migration does not add one.
+
+## s8-psettings-16. A goal update from another client replaces an unsaved goal draft without a notice.
+
+The live project settings screen resets its goal draft when the engine reports a changed goal.
+An update from another client can therefore replace an unsaved local draft.
+The screen does not warn the owner before replacing that draft.
+This behaviour remains unchanged in Round 1.
+
+## s8-psettings-17. The first review found unnecessary lead reads and shared settings records.
+
+The first implementation re-read the lead configuration on every roster publish.
+Those reads disabled the model and effort pickers.
+A read already in flight could suppress the read after a configuration write.
+Lead settings shared `boardAgents` with team details and could corrupt or lose those details.
+Round 1 limits refresh dependencies to the lead's identifier, model, effort, and state.
+It keeps existing choices enabled during background reads.
+It gives reads after a write their own busy key.
+It prevents older reads from overwriting a newer result.
+It stores lead settings in their own guarded collection and clears it at sign-out.
+It checks switch boundaries before slicing the copied screen.
+It checks that the final build output retains the lead loader.
+It renders configuration status in plain words.
