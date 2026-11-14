@@ -1,12 +1,13 @@
 import type { GitAttempt, GitEvidence, GitMainReview } from "./git.ts"
 import type { SetupState, MockRevision, MockApproval, MockScreenReview } from "./mocks.ts"
 import type { RepositoryDesign } from "./design.ts"
-import type { OwnerTaskNotification, Project, ProjectCreation, ProjectSettings, ProjectTaskRecord, Repository, RepositoryLocation, Sprint, Team, Workspace } from "./schema.ts"
+import type { FileSaveNotice, OwnerTaskNotification, Project, ProjectCreation, ProjectSettings, ProjectTaskRecord, Repository, RepositoryLocation, Sprint, Team, Workspace } from "./schema.ts"
 export interface ProjectView {
   readonly gitAttempts: Readonly<Record<string, GitAttempt>>
   readonly gitEvidence: Readonly<Record<string, GitEvidence>>
   readonly gitReviews: Readonly<Record<string, GitMainReview>>
   readonly taskNotifications: Readonly<Record<string, OwnerTaskNotification>>
+  readonly fileSaveNotices: Readonly<Record<string, FileSaveNotice>>
   readonly setup: SetupState
   readonly mockRevisions: Readonly<Record<string, MockRevision>>
   readonly mockHeads: Readonly<Record<string, string>>

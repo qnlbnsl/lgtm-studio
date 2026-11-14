@@ -4,11 +4,12 @@ import { lstat, mkdir, mkdtemp, open, opendir, realpath, rename, rm, stat, write
 import { basename, dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import * as Effect from "effect/Effect";
-import { isRepositoryCredentialPath } from "@lgtm/contracts";
+import { fileTextLimit, isRepositoryCredentialPath } from "@lgtm/contracts";
 import { checkedMetadata, cleanText, directory, filePath, inside, slug, smallFile } from "./paths.ts";
 import { parseChanges, parseConflict, parseFiles, parseHistory, parseNumstat } from "./parse.ts";
+import { replaceFile, ReplaceFileError, sha256 } from "./replace.ts";
 import { boundedUtf8, gitProcess, processFailure, type ProcessReply } from "./process.ts";
-import { GitFailure, type Bounded, type Change, type Conflict, type ConflictChoice, type Diff, type DiscardPlan,
+import { GitFailure, type Bounded, type Change, type FileChange, type FileEntry, type FileImageType, type Conflict, type ConflictChoice, type Diff, type DiscardPlan,
   type GitFailureReason, type ResolvedConflict, type GitService, type Repository, type Review, type Worktree } from "./types.ts";
 export * from "./types.ts";
 
@@ -366,6 +367,40 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     if (comparison.commits.truncated || comparison.files.truncated || comparison.diff.truncated || comparison.diff.binary) return fail("unsupported_review");
     return { from, to, comparison };
   };
+  // Tracked and nonignored untracked names, as Git lists them. The Files tab
+  // never shows, reads or writes an ignored file, a credential path, or a
+  // file reached through a symbolic link.
+  const listedFiles = async (folder: string, signal: AbortSignal, only?: string) => {
+    const reply = await run(folder, ["ls-files", "--cached", "--others", "--exclude-standard", "-z", ...(only === undefined ? [] : ["--", only])], signal, true);
+    if (reply.code !== 0 && !reply.truncated) throw processFailure(reply);
+    const names = reply.stdout.split("\0"); names.pop();
+    return { names: [...new Set(names)].filter((name) => !isRepositoryCredentialPath(name)), truncated: reply.truncated };
+  };
+  const listedFile = async (folder: string, requested: string, signal: AbortSignal) => {
+    if (!cleanText(requested) || isRepositoryCredentialPath(requested)) return fail("invalid_path");
+    const full = await filePath(folder, requested);
+    if (!(await listedFiles(folder, signal, requested)).names.includes(requested)) return fail("invalid_path");
+    const info = await lstat(full);
+    if (!info.isFile() || await realpath(full) !== full) return fail("invalid_path");
+    return { full, size: info.size };
+  };
+  const folderPath = async (folder: string, requested: string | undefined) => {
+    if (requested === undefined) return "";
+    if (!cleanText(requested) || requested.startsWith("/") || requested.includes("\\") || isRepositoryCredentialPath(requested)) return fail("invalid_path");
+    const parts = requested.split("/");
+    if (parts.some((part) => part === "" || part === "." || part === ".." || part.toLowerCase() === ".git")) return fail("invalid_path");
+    let current = folder;
+    for (const part of parts) {
+      current = join(current, part);
+      const info = await lstat(current).catch(() => fail("invalid_path"));
+      if (info.isSymbolicLink() || !info.isDirectory() || await exists(join(current, ".git"))) return fail("invalid_path");
+    }
+    return requested;
+  };
+  const changeOf = (change: Change): FileChange => change.conflict ? "conflict" : change.untracked ? "untracked"
+    : /R/.test(change.index + change.worktree) ? "renamed" : /D/.test(change.index + change.worktree) ? "deleted"
+    : /A/.test(change.index + change.worktree) ? "added" : "modified";
+  const imageTypes: Readonly<Record<string, FileImageType>> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml" };
   const withRepo = <A>(folder: string, body: (path: string, signal: AbortSignal) => Promise<A>, network = false) => operation(async (signal) => body((await repository(folder, signal)).path, signal), network);
   const excludeManagedWorktrees = async (common: string) => {
     const info = join(common, "info");
@@ -427,6 +462,62 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       return { items: items.slice(0, entries), truncated };
     }),
     register: (folder) => operation((signal) => repository(folder, signal)),
+    listFolder: (folder, requested) => withRepo(folder, async (path, signal) => {
+      const at = await folderPath(path, requested), prefix = at === "" ? "" : `${at}/`;
+      const listed = await listedFiles(path, signal);
+      const status = await run(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none"], signal);
+      if (status.code !== 0) throw processFailure(status);
+      const changes = new Map(parseChanges(status.stdout).map((change) => [change.path, changeOf(change)] as const));
+      const folders = new Map<string, FileEntry>(), files: FileEntry[] = [];
+      for (const name of listed.names) {
+        if (!name.startsWith(prefix)) continue;
+        const rest = name.slice(prefix.length), slash = rest.indexOf("/");
+        if (signal.aborted) return fail("cancelled");
+        if (slash >= 0) {
+          const child = rest.slice(0, slash), childPath = prefix + child;
+          const changed = changes.get(name) !== undefined;
+          const known = folders.get(child);
+          if (known === undefined) folders.set(child, { name: child, path: childPath, kind: "folder", size: null, change: changed ? "modified" : null });
+          else if (changed && known.change === null) folders.set(child, { ...known, change: "modified" });
+          continue;
+        }
+        const info = await lstat(join(path, name)).catch(() => undefined);
+        if (info === undefined || !info.isFile()) continue;
+        files.push({ name: rest, path: name, kind: "file", size: info.size, change: changes.get(name) ?? null });
+      }
+      // A folder that holds only symbolic links or nested checkouts is left out.
+      const kept: FileEntry[] = [];
+      for (const entry of [...folders.values()].sort((a, b) => a.name.localeCompare(b.name))) {
+        const info = await lstat(join(path, entry.path)).catch(() => undefined);
+        if (info?.isDirectory() && !info.isSymbolicLink() && !await exists(join(path, entry.path, ".git"))) kept.push(entry);
+      }
+      const items = [...kept, ...files.sort((a, b) => a.name.localeCompare(b.name))];
+      return { folder: at, items: items.slice(0, 500), truncated: listed.truncated || items.length > 500 };
+    }),
+    readFile: (folder, requested) => withRepo(folder, async (path, signal) => {
+      const { full, size } = await listedFile(path, requested, signal);
+      if (size > fileTextLimit) return { kind: "large", path: requested, size };
+      let bytes: Buffer;
+      try { bytes = await smallFile(full, fileTextLimit); }
+      catch (error) { if (error instanceof GitFailure && error.reason === "output_limit") return { kind: "large", path: requested, size }; throw error; }
+      const version = sha256(bytes), mediaType = imageTypes[(/\.([a-z0-9]+)$/i.exec(requested)?.[1] ?? "").toLowerCase()];
+      if (mediaType !== undefined) return { kind: "image", path: requested, size: bytes.length, version, mediaType, data: bytes.toString("base64") };
+      if (bytes.includes(0)) return { kind: "binary", path: requested, size: bytes.length };
+      try { return { kind: "text", path: requested, size: bytes.length, version, text: new TextDecoder("utf-8", { fatal: true }).decode(bytes) }; }
+      catch { return { kind: "binary", path: requested, size: bytes.length }; }
+    }),
+    writeFile: (folder, requested, version, bytes) => withRepo(folder, async (path, signal) => {
+      if (bytes.length > fileTextLimit) return fail("output_limit");
+      const { full, size } = await listedFile(path, requested, signal);
+      if (size > fileTextLimit || sha256(await smallFile(full, fileTextLimit)) !== version) return determinate("stale_state");
+      mutations.add(signal);
+      try { await replaceFile(path, requested, version, bytes, fileTextLimit); }
+      catch (error) {
+        if (error instanceof ReplaceFileError && error.uncertain) throw new GitFailure({ reason: "git_failed", uncertain: true });
+        return determinate("stale_state");
+      }
+      return sha256(bytes);
+    }),
     contextFile: (folder, requested) => withRepo(folder, async (path) => {
       if (isRepositoryCredentialPath(requested)) return fail("invalid_path");
       const full = await filePath(path, requested);
@@ -554,10 +645,22 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
         else await mutateGit(path, ["restore", "--worktree", "--", file], signal);
       }
     }),
-    commit: (folder, message) => withRepo(folder, async (path, signal) => {
+    commit: (folder, message, file) => withRepo(folder, async (path, signal) => {
       if (typeof message !== "string" || message.trim() === "" || message.includes("\0") || Buffer.byteLength(message) > 16_384) return fail("invalid_message");
       const changes = await completeChanges(path, signal);
       if (changes.some((change) => change.conflict)) return fail("conflicts");
+      if (file !== undefined) {
+        // One file only. Its change is added, then committed with --only, so
+        // other staged files stay staged and out of this commit.
+        const change = changes.find((row) => row.path === file);
+        if (change === undefined || isRepositoryCredentialPath(change.path)) return fail("nothing_staged");
+        if (await mergeHead(path, signal) !== null) return fail("conflicts");
+        const paths = changePaths(change);
+        for (const name of paths) await filePath(path, name);
+        await mutateGit(path, ["add", "--all", "--", ...paths], signal);
+        await mutateGit(path, ["commit", "-m", message, "--only", "--", ...paths], signal);
+        return (await head(path, signal))!;
+      }
       if (!changes.some((change) => change.staged) && await mergeHead(path, signal) === null) return fail("nothing_staged");
       await mutateGit(path, ["commit", "-m", message], signal);
       return (await head(path, signal))!;

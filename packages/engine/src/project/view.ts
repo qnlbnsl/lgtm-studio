@@ -6,7 +6,7 @@ export const projectKey = (projectId: string, id: string) => JSON.stringify([pro
 export const mockScreenKey = (projectId: string, revisionId: string, screenId: string) => JSON.stringify([projectId, revisionId, screenId])
 export const projectView = (snapshot: Snapshot): ProjectView => snapshot.project as ProjectView
 const empty = <T>(): Readonly<Record<string, T>> => Object.create(null)
-export const emptyProject = (): ProjectView => ({ gitAttempts: empty(), gitEvidence: empty(), gitReviews: empty(), taskNotifications: empty(), setup: { step: "welcome" }, mockScreenReviews: empty(), mockRevisions: empty(), mockHeads: empty(), mockApprovals: empty(), designs: empty(), designHeads: empty(), creations: empty(), repositories: empty(), locations: empty(), workspaces: empty(), projects: empty(), teams: empty(), sprints: empty(), tasks: empty(), agentProjects: empty(), parents: empty() })
+export const emptyProject = (): ProjectView => ({ gitAttempts: empty(), gitEvidence: empty(), gitReviews: empty(), taskNotifications: empty(), fileSaveNotices: empty(), setup: { step: "welcome" }, mockScreenReviews: empty(), mockRevisions: empty(), mockHeads: empty(), mockApprovals: empty(), designs: empty(), designHeads: empty(), creations: empty(), repositories: empty(), locations: empty(), workspaces: empty(), projects: empty(), teams: empty(), sprints: empty(), tasks: empty(), agentProjects: empty(), parents: empty() })
 const change = <T>(rows: Readonly<Record<string, T>>, id: string, f: (row: T) => T) => {
   const row = own(rows, id)
   return row === undefined ? rows : { ...rows, [id]: f(row) }
@@ -117,8 +117,17 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
       const { _tag, ...row } = event
       return { ...view, taskNotifications: { ...view.taskNotifications, [row.notificationId]: row } }
     }
+    case "project.FileSaveNoticePlanned": {
+      const { _tag, ...row } = event
+      return { ...view, fileSaveNotices: { ...view.fileSaveNotices, [row.noticeId]: row } }
+    }
     case "DeliveryQueued": {
       const source = event.delivery.source
+      if (source?._tag === "piece" && source.namespace === "project" && source.id.startsWith("file-save:")) {
+        const id = source.id.slice("file-save:".length), row = own(view.fileSaveNotices, id)
+        if (row === undefined || row.deliveryId !== undefined || row.targetAgentId !== event.delivery.target) return view
+        return { ...view, fileSaveNotices: { ...view.fileSaveNotices, [id]: { ...row, deliveryId: event.delivery.id } } }
+      }
       if (source?._tag !== "piece" || source.namespace !== "project" || !source.id.startsWith("task-notification:")) return view
       const id = source.id.slice("task-notification:".length)
       const row = own(view.taskNotifications, id)

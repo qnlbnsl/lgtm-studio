@@ -50,5 +50,10 @@ changed.
 ## Where LGTM Studio uses it
 
 The web mock loads the bundle through `design/mock/vendor/codemirror`, a symbolic link to
-this folder, so the preview server can serve it. Only `design/mock/js/editor.js` imports
-it. No production code uses it.
+this folder, so the preview server can serve it. There, only `design/mock/js/editor.js`
+imports it.
+
+The web page's Files tab imports it in `packages/web/src/files/editor.tsx`, added on
+2026-11-14. The import is dynamic, so the bundle loads only when a file is opened. The
+bundle is unchanged. `codemirror.bundle.d.ts` is LGTM Studio's own file. It declares the
+names that `entry.js` exports, so TypeScript accepts the import.

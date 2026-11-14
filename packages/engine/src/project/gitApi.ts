@@ -108,7 +108,7 @@ export const checkObservedWorkspace = (observed: Input, current: Input, workspac
 })
 // No identifier exemption applies to Git text. Paths, authors, patches, hunk
 // sides, ref names and URLs all pass through the production text redactor.
-export const gitReply = (input: Input, requestId: unknown, result: unknown, agent = false) => Effect.gen(function* () {
+export const gitReply = (input: Input, requestId: unknown, result: unknown, agent = false, budget = 256 * 1024) => Effect.gen(function* () {
   const redact = (value: unknown, key?: string): Effect.Effect<unknown> => {
     // Schema discriminators and hunk choices are fixed protocol values, not
     // display text. Preserve these exact positions so redaction cannot turn
@@ -121,7 +121,10 @@ export const gitReply = (input: Input, requestId: unknown, result: unknown, agen
       || key === "state" && ["missing", "current", "stale"].includes(value as string)
       || key === "provenance" && value === "reported"
       || key === "decision" && ["approve", "approve_without_evidence"].includes(value as string)
-      || key === "outcome" && ["open", "merged", "refused", "sent_back"].includes(value as string)) return Effect.succeed(value)
+      || key === "outcome" && ["open", "merged", "refused", "sent_back"].includes(value as string)
+      || key === "kind" && ["folder", "file", "text", "image", "binary", "large"].includes(value as string)
+      || key === "change" && ["added", "modified", "deleted", "renamed", "untracked", "conflict"].includes(value as string)
+      || key === "mediaType" && ["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"].includes(value as string)) return Effect.succeed(value)
     if (typeof value === "string") return input.runtime.log.redactText(value)
     if (Array.isArray(value)) return Effect.forEach(value, (item) => redact(item))
     if (value !== null && typeof value === "object") return Effect.forEach(Object.entries(value), ([key, item]) => redact(item, key).pipe(Effect.map((clean) => [key, clean] as const))).pipe(Effect.map(Object.fromEntries))
@@ -130,7 +133,7 @@ export const gitReply = (input: Input, requestId: unknown, result: unknown, agen
   const clean = yield* redact(result)
   const reply = { requestId, result: clean }
   const wrapped = agent && input.actor._tag === "agent" ? agentReadReply(requestId, reply) : reply
-  if (Buffer.byteLength(JSON.stringify(wrapped), "utf8") > 256 * 1024) return yield* refused("Git reply exceeds the read budget; select a smaller file or page")
+  if (Buffer.byteLength(JSON.stringify(wrapped), "utf8") > budget) return yield* refused("Git reply exceeds the read budget; select a smaller file or page")
   return wrapped
 })
 // The service reconstructs canonical content. The request carries choices and

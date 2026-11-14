@@ -46,6 +46,14 @@ export interface Review {
   readonly commits: Bounded<Commit>; readonly files: Bounded<CommitFile>; readonly diff: Diff;
 }
 export interface ResolvedConflict { readonly path: string; readonly fingerprint: string }
+export type FileChange = "added" | "modified" | "deleted" | "renamed" | "untracked" | "conflict";
+export interface FileEntry { readonly name: string; readonly path: string; readonly kind: "folder" | "file"; readonly size: number | null; readonly change: FileChange | null }
+export interface FileListing { readonly folder: string; readonly items: ReadonlyArray<FileEntry>; readonly truncated: boolean }
+export type FileImageType = "image/png" | "image/jpeg" | "image/gif" | "image/webp" | "image/svg+xml";
+export type FileRead =
+  | { readonly kind: "text"; readonly path: string; readonly size: number; readonly version: string; readonly text: string }
+  | { readonly kind: "image"; readonly path: string; readonly size: number; readonly version: string; readonly mediaType: FileImageType; readonly data: string }
+  | { readonly kind: "binary" | "large"; readonly path: string; readonly size: number };
 export interface DiscardPlan { readonly fingerprint: string; readonly paths: ReadonlyArray<string> }
 export interface GitService {
   mutationIdentity(folder: string): GitOperation<GitMutationIdentity>;
@@ -68,7 +76,12 @@ export interface GitService {
   unstageAll(folder: string): GitOperation<void>;
   planDiscard(folder: string, paths?: ReadonlyArray<string>): GitOperation<DiscardPlan>;
   discard(folder: string, plan: DiscardPlan, confirmed: boolean): GitOperation<void>;
-  commit(folder: string, message: string): GitOperation<string>;
+  commit(folder: string, message: string, path?: string): GitOperation<string>;
+  // The Files tab: one folder, one file, or one replaced file at a time. Only
+  // tracked and nonignored untracked regular files are listed, read or written.
+  listFolder(folder: string, path?: string): GitOperation<FileListing>;
+  readFile(folder: string, path: string): GitOperation<FileRead>;
+  writeFile(folder: string, path: string, version: string, bytes: Uint8Array): GitOperation<string>;
   fetch(folder: string): GitOperation<void>;
   pull(folder: string): GitOperation<void>;
   push(folder: string): GitOperation<void>;

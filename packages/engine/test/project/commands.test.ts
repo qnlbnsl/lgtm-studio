@@ -95,6 +95,7 @@ it.live("roundtrips every project event and receipt identity while keeping works
     { _tag: "project.TaskChanged", projectId, taskId, teamId, sprintId, worktreeId, owner: leadAgentId, title: text, note: text, state: "active" },
     { _tag: "project.TaskNoted", projectId, taskId, title: text, detail: text },
     { _tag: "project.OwnerTaskNotificationPlanned", notificationId: `notice-${marker}`, projectId, taskId, targetAgentId: leadAgentId },
+    { _tag: "project.FileSaveNoticePlanned", noticeId: `file-notice-${marker}`, projectId, worktreeId, path: text, targetAgentId: leadAgentId },
   ].map((event) => Schema.decodeUnknownSync(Event)(event))
   const input = events(marker)
   expect(input.map((event) => event._tag).sort()).toEqual([...projectEventTags].sort())

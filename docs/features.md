@@ -328,6 +328,10 @@ an agent has stopped and nudges it back, or tells its lead.
   Board, Chat, Terminal, and Git shows the assigned repository, branch,
   checkout type, folder, and machine. It stores a project-specific terminal
   shell preference in the preview. Service settings remain a global page.
+  On 2026-11-14 the real page gained the lead's model and effort, a Teams
+  table, and its own "Archive or restore" section. The mock's base branch,
+  permission, three switches, assignment table, need-to-know, delete and task
+  prefix still need engine support.
 - **A project board of sprints** (agreed, 2026-11-05; mocked). The Kanban
   board shows Planned, In progress, Review, and Done. A sprint contains
   the plan's tasks and shows ownership, current phase, dependencies,
@@ -727,7 +731,8 @@ engine's question records and the agents' instructions would need these fields.
 
 ## A file explorer in the Git view
 
-The owner asked for this on 2026-11-11. It is agreed and not built in the engine. A
+The owner asked for this on 2026-11-11. It is agreed. It was built on the branch
+`area/files-settings` on 2026-11-14, for worktrees on this computer only. A
 project has a "Files" tab, beside its Git tab, that works like the file explorer of an
 editor such as Visual Studio Code. It shows a folder tree of the inspected worktree, and
 the open file beside it. References in questions, approvals and plans link to a file and
@@ -744,6 +749,9 @@ service through the client API, and the service asks the machine. The rules are 
 - The service returns one file at a time, as text. A file over 1 megabyte, or a binary
   file, is not returned as text. The client offers it as a download, which the service
   streams from the machine.
+  As built, the limit is 512 kilobytes, because a reply must fit in one WebSocket message
+  of 1 mebibyte. Downloads are not built yet. Both are recorded in
+  [docs/issues.md](issues.md).
 - Images, such as SVG and PNG files, are returned as images and shown as pictures.
 - Every path is checked on the machine against the worktree's folder, after symbolic
   links are resolved, so a request cannot read a file outside the worktree.
@@ -786,6 +794,23 @@ plans the agents work from keep their full detail. Each sprint has its own plan,
 the sprint page beside the sprint's tasks. The tasks are the short version of the plan,
 and each task links to the part of the plan it carries out. The mock shows sprint SP-07
 with a real LGTM Studio plan converted to HTML. The template is not written yet.
+
+## An IDE button that starts a code server on demand
+
+The owner raised this on 2026-11-14. It is an idea, not yet agreed. The owner is first
+finding out what they use an IDE for, after the Files tab is in use.
+
+- LGTM Studio does not embed Visual Studio Code in its own page. The Files tab stays the
+  small editor, because it works on phones and keeps the Git review rules.
+- An "IDE" button starts a dedicated code server session for the inspected worktree, on
+  the machine that holds it, and opens it in its own browser tab.
+- A monitor watches that session's connection. When no tab has been connected for over
+  60 seconds, LGTM Studio stops the code server.
+- Opening it again starts a fresh session the same way, so it acts like an IDE that
+  launches on demand.
+- Open questions: which code server to use and its licence, how it is authenticated
+  behind LGTM Studio's single login, how it reaches a remote machine, and how its Git
+  panel relates to the owner's review of merges into the base branch.
 
 ## Files and images sent with a message
 
@@ -855,7 +880,8 @@ request merged automatically after a passing full test run.
 ## Simple editing in the Files tab
 
 The owner raised this on 2026-11-12 and decided its shape the same day. It is
-**agreed**, and the mock shows it. The engine does not have it yet. The Files tab is a
+**agreed**, and the mock shows it. It was built on the branch `area/files-settings` on
+2026-11-14, without the generated commit message. The Files tab is a
 small editor for minor changes, without autocomplete or other language features. The
 owner edits only one file at a time. Anything bigger is work for the project lead, and the
 owner asks the lead to do it.

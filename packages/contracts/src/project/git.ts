@@ -22,6 +22,21 @@ export const GitConflict = Schema.Struct({ ...GitSelection.fields, ours: text, b
     Schema.Struct({ kind: Schema.Literal("context"), line: count, context: Schema.Array(text) }),
     Schema.Struct({ kind: Schema.Literal("conflict"), ours: Schema.Array(text), base: Schema.Array(text), theirs: Schema.Array(text) })
   ])) })
+// The Files tab reads one folder or one file of a registered worktree at a
+// time. Text is returned plain; a client colours it. Binary and large files
+// are described, never returned. A version is the SHA-256 of the file's bytes.
+export const FileChange = Schema.Literals(["added", "modified", "deleted", "renamed", "untracked", "conflict"])
+export const FileEntry = Schema.Struct({ name: text, path: text, kind: Schema.Literals(["folder", "file"]), size: Schema.NullOr(count), change: Schema.NullOr(FileChange) })
+export const FileListing = Schema.Struct({ folder: text, items: Schema.Array(FileEntry).check(Schema.isMaxLength(500)), truncated: Schema.Boolean })
+export const FileImageType = Schema.Literals(["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"])
+export const FileContent = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("text"), path: text, size: count, version: text, text, editable: Schema.Boolean }),
+  Schema.Struct({ kind: Schema.Literal("image"), path: text, size: count, version: text, mediaType: FileImageType, data: text }),
+  Schema.Struct({ kind: Schema.Literal("binary"), path: text, size: count }),
+  Schema.Struct({ kind: Schema.Literal("large"), path: text, size: count })
+])
+export type FileContent = typeof FileContent.Type
+export const fileTextLimit = 512 * 1024
 export const GitDiscardPlan = Schema.Struct({ fingerprint: ProjectName, paths: Schema.Array(ProjectPath).check(Schema.isMaxLength(200)) })
 export const GitReview = Schema.Struct({ head: text, baseHead: text, branch: text, base: text, commits: items(GitCommit), files: items(GitCommitFile), diff: GitDiff })
 // Reports describe observed work. They are never approval credentials or
@@ -75,7 +90,12 @@ export const ProjectGitRpcGroup = RpcGroup.make(
   Rpc.make("unstage.all", { payload: workspace, success: ack, error }),
   Rpc.make("discard.plan", { payload: { ...workspace, paths: Schema.optionalKey(GitDiscardPlan.fields.paths) }, success: reply(GitDiscardPlan), error }),
   Rpc.make("discard", { payload: { ...workspace, plan: GitDiscardPlan, confirmed: Schema.Boolean }, success: ack, error }),
-  Rpc.make("commit", { payload: { ...workspace, message: ProjectText }, success: reply(Schema.Struct({ head: text })), error }),
+  Rpc.make("files.list", { payload: { ...workspace, folder: Schema.optionalKey(ProjectPath) }, success: readReply(FileListing), error }),
+  Rpc.make("files.read", { payload: { ...workspace, path: ProjectPath }, success: readReply(FileContent), error }),
+  Rpc.make("files.write", { payload: { ...workspace, projectId: ProjectId, path: ProjectPath, version: ProjectName,
+    text: Schema.String.check(Schema.isMaxCodePoints(fileTextLimit)) }, success: reply(Schema.Struct({ version: text, told: count })), error }),
+  // With a path, only that file is committed. Other staged files stay staged.
+  Rpc.make("commit", { payload: { ...workspace, message: ProjectText, path: Schema.optionalKey(ProjectPath) }, success: reply(Schema.Struct({ head: text })), error }),
   Rpc.make("fetch", { payload: workspace, success: ack, error }),
   Rpc.make("pull", { payload: workspace, success: ack, error }),
   Rpc.make("push", { payload: workspace, success: ack, error }),
@@ -106,6 +126,7 @@ export const projectGitAccess = {
   "project.changes": member, "project.diff": member, "project.history": member, "project.commit.files": member, "project.git.state": member,
   "project.stage": owner, "project.unstage": owner, "project.stage.all": owner, "project.unstage.all": owner, "project.discard.plan": owner, "project.discard": owner,
   "project.update": owner, "project.merge.abort": owner, "project.conflict.resolved": owner, "project.conflict.reopen": owner, "project.review.decline": owner,
+  "project.files.list": owner, "project.files.read": owner, "project.files.write": owner,
   "project.commit": owner, "project.fetch": owner, "project.pull": owner, "project.push": owner, "project.integrate": owner, "project.review": member,
   "project.conflict": member, "project.conflict.choose": owner, "project.conflict.resolve": owner,
   "project.review.report": member, "project.review.prepare": owner, "project.review.status": member, "project.review.approve": owner
