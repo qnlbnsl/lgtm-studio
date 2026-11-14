@@ -13517,3 +13517,32 @@ State: the owner ruled on 2026-11-14 that the website is the connected mock; the
 Pull request 47 built both screens in `packages/web`, which the service shows at `/`.
 The page the owner uses is the connected mock at `/studio/`, and it still says "Files is not connected yet".
 The three file commands are in the engine, so the connected mock can use them.
+The Files screen is now connected on `worker/s8-files`.
+The older page remains in place, as the owner required.
+
+## s8-files-1. The live Files screen cannot download a file.
+
+Found: 2026-11-14, while connecting the Files screen at `/studio/`.
+State: the Download controls are disabled with the explanation "Engine work needed".
+
+The engine can return bounded text and image previews.
+It has no authenticated download operation for a binary file or a file over the preview limit.
+The menu and the preview notice keep their Download controls disabled until that operation exists.
+
+## s8-files-2. The live Files screen cannot generate a commit message.
+
+Found: 2026-11-14, while connecting the Files screen at `/studio/`.
+State: the Generate control is disabled with the explanation "Engine work needed".
+
+The engine has no operation that writes a commit message from a file's changes.
+The owner can write a message and commit the open file through `project.commit`.
+
+## s8-files-3. A root folder request must omit the optional folder field.
+
+Found: 2026-11-14, in the new Files browser journey through the real engine.
+State: fixed in the Files connection.
+
+An early root folder request sent a `folder` property whose value was `undefined`.
+The client rejected the request with "Schema validation failed" before it reached the engine.
+The request now omits the property for the root folder.
+The browser journey checks the root entries and a changed folder before opening a child file.

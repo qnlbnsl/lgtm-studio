@@ -1,3 +1,4 @@
+import { exerciseStudioFiles } from './support/studioFiles.ts'
 import { exerciseStudioSettings } from './support/studioSettings.ts'
 import { exerciseStudioGit } from './support/studioGit.ts'
 import { exerciseStudioMocks } from './support/studioMocks.ts'
@@ -1126,3 +1127,5 @@ test('live website: Harnesses installs a missing harness with a fake recipe and 
   const { exerciseStudioHarnesses } = await import('./support/studioHarnesses.ts')
   await exerciseStudioHarnesses(page)
 })
+
+test("studio files: engine tree, editor policy, save conflicts and one-file commit", async ({ page }) => exerciseStudioFiles(page))
