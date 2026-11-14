@@ -1,5 +1,6 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import * as Effect from 'effect/Effect'
+import * as Exit from 'effect/Exit'
 import * as Stream from 'effect/Stream'
 import * as Redacted from 'effect/Redacted'
 import * as NodeServices from '@effect/platform-node/NodeServices'
@@ -7,7 +8,7 @@ import { Account } from '@lgtm/contracts'
 import * as Schema from 'effect/Schema'
 import { readHarnesses, refused, type Input } from '../commands/internal.ts'
 import { accounts as planAccounts } from '../commands/accounts.ts'
-import { prepareAccountHome, folderReasons } from '../accounts/loginHome.ts'
+import { prepareAccountHome, removeCreatedHomes, folderReasons } from '../accounts/loginHome.ts'
 import { withCodexHome } from '../accounts/shadowHome.ts'
 import { credentialSourceFor } from '../accounts/credentialSource.ts'
 import { harnessLogin, homeConflict, loginRefusal } from '../runner/harnesses.ts'
@@ -28,20 +29,37 @@ const sessions = (input: Input) => {
 export const closeSignIns = (log: object) => { instances.get(log)?.close(); instances.delete(log) }
 const add = (input: Input, p: Record<string, unknown>) => Effect.gen(function* () {
   if (input.actor._tag !== 'owner') return yield* refused(signInReasons.owner)
-  const programs = input.runtime.harnessPrograms ?? embeddedHarnessPrograms
-  if (!programs.recipe(p.harnessId as string)) return yield* refused(signInReasons.command)
+  const created: string[] = []
+  const bodyHash = createHash('sha256').update(JSON.stringify([p.harnessId, p.name, p.folder, p.home])).digest('hex')
   return yield* input.runtime.log.transact(append => Effect.gen(function* () {
+    const receipts = yield* input.runtime.sql<{ body_hash: string; result_json: string }>`SELECT body_hash, result_json FROM receipts WHERE caller = 'owner' AND request_id = ${p.requestId as string}`
+    const receipt = receipts[0]
+    if (receipt) {
+      if (receipt.body_hash !== bodyHash) return yield* refused('request id reused')
+      return yield* Effect.try({ try: () => {
+        const stored = JSON.parse(receipt.result_json).reply
+        return { reply: { requestId: p.requestId, account: Schema.decodeUnknownSync(Account)(stored.account) } }
+      }, catch: failure })
+    }
     const snapshot = yield* input.runtime.views.snapshot
     const id = 'account-' + randomUUID(), harness = p.harnessId as string
-    const home = yield* Effect.tryPromise({ try: () => prepareAccountHome({ home: input.runtime.home, harness, id, choice: p.folder as 'existing' | 'separate' | 'advanced', advanced: p.home as string | undefined, accounts: Object.values(snapshot.accounts) }), catch: failure })
-    const account = Schema.decodeUnknownSync(Account)({ id, harness, displayName: p.name as string, enabled: true, ...(home ? { home } : {}),
-      ...(harness === 'codex' && home ? { environment: { CODEX_HOME: home } } : {}) })
+    const home = yield* Effect.tryPromise({ try: () => prepareAccountHome({ home: input.runtime.home, harness, id, choice: p.folder as 'existing' | 'separate' | 'advanced', advanced: p.home as string | undefined, accounts: Object.values(snapshot.accounts), created }), catch: failure })
+    const account = yield* Effect.try({ try: () => Schema.decodeUnknownSync(Account)({ id, harness, displayName: p.name, enabled: true, ...(home ? { home } : {}),
+      ...(harness === 'codex' && home ? { environment: { CODEX_HOME: home } } : {}) }), catch: failure })
     const plan = yield* planAccounts({ ...input, snapshot }, { operation: 'add', account, requestId: p.requestId } as never)
-    const written = yield* append({ _tag: 'owner' }, p.requestId as never, randomUUID(), plan.events, {}, false)
+    const written = yield* append({ _tag: 'owner' }, p.requestId as never, bodyHash, plan.events, {}, batch => {
+      const event = batch[0]?.event
+      return { requestId: p.requestId, account: event?._tag === 'AccountChanged' ? event.account : undefined }
+    })
     const event = written[0]?.event
     if (event?._tag !== 'AccountChanged' || !event.account) return yield* refused(signInReasons.failed)
     return { reply: { requestId: p.requestId, account: event.account } }
-  }))
+  })).pipe(
+    // Finish the short filesystem/commit boundary before interruption can run cleanup.
+    Effect.uninterruptible,
+    Effect.onExit(exit => Exit.isSuccess(exit) ? Effect.void : Effect.promise(() => removeCreatedHomes(created))),
+    Effect.mapError(e => e._tag === 'CommandRefused' ? e : failure(e))
+  )
 })
 const start = (input: Input, p: Record<string, unknown>) => Effect.gen(function* () {
   const connection = yield* Effect.try({ try: () => owner(input), catch: e => e as ReturnType<typeof refused> })

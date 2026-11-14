@@ -6,7 +6,7 @@ export async function exerciseStudioService(page: Page, origin: string) {
   await page.setViewportSize({ width: 1600, height: 1000 })
   await page.goto(`${root}#/subscriptions`)
   await expect(page.locator('.svc-sub')).toContainText('Primary')
-  await page.locator('.svc-harness').filter({ has: page.getByRole('heading', { name: 'Claude Code', exact: true }) }).getByRole('button', { name: 'Add account', exact: true }).click()
+  await page.locator('.svc-harness').filter({ has: page.getByRole('heading', { name: 'first', exact: true }) }).getByRole('button', { name: 'Add account', exact: true }).click()
   await page.locator('#as-name').fill('Browser account')
   await page.locator('.dialog').getByRole('button', { name: 'Add account', exact: true }).click()
   const row = page.locator('.svc-sub').filter({ hasText: 'Browser account' })

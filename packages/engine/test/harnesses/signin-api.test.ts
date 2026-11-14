@@ -3,9 +3,10 @@ import * as Effect from 'effect/Effect'
 import * as Stream from 'effect/Stream'
 import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
-import { writeFileSync, readFileSync, existsSync } from 'node:fs'
+import { writeFileSync, readFileSync, existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { getEventListeners } from 'node:events'
+import { LogWriteFailed } from '../../src/log/EventLog.ts'
 import { CommandHandler } from '../../src/commands/CommandHandler.ts'
 import { Redactor } from '../../src/log/Redactor.ts'
 import { signInReads } from '../../src/harnesses/signinRequests.ts'
@@ -70,4 +71,53 @@ it.live('refuses agents for every sign-in request and sends fake output only to 
   })).pipe(Effect.provide(Logger.layer([logger])))
   expect(diagnostics.join('\n').includes('PRIVATE_SIGNIN_MARKER')).toBe(false)
   expect(diagnostics.join('\n').includes('PRIVATE_KEY_INPUT_MARKER')).toBe(false)
+}))
+
+it.live('review 2: account creation needs no shipped recipe', () => Effect.gen(function* () {
+  rig = makeRig()
+  yield* provideRig(rig, { runner: yield* makeFakeRunner(), secrets: makeFakeSecrets() }, Effect.gen(function* () {
+    yield* registerRebuildCheck()
+    const handler = yield* CommandHandler
+    for (const requestId of ['first', 'second']) {
+      const added = yield* signInReads['client.harness.account.add'](yield* handler.input({ _tag: 'owner' }), { requestId, harnessId: 'custom', name: requestId, folder: 'existing' })
+      expect(added.reply.account.harness).toBe('custom')
+    }
+  }))
+}))
+
+it.live('review 7: failed appends remove only newly created folders', () => Effect.gen(function* () {
+  rig = makeRig()
+  yield* provideRig(rig, { runner: yield* makeFakeRunner(), secrets: makeFakeSecrets(), harnessPrograms: fixtureHarnessPrograms({ home: rig.home, executable: process.execPath, script: 'unused', id: 'claude' }), wrapLog: real => ({ ...real, transact: use => real.transact(() => use(() => Effect.fail(new LogWriteFailed({ reason: 'injected write failure' })))) }) }, Effect.gen(function* () {
+    const handler = yield* CommandHandler
+    const result = yield* signInReads['client.harness.account.add'](yield* handler.input({ _tag: 'owner' }), { requestId: 'failure', harnessId: 'claude', name: 'Test', folder: 'separate' }).pipe(Effect.result)
+    expect(result._tag).toBe('Failure')
+    expect(existsSync(join(rig.home, '.lgtm/accounts/claude')) ? readdirSync(join(rig.home, '.lgtm/accounts/claude')) : []).toEqual([])
+  }))
+}))
+it.live('review 7: schema failures are fixed refusals without orphan folders', () => Effect.gen(function* () {
+  rig = makeRig()
+  yield* provideRig(rig, { runner: yield* makeFakeRunner(), secrets: makeFakeSecrets(), harnessPrograms: fixtureHarnessPrograms({ home: rig.home, executable: process.execPath, script: 'unused', id: 'claude' }) }, Effect.gen(function* () {
+    const handler = yield* CommandHandler
+    const result = yield* signInReads['client.harness.account.add'](yield* handler.input({ _tag: 'owner' }), { requestId: 'invalid', harnessId: 'claude', name: 12, folder: 'separate' }).pipe(Effect.result)
+    expect(result).toMatchObject({ _tag: 'Failure', failure: { _tag: 'CommandRefused', reason: 'The sign-in program could not run.' } })
+    expect(existsSync(join(rig.home, '.lgtm/accounts/claude')) ? readdirSync(join(rig.home, '.lgtm/accounts/claude')) : []).toEqual([])
+  }))
+}))
+it.live('review 7: retries return one durable account and reject changed input', () => Effect.gen(function* () {
+  rig = makeRig()
+  const fakes = { runner: yield* makeFakeRunner(), secrets: makeFakeSecrets(), harnessPrograms: fixtureHarnessPrograms({ home: rig.home, executable: process.execPath, script: 'unused', id: 'claude' }) }
+  let first: unknown
+  const payload = { requestId: 'retry', harnessId: 'claude', name: 'Test', folder: 'separate' }
+  yield* provideRig(rig, fakes, Effect.gen(function* () {
+    yield* registerRebuildCheck()
+    const handler = yield* CommandHandler, input = yield* handler.input({ _tag: 'owner' })
+    first = yield* signInReads['client.harness.account.add'](input, payload)
+    expect(yield* signInReads['client.harness.account.add'](input, payload)).toEqual(first)
+    expect(yield* signInReads['client.harness.account.add'](input, { ...payload, name: 'Changed' }).pipe(Effect.result)).toMatchObject({ _tag: 'Failure', failure: { reason: 'request id reused' } })
+    expect(Object.keys((yield* input.runtime.views.snapshot).accounts)).toHaveLength(1)
+  }))
+  yield* provideRig(rig, fakes, Effect.gen(function* () {
+    const handler = yield* CommandHandler
+    expect(yield* signInReads['client.harness.account.add'](yield* handler.input({ _tag: 'owner' }), payload)).toEqual(first)
+  }))
 }))

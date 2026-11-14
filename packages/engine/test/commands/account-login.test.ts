@@ -39,7 +39,7 @@ it.effect("A9 conflict: catches an account whose `home` and explicit CLAUDE_CONF
         expect(added?.reason).toContain(variable);
         // The same folder is accepted, with a trailing slash too.
         success(yield* call(ownerCredential, "accounts", { operation: "add", account: account(`${harness}-same`, harness, { home: "/srv/login-a", environment: { [variable]: "/srv/login-a/" } }) }));
-        success(yield* call(ownerCredential, "accounts", { operation: "add", account: account(`${harness}-plain`, harness, { home: "/srv/login-c" }) }));
+        yield* appendSetup([eventOf({ _tag: "AccountChanged", accountId: `${harness}-plain`, account: account(`${harness}-plain`, harness, { home: "/srv/login-a" }) })]);
         const set = failureOf(yield* call(ownerCredential, "accounts", { operation: "set", account: { ...clash, id: `${harness}-plain` } }));
         expect(set?.reason).toContain(variable);
       }
@@ -149,3 +149,14 @@ it.effect("A9 F-3 effective values: catches a comparison of the unresolved refer
       expect(JSON.stringify(yield* readLog).includes(planted)).toBe(false);
     }));
   }).pipe(Effect.orDie));
+
+it.effect("review 1: legacy shared default folders permit edits until their effective folder changes", () => Effect.gen(function* () {
+  yield* provideRig(rig, { runner: yield* makeFakeRunner(), secrets: makeFakeSecrets() }, Effect.gen(function* () {
+    yield* registerRebuildCheck();
+    yield* appendSetup(['a', 'b'].map(id => eventOf({ _tag: 'AccountChanged', accountId: id, account: account(id, 'claude', {}) })));
+    success(yield* call(ownerCredential, 'accounts', { operation: 'set', account: account('a', 'claude', { displayName: 'Renamed', enabled: false }) }));
+    success(yield* call(ownerCredential, 'accounts', { operation: 'set', account: account('a', 'claude', { home: '/srv/new' }) }));
+    expect(failureOf(yield* call(ownerCredential, 'accounts', { operation: 'set', account: account('a', 'claude', {}) }))?.reason).toBe('Two accounts cannot share one login folder.');
+    expect(failureOf(yield* call(ownerCredential, 'accounts', { operation: 'add', account: account('c', 'claude', {}) }))?.reason).toBe('Two accounts cannot share one login folder.');
+  }));
+}).pipe(Effect.orDie));

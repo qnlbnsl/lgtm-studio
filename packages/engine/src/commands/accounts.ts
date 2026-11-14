@@ -1,4 +1,4 @@
-import { assertDistinctHome } from "../accounts/loginHome.ts";
+import { assertDistinctHome, sameAccountHome } from "../accounts/loginHome.ts";
 import { randomUUID } from "node:crypto";
 import type { Account } from "@lgtm/contracts";
 import * as Effect from "effect/Effect";
@@ -54,7 +54,15 @@ export const accounts = ({ runtime, snapshot }: Input, payload: Payload<"account
         // different folders leave no way to tell which login the owner meant.
         const reason = yield* loginReason(runtime.secrets, payload.account);
         if (reason !== undefined) return yield* refused(reason);
-        yield* Effect.tryPromise({ try: () => assertDistinctHome(runtime.home, payload.account, Object.values(snapshot.accounts)), catch: (error) => refused(error instanceof Error ? error.message : "The login folder could not be checked.") });
+        yield* Effect.tryPromise({ try: async () => {
+          const effective = async (account: Account) => {
+            const environment = { ...account.environment }, variable = harnessLogin(account.harness).homeVariable;
+            if (variable && environment[variable]?.startsWith("secret:")) environment[variable] = await Effect.runPromise(effectiveValue(runtime.secrets, environment[variable]));
+            return { ...account, environment };
+          };
+          const account = await effective(payload.account);
+          if (payload.operation === "add" || !existing || !await sameAccountHome(runtime.home, account, await effective(existing))) await assertDistinctHome(runtime.home, account, await Promise.all(Object.values(snapshot.accounts).map(effective)));
+        }, catch: (error) => refused(error instanceof Error ? error.message : "The login folder could not be checked.") });
         return { events: [{ _tag: "AccountChanged", accountId: payload.account.id, account: payload.account }] };
       }
       case "remove":

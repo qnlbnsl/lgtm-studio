@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vitest'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { prepareAccountHome } from '../../src/accounts/loginHome.ts'
@@ -88,4 +88,30 @@ it('redacts registered credentials at every split in the responsive terminal str
     const actual = r.redactChunk('s', form.slice(0, at), false, true) + r.redactChunk('s', form.slice(at), true, true)
     expect(actual === r.redactText(form), `${hashOnly ? 'hash' : 'exact'} form ${encoded.indexOf(form)} split ${at}`).toBe(true)
   }
+})
+
+it('review 3: existing sign-in stores no home and creates no default folder', async () => {
+  const home = root()
+  expect(await prepareAccountHome({ home, harness: 'claude', id: 'a', choice: 'existing', accounts: [] })).toBeUndefined()
+  expect(existsSync(join(home, '.claude'))).toBe(false)
+})
+it('review 2: custom harnesses can keep multiple default accounts while Cursor cannot', async () => {
+  const home = root()
+  expect(await prepareAccountHome({ home, harness: 'first', id: 'b', choice: 'existing', accounts: [{ id: 'a', harness: 'first' }] })).toBeUndefined()
+  await expect(prepareAccountHome({ home, harness: 'cursor', id: 'b', choice: 'existing', accounts: [{ id: 'a', harness: 'cursor' }] })).rejects.toThrow('Separate sign-in folders are not supported')
+})
+it('review 8: advanced folders refuse writable permissions and missing parents', async () => {
+  const home = root(), folder = join(home, 'writable')
+  mkdirSync(folder); chmodSync(folder, 0o770)
+  await expect(prepareAccountHome({ home, harness: 'claude', id: 'a', choice: 'advanced', advanced: folder, accounts: [] })).rejects.toThrow('The login folder must be owned by you')
+  chmodSync(folder, 0o707)
+  await expect(prepareAccountHome({ home, harness: 'claude', id: 'a', choice: 'advanced', advanced: folder, accounts: [] })).rejects.toThrow('The login folder must be owned by you')
+  await expect(prepareAccountHome({ home, harness: 'claude', id: 'a', choice: 'advanced', advanced: join(home, 'missing', 'child'), accounts: [] })).rejects.toThrow('The login folder must be owned by you')
+  expect(existsSync(join(home, 'missing'))).toBe(false)
+  expect(await prepareAccountHome({ home, harness: 'claude', id: 'a', choice: 'advanced', advanced: join(home, 'allowed'), accounts: [] })).toBe(join(home, 'allowed'))
+})
+it('review 5: refuses a real symbolic link at the final advanced component', async () => {
+  const home = root(), target = root(), link = join(home, 'link')
+  symlinkSync(target, link)
+  await expect(prepareAccountHome({ home, harness: 'claude', id: 'a', choice: 'advanced', advanced: link, accounts: [] })).rejects.toThrow('The login folder must be owned by you')
 })
