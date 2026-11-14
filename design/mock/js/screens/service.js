@@ -645,7 +645,12 @@ function Defaults({ s }) {
 }
 function Remote({ s }) {
   const set = s.settings;
-  const [f, setF] = useState({ webEnabled: set.webEnabled, port: set.port, checkIn: set.checkIn, proxyMode: set.proxyMode, publicAddress: set.publicAddress });
+  // Only fields edited here override refreshed store values.
+  const [edits, setEdits] = useState({});
+  const f = { webEnabled: set.webEnabled, port: set.port, checkIn: set.checkIn, proxyMode: set.proxyMode, publicAddress: set.publicAddress, ...edits };
+  const pending = (draft) => Object.fromEntries(Object.entries(draft).filter(([key, value]) => value !== set[key]));
+  const setF = (patch) => setEdits((draft) => pending({ ...draft, ...patch }));
+  useEffect(() => setEdits((draft) => pending(draft)), [set.webEnabled, set.port, set.checkIn, set.proxyMode, set.publicAddress]);
   const dirty = Object.keys(f).some((k) => f[k] !== set[k]);
   const bad = f.proxyMode && !/^https:\/\/\S+\.\S+/.test(f.publicAddress.trim()) ? (f.publicAddress.trim() ? 'The public address must start with https://. Plain HTTP is refused.' : 'Give the address your proxy serves.') : null;
   const badPort = !(f.port >= (live.on ? 1 : 1024) && f.port <= 65535) ? 'Use a port from 1024 to 65535.' : null;
@@ -655,20 +660,20 @@ function Remote({ s }) {
   return html`<form onSubmit=${(e) => { e.preventDefault(); save(); }}>
     <div class="svc-rows">
       <${Row} label="Project terminal" hint="Turning it on lets signed-in owner pages run shells as you on the service machine."><${Switch} on=${set.terminalEnabled === true} label="Project terminal" onChange=${(value) => setS({ terminalEnabled: value })} /><//>
-      <${Row} label="Web page" hint="Turn it off to use LGTM Studio from the terminal only."><${Switch} on=${f.webEnabled} label="Web page" onChange=${(v) => setF({ ...f, webEnabled: v })} /><//>
+      <${Row} label="Web page" hint="Turn it off to use LGTM Studio from the terminal only."><${Switch} on=${f.webEnabled} label="Web page" onChange=${(v) => setF({ webEnabled: v })} /><//>
       <${Row} label="Listens on" hint="This computer only. The service never listens on the network.">
-        <span class="row" style="gap:6px"><span class="svc-fixed mono">http://127.0.0.1:</span><input class="input num-field mono" type="number" aria-label="Port" value=${f.port} onInput=${(e) => setF({ ...f, port: +e.target.value })} /></span>
+        <span class="row" style="gap:6px"><span class="svc-fixed mono">http://127.0.0.1:</span><input class="input num-field mono" type="number" aria-label="Port" value=${f.port} onInput=${(e) => setF({ port: +e.target.value })} /></span>
         ${badPort && html`<span class="svc-err">${badPort}</span>`}<//>
-      <${Row} label="Check-in" id="ra-check" hint="How often the page asks the service whether it is alive."><span class="row" style="gap:6px"><input id="ra-check" class="input num-field" type="number" min="5" max="120" value=${f.checkIn} onInput=${(e) => setF({ ...f, checkIn: +e.target.value })} /><span class="muted">seconds</span></span><//>
-      <${Row} label="Behind your HTTPS proxy" hint="Turn on when a proxy such as Caddy serves this page over HTTPS."><${Switch} on=${f.proxyMode} label="Behind your HTTPS proxy" onChange=${(v) => setF({ ...f, proxyMode: v })} /><//>
+      <${Row} label="Check-in" id="ra-check" hint="How often the page asks the service whether it is alive."><span class="row" style="gap:6px"><input id="ra-check" class="input num-field" type="number" min="5" max="120" value=${f.checkIn} onInput=${(e) => setF({ checkIn: +e.target.value })} /><span class="muted">seconds</span></span><//>
+      <${Row} label="Behind your HTTPS proxy" hint="Turn on when a proxy such as Caddy serves this page over HTTPS."><${Switch} on=${f.proxyMode} label="Behind your HTTPS proxy" onChange=${(v) => setF({ proxyMode: v })} /><//>
       ${f.proxyMode && html`<${Row} label="Public address" id="ra-addr" hint="Phone alerts link to a thread through this address.">
-        <input id="ra-addr" class="input mono" value=${f.publicAddress} onInput=${(e) => setF({ ...f, publicAddress: e.target.value })} placeholder="https://lgtm.home.example" spellcheck="false" autocapitalize="off" />
+        <input id="ra-addr" class="input mono" value=${f.publicAddress} onInput=${(e) => setF({ publicAddress: e.target.value })} placeholder="https://lgtm.home.example" spellcheck="false" autocapitalize="off" />
         ${bad && f.publicAddress.trim() && html`<span class="svc-err">${bad}</span>`}<//>`}
       ${!f.proxyMode && html`<${Row} label="From another device" hint="Until a proxy is set up, forward the port over Secure Shell (SSH)." top>
         <${Command} text=${fwd} /><span class="svc-hint">Then open <span class="mono">http://127.0.0.1:${f.port}</span> on that device.</span><//>`}
     </div>
     <div class="svc-save"><button type="submit" class="btn primary" disabled=${!dirty || !!bad || !!badPort}>Save</button>
-      ${dirty && html`<button type="button" class="btn ghost" onClick=${() => setF({ webEnabled: set.webEnabled, port: set.port, checkIn: set.checkIn, proxyMode: set.proxyMode, publicAddress: set.publicAddress })}>Discard</button>`}
+      ${dirty && html`<button type="button" class="btn ghost" onClick=${() => setEdits({})}>Discard</button>`}
       <span class="muted" style="font-size:var(--text-sm)">${!dirty ? 'No unsaved changes.' : bad || badPort ? 'Fix the marked field to save.' : 'Saving closes open web connections. They reconnect on their own.'}</span></div>
   </form>`;
 }

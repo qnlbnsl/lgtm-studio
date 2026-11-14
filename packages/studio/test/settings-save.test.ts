@@ -126,3 +126,39 @@ it('keeps a focused partial number while a background reload changes its stored 
     expect(change).toHaveBeenLastCalledWith(17)
   } finally { kit.render(null, root); root.remove() }
 })
+
+async function remoteForm() {
+  const source = readFileSync('design/mock/js/screens/service.js', 'utf8')
+  const start = source.indexOf('function Remote('), end = source.indexOf('\nfunction StallWatch(', start)
+  const kit = await import('../../../design/mock/vendor/htm-preact/standalone.module.js' as string)
+  const save = vi.fn(), Row = (props: any) => kit.html`<div>${props.children}</div>`
+  const Remote = new Function('html', 'useState', 'useEffect', 'Row', 'Switch', 'Command', 'live', 'setS', 'act', `${source.slice(start, end)}\nreturn Remote;`)(kit.html, kit.useState, kit.useEffect, Row, () => null, () => null, { on: true }, save, {})
+  const root = document.createElement('div'); document.body.append(root)
+  const base = { webEnabled: true, port: 8797, checkIn: 25, proxyMode: false, publicAddress: '' }
+  const draw = (settings: object) => kit.render(kit.h(Remote, { s: { settings, machines: [] } }), root)
+  draw(base)
+  return { root, base, draw, save, close: () => { kit.render(null, root); root.remove() } }
+}
+it('remote access refreshes untouched fields without inventing unsaved changes', async () => {
+  const f = await remoteForm()
+  try {
+    f.draw({ ...f.base, port: 8899, checkIn: 45 })
+    await vi.waitFor(() => expect((f.root.querySelector('[aria-label="Port"]') as HTMLInputElement).value).toBe('8899'))
+    expect((f.root.querySelector('#ra-check') as HTMLInputElement).value).toBe('45')
+    expect((f.root.querySelector('[type=submit]') as HTMLButtonElement).disabled).toBe(true)
+    expect(f.root.textContent).toContain('No unsaved changes.')
+  } finally { f.close() }
+})
+it('remote access keeps a real edit while refreshing other fields and never saves their old values', async () => {
+  const f = await remoteForm()
+  try {
+    const check = f.root.querySelector('#ra-check') as HTMLInputElement
+    check.value = '37'; check.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.waitFor(() => expect((f.root.querySelector('[type=submit]') as HTMLButtonElement).disabled).toBe(false))
+    f.draw({ ...f.base, port: 8899 })
+    await vi.waitFor(() => expect((f.root.querySelector('[aria-label="Port"]') as HTMLInputElement).value).toBe('8899'))
+    expect(check.value).toBe('37')
+    f.root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    expect(f.save).toHaveBeenCalledWith({ ...f.base, port: 8899, checkIn: 37 })
+  } finally { f.close() }
+})

@@ -37,3 +37,18 @@ test('a version reply preserves settings saved while it was in flight and ignore
   await loading
   expect(state.settings).toMatchObject({ stallWorker: 31, version: 'new', commit: 'abc', versionComparison: 'same' })
 })
+
+test('settings fieldsets block workflow checks and restarts, while ordinary saves and reloads remain editable', () => {
+  const original = readFileSync('design/mock/js/screens/service.js', 'utf8')
+  const current = gitActionsSource('js/screens/service.js', harnessIntegrationSource('js/screens/service.js', harnessChoicesSource('js/screens/service.js', original)))
+  const result = serviceSettingsSource('js/screens/service.js', current)
+  const fields = [...result.matchAll(/<fieldset\s+([^>]+)>/g)].filter(m => m[1]!.includes("liveGit.busy('subscriptions')") || m[1]!.includes("liveGit.busy('read-service')"))
+  expect(fields).toHaveLength(2)
+  for (const field of fields) {
+    const condition = /disabled=\$\{(.*?)\}/.exec(field[1]!)?.[1]
+    expect(condition).toBeDefined()
+    const disabled = new Function('live', 'liveGit', 'serviceSettings', `return ${condition}`)
+    for (const operation of ['settings', 'service-restart']) expect(disabled({ on: true }, { busy: () => false }, { busy: (key: string) => key === operation })).toBe(true)
+    for (const operation of ['settings', 'read-service']) expect(disabled({ on: true }, { busy: (key: string) => key === operation }, { busy: () => false })).toBe(false)
+  }
+})
