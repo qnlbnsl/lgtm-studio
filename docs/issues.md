@@ -13517,3 +13517,66 @@ State: the owner ruled on 2026-11-14 that the website is the connected mock; the
 Pull request 47 built both screens in `packages/web`, which the service shows at `/`.
 The page the owner uses is the connected mock at `/studio/`, and it still says "Files is not connected yet".
 The three file commands are in the engine, so the connected mock can use them.
+
+## s8-psettings-1. The live project settings screen had unsupported controls that still looked editable.
+
+The connected mock at `/studio/` showed active controls that only refused a change.
+The live build now disables these controls with the hover text, "Engine work needed".
+The standalone sample keeps its existing behaviour.
+
+## s8-psettings-2. A project has no configurable base branch.
+
+The engine does not expose a project base branch setting or a command to change it.
+The live base branch picker is disabled.
+
+## s8-psettings-3. A project lead cannot change its subscription.
+
+The engine reports the lead's account, but `configure` accepts only a model and an effort.
+The live subscription picker shows the account and is disabled.
+
+## s8-psettings-4. A project cannot set the permission for every agent.
+
+The engine reports each agent's permission, but has no project permission command.
+The live permission choices are disabled.
+
+## s8-psettings-5. A project cannot set the write-tests-first switch.
+
+The engine has no project setting or command for this switch.
+The live switch is disabled.
+
+## s8-psettings-6. A project cannot set the agent-review switch.
+
+The engine has no project setting or command for this switch.
+The live switch is disabled.
+
+## s8-psettings-7. A project cannot choose to remove agent credits when merging.
+
+The engine has no project preference for removing agent credit lines.
+The live switch is disabled.
+
+## s8-psettings-8. A project cannot configure or approve the assignment table.
+
+The engine has no project work-kind assignment record or commands to apply or approve it.
+The live harness, model, and effort choices are disabled for each work kind.
+The Every row picker, Apply button, and Approve button are disabled.
+
+## s8-psettings-9. A team cannot change its need-to-know setting.
+
+The engine has no team need-to-know record or command.
+The live team switches are disabled.
+
+## s8-psettings-10. A project cannot configure its task label prefix.
+
+The engine accepts labels on tasks, but exposes no project prefix setting.
+The live task label prefix field is disabled.
+
+## s8-psettings-11. A project cannot be deleted.
+
+The engine supports archive and restore, but has no project deletion command.
+The live Delete button is disabled.
+
+## s8-psettings-12. The project lead pickers did not distinguish desired and applied settings.
+
+The live project settings screen previously selected values from the roster.
+The screen now reads the lead's configuration and choices from `client.agent.configuration`.
+It displays the engine's desired values and reports the applied model and acknowledgement status separately.
