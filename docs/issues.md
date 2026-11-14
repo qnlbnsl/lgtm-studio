@@ -13999,3 +13999,18 @@ That cleanup could discard a held secret prefix between output chunks.
 Each subscription now has its own redaction key.
 A socket test attempts both a second owner's subscription and a duplicate subscription between the secret's chunks.
 The test first failed with an unblanked suffix.
+
+## s9-terminal-13. The model-discovery journey intermittently loses a harness selection.
+
+Found in the full remote check during the project terminal work.
+State: unresolved.
+The full check passed all 594 unit test files.
+It passed 61 browser journeys and failed the model-discovery journey.
+The failed assertion expected the empty harness's model-choice explanation.
+The browser snapshot still showed the first harness selected.
+The focused rerun passed one journey in 3.0 seconds.
+The settings action currently ignores a new action while its settings request is pending.
+A selection made during that interval is a possible cause.
+The exact cause is not established.
+The project terminal journey passed in both its focused run and the full run.
+The full check remains a failed run.
