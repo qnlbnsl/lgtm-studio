@@ -14116,6 +14116,15 @@ Their causes remain unproved.
 The terminal journey and the rapid-settings journey passed in the full run.
 The separate credits check passed.
 The full check remains a failed run.
+The separate full browser run during round 2 reproduced both failures.
+Its result was 60 passed and two failed in 10.0 minutes.
+The Mocks journey again missed its save confirmation.
+The Files journey again retained its busy state beyond five seconds.
+The project terminal, harness sign-in, and service-settings journeys passed.
+Both unchanged failing journeys passed in a serial focused rerun in 35.2 seconds.
+Their assertions and deadlines remain unchanged.
+The credits check passed after that rerun.
+The full browser run remains failed.
 
 ## s9-terminal-22. Secret-form and credential-probe overlaps still delayed echo.
 
