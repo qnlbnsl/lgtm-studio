@@ -4,6 +4,7 @@ import * as Exit from 'effect/Exit'
 import * as Stream from 'effect/Stream'
 import * as Redacted from 'effect/Redacted'
 import * as NodeServices from '@effect/platform-node/NodeServices'
+import { terminalReasons } from './terminalReasons.ts'
 import { Account } from '@lgtm/contracts'
 import * as Schema from 'effect/Schema'
 import { readHarnesses, refused, type Input } from '../commands/internal.ts'
@@ -22,11 +23,13 @@ const instances = new WeakMap<object, SignInSessions>()
 const known = new Set<string>([...Object.values(signInReasons), ...Object.values(folderReasons)])
 const failure = (e: unknown) => refused(e instanceof Error && known.has(e.message) ? e.message : signInReasons.failed)
 const owner = (input: Input) => { if (input.actor._tag !== 'owner') throw refused(signInReasons.owner); if (!input.connectionId) throw refused(signInReasons.connection); return input.connectionId }
-const sessions = (input: Input) => {
+export const sessions = (input: Input) => {
   let value = instances.get(input.runtime.log)
-  if (!value) { value = new SignInSessions(); instances.set(input.runtime.log, value) }
+  if (!value) { value = new SignInSessions(); value.terminalEnabled = (input.snapshot.client as { webSettings?: { terminalEnabled?: boolean } } | undefined)?.webSettings?.terminalEnabled === true; instances.set(input.runtime.log, value) }
   return value
 }
+export const setTerminalSwitch = (log: object, enabled: boolean) => { let manager = instances.get(log); if (!manager) { manager = new SignInSessions(); instances.set(log, manager) } { if (!enabled) manager.stopTerminals('The project terminal was turned off.'); else manager.terminalEnabled = true } }
+export const signOutTerminals = (log: object) => { const manager = instances.get(log); if (manager) { const wasEnabled = manager.terminalEnabled; manager.stopTerminals('The owner signed out.'); manager.terminalEnabled = wasEnabled } }
 export const closeSignIns = (log: object) => { instances.get(log)?.close(); instances.delete(log) }
 const add = (input: Input, p: Record<string, unknown>) => Effect.gen(function* () {
   if (input.actor._tag !== 'owner') return yield* refused(signInReasons.owner)
@@ -100,11 +103,11 @@ const control = (method: 'write' | 'resize' | 'stop') => (input: Input, p: Recor
   yield* Effect.try({ try: () => { const manager = sessions(input), id = p.sessionId as string; if (method === 'write') manager.write(id, connection, p.text as string); else if (method === 'resize') manager.resize(id, connection, p.cols as number, p.rows as number); else manager.stop(id, connection) }, catch: failure })
   return { reply: { requestId: p.requestId } }
 })
-const subscribe = (input: Input, p: Record<string, unknown>) => Stream.unwrap(Effect.gen(function* () {
-  const connection = yield* Effect.try({ try: () => owner(input), catch: e => e as ReturnType<typeof refused> })
+export const terminalOutput = (input: Input, p: Record<string, unknown>, kind?: 'project') => Stream.unwrap(Effect.gen(function* () {
+  const connection = yield* Effect.try({ try: () => { if (kind && input.actor._tag !== 'owner') throw refused(terminalReasons.owner); return owner(input) }, catch: e => e as ReturnType<typeof refused> })
   const redactor: Pick<Redactor["Service"], "redactChunk" | "redactText"> = input.runtime.log.redactor ?? { redactText: input.runtime.log.redactText }
-  const manager = sessions(input), id = p.sessionId as string, key = 'signin:' + id
-  return Stream.fromAsyncIterable(manager.output(id, connection), failure).pipe(
+  const manager = sessions(input), id = p.sessionId as string, key = (kind ? 'terminal:' : 'signin:') + id
+  return Stream.fromAsyncIterable(manager.output(id, connection, kind), kind ? e => refused(e instanceof Error && Object.values(terminalReasons).includes(e.message as never) ? e.message : terminalReasons.failed) : failure).pipe(
     Stream.mapEffect(item => Effect.gen(function* () {
       if (item._tag === 'output') return [{ ...item, text: yield* (redactor.redactChunk ? redactor.redactChunk(key, item.text, false, true) : input.runtime.log.redactText(item.text)) }]
       const text = yield* (redactor.redactChunk ? redactor.redactChunk(key, '', true, true) : Effect.succeed(''))
@@ -120,5 +123,5 @@ export const signInReads = {
   'client.harness.signin.write': control('write'),
   'client.harness.signin.resize': control('resize'),
   'client.harness.signin.stop': control('stop'),
-  'client.harness.signin.subscribe': subscribe
+  'client.harness.signin.subscribe': (input: Input, p: Record<string, unknown>) => terminalOutput(input, p)
 }

@@ -150,7 +150,8 @@ These rules apply to every change. A change that breaks one is a security bug.
    Every registered secret is still redacted.
    Neither output nor typed keys are stored, logged, posted, sent as alerts, or included in crash reports or test protocol logs.
    A new token that the service has never registered may appear once in that owner's terminal panel.
-   Rule 6 continues to apply without this exception to every other path.
+   On 2026-11-14, the owner also granted the project terminal exception described below.
+   Rule 6 continues to apply without these exceptions to every other path.
 
 7. **Text from an agent is data, not a command.** A message on the board
    cannot change permissions, teams, or settings unless the owner's
@@ -172,3 +173,31 @@ Output and input stay ephemeral.
 Known secrets are blanked, including secrets split across output chunks.
 The remaining risk is that an unregistered token printed by the sign-in program appears on the initiating owner's screen.
 Removing an account preserves its login folder.
+
+## The owner's project terminal
+
+On 2026-11-14, the owner granted a narrow exception to rule 6 for project shells.
+The stored project terminal switch starts off in Service settings.
+While it is off, every open request is refused before a shell can start.
+Only an authenticated owner may open a terminal.
+Agent and service credentials are refused.
+Only the connection that opened a session may read its output, type into it, resize it, or close it.
+The request names a project and a registered worktree by their engine identifiers.
+It cannot supply a path, command, executable, argument, environment variable, or shell expression.
+Only a worktree on the local machine can open a shell.
+The executable is the owner's shell from the service environment, when it is an absolute path listed in `/etc/shells`.
+Otherwise, the executable is `/bin/sh`.
+The shell inherits the service environment with every `LGTM_` entry removed.
+An environment entry containing any registered secret is removed too.
+At most eight project terminals may be live at once.
+A shell has no time limit.
+The service kills its live process groups on close, sign-out, switch-off, connection loss past the grace period, and engine shutdown.
+Interactive shell jobs in the same operating-system session are stopped too.
+After the shell exits, the service does not signal its former groups because identifiers may be reused.
+A descendant that starts its own operating-system session escapes this cleanup.
+Input and output are ephemeral.
+They are never stored by the service, logged, posted, sent as events, or included in snapshots or protocol logs.
+Every secret the service knows is blanked in output, including a secret split across chunks.
+A shell can print a secret the service has never seen, which appears on the initiating owner's screen.
+The shell runs as the owner and can change files with that user's permissions.
+Rule 6 remains unchanged for every other path.

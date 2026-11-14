@@ -1,3 +1,4 @@
+import { signOutTerminals } from '../../harnesses/signinRequests.ts'
 import { createServer } from "node:http";
 import type { Socket } from "node:net";
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer";
@@ -159,7 +160,7 @@ export const serve = (options: {
     if (caller === undefined) return HttpServerResponse.empty({ status: 401 });
     if (path === "/api/session" && request.method === "POST" && !upgrade) return HttpServerResponse.empty({ status: 204 });
     if (path === "/api/logout" && request.method === "POST" && !upgrade) {
-      session.rotate(); yield* disconnect;
+      session.rotate(); signOutTerminals((yield* handler.input({ _tag: 'owner' })).runtime.log); yield* disconnect;
       const cleaned = yield* lifecycle.withPermits(1)(stopDisplay);
       return HttpServerResponse.empty({ status: cleaned ? 204 : 503 });
     }

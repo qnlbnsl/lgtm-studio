@@ -13905,3 +13905,40 @@ The exact source of the delay in the full run is not established.
 The focused Files journey passed after this change, with one journey passed in 22.8 seconds.
 The separate credit check passed.
 The full check remains a failed run.
+
+## s9-terminal-1. Agent terminal watching and takeover need engine support.
+
+The project terminal API opens private owner shells only.
+It cannot attach to an agent's terminal or transfer that terminal's keyboard.
+The live Session actions menu draws Watch agent session and Take over agent session disabled.
+Both controls show “Engine work needed” on hover.
+
+## s9-terminal-2. Ended project shells cannot reconnect.
+
+A project shell belongs to its opening connection.
+Reloading the page or losing that connection ends the shell after the grace period.
+The live Reconnect control is disabled, with “Engine work needed” on hover.
+A New session control opens a fresh shell instead.
+Remote worktrees show the local-machine refusal because remote terminal transport is unbuilt.
+
+## s9-terminal-3. Interactive shell jobs use separate process groups.
+
+Found and fixed during the project terminal work.
+Killing only the pseudo-terminal child's process group left background shell jobs running.
+Cleanup now finds and kills the other process groups in the live child's operating-system session.
+It never signals the former session after the child exits.
+The request-layer tests run a real shell and background job through every cleanup path.
+
+## s9-terminal-4. Terminal requests must reject undeclared fields before decoding.
+
+Found and fixed during the project terminal work.
+Effect 4 parser options are not controlled by schema annotations.
+A filter on the raw request now rejects undeclared fields before the structure decoder runs.
+Authenticated raw socket tests send command, path, executable, argument, and environment fields.
+
+## s9-terminal-5. A new terminal import exposed an engine module cycle.
+
+Found and fixed during the project terminal work.
+Importing the project Git API while composing the request tables accessed web settings before initialization.
+The terminal now loads the shared worktree resolver only when an open request runs.
+The native-package regression tests still import and start the engine with the pseudo-terminal package unavailable.
