@@ -19,7 +19,7 @@ it('releases only the ambiguous lead after idle and retains covered bytes for a 
   const rest = redactor.redactChunk('encoded', encoded.slice(3) + '\r\n', false, true) + redactor.redactChunk('encoded', '', true, true)
   expect(rest).not.toContain(encoded.slice(3)); expect(rest.replace('[REDACTED]', '')).toBe('\r\n')
 })
-it.each(['registered-terminal-', 'shp_a_', '7368705f', 'c2hwX2Ff', '%73%68%70%5f', '%7'])('never releases a real secret or credential prefix on idle: %s', prefix => {
+it.each(['registered-terminal-', 'shp_', 'shp_a_', '7368705f', 'c2hwX2Ff', '%73', 's%68', '%73%68%70%5f', '%7'])('never releases a real secret or credential prefix on idle: %s', prefix => {
   let now = 0; vi.spyOn(Date, 'now').mockImplementation(() => now)
   const token = mintCredential('shp_a_')
   const redactor = makeRedactor({ secrets: () => [Redacted.make('registered-terminal-secret')], tokenHashes: () => new Set([token.tokenHash]) })

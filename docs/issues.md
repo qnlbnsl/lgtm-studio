@@ -14073,3 +14073,24 @@ The worktree menu uses the same project and team relationships as the engine.
 Unassigned linked worktrees are left out.
 The service-credential tests now call the actual read handlers for all five requests.
 The security document states the process-discovery and terminal-control-sequence limits.
+
+## s9-terminal-19. The encoded-token regression assumed a precise shell pause.
+
+Found in the full review-round-1 check.
+State: fixed.
+The socket test expected all three generic lead characters to appear during a timed shell pause.
+The loaded worker sometimes received the remaining token before processing its idle tick.
+The redactor then blanked a character that the test expected to see.
+That behavior exposed less text than the permitted lead.
+The test now waits for the reader to observe the idle release before allowing the shell to print the remaining token.
+
+## s9-terminal-20. A completed first URL escape lost its credential-prefix hold.
+
+Found by the sign-in split-credential regression during the full review-round-1 check.
+State: fixed.
+The idle-lead classification treated a short decoded prefix as ambiguous even when its source contained a URL escape.
+A split after the completed first escape could discard the percent sign from the matching carry.
+The encoded credential could then escape blanking.
+Any decoded credential-prefix overlap containing an escape now keeps its original strict hold.
+The existing regression checks every split of the mixed escaped form.
+The idle tests also cover completed escapes before the full prefix arrives.

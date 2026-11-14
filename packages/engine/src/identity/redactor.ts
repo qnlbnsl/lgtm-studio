@@ -324,7 +324,8 @@ export const makeRedactor = (registry: {
         }
         for (let size = 1; size <= Math.min(decoded.length, credentialLength); size++) {
           const suffix = decoded.slice(-size);
-          if (size >= 4 && ("shp_a_".startsWith(suffix) || suffix.startsWith("shp_a_"))) held = Math.max(held, joined.length - starts[starts.length - size]!);
+          const start = starts[starts.length - size]!;
+          if ((size >= 4 || joined.slice(start).includes('%')) && ("shp_a_".startsWith(suffix) || suffix.startsWith("shp_a_"))) held = Math.max(held, joined.length - start);
         }
         const incompleteEscape = /%[0-9a-f]?$/i.exec(joined);
         if (incompleteEscape) held = Math.max(held, incompleteEscape[0].length);

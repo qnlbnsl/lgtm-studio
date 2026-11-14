@@ -209,7 +209,12 @@ live('an encoded token split after its lead remains blanked after idle release',
   yield* req(client, 'write', { sessionId, text: 'stty -echo\r' }); yield* Effect.sleep(200)
   const encoded = Buffer.from('xy' + Redacted.value(token.token)).toString('base64')
   text = ''
-  yield* req(client, 'write', { sessionId, text: `printf 'ENCODED_BEGIN ${encoded.slice(0, 3)}'; sleep 0.2; printf '${encoded.slice(3)}\\nENCODED_DONE\\n'\r` })
+  // Wait in the shell until this reader has observed the idle release. A
+  // timed sleep can finish before a loaded test worker processes its ticks.
+  yield* req(client, 'write', { sessionId, text: `printf 'ENCODED_BEGIN ${encoded.slice(0, 3)}'; read terminal_continue; printf '${encoded.slice(3)}\\nENCODED_DONE\\n'\r` })
+  yield* waitFor('encoded lead idle release', () => text.includes('ENCODED_BEGIN ' + encoded.slice(0, 3)))
+  yield* Effect.sleep(50)
+  yield* req(client, 'write', { sessionId, text: '\r' })
   yield* waitFor('encoded token completion', () => text.includes('ENCODED_DONE'))
   const between = text.split('ENCODED_BEGIN ')[1]!.split('\r')[0]!
   expect(between.replace('[REDACTED]', '')).toBe(encoded.slice(0, 3))
