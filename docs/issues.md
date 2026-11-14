@@ -14259,3 +14259,22 @@ The corrected sign-in file and the unchanged service-start file passed all ten t
 No service-start assertion or deadline changed.
 The full command stopped before browser tests and credits because its unit stage failed.
 The original full check remains a failed run.
+
+## 936. A mock editor save waited for about eighty Git processes before it said "saved".
+
+Found: 2026-11-14, by reading the code, after the Mocks journey missed "Editor changes saved" within five seconds in three full checks.
+Status: partly fixed.
+
+The page showed "Editor changes saved" only after four steps finished in order.
+The steps were a design read, the save, a mocks reload and a second design read.
+Inside the save, the engine takes its one Git gate five separate times.
+Each time it checks the workspace again, and one workspace check starts about eleven Git processes.
+The whole wait is about eighty Git processes in a row, by a count from the code.
+Under the load of a full check that takes four to five seconds.
+The page now shows the notice when the save replies, and the two reloads run in the background.
+Two parts stay open.
+The page still reads the design before the save, only to learn the worktree.
+The engine still checks the workspace five times inside one save.
+The same repeated workspace check is behind issue 928, and probably behind other save journeys that fail once in a full check.
+A workspace check that is done once for each request, or cached for a short time, would cut all of them.
+
