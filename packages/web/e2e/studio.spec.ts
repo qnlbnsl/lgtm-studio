@@ -1,3 +1,4 @@
+import { exerciseStudioProjectSettings } from './support/studioProjectSettings.ts'
 import { exerciseStudioSettings } from './support/studioSettings.ts'
 import { exerciseStudioGit } from './support/studioGit.ts'
 import { exerciseStudioMocks } from './support/studioMocks.ts'
@@ -1126,3 +1127,5 @@ test('live website: Harnesses installs a missing harness with a fake recipe and 
   const { exerciseStudioHarnesses } = await import('./support/studioHarnesses.ts')
   await exerciseStudioHarnesses(page)
 })
+
+test("studio project settings: live changes, disabled controls and archive restore", async ({ page }) => { test.setTimeout(90_000); await exerciseStudioProjectSettings(page) })

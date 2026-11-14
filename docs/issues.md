@@ -13580,3 +13580,11 @@ The live Delete button is disabled.
 The live project settings screen previously selected values from the roster.
 The screen now reads the lead's configuration and choices from `client.agent.configuration`.
 It displays the engine's desired values and reports the applied model and acknowledgement status separately.
+
+## s8-psettings-13. The engine hides the specific reason for a refused lead configuration.
+
+The `configure` planner can refuse a model or an effort that is no longer available.
+The public command error filter reduces that reason to "command refused".
+The live project settings notice displays the public reason that the engine returns.
+The browser journey checks that reason and confirms that the refused value does not persist.
+The filter remains unchanged in this migration.
