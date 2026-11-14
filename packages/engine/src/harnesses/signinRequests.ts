@@ -28,7 +28,12 @@ export const sessions = (input: Input) => {
   if (!value) { value = new SignInSessions(); value.terminalEnabled = (input.snapshot.client as { webSettings?: { terminalEnabled?: boolean } } | undefined)?.webSettings?.terminalEnabled === true; instances.set(input.runtime.log, value) }
   return value
 }
-export const setTerminalSwitch = (log: object, enabled: boolean) => { let manager = instances.get(log); if (!manager) { manager = new SignInSessions(); instances.set(log, manager) } { if (!enabled) manager.stopTerminals('The project terminal was turned off.'); else manager.terminalEnabled = true } }
+export const setTerminalSwitch = (log: object, enabled: boolean) => {
+  let manager = instances.get(log)
+  if (!manager) { manager = new SignInSessions(); instances.set(log, manager) }
+  if (!enabled) manager.stopTerminals('The project terminal was turned off.')
+  else manager.terminalEnabled = true
+}
 export const signOutTerminals = (log: object) => { const manager = instances.get(log); if (manager) { const wasEnabled = manager.terminalEnabled; manager.stopTerminals('The owner signed out.'); manager.terminalEnabled = wasEnabled } }
 export const closeSignIns = (log: object) => { instances.get(log)?.close(); instances.delete(log) }
 const add = (input: Input, p: Record<string, unknown>) => Effect.gen(function* () {
@@ -106,7 +111,8 @@ const control = (method: 'write' | 'resize' | 'stop') => (input: Input, p: Recor
 export const terminalOutput = (input: Input, p: Record<string, unknown>, kind?: 'project') => Stream.unwrap(Effect.gen(function* () {
   const connection = yield* Effect.try({ try: () => { if (kind && input.actor._tag !== 'owner') throw refused(terminalReasons.owner); return owner(input) }, catch: e => e as ReturnType<typeof refused> })
   const redactor: Pick<Redactor["Service"], "redactChunk" | "redactText"> = input.runtime.log.redactor ?? { redactText: input.runtime.log.redactText }
-  const manager = sessions(input), id = p.sessionId as string, key = (kind ? 'terminal:' : 'signin:') + id
+  // A refused or duplicate subscriber must never flush the active reader's carry.
+  const manager = sessions(input), id = p.sessionId as string, key = (kind ? 'terminal:' : 'signin:') + id + ':' + randomUUID()
   return Stream.fromAsyncIterable(manager.output(id, connection, kind), kind ? e => refused(e instanceof Error && Object.values(terminalReasons).includes(e.message as never) ? e.message : terminalReasons.failed) : failure).pipe(
     Stream.mapEffect(item => Effect.gen(function* () {
       if (item._tag === 'output') return [{ ...item, text: yield* (redactor.redactChunk ? redactor.redactChunk(key, item.text, false, true) : input.runtime.log.redactText(item.text)) }]

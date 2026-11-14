@@ -13919,7 +13919,8 @@ A project shell belongs to its opening connection.
 Reloading the page or losing that connection ends the shell after the grace period.
 The live Reconnect control is disabled, with “Engine work needed” on hover.
 A New session control opens a fresh shell instead.
-Remote worktrees show the local-machine refusal because remote terminal transport is unbuilt.
+Remote worktree menu items are disabled because remote terminal transport is unbuilt.
+They show “Engine work needed” on hover.
 
 ## s9-terminal-3. Interactive shell jobs use separate process groups.
 
@@ -13942,3 +13943,59 @@ Found and fixed during the project terminal work.
 Importing the project Git API while composing the request tables accessed web settings before initialization.
 The terminal now loads the shared worktree resolver only when an open request runs.
 The native-package regression tests still import and start the engine with the pseudo-terminal package unavailable.
+
+## s9-terminal-6. Private terminal streams must use their opening socket.
+
+Found and fixed by the project terminal browser journey.
+The client normally uses a separate socket for subscriptions.
+A terminal output subscription on that socket was correctly refused as another connection.
+Project terminal streams now use the opening read socket, as harness sign-in streams do.
+Terminal requests do not retry after a transport failure.
+Node and browser client tests verify both properties.
+
+## s9-terminal-7. The sample terminal has a local variable named live.
+
+Found and fixed by the project terminal browser journey.
+An injected guard that used the same name accessed the local variable before initialization.
+The build now imports the live-mode flag with a distinct name.
+The standalone sample source is unchanged.
+
+## s9-terminal-8. A remote worktree may have no paired machine record.
+
+Found and fixed during the project terminal review.
+The live worktree menu now falls back to the engine's machine identifier when its machine record is absent.
+The remote menu item is disabled with “Engine work needed” on hover.
+The menu explains that project terminals are available only on the local machine.
+The terminal browser journey covers this state.
+
+## s9-terminal-9. The terminal must resolve the repository main checkout.
+
+Found and fixed during the project terminal review.
+The live menu includes the registered main checkout of the project's repository.
+The shared resolver now accepts that checkout when an owner terminal explicitly requests this option.
+Other request paths keep their existing worktree permissions.
+A socket test checks that a different repository is still refused.
+The browser journey opens both the project's worktree and its main checkout.
+
+## s9-terminal-10. The live terminal used the sample folder field.
+
+Found and fixed during the project terminal review.
+The engine maps a worktree's folder to the folder field.
+The live menu and status bar now read that field.
+The browser journey checks the initial folder for both worktrees.
+
+## s9-terminal-11. Terminal requests need the pinned API and CLI inventories.
+
+Found and fixed by the full check during the project terminal work.
+The contract inventories now include the five owner-only terminal requests.
+The command-line parity fixtures cover their payloads and stream.
+The logout route uses the caller returned by the shared cookie boundary.
+
+## s9-terminal-12. A refused subscription could reset another reader's redaction carry.
+
+Found and fixed during the project terminal privacy review.
+A rejected stream ran cleanup with the active stream's redaction key.
+That cleanup could discard a held secret prefix between output chunks.
+Each subscription now has its own redaction key.
+A socket test attempts both a second owner's subscription and a duplicate subscription between the secret's chunks.
+The test first failed with an unblanked suffix.

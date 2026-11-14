@@ -16,7 +16,7 @@ const open = (input: Input, p: Record<string, unknown>) => Effect.gen(function* 
   const candidate = own(projectView(input.snapshot).workspaces, p.worktreeId as string)
   if (candidate && candidate.machineId !== 'local') return yield* refused(reasons.remote)
   const { workspaceReference } = yield* Effect.promise(() => import('../project/gitApi.ts'))
-  const workspace = yield* workspaceReference(input, p).pipe(Effect.mapError(() => refused(reasons.workspace)))
+  const workspace = yield* workspaceReference(input, p, { ownerMain: true }).pipe(Effect.mapError(() => refused(reasons.workspace)))
   // Give a direct reason even when a remote record is not attached to this project.
   if (workspace.machineId !== 'local') return yield* refused(reasons.remote)
   const shell = yield* Effect.promise(async () => {

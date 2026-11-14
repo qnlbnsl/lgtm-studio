@@ -1,3 +1,5 @@
+import * as Pty from '@lydell/node-pty'
+import { vi } from 'vitest'
 import { engineLists } from '../../src/pieces/lists.ts'
 import { expect, it } from '@effect/vitest'
 import * as Effect from 'effect/Effect'
@@ -17,6 +19,7 @@ import { connect, upgrade, ancestryHeaders, authorization, requestFrame } from '
 import { alive, waitFor } from '../support/serviceProcess.ts'
 import { registerRebuildCheck } from '../support/rebuildCheck.ts'
 import { unusedPort } from '../support/browserWeb.ts'
+vi.mock('@lydell/node-pty', async original => { const actual = await original<typeof import('@lydell/node-pty')>(); return { ...actual, spawn: vi.fn(actual.spawn) } })
 const known = 'registered-terminal-secret', marker = 'PRIVATE_TERMINAL_OUTPUT', keys = 'PRIVATE_TERMINAL_INPUT'
 const live = (name: string, body: () => Effect.Effect<any, any, any>) => it.live(name, () => body() as Effect.Effect<void, unknown, never>, 45000)
 const req = (client: any, operation: string, payload = {}) => client['client.terminal.' + operation]({ requestId: randomBytes(8).toString('hex'), ...payload }) as Effect.Effect<any, any>
@@ -43,12 +46,14 @@ const withServer = (body: (ctx: { client: any; socket: string; bearer: string; r
   } finally { for (const [name, value] of Object.entries(previous)) { if (value === undefined) delete process.env[name]; else process.env[name] = value }; removeRig(rig) }
 })
 live('terminal is off initially, refuses extra open fields and refuses remote worktrees', () => withServer(({ client, socket, bearer }) => Effect.gen(function* () {
+  const processes = vi.mocked(Pty.spawn).mock.calls.length
   yield* failure(open(client), 'The project terminal is turned off.')
+  expect(vi.mocked(Pty.spawn).mock.calls.length).toBe(processes)
   yield* enabled(client, true)
   for (const field of ['command', 'path', 'executable', 'args', 'environment']) {
     const upgraded = yield* Effect.promise(() => upgrade(socket, { ...authorization(bearer), ...ancestryHeaders() }))
     if (upgraded.status !== 101) throw new Error('owner socket refused')
-    const ws = upgraded.socket
+    const ws = upgraded.socket!
     const reply = yield* Effect.promise(() => new Promise<string>(resolve => { ws.once('message', frame => resolve(frame.toString())); ws.send(requestFrame('1', 'client.terminal.open', { requestId: 'extra', projectId: 'terminal-project', worktreeId: 'terminal-worktree', cols: 80, rows: 24, [field]: 'untrusted' })) }))
     ws.close()
     expect(reply, field).toContain('Failure')
@@ -59,6 +64,10 @@ live('terminal is off initially, refuses extra open fields and refuses remote wo
 })))
 live('terminal access is owner-only and isolated to the opening socket', () => withServer(({ client, socket, bearer }) => Effect.gen(function* () {
   yield* enabled(client, true)
+  const handler = yield* CommandHandler
+  for (const operation of ['open', 'write', 'resize', 'close', 'subscribe']) {
+    expect((yield* handler.execute({ _tag: 'service', service: 'roles.stallWatch' }, 'client.terminal.' + operation, { requestId: 'service-' + operation }).pipe(Effect.result))._tag).toBe('Failure')
+  }
   const { sessionId } = yield* open(client), second = yield* connect(socket, bearer)
   const agent = yield* seedAgent({ id: 'worker' }), asAgent = yield* connect(socket, agent.token)
   yield* failure(open(asAgent), 'Only the owner can run a project terminal.')
@@ -85,7 +94,7 @@ live('real sh redacts split secrets, strips private environment and leaves no du
     yield* req(client, 'write', { sessionId, text: `printf '${marker} '; printf 'registered-terminal-'; sleep 0.1; printf 'secret\\n'; printf '${keys}\\n'; env; printf 'ENV_DONE\\n'\r` })
     yield* waitFor('shell output', () => text.includes('ENV_DONE'))
     expect(text).toContain(marker); expect(text).toContain('[REDACTED]'); expect(text).not.toContain(known)
-    expect(text).not.toContain('LGTM_TEST_TERMINAL='); expect(text).not.toContain('NORMAL_PRIVATE=')
+    expect(text).not.toMatch(/\bLGTM_[A-Za-z0-9_]*=/); expect(text).not.toContain('LGTM_TEST_TERMINAL='); expect(text).not.toContain('NORMAL_PRIVATE=')
     yield* req(client, 'resize', { sessionId, cols: 100, rows: 30 })
     yield* req(client, 'close', { sessionId })
     const input = yield* (yield* CommandHandler).input({ _tag: 'owner' })
@@ -129,3 +138,31 @@ for (const mode of ['close', 'disable', 'disconnect', 'logout', 'shutdown'] as c
   }))
   yield* waitFor('shutdown', () => pids.every(pid => !alive(pid)))
 }))
+
+live('a project terminal can open its repository main checkout but not a different repository', () => withServer(({ client, rig }) => Effect.gen(function* () {
+  yield* enabled(client, true)
+  yield* appendSetup([
+    eventOf({ _tag: 'project.WorktreeCreated', repoId: 'terminal-repo', worktreeId: 'base-worktree', branch: 'main', path: rig.work, machineId: 'local', checkout: 'main' }),
+    eventOf({ _tag: 'project.WorktreeCreated', repoId: 'other-repo', worktreeId: 'other-worktree', branch: 'main', path: rig.work, machineId: 'local', checkout: 'main' })
+  ])
+  const { sessionId } = yield* open(client, { worktreeId: 'base-worktree' })
+  yield* req(client, 'close', { sessionId })
+  yield* failure(open(client, { worktreeId: 'other-worktree' }), 'The project worktree is unavailable.')
+})))
+
+live('a refused output subscription cannot reset the owner stream redaction carry', () => withServer(({ client, socket, bearer }) => Effect.gen(function* () {
+  yield* enabled(client, true)
+  const { sessionId } = yield* open(client)
+  let text = ''
+  yield* output(client, sessionId).pipe(Stream.runForEach(item => Effect.sync(() => { if (item._tag === 'output') text += item.text })), Effect.forkScoped)
+  yield* req(client, 'write', { sessionId, text: 'stty -echo\r' }); yield* Effect.sleep(100)
+  yield* req(client, 'write', { sessionId, text: "printf 'CARRY_READY registered-terminal-'; sleep 0.6; printf 'secret\\nCARRY_DONE\\n'\r" })
+  yield* waitFor('first secret chunk', () => text.includes('CARRY_READY '))
+  const second = yield* connect(socket, bearer)
+  yield* failure(output(second, sessionId).pipe(Stream.runDrain), 'This terminal belongs to another connection.')
+  yield* failure(output(client, sessionId).pipe(Stream.runDrain), 'This terminal already has an output stream.')
+  yield* waitFor('second secret chunk', () => text.includes('CARRY_DONE'))
+  expect(text).toContain('[REDACTED]'); expect(text).not.toContain(known)
+  expect(text).not.toContain('secret')
+  yield* req(client, 'close', { sessionId })
+})))

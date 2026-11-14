@@ -16,6 +16,7 @@
   "dependencies": {
     "@lgtm/client": "workspace:*",
     "@lgtm/contracts": "workspace:*",
+    "@xterm/xterm": "^6.0.0",
     "effect": "catalog:"
   },
   "devDependencies": {
