@@ -13384,3 +13384,10 @@ The required remote check exited with status 255 before running a test.
 Secure Shell rejected `/etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf` with `Bad owner or permissions`.
 Running the same helper with sandbox escalation reached the remote computer and started the required check.
 The worker did not change the system configuration or substitute local tests.
+
+## s7-signin-3. The sandbox cannot open the local package store operation lock.
+
+The required local dependency installation exited with status 1.
+The package manager reported `ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK` because its store lock was on a read-only file system.
+The remote check installed its own dependencies and ran there.
+The worker left local dependency setup incomplete after the security stop.
