@@ -46,7 +46,7 @@ export async function exerciseStudioNotifications(page: Page) {
         yield* Effect.promise(async () => {
           const origin = `http://127.0.0.1:${port}`
           await page.setViewportSize({ width: 1440, height: 2400 })
-          await page.goto(`${origin}/standalone-sample/#/notifications`)
+          await page.goto(`${origin}/standalone-sample/index.html#/notifications`)
           await expect(page.getByRole('heading', { name: 'Notifications', exact: true })).toBeVisible()
           await expect(page.locator('#em-host')).toBeVisible()
           await expect(page.getByText('Sprint alerts stay here until you dismiss them.', { exact: true })).toBeVisible()
