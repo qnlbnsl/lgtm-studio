@@ -351,10 +351,27 @@ it("lists the project's teams with their agents and branches", async () => {
   expect(rows[0]!.querySelector("a")!.getAttribute("href")).toBe("/#/project/project/team/builders/chat")
 })
 
-it("says when the project has no teams and keeps archive in its own section", async () => {
+it("says when the project has no teams and keeps archive and delete in their own section", async () => {
   const { element } = await render(<ProjectSettingsPage route={{ page: "project", projectId: project.projectId, tab: "settings" }} />)
   expect(element.querySelector('section[aria-label="Teams"]')!.textContent).toContain("No teams")
-  const archive = element.querySelector('section[aria-label="Archive or restore"]')!
+  const archive = element.querySelector('section[aria-label="Archive or delete"]')!
   expect([...archive.querySelectorAll("button")].map((row) => row.textContent)).toContain("Archive")
   expect(element.querySelector(".admin-page-top")!.textContent).not.toContain("Archive")
+})
+
+it("draws every control the engine cannot serve yet as disabled, and says so on hover", async () => {
+  const data = baseData()
+  const team = { projectId: "project", teamId: "builders", name: "Builders", worktreeId: "inspected", group: "group-builders" }
+  mock.data = { ...data, navigation: { ...data.navigation!, teams: [team] } } as unknown as ShellData
+  const { element } = await render(<ProjectSettingsPage route={{ page: "project", projectId: project.projectId, tab: "settings" }} />)
+  const stubs = [...element.querySelectorAll<HTMLElement>(".admin-stub")]
+  const names = stubs.map((stub) => stub.querySelector("[aria-label]")?.getAttribute("aria-label") ?? stub.textContent?.trim())
+  expect(names).toEqual(["Task label prefix", "Base branch", "Lead subscription", "Permission", "Write tests first", "Agent review",
+    "Remove agent credits when merging", "Approve", "Plan harness", "Plan model", "Plan effort", "Build harness", "Build model", "Build effort",
+    "Review harness", "Review model", "Review effort", "Test harness", "Test model", "Test effort", "Every row", "Apply",
+    "Need-to-know for Builders", "Delete"])
+  for (const stub of stubs) {
+    expect(stub.title).toBe("Engine work needed")
+    for (const control of stub.querySelectorAll<HTMLInputElement>("input, select, button")) expect(control.disabled).toBe(true)
+  }
 })

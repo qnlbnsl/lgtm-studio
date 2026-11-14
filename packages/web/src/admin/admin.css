@@ -85,3 +85,8 @@
   .admin-facts { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .admin-facts dd { margin-bottom: 8px; }
 }
+.admin-stub { display: inline-grid; max-width: 100%; cursor: help; }
+.admin-stub :disabled { pointer-events: none; }
+.admin-stub label { display: grid; }
+.admin-stub .admin-check { display: flex; }
+.admin-page .admin-danger { color: var(--color-error); }

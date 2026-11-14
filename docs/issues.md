@@ -13454,3 +13454,24 @@ None of the three tests covers the Files tab or Project settings.
 The first run of case 7.14 failed for a different reason, which this change fixes.
 The test read the first script file of the production build, and the editor's chunk now sorts first.
 The test now reads the script file that holds the pinger.
+
+## 855. Project settings shows controls that the engine cannot serve yet
+
+Found: 2026-11-14, while finishing the Project settings tab.
+State: open.
+
+The owner asked for the mock's full Project settings page, with stubs where the engine has no support.
+Each stub is drawn disabled, and hovering it says "Engine work needed".
+The stubs are the following controls:
+
+- The task label prefix. `Project` has no prefix field.
+- The base branch. No setting stores it, and the engine merges only into `main` or `master`.
+- The lead subscription. The `configure` command changes only the model and the effort.
+- The permission for every agent in the project. Permission is set only when an agent starts.
+- The switches "Write tests first", "Agent review", and "Remove agent credits when merging".
+- The assignment table, with its "Every row" picker and its Approve button.
+- The need-to-know switch for each team.
+- The Delete button. The engine has no command that deletes a project.
+
+The stubs are in `packages/web/src/admin/project-settings.tsx`.
+Each one becomes a working control when its engine command exists.
