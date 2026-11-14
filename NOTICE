@@ -94,3 +94,12 @@ web mock's design/workbench.html and design/workbench.js at LGTM Studio commit
 bef4b1090a8dc783075f835e7c5e90dbc3b8aad9. See
 third_party/lucide/README.md and third_party/lucide/LICENSE (ISC; Feather
 portions copyright Cole Bemis 2013–2022, MIT).
+
+- xterm.js (https://github.com/xtermjs/xterm.js), @xterm/xterm 6.0.0.
+  Copyright (c) 2017-2019, The xterm.js authors.
+  Copyright (c) 2014-2016, SourceLair Private Company.
+  Copyright (c) 2012-2013, Christopher Jeffrey. MIT License.
+  In LGTM Studio: an ordinary npm dependency of packages/studio, bundled for
+  the connected project Terminal tab. The build adds the page's style nonce
+  before its three renderer style elements are attached.
+  The dependency's LICENSE ships with the built website as licenses/xterm.txt.

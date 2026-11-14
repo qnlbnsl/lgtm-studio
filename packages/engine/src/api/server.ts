@@ -1,3 +1,4 @@
+import { terminalReasons } from '../harnesses/terminalReasons.ts'
 import { projectRefusalReasons } from "../project/errors.ts";
 // Connection assembly pattern: T3 Code apps/server/src/ws.ts, lines
 // 3293-3330, 3360-3367 and 3374-3385 (MIT licence). No source code is copied.
@@ -44,7 +45,7 @@ type Handlers = { readonly [R in RpcGroup.Rpcs<typeof CommandsRpcGroup> as R["_t
 
 const refused = (status: number, text: string) => HttpServerResponse.text(text, { status });
 const reasons = new Set([
-  ...Object.values(signInReasons), ...Object.values(folderReasons),
+  ...Object.values(terminalReasons), ...Object.values(signInReasons), ...Object.values(folderReasons),
   "Confirm that every signed-in page is signed out and running agents are stopped.",
   "This service cannot restart itself on this platform.", "The service launch files are unavailable. Restart was refused before stopping agents.", "service restarting",
   "The workflow folder must be absolute, existing, owned by you, outside the service state folder, and have no symbolic links.",
@@ -201,7 +202,7 @@ export const application = (options: ApplicationOptions) => Effect.gen(function*
       if (read === undefined) return handler.execute(credential, name, payload).pipe(Effect.mapError((error) => commandError(payload.requestId, error.reason, name)));
       const prepare = authenticateRequest(payload.requestId).pipe(Effect.andThen(Effect.gen(function* () {
         if (name === "debug.compare-views" && credential._tag !== "owner") return yield* refuseCommand();
-        if (!lists.access[name]?.includes(actor._tag)) return yield* refuseCommand(name.startsWith("client.harness.signin.") ? signInReasons.owner : "command refused");
+        if (!lists.access[name]?.includes(actor._tag)) return yield* refuseCommand(name.startsWith("client.terminal.") ? terminalReasons.owner : name.startsWith("client.harness.signin.") ? signInReasons.owner : "command refused");
         const input = yield* handler.input(actor);
         return { ...input, connectionId, connectionSignal: connection.signal };
       })));

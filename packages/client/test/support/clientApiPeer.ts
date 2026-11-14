@@ -10,6 +10,9 @@ import { agentEnvironment, bounded, prepareRoot, type RequestFrame } from "../..
 export { chunk, succeed, until } from "../../../testing/test/support/unit7b.ts";
 export type { RequestFrame };
 export interface TestClient {
+  "client.terminal.open": (payload: any) => Effect.Effect<any, unknown>;
+  "client.terminal.write": (payload: any) => Effect.Effect<any, unknown>;
+  "client.terminal.subscribe": (payload: any) => Stream.Stream<any, unknown>;
   ask: (payload: any) => Effect.Effect<any, unknown>;
   subscribe: (payload: any) => Stream.Stream<any, unknown>;
   "client.subscribe": (payload: any) => Stream.Stream<any, unknown>;

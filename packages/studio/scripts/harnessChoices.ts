@@ -9,7 +9,7 @@ export function harnessChoicesSource(path: string, source: string): string {
     replace('let service;', 'let choicesVersion = 0;\nlet service;')
     replace('Object.keys(HARNESSES).forEach((k) => { delete HARNESSES[k]; });\n  Object.assign(HARNESSES, mapping.mapHarnesses(service.harnesses));', `const generation = ++choicesVersion;
   const current = service, currentAccounts = accounts, currentStatuses = statuses;
-  const valid = () => generation === choicesVersion && version === revision && S().session.status === 'in';
+  const valid = () => generation === choicesVersion && currentRead();
   const pendingReport = (harnessId, accountId) => ({ harnessId, accountId, models: { source: 'unavailable', options: [] }, efforts: { source: 'unavailable', options: [] }, reason: 'Reading the models.', effortReason: 'Reading the models.' });
   const accountReports = new Map(currentAccounts.map((a) => [a.id, pendingReport(a.harness, a.id)]));
   Object.keys(HARNESSES).forEach((k) => { delete HARNESSES[k]; });

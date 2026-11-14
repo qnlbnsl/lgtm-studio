@@ -22,8 +22,9 @@ export const installWebRuntime = (views: Views["Service"], runtime: WebRuntime) 
 export const webSettingsCommitted = (views: Views["Service"]) => runtimes.get(views)?.changed ?? Effect.void;
 export const settingsOf = (view: unknown) => (view as ClientWebView | undefined)?.webSettings;
 
-export const setWebSettings = (_input: Input, payload: Record<string, unknown>) => Effect.gen(function* () {
-  const settings = payload.settings as WebSettings;
+export const setWebSettings = (input: Input, payload: Record<string, unknown>) => Effect.gen(function* () {
+  const submitted = payload.settings as WebSettings;
+  const settings = { ...submitted, terminalEnabled: submitted.terminalEnabled ?? settingsOf(input.snapshot.client)?.terminalEnabled ?? false };
   if (settings.proxyMode && settings.publicAddress === undefined) return yield* refused("Proxy mode requires an HTTPS public address.");
   if (settings.publicAddress !== undefined && !Schema.is(PublicWebAddress)(settings.publicAddress)) {
     return yield* refused(publicAddressError);

@@ -192,14 +192,14 @@ export const connectWith = (options: CoreConnectOptions): Effect.Effect<Client, 
           ),
           reads.release
         ).pipe(Effect.catchIf(
-          (error) => (isTransport(error) || error instanceof ClientError) && attempt < ((tag.startsWith("client.harness.signin.") || tag === "client.harness.account.add") ? 1 : attempts),
+          (error) => (isTransport(error) || error instanceof ClientError) && attempt < ((tag.startsWith("client.harness.signin.") || tag.startsWith("client.terminal.") || tag === "client.harness.account.add") ? 1 : attempts),
           () => pause(attempt).pipe(Effect.andThen(() => run(attempt + 1, retryPayload(tag, request))))
         ))
       return run(1, payload)
     }
 
     const subscribe = (tag: string, success: Schema.Top) => (payload: any, callOptions?: any): Stream.Stream<unknown, unknown> => Stream.suspend(() => {
-      const transport = tag.startsWith("client.harness.signin.") ? reads : streams
+      const transport = tag.startsWith("client.harness.signin.") || tag.startsWith("client.terminal.") ? reads : streams
       let after = payload.after
       let first = true
       const from = (failures: number): Stream.Stream<unknown, unknown> => Stream.unwrap(
@@ -249,7 +249,7 @@ export const connectWith = (options: CoreConnectOptions): Effect.Effect<Client, 
         }))
       ).pipe(Stream.catchIf(
         (error) => isTransport(error) || error instanceof ClientError,
-        (error) => failures + 1 >= ((tag.startsWith("client.harness.signin.") || tag === "client.harness.account.add") ? 1 : attempts) ? Stream.fail(error) : Stream.fromEffect(pause(failures + 1)).pipe(
+        (error) => failures + 1 >= ((tag.startsWith("client.harness.signin.") || tag.startsWith("client.terminal.") || tag === "client.harness.account.add") ? 1 : attempts) ? Stream.fail(error) : Stream.fromEffect(pause(failures + 1)).pipe(
           Stream.drain, Stream.concat(Stream.suspend(() => from(failures + 1)))
         )
       ))

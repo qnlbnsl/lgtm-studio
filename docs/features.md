@@ -429,14 +429,20 @@ These interactions are represented in the browser mock.
 
 ### Terminal, Git, machines, and subscriptions
 
-Requested on 2026-11-06. Interactive views are mocked. Live terminal and
-machine coordination are not implemented by this design pass.
+Requested on 2026-11-06. The project Terminal tab is connected as of 2026-11-14.
+Machine coordination remains planned.
 
 - The main conversation can switch to a terminal. The intended product
   provides actual direct commands on the selected machine and workspace.
-  It needs an authenticated terminal session with streamed output,
-  interruption, resizing, and reconnection. The current mock never runs a
-  command. The owner requested normal product copy without repeated mock
+  The connected website provides owner-only shells in registered local worktrees.
+  Service settings has a stored switch that starts off.
+  The renderer supports colours, cursor movement, full-screen programs, and resizing.
+  Output reaches only the opening owner connection unchanged, under the owner's ruling of 2026-11-14.
+  The service never stores or logs input or output.
+  At most eight sessions may be open.
+  Reloading the page or losing its connection ends its sessions.
+  Reconnecting to an old shell and taking over an agent terminal remain planned.
+  The standalone mock still runs only its pretend shell. The owner requested normal product copy without repeated mock
   disclaimers on 2026-11-06. Prototype boundaries remain in design documentation.
 - Git combines a changed-file tree with unified and split diffs. Clicking a
   file directly opens its diff. Branch-aware commit history uses the same
@@ -574,6 +580,21 @@ The full design is in
   project's load spreads across machines. How a client machine proves who it is
   needs the owner's word, because the login rule is one user, one password and no
   pairing.
+- **The server does no machine work itself** (the owner's direction, 2026-11-14;
+  not designed). The owner described the split in more detail.
+  - The server holds the event log, the board and the website. It runs no agent
+    and no command on a machine.
+  - A client is the program that runs agents, shells and Git commands on one
+    machine.
+  - A client opens the connection to the server and takes its commands over it.
+    The client knows the server's address. The server does not need to know
+    where a client is, so it can run in the cloud.
+  - On one machine, starting the server in client mode also starts a client, so
+    a single-machine setup still needs one command.
+  - More machines are added by starting more clients.
+  - Still to decide: how a client proves who it is to the server, what a client
+    may refuse, and what happens to its agents when the connection drops.
+  - The owner sees this as a project to run inside LGTM Studio.
 
 ## 10. Design and mock modes
 
@@ -847,6 +868,26 @@ The service must apply the same rules to images that other clients send at full 
 common server image library, sharp, cannot read HEIC in its standard build, so the service
 needs a separate converter for it.
 
+### Safety of uploaded files, required by the owner
+
+The owner set this requirement on 2026-11-14.
+An uploaded file is untrusted data, even from a signed-in owner page, because a page or a pasted file can carry a malicious payload.
+The path of a file is: the page, then the server, then the client machine that runs the agent, then the agent's harness.
+Every step on that path must be safe on its own.
+The design must meet these points before any upload is built.
+
+- The library that parses uploads on the server must be a well-maintained one with a record of security fixes. The choice and its reasons are written down before it is used.
+- The server enforces a size limit and a count limit while the bytes arrive, not after.
+- The server never trusts the file name, the folder path or the declared type that the page sends. It gives each file its own stored name. It finds the real type from the bytes.
+- The server stores uploads outside every project folder and outside every folder it serves. It never runs an upload, and never unpacks an archive.
+- The server and the client machine treat image decoding as dangerous. Decoding and converting run with tight limits on memory, time and image size, apart from the main service process if possible.
+- A drawing in the Scalable Vector Graphics format can carry scripts. It is never shown as a live page element. It is shown as a flat picture or as a file.
+- A file served back to a page is sent with headers that stop the browser from running it or guessing its type.
+- The client machine checks a file again when the server forwards it: size, stored name and type. It does not rely on the server's checks alone.
+- The agent's harness receives a file as data in a folder made for that message. The file never lands in the worktree unless the owner asks.
+- Agents cannot upload through this path. Only the owner's signed-in page can.
+- A security review with real malicious samples is part of the work, and SECURITY.md gains a section for it.
+
 ## Pushing a finished project and opening its pull request
 
 The owner raised this on 2026-11-12 and decided its shape the same day. It is
@@ -1088,3 +1129,53 @@ The owner asked on 2026-11-14 whether agents should run the vendor's installed p
 Today the engine runs the copy that the Agent Client Protocol adapter depends on, at the version the lockfile pins.
 A setting for each harness could offer "Bundled with LGTM Studio" and "Installed on this machine".
 The owner has not ruled on it.
+
+## Offer a sign-in that is already on the machine
+
+The owner asked for this on 2026-11-14.
+The "Harnesses" page lists an account only after someone adds it.
+A harness can already be signed in on the service's machine, in its own default folder.
+The page should notice that and offer it in one step, for example "A Claude Code sign-in was found on this machine. Use it?".
+The page must not add the account by itself, because an account lets agents run as the owner.
+The check must read only whether a sign-in exists, as "Check again" does today.
+
+## A simpler way to set up harnesses and subscriptions
+
+The owner said on 2026-11-14 that adding a harness account feels weird and should be simpler.
+The "Harnesses" page and its "Add account" dialog need an overhaul.
+The owner plans to run that overhaul as the first project inside LGTM Studio itself.
+The section "Offer a sign-in that is already on the machine" above is one part of it.
+
+## One agreed layout for the `~/.lgtm` folder
+
+The owner asked for this on 2026-11-14.
+The folder `~/.lgtm` in the owner's home should hold a separate home for each subscription, the configuration, and the owner's overrides.
+Today it holds login folders under `~/.lgtm/accounts/<harness>/<account id>` and workflow overrides.
+The service's data lives elsewhere, in `~/.local/state/lgtm`.
+The layout has not been designed as a whole.
+The design should say what each folder holds, which files are secret, and what a backup must include.
+
+## A better build loop
+
+The owner said on 2026-11-14 that the current build loop is not good enough and needs a better way.
+No replacement has been designed.
+The owner wants the Terminal finished first.
+
+## A full-size OpenPencil editor beside the chat
+
+The owner asked for this on 2026-11-14.
+In edit mode on the Mocks screen, the OpenPencil editor sits in a small area.
+A maximize button should let the editor fill the page, with all of OpenPencil's own tools.
+The chat stays open at the side while the editor is maximized.
+The button returns the screen to its normal layout when it is pressed again.
+This changes the look of an existing screen, so it needs the owner's approval of a mock first.
+
+## Click an object in a mock to refer to it in the chat
+
+The owner asked for this on 2026-11-14.
+In view mode on the Mocks screen, the owner should be able to click one object in a mock.
+The click puts a reference to that object into the chat composer.
+The agent that receives the message then knows exactly which object the owner means.
+Still to decide: what the reference carries, for example the object's identifier, its name, its screen and the mock revision.
+Still to decide: how the reference looks in the composer and in the sent message.
+The section "Files and images sent with a message" above covers a related need.

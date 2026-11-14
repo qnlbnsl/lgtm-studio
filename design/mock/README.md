@@ -48,7 +48,7 @@ In live mode the page has no "Mock controls" button and no sample data.
 Actions that change something are not connected to the engine yet.
 Such an action shows the notice "This is not connected to the service yet. Nothing was
 changed." and leaves the page as it was.
-The Terminal and Files tabs and the first run say that they are not connected yet.
+The Terminal and Files tabs and the first run are connected in the engine build.
 `js/engine.js` describes the connection object that `mount()` accepts in live mode.
 
 ## Using it as a package
@@ -97,7 +97,7 @@ This folder's own page starts the mock the same way, through `js/main.js`.
 | Chat with any agent | `/p/console/chat` |
 | Messages, the agents' message board | `/p/console/messages` |
 | Agents, the roster by situation | `/p/console/agents` |
-| Terminal | `/p/console/terminal` |
+| Terminal, with owner shells in local worktrees in the connected website | `/p/console/terminal` |
 | Files, the inspected worktree as a folder tree and a small editor that saves and commits one file | `/p/console/files`, and one file at `/p/console/files?f=README.md` |
 | Git, with generated commit and pull request text | `/p/console/git` |
 | Project settings, with the lead's model and the work assignment table | `/p/console/settings` |
@@ -146,3 +146,19 @@ The sample mode simulates delivery without a network request.
 The live website sends each action through the authenticated client application programming interface (API).
 Secret fields never contain a stored secret.
 See [the notification guide](../../docs/notifications.md) for the transport and API details.
+
+## The connected project terminal
+
+The engine build connects the existing Terminal screen to owner-only shells.
+The Project terminal switch in Service settings starts off.
+An enabled terminal uses the registered local worktree folder and the service's shell.
+The xterm.js renderer handles colours, cursor movement, and full-screen programs.
+The build adds the page's style nonce before the renderer attaches its style elements.
+The content security policy is unchanged.
+Output reaches only the opening owner connection unchanged, under the owner's ruling of 2026-11-14.
+A printed secret appears on the owner's screen and in any scrollback the owner's tools keep.
+The service stores neither output nor input.
+Sessions end when the page reloads, its connection grace period expires, the owner signs out, the switch turns off, or the service stops.
+Remote shells, agent terminal watching, agent terminal takeover, and session reconnection need engine support.
+Those controls are disabled in the live screen, with the tooltip “Engine work needed”.
+The sample screen and its pretend shell remain unchanged when opened without the engine.

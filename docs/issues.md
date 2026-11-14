@@ -13909,7 +13909,7 @@ The full check remains a failed run.
 ## 905. A stall-watch timer field came back empty after a reload in one full run.
 
 Found: 2026-11-14, in the full check of `area/studio-default` at `cfcc4de`.
-Status: open.
+Status: a likely cause is fixed under issue 918; the failure was never reproduced, so it stays open until several full runs pass.
 
 The full check ran alone on the test computer.
 It passed 591 unit test files and 60 of 61 browser journeys.
@@ -13924,6 +13924,217 @@ One possible cause is a save of one field that overwrites the save of the field 
 That cause has not been tested.
 An owner who types quickly across these fields might lose one value in the same way.
 
+## 906. Agent terminal watching and takeover need engine support.
+
+The project terminal API opens private owner shells only.
+It cannot attach to an agent's terminal or transfer that terminal's keyboard.
+The live Session actions menu draws Watch agent session and Take over agent session disabled.
+Both controls show “Engine work needed” on hover.
+
+## 907. Ended project shells cannot reconnect.
+
+A project shell belongs to its opening connection.
+Reloading the page or losing that connection ends the shell after the grace period.
+The live Reconnect control is disabled, with “Engine work needed” on hover.
+A New session control opens a fresh shell instead.
+Remote worktree menu items are disabled because remote terminal transport is unbuilt.
+They show “Engine work needed” on hover.
+
+## 908. Interactive shell jobs use separate process groups.
+
+Found and fixed during the project terminal work.
+Killing only the pseudo-terminal child's process group left background shell jobs running.
+Cleanup now finds and kills the other process groups in the live child's operating-system session.
+It never signals the former session after the child exits.
+The request-layer tests run a real shell and background job through every cleanup path.
+
+## 909. Terminal requests must reject undeclared fields before decoding.
+
+Found and fixed during the project terminal work.
+Effect 4 parser options are not controlled by schema annotations.
+A filter on the raw request now rejects undeclared fields before the structure decoder runs.
+Authenticated raw socket tests send command, path, executable, argument, and environment fields.
+
+## 910. A new terminal import exposed an engine module cycle.
+
+Found and fixed during the project terminal work.
+Importing the project Git API while composing the request tables accessed web settings before initialization.
+The terminal now loads the shared worktree resolver only when an open request runs.
+The native-package regression tests still import and start the engine with the pseudo-terminal package unavailable.
+
+## 911. Private terminal streams must use their opening socket.
+
+Found and fixed by the project terminal browser journey.
+The client normally uses a separate socket for subscriptions.
+A terminal output subscription on that socket was correctly refused as another connection.
+Project terminal streams now use the opening read socket, as harness sign-in streams do.
+Terminal requests do not retry after a transport failure.
+Node and browser client tests verify both properties.
+
+## 912. The sample terminal has a local variable named live.
+
+Found and fixed by the project terminal browser journey.
+An injected guard that used the same name accessed the local variable before initialization.
+The build now imports the live-mode flag with a distinct name.
+The standalone sample source is unchanged.
+
+## 913. A remote worktree may have no paired machine record.
+
+Found and fixed during the project terminal review.
+The live worktree menu now falls back to the engine's machine identifier when its machine record is absent.
+The remote menu item is disabled with “Engine work needed” on hover.
+The menu explains that project terminals are available only on the local machine.
+The terminal browser journey covers this state.
+
+## 914. The terminal must resolve the repository main checkout.
+
+Found and fixed during the project terminal review.
+The live menu includes the registered main checkout of the project's repository.
+The shared resolver now accepts that checkout when an owner terminal explicitly requests this option.
+Other request paths keep their existing worktree permissions.
+A socket test checks that a different repository is still refused.
+The browser journey opens both the project's worktree and its main checkout.
+
+## 915. The live terminal used the sample folder field.
+
+Found and fixed during the project terminal review.
+The engine maps a worktree's folder to the folder field.
+The live menu and status bar now read that field.
+The browser journey checks the initial folder for both worktrees.
+
+## 916. Terminal requests need the pinned API and CLI inventories.
+
+Found and fixed by the full check during the project terminal work.
+The contract inventories now include the five owner-only terminal requests.
+The command-line parity fixtures cover their payloads and stream.
+The logout route uses the caller returned by the shared cookie boundary.
+
+## 917. A refused subscription could reset another reader's redaction carry.
+
+Found and fixed during the project terminal privacy review.
+A rejected stream ran cleanup with the active stream's redaction key.
+That cleanup could discard a held secret prefix between output chunks.
+Each subscription now has its own redaction key.
+A socket test attempts both a second owner's subscription and a duplicate subscription between the secret's chunks.
+The test first failed with an unblanked suffix.
+
+## 918. The model-discovery journey intermittently loses a harness selection.
+
+Found in the full remote check during the project terminal work.
+State: fixed in review round 1.
+The full check passed all 594 unit test files.
+It passed 61 browser journeys and failed the model-discovery journey.
+The failed assertion expected the empty harness's model-choice explanation.
+The browser snapshot still showed the first harness selected.
+The focused rerun passed one journey in 3.0 seconds.
+The review identified a save guard that discarded pending changes.
+It also identified a second background reload that disabled a control after it became enabled.
+An older reload could overwrite the cached records used by a later save.
+The settings action now queues writes through their complete readback.
+Unsent changes to one field keep the latest value.
+Pending edits are retained across background reads.
+Background reads no longer disable the settings inputs.
+Only the latest reload may publish its results.
+A readback invalidated by navigation is repeated before the next queued write.
+This also addresses the Service settings race identified as issue 905 in the fix brief.
+The new unit regressions reproduced the dropped-edit and stale-read behavior before the fix.
+The browser journey changes two fields and then a harness before reloading.
+All ten serial repetitions passed after the fix.
+The project terminal journey passed in both its focused run and the full run.
+The original full check remains a failed historical run.
+
+## 919. Large output killed the project shell.
+
+Found in review round 1.
+State: fixed.
+The sign-in unread-output limit was unsuitable for project shells.
+Project shells now pause at a high unread-output mark and resume after the reader drains the queue.
+Sign-in sessions keep their existing limit.
+A socket test reads several megabytes and runs another command in the same shell.
+
+## 920. Registered agent tokens delayed terminal echo.
+
+Found in review round 1.
+State: fixed by the owner's ruling of 2026-11-14.
+The first idle release fixed only the generic lead.
+Review round 2 found that secret-form and credential-prefix holds still delayed typed characters.
+The owner then removed blanking from both owner terminal streams.
+Terminal output now reaches its opening connection unchanged, without a hold or idle timer.
+The engine and browser tests check `ls` with a registered secret starting with `s`.
+They check `chmod 777` before Enter too.
+Every other caller of the redactor keeps its existing behavior.
+
+## 921. A background job survived the shell's own exit.
+
+Found in review round 1.
+State: fixed on hosts with `/proc`.
+Cleanup now scans session members after the shell exits as well as during explicit cleanup.
+It never signals the former leader or its former group after exit.
+A socket test starts a background sleep and exits the shell.
+Hosts without `/proc` cannot discover these descendants.
+
+## 922. True colour used a policy-blocked style attribute.
+
+Found in review round 1.
+State: fixed.
+The renderer build now replaces its one style-attribute anchor with a style-object assignment.
+The build fails when that anchor is absent or duplicated.
+The browser journey checks true-colour foreground and background cells under the unchanged policy.
+
+## 923. Review found terminal settings and page cleanup gaps.
+
+Found in review round 1.
+State: fixed.
+The terminal switch now belongs to the sample Service settings screen too.
+An older client's web-settings save preserves an omitted terminal switch.
+A refused or disconnected close request no longer traps a local session tab.
+The worktree menu uses the same project and team relationships as the engine.
+Unassigned linked worktrees are left out.
+The service-credential tests now call the actual read handlers for all five requests.
+The security document states the process-discovery and terminal-control-sequence limits.
+
+## 924. The encoded-token regression assumed a precise shell pause.
+
+Found in the full review-round-1 check.
+State: fixed.
+The socket test expected all three generic lead characters to appear during a timed shell pause.
+The loaded worker sometimes received the remaining token before processing its idle tick.
+The redactor then blanked a character that the test expected to see.
+That behavior exposed less text than the permitted lead.
+The round-1 test waited for the reader to observe the idle release before allowing the shell to print the remaining token.
+The owner's ruling of 2026-11-14 then removed terminal blanking and its idle release.
+The replacement regression requires the full encoded value to arrive unchanged.
+
+## 925. A completed first URL escape lost its credential-prefix hold.
+
+Found by the sign-in split-credential regression during the full review-round-1 check.
+State: fixed.
+The idle-lead classification treated a short decoded prefix as ambiguous even when its source contained a URL escape.
+A split after the completed first escape could discard the percent sign from the matching carry.
+The encoded credential could then escape blanking.
+Any decoded credential-prefix overlap containing an escape now keeps its original strict hold.
+The round-1 regression checked every split of the mixed escaped form.
+The owner's ruling of 2026-11-14 then removed the terminal-only responsive path and its idle tests.
+The general redactor still protects stored events, logs, and agent-facing streams.
+Its existing tests remain unchanged.
+
+## 926. The full review check timed out on Mocks and Files save completion.
+
+Found in the full remote check of `38a825a` during review round 1.
+State: unresolved.
+All 596 unit test files passed.
+The unit result was 9,038 passed and two skipped.
+The browser result was 60 passed and two failed.
+The Mocks journey did not see the editor-save confirmation within five seconds.
+The Files journey still saw its busy state after the five-second save-completion assertion.
+Both unchanged journeys passed in a serial focused rerun.
+The focused result was two passed journeys in 35.5 seconds.
+No assertion or deadline was changed for these failures.
+Their causes remain unproved.
+The terminal journey and the rapid-settings journey passed in the full run.
+The separate credits check passed.
+The full check remains a failed run.
+
 ## 927. The public repository had no licence.
 
 Found: 2026-11-14, when the owner asked which licence requires credit.
@@ -13937,4 +14148,137 @@ The root `LICENSE` file now holds its text, and every package names it.
 Two matters stay open.
 The name "LGTM Studio" is not a registered trademark.
 There is no contributor agreement, so a contribution from another person would limit the owner's freedom to offer other licence terms later.
+
+## 928. A file save kept the editor busy for the whole folder refresh.
+
+Found: 2026-11-14, in two full checks, where the Files journey still saw `aria-busy="true"` five seconds after a save.
+Status: fixed in `design/mock/js/live/files.js`.
+
+A save waited for the throttled refresh of every open folder before it cleared its busy state.
+Each pass of that refresh waited up to one second and then listed every open folder.
+Each folder listing starts about eleven Git processes in the engine.
+A pushed project event during the refresh added another pass.
+A save that tells a working agent always pushes such an event.
+Under the load of a full run, two passes took more than five seconds.
+The commit dialog waited in the same way, which issue 904 recorded.
+A save or a commit now waits for one direct listing of the file's own folder.
+The refresh of the other open folders runs in the background.
+A second fault was found by reading and is fixed too.
+The busy flags were cleared only while the page was signed in.
+A sign-out during a save could therefore leave the editor busy after the next sign-in.
+The flags are now always cleared.
+The engine still starts about eleven Git processes for each folder listing, which stays open as a cost.
+The final full check of `area/terminal` then got past the save and failed later in the same journey.
+The conflict comparison did not appear within five seconds of a refused save.
+The journey passed three of three times when run alone.
+The repeated workspace check of issue 936 is the likely cause, and it stays open.
+
+The separate full browser run during round 2 reproduced both failures.
+Its result was 60 passed and two failed in 10.0 minutes.
+The Mocks journey again missed its save confirmation.
+The Files journey again retained its busy state beyond five seconds.
+The project terminal, harness sign-in, and service-settings journeys passed.
+Both unchanged failing journeys passed in a serial focused rerun in 35.2 seconds.
+Their assertions and deadlines remain unchanged.
+The credits check passed after that rerun.
+The full browser run remains failed.
+
+## 929. Secret-form and credential-probe overlaps still delayed echo.
+
+Found in review round 2, finding 1.
+State: fixed by the owner's ruling of 2026-11-14.
+A strict suffix hold could delay the last character of `ls` or `chmod 777` indefinitely.
+It could also withhold the end of a terminal device query.
+The owner decided to remove blanking from project and harness sign-in terminal output.
+Printed secrets therefore appear on the opening owner's screen and in scrollback kept by the owner's tools.
+Terminal output remains excluded from storage, logs, tracing, errors, other subscribers, and agent streams.
+The redactor's terminal-only responsive mode, idle release, and carry use were removed.
+The existing general redactor tests remain unchanged.
+
+## 930. A paused pseudo-terminal could lose its final output on exit.
+
+Found in review round 2, finding 3.
+State: fixed.
+The native library closes an unread socket 200 milliseconds after the child exits.
+Its public exit event arrives after that close.
+A paused project terminal now watches the pinned Unix library's native exit indicator every 15 milliseconds.
+Native exit resumes reading and drains the finite tail before the public exit ends the stream.
+An unexpected library indicator refuses a project shell instead of silently losing the tail.
+A regression covers the earlier native exit boundary.
+A real shell regression pauses a slow reader and receives `END-MARK` after 200,000 lines.
+
+## 931. A single cleanup scan could miss a fork or run after identifier reuse.
+
+Found in review round 2, finding 4.
+State: fixed within the documented five-pass bound.
+Cleanup repeats until a scan finds no session member or five passes finish.
+Natural exit starts cleanup once.
+An empty session causes no signal.
+A reappearing former leader identifier prevents signalling its new session.
+Regressions cover continuous forks, identifier reuse, an empty session, and absent `/proc`.
+A process that leaves the session with `setsid` survives.
+Cleanup cannot discover descendants without `/proc`.
+
+## 932. Settings checks stopped disabling inputs and external changes appeared unsaved.
+
+Found in review round 2, finding 6.
+State: fixed.
+Workflow checks and service restarts disable the Service settings and Harnesses inputs again.
+Ordinary queued saves and background reloads may keep those inputs enabled.
+The Remote access form overlays only fields the owner actually edited.
+Untouched fields refresh from the store without creating an unsaved change.
+A real pending edit survives a refresh of other fields.
+Unit regressions verify that Save sends refreshed values rather than older copies.
+
+## 933. A refused duplicate reader disconnected a live session.
+
+Found in review round 2, outside its original findings.
+State: fixed.
+A refused subscription used to start the active reader's disconnect timer.
+Stream cleanup now detaches only a subscription that acquired the reader.
+Both project and sign-in socket regressions keep their original reader alive beyond the grace period.
+
+## 934. Random bearer forms made terminal socket tests intermittent.
+
+Found in review round 2, finding 2.
+State: fixed.
+The terminal fixtures use fixed synthetic bearers.
+The registered project secret deliberately starts with `s`.
+The owner's decision to remove terminal blanking removes the dependency on secret-form prefixes.
+The browser echo assertion now checks the active prompt line rather than any row.
+
+## 935. The round-2 full check found a startup timeout and an obsolete sign-in assertion.
+
+Found in the full remote check of `e763c06` during review round 2.
+State: the assertion is fixed; the startup timeout remains unresolved under issue 360.
+Typechecking passed.
+The unit result was 595 passed files and two failed files.
+The test result was 9,036 passed, two failed, and two skipped.
+The concurrent-service contest timed out while waiting for its surviving service to answer.
+This repeats the symptom already recorded in issue 360.
+The sign-in application programming interface test still expected the former secret blanking.
+Its assertion now requires the registered secret to reach the opening owner unchanged.
+Its storage and log privacy assertions remain in place.
+The corrected sign-in file and the unchanged service-start file passed all ten tests in a focused rerun.
+No service-start assertion or deadline changed.
+The full command stopped before browser tests and credits because its unit stage failed.
+The original full check remains a failed run.
+
+## 936. A mock editor save waited for about eighty Git processes before it said "saved".
+
+Found: 2026-11-14, by reading the code, after the Mocks journey missed "Editor changes saved" within five seconds in three full checks.
+Status: partly fixed.
+
+The page showed "Editor changes saved" only after four steps finished in order.
+The steps were a design read, the save, a mocks reload and a second design read.
+Inside the save, the engine takes its one Git gate five separate times.
+Each time it checks the workspace again, and one workspace check starts about eleven Git processes.
+The whole wait is about eighty Git processes in a row, by a count from the code.
+Under the load of a full check that takes four to five seconds.
+The page now shows the notice when the save replies, and the two reloads run in the background.
+Two parts stay open.
+The page still reads the design before the save, only to learn the worktree.
+The engine still checks the workspace five times inside one save.
+The same repeated workspace check is behind issue 928, and probably behind other save journeys that fail once in a full check.
+A workspace check that is done once for each request, or cached for a short time, would cut all of them.
 

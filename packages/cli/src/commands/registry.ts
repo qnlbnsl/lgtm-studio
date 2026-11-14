@@ -10,6 +10,11 @@ export type CommandName = Rpc.Tag<RpcGroup.Rpcs<typeof CommandsRpcGroup>> | "cli
 export const commandNames: ReadonlyArray<CommandName> = [...CommandsRpcGroup.requests.keys()] as Array<CommandName>
 
 const summaries: Record<CommandName, string> = {
+  "client.terminal.open": "Open an owner shell in a registered local project worktree, if enabled in service settings.",
+  "client.terminal.write": "Send keys on the opening connection only. A standalone invocation cannot control an existing terminal. --text puts keys in shell history.",
+  "client.terminal.resize": "Resize a project terminal on its opening connection only.",
+  "client.terminal.close": "Kill a project terminal process group on its opening connection only.",
+  "client.terminal.subscribe": "Read ephemeral project terminal output on its opening connection only.",
   "client.harness.account.add": "Add an account using an existing, managed separate, or advanced login folder.",
   "client.harness.signin.start": "Run the account sign-in in a private owner terminal session.",
   "client.harness.signin.write": "Send keys on the initiating connection. Standalone invocations open a new connection and cannot control an existing session. --text puts keys in shell history.",

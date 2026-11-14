@@ -44,7 +44,8 @@ export function saveEditor(project, mocks, file, confirmed = false) {
     for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
     const saved = await engine.request('project.mocks.editor.save', { projectId: project.id, revisionId: mocks.revisionId,
       designRevision: mocks.designRevision, worktreeId: reply.result.record.design.worktreeId, confirmed: true, content: btoa(binary) });
-    await loadMocks(project.id); await loadDesign(project.repo);
+    // The saved notice does not wait for the two reads that follow (issue 936).
+    void loadMocks(project.id).then(() => loadDesign(project.repo)).catch(() => {});
     return saved;
   }, 'Editor changes saved');
 }

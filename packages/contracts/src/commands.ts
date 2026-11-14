@@ -1,3 +1,4 @@
+import { terminalAccess, terminalCommandNames } from './terminal.ts'
 import { signInAccess, signInCommandNames } from "./harnessSignIn.ts"
 import { ServiceControlRpcGroup, serviceControlAccess, serviceControlCommandNames } from "./serviceCommands.ts"
 import { WorkflowRpcGroup, workflowAccess, workflowCommandNames } from "./workflowCommands.ts"
@@ -150,7 +151,7 @@ export const EngineCommandsRpcGroup = RpcGroup.make(
 // Later pieces merge their prefixed groups here, in namespace order.
 const StandardClientRpcGroup = ClientRpcGroup.omit(...workflowCommandNames, ...serviceControlCommandNames)
 export const WebRpcGroup = StandardClientRpcGroup.omit(
-  ...signInCommandNames,
+  ...signInCommandNames, ...terminalCommandNames,
   "client.harness.status", "client.harness.recipe", "client.harness.install", "client.harness.account.check",
   "client.harness.choices",
   "client.snapshot", "client.roster", "client.thread", "client.subscribe", "client.event", "client.sequence", "client.requests", "client.alerts.retry", "client.alerts.test", "client.alerts.prompt.dismiss", "client.agent.configuration", "client.agent.context",
@@ -164,7 +165,7 @@ export const ServiceRpcGroup = CommandsRpcGroup.omit("debug.compare-views")
 
 // A new command requires an access decision at the composition point.
 export const commandAccess = {
-  ...signInAccess,
+  ...signInAccess, ...terminalAccess,
   "client.harness.status": ["owner"], "client.harness.recipe": ["owner"], "client.harness.install": ["owner"], "client.harness.account.check": ["owner"],
   "client.web.settings": ["owner"], "client.web.settings.set": ["owner"],
   "client.alerts.retry": ["owner"], "client.alerts.test": ["owner"], "client.alerts.prompt.dismiss": ["owner"],

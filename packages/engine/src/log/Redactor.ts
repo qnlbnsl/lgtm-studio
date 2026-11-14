@@ -11,7 +11,7 @@ export class Redactor extends Context.Service<
   {
     readonly redact: (event: Event) => Effect.Effect<Event>;
     readonly redactText: (text: string) => Effect.Effect<string>;
-    readonly redactChunk?: (itemId: string, text: string, final: boolean, responsive?: boolean) => Effect.Effect<string>;
+    readonly redactChunk?: (itemId: string, text: string, final: boolean) => Effect.Effect<string>;
   }
 >()("lgtm/engine/log/Redactor") {}
 
