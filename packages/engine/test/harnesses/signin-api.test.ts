@@ -55,7 +55,7 @@ it.live('refuses agents for every sign-in request and sends fake output only to 
       else state = item.check.state
     })))
     expect(text.includes('PRIVATE_SIGNIN_MARKER')).toBe(true)
-    expect(text.includes('known-secret')).toBe(false)
+    expect(text).toContain('PRIVATE_SIGNIN_MARKER known-secret Press y')
     expect(state).toBe('local-credential')
     expect(getEventListeners(disconnected.signal, 'abort')).toHaveLength(0)
     expect(existsSync(join(rig.home, '.claude/.credentials.json'))).toBe(false)

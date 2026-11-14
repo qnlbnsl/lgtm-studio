@@ -14083,7 +14083,9 @@ The socket test expected all three generic lead characters to appear during a ti
 The loaded worker sometimes received the remaining token before processing its idle tick.
 The redactor then blanked a character that the test expected to see.
 That behavior exposed less text than the permitted lead.
-The test now waits for the reader to observe the idle release before allowing the shell to print the remaining token.
+The round-1 test waited for the reader to observe the idle release before allowing the shell to print the remaining token.
+The owner's ruling of 2026-11-14 then removed terminal blanking and its idle release.
+The replacement regression requires the full encoded value to arrive unchanged.
 
 ## s9-terminal-20. A completed first URL escape lost its credential-prefix hold.
 
@@ -14093,8 +14095,10 @@ The idle-lead classification treated a short decoded prefix as ambiguous even wh
 A split after the completed first escape could discard the percent sign from the matching carry.
 The encoded credential could then escape blanking.
 Any decoded credential-prefix overlap containing an escape now keeps its original strict hold.
-The existing regression checks every split of the mixed escaped form.
-The idle tests also cover completed escapes before the full prefix arrives.
+The round-1 regression checked every split of the mixed escaped form.
+The owner's ruling of 2026-11-14 then removed the terminal-only responsive path and its idle tests.
+The general redactor still protects stored events, logs, and agent-facing streams.
+Its existing tests remain unchanged.
 
 ## s9-terminal-21. The full review check timed out on Mocks and Files save completion.
 
@@ -14176,3 +14180,20 @@ The terminal fixtures use fixed synthetic bearers.
 The registered project secret deliberately starts with `s`.
 The owner's decision to remove terminal blanking removes the dependency on secret-form prefixes.
 The browser echo assertion now checks the active prompt line rather than any row.
+
+## s9-terminal-28. The round-2 full check found a startup timeout and an obsolete sign-in assertion.
+
+Found in the full remote check of `e763c06` during review round 2.
+State: the assertion is fixed; the startup timeout remains unresolved under issue 360.
+Typechecking passed.
+The unit result was 595 passed files and two failed files.
+The test result was 9,036 passed, two failed, and two skipped.
+The concurrent-service contest timed out while waiting for its surviving service to answer.
+This repeats the symptom already recorded in issue 360.
+The sign-in application programming interface test still expected the former secret blanking.
+Its assertion now requires the registered secret to reach the opening owner unchanged.
+Its storage and log privacy assertions remain in place.
+The corrected sign-in file and the unchanged service-start file passed all ten tests in a focused rerun.
+No service-start assertion or deadline changed.
+The full command stopped before browser tests and credits because its unit stage failed.
+The original full check remains a failed run.
