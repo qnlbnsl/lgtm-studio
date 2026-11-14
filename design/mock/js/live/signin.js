@@ -1,6 +1,7 @@
 // Private terminal state lives only in this component. It never enters the store.
 import { html, useState, useEffect, useRef, live, store, engineWrite, update, uid } from '../lib.js';
 import * as engine from '../engine.js';
+import * as liveGit from './git.js';
 export const checkWords = (check) => ({ 'local-credential': 'Local sign-in found. The provider checks it when an agent starts.', 'signed-out': 'No local sign-in found.', 'missing-executable': 'The harness is not installed.', unavailable: 'Local sign-in could not be checked.' }[check?.state] || 'Local sign-in could not be checked.');
 export const folderLabel = (account) => account?.home ? account.harness === 'gemini' ? account.home + '/.gemini' : account.home : '~/' + ({ claude: '.claude', codex: '.codex', gemini: '.gemini', cursor: '.cursor' }[account?.harness] || 'the harness default folder');
 export async function addAccount(harness, name, folder, home, machine) {
@@ -11,6 +12,7 @@ export async function addAccount(harness, name, folder, home, machine) {
   const { account } = await engine.request('client.harness.account.add', { harnessId: harness, name, folder, ...(folder === 'advanced' ? { home } : {}) });
   // Only the engine's account reply adds a row. No optimistic record is created.
   engineWrite({ subscriptions: [...store.state.subscriptions, { id: account.id, harness: account.harness, name: account.displayName || account.id, home: account.home || '', machine: 'local', enabled: account.enabled !== false, signedIn: false, model: '', usage: null, window: null }] });
+  await liveGit.refreshAccounts();
   return account;
 }
 function applyCheck(account, check) {

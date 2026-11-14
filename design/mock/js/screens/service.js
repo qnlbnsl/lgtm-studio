@@ -1,5 +1,5 @@
 import * as liveGit from '../live/git.js';
-import * as signIn from '../live/signin.js';
+import * as signInUi from '../live/signin.js';
 // The service pages: Machines, Harnesses, Notifications and Service settings,
 // plus one project's Settings tab and the Add repository dialog.
 import { html, useState, useEffect, Icon, cx, update, store, go, href, ago, clock, dayLabel, useNow, uid, plural, MIN, HOUR, DAY, live, refuse } from '../lib.js';
@@ -375,7 +375,7 @@ function AddSubscription({ s, d }) {
   const [recipe, setRecipe] = useState(live.on ? null : h.recipe), [result, setResult] = useState(null), [step, setStep] = useState(h.installed ? 'account' : 'install');
   const [pending, setPending] = useState(false), [error, setError] = useState(''), [account, setAccount] = useState(null);
   const [folder, setFolder] = useState(s.subscriptions.some(x => x.harness === harness) ? 'separate' : 'existing');
-  const terminal = signIn.useSignIn();
+  const terminal = signInUi.useSignIn();
   const close = () => { terminal.stop(); act.closeDialog(); };
   useEffect(() => { if (live.on && step === 'install') liveGit.harnessRecipe(harness).then(setRecipe).catch((e) => setError(e.message)); }, [harness]);
   const install = async () => { setPending(true); setError(''); try {
@@ -387,7 +387,7 @@ function AddSubscription({ s, d }) {
   const selectedMachine = machineOf(s, machine);
   const why = !live.on && selectedMachine?.status !== 'online' ? `${selectedMachine?.name || 'This machine'} is offline.` : !live.on && !selectedMachine?.harnesses?.[harness] ? `${h.name} is not installed on ${selectedMachine?.name || 'this machine'}.` : !name.trim() ? 'Give the account a name.' : dup ? 'This harness already has an account with that name.' : folder === 'advanced' && !home.startsWith('/') ? 'Use an absolute login folder.' : '';
   const add = async (run = false) => { if (why || step !== 'account' || pending) return; setPending(true); setError('');
-    try { const added = account || await signIn.addAccount(harness, name.trim(), folder, home.trim(), machine); setAccount(added); if (run) await terminal.start(added); else close(); }
+    try { const added = account || await signInUi.addAccount(harness, name.trim(), folder, home.trim(), machine); setAccount(added); if (run) await terminal.start(added); else close(); }
     catch (e) { setError(e.message); } finally { setPending(false); } };
   return html`<${Dialog} title=${'Add account · ' + h.name} size=${terminal.session ? 'signin-wide' : ''} onClose=${pending ? () => {} : close} onSubmit=${step === 'account' ? () => add(false) : () => {}}
     foot=${html`<button type="button" class="btn" disabled=${pending} onClick=${close}>${account ? 'Done' : 'Cancel'}</button>
@@ -406,7 +406,7 @@ function AddSubscription({ s, d }) {
       <p>Sign in here, or run the command in your own terminal.</p><${CodeBox} text=${h.signInCommand || h.recipe?.signInCommand || 'Use the harness’s own sign-in command.'} label="sign-in command" />
       <button type="button" class="btn primary" disabled=${!!why || pending || terminal.pending || terminal.running} onClick=${() => add(true)}>Sign in here</button>
       ${h.recipe?.signInSource && html`<p><a class="link" href=${h.recipe.signInSource} target="_blank" rel="noreferrer">Official sign-in documentation</a></p>`}`}
-    ${terminal.session && html`<${signIn.TerminalPanel} terminal=${terminal} />`}
+    ${terminal.session && html`<${signInUi.TerminalPanel} terminal=${terminal} />`}
     ${!terminal.session && terminal.error && html`<p role="alert">${terminal.error} You can use the command in your own terminal.</p>`}
     ${error && html`<p role="alert" class="error-text">${error}</p>`}
   <//>`;
@@ -416,16 +416,16 @@ registerDialog('add-subscription', AddSubscription);
 function HarnessSignIn({ s, d }) {
   const account = s.subscriptions.find((x) => x.id === d.account), h = HARNESSES[account?.harness];
   const [check, setCheck] = useState(null), [error, setError] = useState(''), [pending, setPending] = useState(false);
-  const terminal = signIn.useSignIn();
+  const terminal = signInUi.useSignIn();
   const close = () => { terminal.stop(); act.closeDialog(); };
   const again = async () => { setPending(true); setError(''); try { setCheck(live.on ? await liveGit.checkAccount(account.id) : { state: account.signedIn ? 'local-credential' : 'signed-out', signInCommand: h.recipe?.signInCommand }); } catch (e) { setError(e.message); } finally { setPending(false); } };
   useEffect(() => { void again(); }, [d.account]);
   return html`<${Dialog} title=${'Sign in · ' + (account?.name || '')} size=${terminal.session ? 'signin-wide' : ''} onClose=${close} foot=${html`<button type="button" class="btn" onClick=${close}>Done</button><button type="button" class="btn" disabled=${pending || terminal.running} onClick=${again}>Check again</button>`}>
     <p>Sign in here, or run this command in your terminal.</p><${CodeBox} text=${check?.signInCommand || h?.signInCommand || h?.recipe?.signInCommand || ''} label="sign-in command" />
-    <p class="hint">Login folder: ${signIn.folderLabel(account)}.</p>
+    <p class="hint">Login folder: ${signInUi.folderLabel(account)}.</p>
     <button type="button" class="btn primary" disabled=${pending || terminal.pending || terminal.running || !account} onClick=${() => terminal.start(account)}>Sign in here</button>
     ${h?.recipe?.signInSource && html`<p><a class="link" href=${h.recipe.signInSource} target="_blank" rel="noreferrer">Official sign-in documentation</a></p>`}
-    ${terminal.session ? html`<${signIn.TerminalPanel} terminal=${terminal} />` : check && html`<p role="status">${signIn.checkWords(check)}</p>`}
+    ${terminal.session ? html`<${signInUi.TerminalPanel} terminal=${terminal} />` : check && html`<p role="status">${signInUi.checkWords(check)}</p>`}
     ${(error || terminal.error) && !terminal.session && html`<p role="alert">${error || terminal.error} Use the command in your terminal if sign-in cannot run here.</p>`}
   <//>`;
 }

@@ -826,14 +826,16 @@ test("live website: subscriptions, notifications and service settings persist th
     const port = await unusedPort()
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const runner = yield* makeFakeRunner()
+      const { fixtureHarnessPrograms } = yield* Effect.promise(() => import("../../engine/test/support/fixtureHarnessPrograms.ts"))
+      const harnessPrograms = fixtureHarnessPrograms({ home: rig.home, executable: process.execPath, script: "unused", id: "claude", name: "Claude Code" })
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, Layer.succeed(Redactor, {
         redact: (event) => Effect.succeed(event), redactText: (text) => Effect.succeed(text)
       }))
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck()
         const project = yield* decisionSetup()
-        success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: harnessSettings('first', { models: ['test-model', 'other-model'], efforts: ['high'], defaultModel: 'test-model', defaultEffort: 'high' }) }))
-        success(yield* call(ownerCredential, 'project.settings.set', { settings: { workspaceFolder: rig.work, shell: 'zsh', lead: { harness: 'first', account: { _tag: 'any' }, permission: 'ask', model: 'test-model', effort: 'high' } } }))
+        success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: harnessSettings('claude', { models: ['test-model', 'other-model'], efforts: ['high'], defaultModel: 'test-model', defaultEffort: 'high' }) }))
+        success(yield* call(ownerCredential, 'project.settings.set', { settings: { workspaceFolder: rig.work, shell: 'zsh', lead: { harness: 'claude', account: { _tag: 'any' }, permission: 'ask', model: 'test-model', effort: 'high' } } }))
         yield* completedSetup(project.projectId)
         yield* serve({ password: Redacted.make(password), staticRoot, studioRoot, lists: engineLists,
           settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
@@ -894,10 +896,10 @@ test("live website: subscriptions, notifications and service settings persist th
         })
         const savedProject = success(yield* call(ownerCredential, 'project.settings', {})).settings
         expect(savedProject.workspaceFolder).toBe(rig.work)
-        expect(savedProject.lead).toMatchObject({ harness: 'first', model: 'other-model', effort: 'high', permission: 'edit' })
+        expect(savedProject.lead).toMatchObject({ harness: 'claude', model: 'other-model', effort: 'high', permission: 'edit' })
         const savedRoles = success(yield* call(ownerCredential, 'roles.settings.get', {})).settings
         expect(savedRoles).toMatchObject({ stallWatch: true, standingRules: true, limits: { stallMinutes: 37, capacityBackoffMinutes: 6, capacityRetries: 2, crashRetries: 0, teamIdleMinutes: 90 } })
-      })).pipe(Effect.provide(buildServices(rig, engineLists).pipe(Layer.provide(dependencies))), Effect.provide(runner.layer))
+      })).pipe(Effect.provide(buildServices({ ...rig, harnessPrograms }, engineLists).pipe(Layer.provide(dependencies))), Effect.provide(runner.layer))
     })).pipe(Effect.provide(SqliteClient.layer({ filename: rig.database, readerWorker: true })), Effect.scoped) as Effect.Effect<void, unknown, never>)
     expect(await page.evaluate(() => (window as unknown as { violations?: string[] }).violations ?? [])).toEqual([])
     expect(errors).toEqual([])

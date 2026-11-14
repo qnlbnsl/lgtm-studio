@@ -6,7 +6,7 @@ export async function exerciseStudioService(page: Page, origin: string) {
   await page.setViewportSize({ width: 1600, height: 1000 })
   await page.goto(`${root}#/subscriptions`)
   await expect(page.locator('.svc-sub')).toContainText('Primary')
-  await page.locator('.svc-harness').filter({ has: page.getByRole('heading', { name: 'first', exact: true }) }).getByRole('button', { name: 'Add account', exact: true }).click()
+  await page.locator('.svc-harness').filter({ has: page.getByRole('heading', { name: 'Claude Code', exact: true }) }).getByRole('button', { name: 'Add account', exact: true }).click()
   await page.locator('#as-name').fill('Browser account')
   await page.locator('.dialog').getByRole('button', { name: 'Add account', exact: true }).click()
   const row = page.locator('.svc-sub').filter({ hasText: 'Browser account' })
@@ -37,7 +37,7 @@ export async function exerciseStudioService(page: Page, origin: string) {
 
   await page.goto(`${root}#/harnesses`)
   await expect(page.locator('#df-model')).toHaveValue('test-model')
-  await page.getByRole('group', { name: 'Harness', exact: true }).getByRole('button', { name: 'first', exact: true }).click()
+  await page.getByRole('group', { name: 'Harness', exact: true }).getByRole('button', { name: 'Claude Code', exact: true }).click()
   await page.getByRole('group', { name: 'Effort', exact: true }).getByRole('button', { name: 'high', exact: true }).click()
   await page.locator('#df-model').selectOption('other-model')
   await expect(page.getByText('Saving…', { exact: true })).toHaveCount(0)
@@ -116,6 +116,8 @@ export async function exerciseStudioService(page: Page, origin: string) {
   await page.goto(`${root}#/subscriptions`)
   await renamed.getByRole('button', { name: 'Actions for Renamed account', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Remove', exact: true }).click()
+  await expect(page.getByRole('dialog')).toContainText('Its login folder is kept:')
+  await expect(page.getByRole('dialog')).toContainText('/.claude')
   await page.getByRole('dialog').getByRole('button', { name: 'Remove subscription', exact: true }).click()
   await expect(renamed).toHaveCount(0)
 }

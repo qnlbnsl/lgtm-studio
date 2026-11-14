@@ -13452,3 +13452,27 @@ A focused cleanup assertion found one abort listener after the session ended.
 Repeated sign-ins on one connection could retain unnecessary session closures.
 The session now removes its listener when it begins ending.
 The test checks that no abort listener remains after the fake program exits.
+
+## s7-signin-9. The older service browser fixture cannot create a separate login folder.
+
+The full browser run passed 58 journeys and failed the service-settings journey while adding its account.
+That journey used a synthetic harness with no shipped sign-in recipe or documented home variable.
+Its second account therefore cannot use the new separate-folder choice.
+The fixture now supplies a fake Claude program and adds a Claude account through the real engine.
+The journey still covers account settings, notifications, removal, and persistence.
+
+## s7-signin-10. A newly added account could appear before its action cache was refreshed.
+
+The updated service journey found that a newly added row could change its action menu while the owner clicked it.
+The dialog had inserted the account reply before the older service cache finished its next read.
+Account creation now awaits a fresh service read before it closes the dialog or starts sign-in.
+That read also fills the cache used by account actions.
+The build checks the refresh export's replacement marker.
+
+## s7-signin-11. The removal confirmation used a shadowed sign-in name.
+
+The service journey reached removal after the account-cache correction.
+Its existing local sign-in action shadowed the new imported namespace.
+That caused the folder-label call in the live removal confirmation to fail.
+The import now uses a distinct namespace name.
+The same journey verifies that the account can be removed afterward.
