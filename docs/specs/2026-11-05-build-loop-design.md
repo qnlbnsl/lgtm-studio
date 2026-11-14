@@ -6,8 +6,10 @@ This note records how the owner wants LGTM Studio to run a piece of work from a
 described change to a running product. The owner and an agent worked it out
 as a set of state diagrams on 2026-11-04 and 2026-11-05.
 
-The chart is at <https://claude.ai/artifact/LJx1tSx4h27WHQyc6qZjpF>. This note
-holds the same steps as text, plus the reasons and the evidence.
+The chart is in [the build loop chart](2026-11-05-build-loop-chart.md), which
+GitHub draws from this note's step lines. This note holds the same steps as
+text, plus the reasons and the evidence. After changing a step line, redraw
+the chart with `node packages/contracts/scripts/build-loop-chart.ts`.
 
 This is a design draft. None of it is built, and no skill has been changed.
 Measurements, model choices and round-by-round tuning were kept out of the
