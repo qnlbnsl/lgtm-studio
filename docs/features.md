@@ -621,10 +621,15 @@ timing is a round after each phase step, in the build loop design's
 
 ## Open questions
 
-- Which licence should LGTM Studio use?
+- Should the name "LGTM Studio" be registered as a trademark, so that a changed version must use another name?
+- Should outside contributors sign an agreement, so that the owner can offer other licence terms later?
 
 ## Decided
 
+- **The licence is the GNU Affero General Public License, version 3 only**
+  (2026-11-14). The owner wants every changed version to stay open, including
+  one that is run as a network service, so that the project's history and
+  credit stay visible.
 - **The product is named LGTM Studio** (2026-11-11). The owner chose the name
   on 2026-11-11 and confirmed the spelling, two words with a space. On
   2026-11-12 the owner asked for the full rename. The command is `lgtm`, the

@@ -14130,6 +14130,20 @@ The terminal journey and the rapid-settings journey passed in the full run.
 The separate credits check passed.
 The full check remains a failed run.
 
+## 927. The public repository had no licence.
+
+Found: 2026-11-14, when the owner asked which licence requires credit.
+Status: fixed by adding the GNU Affero General Public License, version 3 only.
+
+The repository on GitHub is public.
+It had no licence file, and `README.md` said that a licence had not been chosen.
+Without a licence, nobody had permission to use, change or share the code.
+The owner chose the GNU Affero General Public License on 2026-11-14.
+The root `LICENSE` file now holds its text, and every package names it.
+Two matters stay open.
+The name "LGTM Studio" is not a registered trademark.
+There is no contributor agreement, so a contribution from another person would limit the owner's freedom to offer other licence terms later.
+
 ## 928. A file save kept the editor busy for the whole folder refresh.
 
 Found: 2026-11-14, in two full checks, where the Files journey still saw `aria-busy="true"` five seconds after a save.
@@ -14149,4 +14163,3 @@ The busy flags were cleared only while the page was signed in.
 A sign-out during a save could therefore leave the editor busy after the next sign-in.
 The flags are now always cleared.
 The engine still starts about eleven Git processes for each folder listing, which stays open as a cost.
-

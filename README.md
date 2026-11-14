@@ -126,4 +126,17 @@ An installer, startup at login, and loading project configuration from
 
 ## Licence
 
-A licence has not been chosen yet.
+LGTM Studio is free software.
+Its licence is the GNU Affero General Public License, version 3 only.
+The full text is in [LICENSE](LICENSE).
+Copyright (C) 2026 Kunal Bansal.
+
+The licence lets anyone use, change and share LGTM Studio.
+Anyone who shares a changed version must share its source code under the same licence.
+Anyone who runs a changed version as a network service must offer its source code to the people who use that service.
+Every copy must keep the copyright lines and the [NOTICE](NOTICE) file.
+
+Code copied from other projects keeps its own licence.
+The [NOTICE](NOTICE) file lists each such project, and the licence texts are under `third_party/`.
+
+The licence does not grant the use of the name "LGTM Studio" for a changed version.
