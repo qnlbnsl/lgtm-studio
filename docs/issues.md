@@ -13513,7 +13513,7 @@ The check should use the repository's recorded base branch.
 ## 859. The "Files" tab and the finished "Project settings" exist only on the older page
 
 Found: 2026-11-14, in the review of pull request 47.
-State: the owner ruled on 2026-11-14 that the website is the connected mock; the two screens are being moved there.
+State: fixed on 2026-11-14. Both screens are on the website, which the service now serves at the root address.
 
 Pull request 47 built both screens in `packages/web`, which the service shows at `/`.
 The page the owner uses is the connected mock at `/studio/`, and it still says "Files is not connected yet".
@@ -13669,7 +13669,7 @@ Many browser journeys still drive the engine through the older page.
 Removing the package now would remove that coverage of the engine.
 Each journey needs an equal journey on the website before the package is removed.
 The Files tab and the Project settings screen existed only on the older page.
-They are unreachable until the units `s8-files` and `s8-psettings` merge.
+Both screens are now on the website, from the units `s8-files` and `s8-psettings`.
 
 ## 876. The live project settings screen had unsupported controls that still looked editable.
 
@@ -13785,3 +13785,123 @@ The failure was a five-second timeout waiting for the fake runner to receive the
 The same journey passed in isolation without a code change.
 The project settings journey passed in both its focused run and the full check.
 The cause of the intermittent permission-answer failure remains unconfirmed.
+
+The Files screen is now connected on `worker/s8-files`.
+The older page remains in place, as the owner required.
+
+## 894. The live Files screen cannot download a file.
+
+Found: 2026-11-14, while connecting the Files screen at `/studio/`.
+State: the Download controls are disabled with the explanation "Engine work needed".
+
+The engine can return bounded text and image previews.
+It has no authenticated download operation for a binary file or a file over the preview limit.
+The menu and the preview notice keep their Download controls disabled until that operation exists.
+
+## 895. The live Files screen cannot generate a commit message.
+
+Found: 2026-11-14, while connecting the Files screen at `/studio/`.
+State: the Generate control is disabled with the explanation "Engine work needed".
+
+The engine has no operation that writes a commit message from a file's changes.
+The owner can write a message and commit the open file through `project.commit`.
+
+## 896. A root folder request must omit the optional folder field.
+
+Found: 2026-11-14, in the new Files browser journey through the real engine.
+State: fixed in the Files connection.
+
+An early root folder request sent a `folder` property whose value was `undefined`.
+The client rejected the request with "Schema validation failed" before it reached the engine.
+The request now omits the property for the root folder.
+The browser journey checks the root entries and a changed folder before opening a child file.
+
+## 897. A large conflict comparison could hide the owner's editor.
+
+Found: 2026-11-14, while extending the Files browser journey to compare a current file with 120 lines.
+State: fixed with a bounded comparison area in the live screen.
+
+The current file initially used an unbounded preformatted block under the editor.
+That block could take the editor's available height.
+The comparison now scrolls within forty percent of the main area's height.
+The browser journey checks that both the comparison and the editor remain visible.
+
+## 898. Three existing browser journeys failed in the full run and passed unchanged in isolation.
+
+Found: 2026-11-14, in the final remote check for the Files migration.
+State: open.
+
+The full check passed all 580 Vitest files, with 8,799 tests passed and two tests skipped.
+The browser suite passed 55 journeys and failed three journeys.
+The new Files journey passed in that run.
+The Mocks journey did not see the "Editor changes saved" notice within five seconds at `studioMocks.ts:89`.
+The subscriptions and service-settings journey did not see "No unsaved changes." after saving the heartbeat at `studioService.ts:75`.
+The service-settings journey read two reviewers after saving four reviewers at `studioSettings.ts:65`.
+Issue 727 records the same heartbeat save symptom in an earlier full check.
+All three unchanged journeys passed when run together with one worker, with a total of three passed in 23.7 seconds.
+The separate credit check passed before that rerun.
+The full check remains a failed run.
+The underlying cause of these intermittent failures is not established.
+
+## 899. File conflict detection depends on an English engine refusal.
+
+Found: 2026-11-14, in the first review of the connected Files screen.
+State: open.
+
+The Files screen recognizes a stale version by matching the engine's English refusal sentence.
+A change to that sentence could prevent the comparison controls from appearing.
+
+## 900. A file absent from a loaded listing can lack change controls.
+
+Found: 2026-11-14, in the first review of the connected Files screen.
+State: open.
+
+The Commit control and the file's change badge depend on the file appearing in a loaded folder listing.
+The engine limits a folder listing to 500 entries.
+A file beyond that limit may have no Commit control or change badge when opened through search or a direct address.
+
+## 901. The Files offline state has only a forced-store browser check.
+
+Found: 2026-11-14, in the first review of the connected Files screen.
+State: open.
+
+The browser journey checks the Files offline state by closing the connection and forcing the store's connection status.
+It does not test the transition caused by an actual network interruption.
+
+## 902. Image Blob address revocation has no test.
+
+Found: 2026-11-14, in the first review of the connected Files screen.
+State: open.
+
+The Files screen revokes an image's Blob address when the image changes or the view unmounts.
+No test verifies that revocation.
+
+## 903. A temporary save lock blurred the file editor.
+
+Found: 2026-11-14, while strengthening the Files browser journey for the first review.
+State: fixed in the engine build's editor integration.
+
+Removing the version from the editor key preserved the editor node after saving.
+Temporarily disabling the editor's editable element still removed its focus.
+The engine build now blocks edits during a request through the editor's state lock while keeping the element focusable.
+The browser journey checks the same editor node after Control+S.
+It also checks the focus and cursor position after the save.
+It types the next change through the keyboard without refilling the editor.
+
+## 904. The full Files journey exceeded its commit-dialog assertion budget.
+
+Found: 2026-11-14, in the round 1 remote check.
+State: the journey now waits for the engine's commit acknowledgement before checking the closed dialog.
+
+The full check passed all 581 unit test files.
+The browser suite passed 57 journeys and failed the Files journey at its five-second dialog assertion.
+The failure snapshot showed the committed-file notice.
+The snapshot's page tree no longer contained the dialog.
+The Files model waits for its coalesced listing refresh before closing the dialog.
+The journey now allows fifteen seconds for the commit acknowledgement.
+It still checks the closed dialog after that acknowledgement.
+It still checks the real Git commit's file list.
+The exact source of the delay in the full run is not established.
+The focused Files journey passed after this change, with one journey passed in 22.8 seconds.
+The separate credit check passed.
+The full check remains a failed run.

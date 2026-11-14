@@ -1,0 +1,3 @@
+/* Only the connected Files screen adds a current-version comparison. */
+.fx-current { flex: none; max-height: 40%; overflow: auto; overflow-wrap: anywhere; }
+.fx-current pre { white-space: pre-wrap; color: var(--color-text); }

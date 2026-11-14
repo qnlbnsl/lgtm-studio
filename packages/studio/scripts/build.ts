@@ -1,5 +1,7 @@
 import { signInSource } from "./signInSource.ts"
 import { projectSettingsSource, assertProjectSettingsSource } from "./projectSettings.ts"
+
+import { filesSource } from "./filesSource.ts"
 import { serviceSettingsSource } from "./serviceSettings.ts"
 import { gitActionsSource } from "./gitActions.ts"
 import { harnessChoicesSource } from "./harnessChoices.ts"
@@ -87,8 +89,13 @@ export async function buildStudio(dist = defaultDist): Promise<string> {
     writeFileSync(target, assertProjectSettingsSource(path, source))
   }
 
+  for (const path of ["js/app.js", "js/screens/files.js", "js/editor.js", "js/ui.js"]) {
+    const target = join(dist, path)
+    writeFileSync(target, filesSource(path, readFileSync(target, "utf8")))
+  }
+
   writeFileSync(join(dist, "js/workflow-contracts.js"), contracts)
-  const { page, theme } = rewriteIndex(readFileSync(join(mock, "index.html"), "utf8"))
+  const { page, theme } = rewriteIndex(filesSource("index.html", readFileSync(join(mock, "index.html"), "utf8")))
   writeFileSync(join(dist, "index.html"), page)
   writeFileSync(join(dist, "theme.js"), theme)
   await build({

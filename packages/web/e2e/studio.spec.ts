@@ -1,4 +1,6 @@
 import { exerciseStudioProjectSettings } from './support/studioProjectSettings.ts'
+
+import { exerciseStudioFiles } from './support/studioFiles.ts'
 import { exerciseStudioSettings } from './support/studioSettings.ts'
 import { exerciseStudioGit } from './support/studioGit.ts'
 import { exerciseStudioMocks } from './support/studioMocks.ts'
@@ -1114,3 +1116,5 @@ test('Harnesses sign-in runs a strict fake terminal and checks the added account
 test('Harnesses then project Chat keeps the composer visible', async ({ page }) => { test.setTimeout(90_000); await (await import('./support/studioSignIn.ts')).exerciseHarnessesThenChat(page) })
 
 test("studio project settings: live changes, disabled controls and archive restore", async ({ page }) => { test.setTimeout(90_000); await exerciseStudioProjectSettings(page) })
+
+test("studio files: engine tree, editor policy, save conflicts and one-file commit", async ({ page }) => exerciseStudioFiles(page))
