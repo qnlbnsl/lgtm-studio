@@ -201,3 +201,15 @@ live("Gemini account homes set GEMINI_CLI_HOME while preserving the service HOME
     expect(seen.env.GEMINI_CLI_HOME).toBe(home);
     expect(seen.env.HOME).toBe(serviceEnvironment(rig).HOME);
   })));
+
+live("A managed Codex account uses its explicit CODEX_HOME directly, preserving its own sign-in and the service HOME", () =>
+  withAcpRunner(rig, {}, ({ runner }) => Effect.gen(function* () {
+    const echo = echoFile(rig), home = join(rig.root, "codex-managed");
+    const base = accountFor("codex", { turns: [] }, echo);
+    const account = { ...base, id: "account-managed" as typeof base.id, home, environment: { ...base.environment, CODEX_HOME: home } };
+    const spawn = yield* spawnFor(rig, harnessFor("codex", writeFakeAdapter(rig)), account);
+    yield* runner.start(spawn.input);
+    const seen = yield* readEcho(echo);
+    expect(seen.env.CODEX_HOME).toBe(home);
+    expect(seen.env.HOME).toBe(serviceEnvironment(rig).HOME);
+  })));

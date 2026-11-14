@@ -5,6 +5,7 @@ import * as Layer from 'effect/Layer'
 import * as Logger from 'effect/Logger'
 import { writeFileSync, readFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
+import { getEventListeners } from 'node:events'
 import { CommandHandler } from '../../src/commands/CommandHandler.ts'
 import { Redactor } from '../../src/log/Redactor.ts'
 import { signInReads } from '../../src/harnesses/signinRequests.ts'
@@ -32,7 +33,8 @@ it.live('refuses agents for every sign-in request and sends fake output only to 
     const added = yield* signInReads['client.harness.account.add'](input, { requestId: 'add', harnessId: 'claude', name: '../../hostile; $(touch bad)', folder: 'separate' })
     const account = added.reply.account as any
     expect(account.home.startsWith(join(rig.home, '.lgtm/accounts/claude/'))).toBe(true)
-    const current = { ...yield* handler.input({ _tag: 'owner' }), connectionId: 'one' }
+    const disconnected = new AbortController()
+    const current = { ...yield* handler.input({ _tag: 'owner' }), connectionId: 'one', connectionSignal: disconnected.signal }
     for (const [next, reason] of [['no-command', 'No usable sign-in command is shipped for this harness.'], ['missing', 'The harness program is not installed.']]) {
       mode = next!
       expect(yield* signInReads['client.harness.signin.start'](current, { requestId: 'refused', accountId: account.id }).pipe(Effect.result)).toMatchObject({ _tag: 'Failure', failure: { reason } })
@@ -54,6 +56,7 @@ it.live('refuses agents for every sign-in request and sends fake output only to 
     expect(text.includes('PRIVATE_SIGNIN_MARKER')).toBe(true)
     expect(text.includes('known-secret')).toBe(false)
     expect(state).toBe('local-credential')
+    expect(getEventListeners(disconnected.signal, 'abort')).toHaveLength(0)
     expect(existsSync(join(rig.home, '.claude/.credentials.json'))).toBe(false)
     const rows = yield* readLog
     expect(JSON.stringify(rows).includes('PRIVATE_SIGNIN_MARKER')).toBe(false)

@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { prepareAccountHome } from '../../src/accounts/loginHome.ts'
 import { SignInSessions } from '../../src/harnesses/signinSessions.ts'
+import { registerRebuildCheck } from '../support/rebuildCheck.ts'
+registerRebuildCheck({ noLog: true })
 let roots: string[] = []
 const root = () => { const p = mkdtempSync(join(tmpdir(), 'lgtm-signin-')); roots.push(p); return p }
 afterEach(() => { for (const p of roots) rmSync(p, { recursive: true, force: true }); roots = [] })

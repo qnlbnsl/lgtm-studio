@@ -17,7 +17,7 @@ export const SignInRpcGroup = RpcGroup.make(
   Rpc.make('signin.write', { payload: { ...session, text: Schema.String.check(Schema.isMaxLength(4096)) }, success: Schema.Struct(request), error: Refused }),
   Rpc.make('signin.resize', { payload: { ...session, cols: Schema.Int.check(Schema.isBetween({ minimum: 20, maximum: 240 })), rows: Schema.Int.check(Schema.isBetween({ minimum: 5, maximum: 100 })) }, success: Schema.Struct(request), error: Refused }),
   Rpc.make('signin.stop', { payload: session, success: Schema.Struct(request), error: Refused }),
-  Rpc.make('signin.subscribe', { payload: session, success: SignInOutput, stream: true, error: Refused })
+  Rpc.make('signin.subscribe', { payload: session, success: SignInOutput, stream: true, error: Refused }).setError(Refused)
 ).prefix('client.harness.')
 export const signInCommandNames = ['client.harness.account.add', 'client.harness.signin.start', 'client.harness.signin.write', 'client.harness.signin.resize', 'client.harness.signin.stop', 'client.harness.signin.subscribe'] as const
 export const signInAccess = Object.fromEntries(signInCommandNames.map(name => [name, ['owner']])) as unknown as { readonly [K in typeof signInCommandNames[number]]: readonly ['owner'] }

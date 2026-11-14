@@ -8,6 +8,7 @@
 // the fake adapter "claude": the engine then reads "Authentication required"
 // as a sign-out and "You've hit your ..." as a usage limit, as it does for the
 // real adapter. The fake agent is still the only process that runs.
+import { join } from "node:path";
 import { afterEach, expect } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 
@@ -42,6 +43,7 @@ const setup = (w: World, accountId: string, failing: Record<string, unknown>) =>
   const crowd2 = yield* alsoOn(w, "acct-busy", "Crowd 2");
   const sick = yield* w.start(w.owner, {
     name: "Sick", accountId, harness: "claude", prompt: "Go.",
+    environment: { CLAUDE_CONFIG_DIR: join(w.root.home, accountId) },
     script: { turns: [[], [failing]] },
   });
   yield* eventsUntil(w.owner, 0, "the first turns", isTag("TurnEnded", sick.agentId));

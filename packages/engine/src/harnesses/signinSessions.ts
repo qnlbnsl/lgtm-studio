@@ -15,8 +15,8 @@ export const signInReasons = {
 } as const
 export type SignInItem = SignInOutput
 type Check = Extract<SignInOutput, { _tag: 'ended' }>['check']
-type Start = { accountId: string; connectionId: string; executable: string; args: ReadonlyArray<string>; cwd: string; environment: Record<string, string>; check: () => Promise<Check> }
-type Session = { id: string; accountId: string; connectionId: string; child: IPty; queue: SignInItem[]; bytes: number; wake?: (() => void) | undefined; timer: ReturnType<typeof setTimeout>; grace?: ReturnType<typeof setTimeout> | undefined; ending: boolean; done: boolean; attached: boolean; check: Start['check']; exited: Promise<void> }
+type Start = { accountId: string; connectionId: string; executable: string; args: ReadonlyArray<string>; cwd: string; environment: Record<string, string>; check: () => Promise<Check>; onEnd?: () => void }
+type Session = { id: string; accountId: string; connectionId: string; child: IPty; queue: SignInItem[]; bytes: number; wake?: (() => void) | undefined; timer: ReturnType<typeof setTimeout>; grace?: ReturnType<typeof setTimeout> | undefined; ending: boolean; done: boolean; attached: boolean; check: Start['check']; onEnd: Start['onEnd']; exited: Promise<void> }
 // Ephemeral only. No logger, event-store, board or alert dependency is available here.
 export class SignInSessions {
   private sessions = new Map<string, Session>()
@@ -30,7 +30,7 @@ export class SignInSessions {
     let resolveExit!: () => void
     const exited = new Promise<void>(resolve => { resolveExit = resolve })
     const id = randomUUID()
-    const session: Session = { id, accountId: input.accountId, connectionId: input.connectionId, child, queue: [], bytes: 0, ending: false, done: false, attached: false, check: input.check, exited,
+    const session: Session = { id, accountId: input.accountId, connectionId: input.connectionId, child, queue: [], bytes: 0, ending: false, done: false, attached: false, check: input.check, onEnd: input.onEnd, exited,
       timer: setTimeout(() => this.finish(session, 'The sign-in reached its time limit.'), this.options.limitMs ?? 5 * 60_000) }
     session.timer.unref()
     this.sessions.set(id, session)
@@ -44,7 +44,7 @@ export class SignInSessions {
   private get(id: string, connection: string) { const s = this.sessions.get(id); if (!s) throw new Error(signInReasons.missing); if (s.connectionId !== connection) throw new Error(signInReasons.connection); return s }
   private finish(s: Session, reason: string) {
     if (s.ending) return
-    s.ending = true; clearTimeout(s.timer); clearTimeout(s.grace)
+    s.ending = true; clearTimeout(s.timer); clearTimeout(s.grace); s.onEnd?.()
     // forkpty creates a process group. Kill descendants even after a normal exit.
     try { process.kill(-s.child.pid, 'SIGKILL') } catch {}
     try { s.child.kill('SIGKILL') } catch {}

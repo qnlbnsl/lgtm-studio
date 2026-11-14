@@ -68,10 +68,11 @@ const start = (input: Input, p: Record<string, unknown>) => Effect.gen(function*
   delete environment.LGTM_TOKEN; delete environment.LGTM_SOCKET
   if (account.harness === 'cursor') environment.NO_OPEN_BROWSER = '1'
   if (input.runtime.credentials) yield* input.runtime.credentials.open(credentialSourceFor({ harnessId: account.harness, home: input.runtime.home, variables: environment })).pipe(Effect.mapError(() => refused(signInReasons.failed)))
-  const manager = sessions(input)
+  const manager = sessions(input), disconnected = () => manager.disconnect(connection)
   const session = yield* Effect.try({ try: () => manager.start({ accountId: account.id, connectionId: connection, executable: installation.path!, args: recipe.signInArguments, cwd: input.runtime.home, environment,
+    onEnd: () => input.connectionSignal?.removeEventListener('abort', disconnected),
     check: () => Effect.runPromise(Effect.gen(function* () { const current = (yield* input.runtime.views.snapshot).accounts[account.id]; return { state: current && harness ? yield* accountReadiness(input, harness, current) : 'unavailable' } as const })) }), catch: failure })
-  input.connectionSignal?.addEventListener('abort', () => manager.disconnect(connection), { once: true })
+  input.connectionSignal?.addEventListener('abort', disconnected, { once: true })
   if (input.connectionSignal?.aborted) manager.disconnect(connection)
   return { reply: { requestId: p.requestId, sessionId: session.id } }
 })

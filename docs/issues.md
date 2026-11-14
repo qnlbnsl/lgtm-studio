@@ -13438,3 +13438,17 @@ Its authentication documentation does not establish that this moves login creden
 The existing adapter also replaces that configuration directory with its own temporary tool configuration.
 The account creation request therefore refuses a second Cursor account with a fixed reason.
 A separate Cursor sign-in remains unavailable until the credential isolation can be established.
+
+## s7-signin-7. Sign-in registration depended on the module import order.
+
+The first full implementation check found that two plain Node.js import orders could reach the sign-in table before its initialization.
+The same cycle could omit the six new handlers from the test loader's table.
+The registration now happens in the engine's existing delayed read-table getter.
+The import-order tests and the command-table completeness test cover the correction.
+
+## s7-signin-8. A finished sign-in retained its disconnect listener.
+
+A focused cleanup assertion found one abort listener after the session ended.
+Repeated sign-ins on one connection could retain unnecessary session closures.
+The session now removes its listener when it begins ending.
+The test checks that no abort listener remains after the fake program exits.

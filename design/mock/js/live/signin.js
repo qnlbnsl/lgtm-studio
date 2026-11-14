@@ -25,6 +25,7 @@ function terminal() {
     for (const ch of text) {
       if (escape) {
         escape += ch;
+        if (escape.length > 8192) { escape = ''; continue; }
         if (escape === '\x1b[' || escape === '\x1b]') continue;
         if (escape.startsWith('\x1b[')) {
           if (/[\x40-\x7e]/.test(ch)) {
@@ -85,7 +86,7 @@ export function TerminalPanel({ terminal: t }) {
   useEffect(() => { if (log.current) log.current.scrollTop = log.current.scrollHeight; }, [t.output]);
   const links = [...new Set((t.output.match(/https?:\/\/[^\s<>"'\x00-\x1f]+/g) || []).map(s => s.replace(/[),.;]+$/, '')).filter(s => { try { const u = new URL(s); return ['http:', 'https:'].includes(u.protocol) && !u.username && !u.password; } catch { return false; } }))].slice(0, 8);
   const keys = e => {
-    if (!t.running || e.isComposing) return;
+    if (!t.running || e.isComposing || (e.key === 'Tab' && e.shiftKey) || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v')) return;
     const specials = { Enter: '\r', Backspace: '\x7f', Tab: '\t', Escape: '\x1b', ArrowUp: '\x1b[A', ArrowDown: '\x1b[B', ArrowRight: '\x1b[C', ArrowLeft: '\x1b[D', Delete: '\x1b[3~' };
     let text = specials[e.key] || (e.key.length === 1 && !e.metaKey ? e.ctrlKey ? String.fromCharCode(e.key.toUpperCase().charCodeAt(0) & 31) : e.key : '');
     if (text) { e.preventDefault(); e.stopPropagation(); t.write(text); }

@@ -1,4 +1,3 @@
-import { signInReads } from "../harnesses/signinRequests.ts";
 import type { Event, ClientStreamItem, SignInOutput } from "@lgtm/contracts";
 import * as Effect from "effect/Effect";
 import * as Stream from "effect/Stream";
@@ -23,7 +22,6 @@ export type ReadHandler = (input: Input, payload: Record<string, unknown>) =>
   Effect.Effect<ReadReply, any, any> | Stream.Stream<ClientStreamItem | SignInOutput, any, any>;
 export const reads = {
   ...harnessReads,
-  ...signInReads,
   ...clientReads,
   "client.alerts.test": testNotification,
   "client.alerts.retry": retryNotification,
