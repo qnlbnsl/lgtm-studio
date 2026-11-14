@@ -77,6 +77,7 @@ export class EventLog extends Context.Service<
     readonly lists?: EngineLists;
     readonly append: Append;
     // Check metadata with the same redactor instance that protects appends.
+    readonly redactor?: Redactor.Redactor["Service"];
     readonly redactText: (text: string) => Effect.Effect<string>;
     readonly subscribeCommitted: Effect.Effect<PubSub.Subscription<EventEnvelope>, never, Scope.Scope>;
     // Runs an effect while holding the writer's permit, so no batch commits
@@ -289,6 +290,7 @@ export const makeLayer = (lists: EngineLists = engineLists) => Layer.effect(Even
   return EventLog.of({
     lists,
     append,
+    redactor,
     redactText: redactor.redactText,
     transact,
     subscribeCommitted: PubSub.subscribe(committedEvents),

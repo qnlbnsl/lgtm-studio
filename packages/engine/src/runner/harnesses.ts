@@ -19,7 +19,7 @@ export interface HarnessLogin {
 const harnessLogins: Readonly<Record<string, HarnessLogin>> = {
   claude: { homeVariable: "CLAUDE_CONFIG_DIR", keyVariable: "ANTHROPIC_API_KEY" },
   codex: { homeVariable: "CODEX_HOME", keyVariable: "OPENAI_API_KEY" },
-  gemini: { keyVariable: "GEMINI_API_KEY" },
+  gemini: { homeVariable: "GEMINI_CLI_HOME", keyVariable: "GEMINI_API_KEY" },
   cursor: { keyVariable: "CURSOR_API_KEY" }
 }
 

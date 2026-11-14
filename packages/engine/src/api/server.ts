@@ -1,7 +1,9 @@
 import { projectRefusalReasons } from "../project/errors.ts";
 // Connection assembly pattern: T3 Code apps/server/src/ws.ts, lines
 // 3293-3330, 3360-3367 and 3374-3385 (MIT licence). No source code is copied.
-import { timingSafeEqual } from "node:crypto";
+import { signInReasons } from "../harnesses/signinSessions.ts";
+import { folderReasons } from "../accounts/loginHome.ts";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import { createServer } from "node:http";
 import type { Socket } from "node:net";
 
@@ -42,6 +44,7 @@ type Handlers = { readonly [R in RpcGroup.Rpcs<typeof CommandsRpcGroup> as R["_t
 
 const refused = (status: number, text: string) => HttpServerResponse.text(text, { status });
 const reasons = new Set([
+  ...Object.values(signInReasons), ...Object.values(folderReasons),
   "Confirm that every signed-in page is signed out and running agents are stopped.",
   "This service cannot restart itself on this platform.", "The service launch files are unavailable. Restart was refused before stopping agents.", "service restarting",
   "The workflow folder must be absolute, existing, owned by you, outside the service state folder, and have no symbolic links.",
@@ -126,6 +129,8 @@ export const application = (options: ApplicationOptions) => Effect.gen(function*
     const currentIdentity = () => options.webIdentity === undefined ? authenticate(raw) : Effect.sync(() => Option.fromUndefinedOr(options.webIdentity!(request)));
     const identity = yield* currentIdentity();
     if (Option.isNone(identity)) return refused(401, "invalid credential");
+    const connectionId = randomUUID(), connection = new AbortController();
+    yield* Effect.addFinalizer(() => Effect.sync(() => connection.abort()));
     const { credential, agentId } = identity.value as { credential: Credential; agentId?: AgentId };
     if (options.webIdentity === undefined && credential._tag === "owner" && !(yield* outsideAdapters(request.headers["lgtm-ancestors"], request.headers["lgtm-process-group"]))) return refused(403, "owner credential refused");
     // Ordinary HTTP is used by serve --detach to detect this service. It
@@ -196,8 +201,9 @@ export const application = (options: ApplicationOptions) => Effect.gen(function*
       if (read === undefined) return handler.execute(credential, name, payload).pipe(Effect.mapError((error) => commandError(payload.requestId, error.reason, name)));
       const prepare = authenticateRequest(payload.requestId).pipe(Effect.andThen(Effect.gen(function* () {
         if (name === "debug.compare-views" && credential._tag !== "owner") return yield* refuseCommand();
-        if (!lists.access[name]?.includes(actor._tag)) return yield* refuseCommand();
-        return yield* handler.input(actor);
+        if (!lists.access[name]?.includes(actor._tag)) return yield* refuseCommand(name.startsWith("client.harness.signin.") ? signInReasons.owner : "command refused");
+        const input = yield* handler.input(actor);
+        return { ...input, connectionId, connectionSignal: connection.signal };
       })));
       if (RpcSchema.isStreamSchema(rpc.successSchema)) return Stream.unwrap(prepare.pipe(Effect.map((input) =>
         read(input, payload) as Stream.Stream<unknown, unknown, Services>

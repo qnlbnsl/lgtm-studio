@@ -76,6 +76,12 @@ for (const { command, words, form } of invocations) {
       "client.alerts.carrier.remove": { name: "email" },
       start: { name: "Parity agent", role: "worker", harness: "fake", account: { _tag: "any" }, permission: "ask", folder: root.work, groups: ["review"], model: "small", effort: "low", prompt: "Check parity." },
       configure: { agentId: "member", model: "small", effort: "low" },
+      "client.harness.account.add": { harnessId: "fake", name: "Owner account", folder: "separate" },
+      "client.harness.signin.start": { accountId: "account" },
+      "client.harness.signin.write": { sessionId: "signin", text: "y" },
+      "client.harness.signin.resize": { sessionId: "signin", cols: 80, rows: 24 },
+      "client.harness.signin.stop": { sessionId: "signin" },
+      "client.harness.signin.subscribe": { sessionId: "signin" },
       "client.harness.status": {}, "client.harness.recipe": { harnessId: "fake" },
       "client.harness.install": { harnessId: "fake" }, "client.harness.account.check": { accountId: "account" },
       "client.harness.choices": { harnessId: "fake", accountId: "account", model: "small", refresh: true },
@@ -209,6 +215,8 @@ for (const { command, words, form } of invocations) {
         start: { ...base, agentId: "member" }, prompt: { ...base, deliveryId: "delivery" },
         "client.service.version": { ...base, version: "0.0.1", commit: "abc123", dataFolder: root.work, checkout: root.work, comparison: "unchecked", updateCommands: [] },
         "client.service.restart": { ...base, restarting: true },
+        "client.harness.account.add": { ...base, account: { id: "account", harness: "fake", displayName: "Owner account", home: "/tmp/account" } },
+        "client.harness.signin.start": { ...base, sessionId: "signin" },
         "client.harness.status": { ...base, harnesses: [{ harnessId: "fake", installed: false }] },
         "client.harness.recipe": { ...base, recipe: { harnessId: "fake", name: "Fixture", automatic: true, packages: ["fixture@1.2.3"], registry: "https://example.test", source: "https://example.test/install", commands: ["fixed fixture command"], signInCommand: "fixture login", signInArguments: ["login"] } },
         "client.harness.install": { ...base, state: "installed", installation: { harnessId: "fake", installed: true, path: "/tmp/fixture", version: "1.2.3" }, output: "Fixture installed." },
@@ -296,7 +304,9 @@ for (const { command, words, form } of invocations) {
         "roles.actions.list": { ...base, items: [] },
         "roles.record": { ...base, sequence: 101 },
       };
-      if (frame.tag === "subscribe" || frame.tag === "client.subscribe") {
+      if (frame.tag === "client.harness.signin.subscribe") {
+        chunk(socket, frame, [{ _tag: "output", text: "Private terminal output" }]); succeed(socket, frame, undefined);
+      } else if (frame.tag === "subscribe" || frame.tag === "client.subscribe") {
         chunk(socket, frame, [{ sequence: 101, eventId: "parity-event", occurredAt: 1_800_000_000_000,
           caller: { _tag: "agent", agentId: "member" }, agentId: "member", event: { _tag: "TurnEnded", agentId: "member", compact: false } }]);
         succeed(socket, frame, undefined);
