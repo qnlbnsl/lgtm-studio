@@ -1,4 +1,9 @@
 LGTM Studio
+Copyright (C) 2026 Kunal Bansal
+
+LGTM Studio is licensed under the GNU Affero General Public License,
+version 3 only. The licence text is in the LICENSE file. The code listed
+below comes from other projects and keeps the licence named in its entry.
 
 This file lists the code in LGTM Studio that comes from other open-source
 projects. Each entry names the project, its copyright holder, its licence,
