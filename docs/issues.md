@@ -14168,6 +14168,10 @@ The busy flags were cleared only while the page was signed in.
 A sign-out during a save could therefore leave the editor busy after the next sign-in.
 The flags are now always cleared.
 The engine still starts about eleven Git processes for each folder listing, which stays open as a cost.
+The final full check of `area/terminal` then got past the save and failed later in the same journey.
+The conflict comparison did not appear within five seconds of a refused save.
+The journey passed three of three times when run alone.
+The repeated workspace check of issue 936 is the likely cause, and it stays open.
 
 The separate full browser run during round 2 reproduced both failures.
 Its result was 60 passed and two failed in 10.0 minutes.
