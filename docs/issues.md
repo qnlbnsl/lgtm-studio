@@ -14094,3 +14094,20 @@ The encoded credential could then escape blanking.
 Any decoded credential-prefix overlap containing an escape now keeps its original strict hold.
 The existing regression checks every split of the mixed escaped form.
 The idle tests also cover completed escapes before the full prefix arrives.
+
+## s9-terminal-21. The full review check timed out on Mocks and Files save completion.
+
+Found in the full remote check of `38a825a` during review round 1.
+State: unresolved.
+All 596 unit test files passed.
+The unit result was 9,038 passed and two skipped.
+The browser result was 60 passed and two failed.
+The Mocks journey did not see the editor-save confirmation within five seconds.
+The Files journey still saw its busy state after the five-second save-completion assertion.
+Both unchanged journeys passed in a serial focused rerun.
+The focused result was two passed journeys in 35.5 seconds.
+No assertion or deadline was changed for these failures.
+Their causes remain unproved.
+The terminal journey and the rapid-settings journey passed in the full run.
+The separate credits check passed.
+The full check remains a failed run.
