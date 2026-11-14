@@ -1102,3 +1102,25 @@ A harness can already be signed in on the service's machine, in its own default 
 The page should notice that and offer it in one step, for example "A Claude Code sign-in was found on this machine. Use it?".
 The page must not add the account by itself, because an account lets agents run as the owner.
 The check must read only whether a sign-in exists, as "Check again" does today.
+
+## A simpler way to set up harnesses and subscriptions
+
+The owner said on 2026-11-14 that adding a harness account feels weird and should be simpler.
+The "Harnesses" page and its "Add account" dialog need an overhaul.
+The owner plans to run that overhaul as the first project inside LGTM Studio itself.
+The section "Offer a sign-in that is already on the machine" above is one part of it.
+
+## One agreed layout for the `~/.lgtm` folder
+
+The owner asked for this on 2026-11-14.
+The folder `~/.lgtm` in the owner's home should hold a separate home for each subscription, the configuration, and the owner's overrides.
+Today it holds login folders under `~/.lgtm/accounts/<harness>/<account id>` and workflow overrides.
+The service's data lives elsewhere, in `~/.local/state/lgtm`.
+The layout has not been designed as a whole.
+The design should say what each folder holds, which files are secret, and what a backup must include.
+
+## A better build loop
+
+The owner said on 2026-11-14 that the current build loop is not good enough and needs a better way.
+No replacement has been designed.
+The owner wants the Terminal finished first.
