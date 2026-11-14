@@ -13353,7 +13353,8 @@ The error stopped the page from drawing, so every project tab kept showing the "
 The snapshot mapping already put subscriptions on the machine `local`, so the fault appeared only after a visit to "Harnesses".
 `mapAccounts` in `packages/studio/src/git.ts` now puts each account on the machine `local` as well.
 The test in `packages/studio/test/git.test.ts` had pinned the empty machine name, and it now expects `local`.
-No browser journey opens a project chat after the "Harnesses" page, so the journeys did not catch it.
+The original browser journeys did not open a project chat after the "Harnesses" page.
+The s7-signin journey now covers that navigation and checks the composer.
 
 The numbers 843 and 844 are used by entries that another session holds uncommitted in the main checkout.
 
@@ -13413,3 +13414,27 @@ The required local dependency installation exited with status 1.
 The package manager reported `ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK` because its store lock was on a read-only file system.
 The remote check installed its own dependencies and ran there.
 A sandbox escalation completed the same local installation with 299 packages afterward.
+
+## s7-signin-4. The baseline Mocks browser journey did not see its editor-save confirmation.
+
+The baseline check passed 577 test files with 8,720 tests passed and two skipped.
+The browser stage passed 56 journeys and failed the existing Mocks journey.
+The assertion in `packages/web/e2e/support/studioMocks.ts:89` did not find "Editor changes saved" within five seconds.
+The check ran before the sign-in implementation and before the required merge from the base branch.
+The chained credit check did not run in that attempt.
+
+## s7-signin-5. Opening Harnesses can discard metadata that a project's Chat still needs.
+
+The required browser regression found a second cause of the failure described in issue 845.
+The Harnesses read cleared every harness name before replacing configured harnesses.
+An agent using a harness absent from that response then lost the metadata its Chat view needs.
+The live build now retains metadata for harnesses used by current agents.
+The new browser journey opens Harnesses and then checks the project lead's composer.
+
+## s7-signin-6. Cursor has no established variable for isolating its login credentials.
+
+Cursor documents `CURSOR_CONFIG_DIR` for its configuration.
+Its authentication documentation does not establish that this moves login credentials.
+The existing adapter also replaces that configuration directory with its own temporary tool configuration.
+The account creation request therefore refuses a second Cursor account with a fixed reason.
+A separate Cursor sign-in remains unavailable until the credential isolation can be established.

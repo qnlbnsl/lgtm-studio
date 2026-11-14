@@ -28,7 +28,7 @@ export function mapAccounts(accounts: ReadonlyArray<Account>, statuses: ClientSn
   return accounts.map((a) => {
     const status = statuses?.find((s) => s.id === a.id)?.status
     const report = reports?.find((r) => r.harnessId === a.harness && r.accountId === a.id)
-    return { id: a.id, name: a.displayName ?? a.id, harness: a.harness, machine: LOCAL_MACHINE, enabled: a.enabled !== false,
+    return { id: a.id, home: a.home ?? "", name: a.displayName ?? a.id, harness: a.harness, machine: LOCAL_MACHINE, enabled: a.enabled !== false,
       signedIn: status !== "needs-sign-in", status: status ?? "", useForNew: settings?.lead?.account._tag === "named" && settings.lead.account.accountId === a.id,
       model: harnesses.find((h) => h.id === a.harness)?.defaultModel ?? "", account: null, usage: null, window: null,
       ...(reports ? { models: report?.models.options.map((o) => o.id) ?? [], reason: report?.reason ?? "This harness did not report model choices.",
