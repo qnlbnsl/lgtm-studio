@@ -14129,3 +14129,24 @@ Their causes remain unproved.
 The terminal journey and the rapid-settings journey passed in the full run.
 The separate credits check passed.
 The full check remains a failed run.
+
+## 928. A file save kept the editor busy for the whole folder refresh.
+
+Found: 2026-11-14, in two full checks, where the Files journey still saw `aria-busy="true"` five seconds after a save.
+Status: fixed in `design/mock/js/live/files.js`.
+
+A save waited for the throttled refresh of every open folder before it cleared its busy state.
+Each pass of that refresh waited up to one second and then listed every open folder.
+Each folder listing starts about eleven Git processes in the engine.
+A pushed project event during the refresh added another pass.
+A save that tells a working agent always pushes such an event.
+Under the load of a full run, two passes took more than five seconds.
+The commit dialog waited in the same way, which issue 904 recorded.
+A save or a commit now waits for one direct listing of the file's own folder.
+The refresh of the other open folders runs in the background.
+A second fault was found by reading and is fixed too.
+The busy flags were cleared only while the page was signed in.
+A sign-out during a save could therefore leave the editor busy after the next sign-in.
+The flags are now always cleared.
+The engine still starts about eleven Git processes for each folder listing, which stays open as a cost.
+

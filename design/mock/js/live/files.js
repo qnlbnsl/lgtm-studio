@@ -112,9 +112,15 @@ export function createFilesModel(context, changed, valid = () => true) {
             }
           } catch (readError) { if (active() && m.selected === path) { m.currentUnavailable = readError.message; m.notice = readError.message; } }
         }
-      } finally { if (active()) { m.saving = false; changed(); } }
+      } finally { m.saving = false; if (active()) changed(); }
     },
-    refreshFolders() { return m.refresh(); },
+    // A save or a commit waits for one direct listing of the file's own folder.
+    // The throttled refresh of every open folder runs in the background, so
+    // pushed events cannot keep the editor busy (issue 928).
+    refreshFolders(path = '') {
+      void m.refresh();
+      return Promise.resolve(m.folder(path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '')).catch(() => {});
+    },
     refresh() {
       if (!active() || !context.online || context.machine !== 'local') return Promise.resolve();
       requested = true;
@@ -148,7 +154,7 @@ export function createFilesModel(context, changed, valid = () => true) {
         m.notice = `Committed ${path.split('/').pop()} as ${saved.head.slice(0, 7)}.`;
         await m.refreshFolders(path); return true;
       } catch (e) { if (active()) m.notice = e.message; return false; }
-      finally { if (active()) { m.committing = false; changed(); } }
+      finally { m.committing = false; if (active()) changed(); }
     },
   };
   return m;
