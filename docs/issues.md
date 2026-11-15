@@ -14907,3 +14907,44 @@ The feature list explicitly says that choosing Always ask begins Not granted on 
 The live and standalone withdrawal toasts both say "Permission withdrawn".
 The command-line summary uses the visible permission and setting names.
 The browser journey asserts the exact denied-request sentence.
+
+## 971. Many controls in "Project settings" are disabled on the website, and the page does not say why.
+
+The owner found this on 2026-11-15.
+The "Task label prefix" field shows "Not set" and cannot be edited.
+The "Base branch" dropdown does nothing.
+The "Write tests first", "Agent review" and "Remove agent credits when merging" switches cannot be clicked.
+In the "Assignment" section, the "Not set" dropdowns cannot be opened.
+The "Need to know" switch on a team does nothing.
+Each of these controls is disabled on purpose by `packages/studio/scripts/projectSettings.ts`.
+The engine stores no value for any of them, so the website has nothing to read or save.
+The only explanation is a hover text, "Engine work needed", which the owner did not see.
+A disabled control that looks like a setting reads as a broken page.
+This is open.
+
+## 972. A setting's explanation takes a line under its label.
+
+The owner asked for this on 2026-11-15, about the "Runs on" row and every row like it in "Project settings".
+The owner said the line under the label is not needed.
+The owner asked for a small question mark in a circle beside the label instead.
+The explanation appears when a person hovers over the question mark or clicks it.
+This changes the look of an existing screen, and the owner asked for it.
+This is open.
+
+## 973. "New session" in the Terminal tab opens a dialog to choose the folder.
+
+The owner tried the Terminal tab on 2026-11-15.
+The owner said the terminal looks good and liked the font control at the top right.
+The owner asked for the folder choice to sit in the tab itself, as a dropdown beside the "New session" button.
+The dropdown lists the places where a session can open.
+The dialog is then not needed.
+This is open.
+
+## 974. A project can be archived but not deleted.
+
+The owner reported this on 2026-11-15.
+The owner said: "I cannot delete projects. I can only archive them."
+The engine has an archive command for a project and no delete command.
+A test project therefore stays in the archive for good.
+A delete must say what happens to the project's worktree, its branch, its agents and its stored history.
+This is open.
