@@ -14174,6 +14174,8 @@ The conflict comparison did not appear within five seconds of a refused save.
 The journey passed three of three times when run alone.
 The repeated workspace check of issue 936 was the likely cause.
 Fix round 1 removes that repetition within one uninterrupted gate.
+The later s10-lead full browser run still reproduced a busy Files save beyond five seconds.
+Issue s10-lead-20 records that remaining timing failure separately from the completed process reduction.
 
 The separate full browser run during round 2 reproduced both failures.
 Its result was 60 passed and two failed in 10.0 minutes.
@@ -14300,6 +14302,9 @@ With one browser worker, Mocks changed from 15.1 seconds to 10.5 seconds.
 Files changed from a failure at 25.6 seconds to a pass at 40.0 seconds.
 The website Git journey changed from a six-minute timeout to a pass in 4.5 minutes.
 These are host journey measurements, not an isolated benchmark.
+The later full browser run passed Mocks in 17.8 seconds.
+Files and website Git still failed their restored limits in that run.
+Issue s10-lead-20 records these remaining timing failures.
 
 ## 937. The owner's feedback on the "Add account" dialog.
 
@@ -14652,3 +14657,24 @@ A revoked source therefore returned the approval refusal instead of the establis
 Prompt admission now checks context access before checking approval to queue work.
 Both checks run before a delivery can be recorded.
 The existing observation safety assertion remains unchanged.
+
+## s10-lead-20. Five browser journeys still failed with their restored limits.
+
+Found during fix round 1 on 2026-11-14.
+Status: open for further timing investigation.
+The restored five-second assertion expired while two legacy Git merge dialogs still showed a pending submission.
+The cases were an owner approval into main and an approval with stale reported evidence into master.
+The broader projects and board journey also remained on All projects five seconds after pressing Create project.
+The equivalent simple master merge and the dedicated creation journeys passed.
+These failures do not establish which engine or page phase was slow.
+The website Git journey reached its six-minute overall limit while a refresh was busy after merging.
+The Files journey still showed its save as busy when the five-second assertion expired.
+The full suite passed fifty-eight journeys and failed these five in 15.8 minutes with two workers.
+The unchanged one-worker rerun passed both legacy Git cases, project creation and Files.
+Their times were 17.7 seconds, 29.7 seconds, 50.7 seconds and 35.9 seconds respectively.
+Website Git again reached its six-minute limit, with a refresh and diff still loading.
+The rerun passed four journeys and failed one in 8.3 minutes.
+The earlier one-worker website Git measurement passed in 4.5 minutes.
+The later failures leave its timing unresolved.
+No assertion or operation deadline is widened.
+Issues 928 and 936 record the completed workspace and save optimizations.
