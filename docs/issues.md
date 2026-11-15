@@ -14826,7 +14826,12 @@ The owner said the terminal looks good and liked the font control at the top rig
 The owner asked for the folder choice to sit in the tab itself, as a dropdown beside the "New session" button.
 The dropdown lists the places where a session can open.
 The dialog is then not needed.
-This is open.
+Status: fixed in unit s15-chat2.
+A labelled "Open in" dropdown now sits beside "New session" in the tab.
+The choice stays in page memory for each project.
+The button sends the same registered-worktree request immediately.
+Remote worktrees remain disabled, with "Engine work needed: local machine only" in the option text.
+The sample mock uses the same control.
 
 ## 974. A project can be archived but not deleted.
 
@@ -14979,6 +14984,34 @@ It must also cover a diff-first file write and the raw tool titles and command a
 The repository still has no real recording of that multi-hunk shape.
 The round 1 tests use explicitly constructed protocol inputs, rather than invented recordings.
 
+Unit s15-chat2 inspected the installed `@agentclientprotocol/codex-acp` version 2.6.0.
+Its `commandActionFacts` reports quoted read and list titles.
+Its unknown command report retains the full command in `rawInput.command`.
+Its `McpToolReporter` names a call `mcp.<server>.<tool>`.
+Its renderer sends these fields as Agent Client Protocol tool updates.
+The unit also inspected the installed `@agentclientprotocol/claude-agent-acp` version 0.99.1.
+Its read reporter supplies a display path, line range and locations.
+Its Bash reporter uses the command as the title.
+Its renderer carries the tool input as `rawInput`.
+The new tests reconstruct these shapes with synthetic paths and arguments.
+Their comments distinguish adapter-derived reports from constructed command edge cases and question events.
+They are not harness recordings.
+
+A real Codex project-lead recording must include `ask`, its recommendation, the later reply and the owner's answer.
+It must include the durable `QuestionAsked` and `ThreadItem` events, with their sequences and times.
+The orchestrator supplied the observed three-paragraph message in s15 fix round 1.
+It begins with the bold question title, continues with a recommendation, and ends with "Sent through LGTM Studio.".
+That final sentence is the lead's own announcement.
+No engine delivery code produces it.
+The engine's ask planner records a question without writing a board post.
+For an owner holder, routing emits only `OwnerNeeded`.
+A prompt delivery is queued only when another agent holds the question.
+The website maps agent messages only from thread text events.
+It does not turn board posts into agent messages.
+A board-originated tool result can therefore only appear as lead speech if the harness emits it again as agent text.
+A real event export is still needed to confirm the message's tool correlation and turn boundaries.
+A real Claude Code question recording is also still needed.
+
 ## 985. Legacy Agent Client Protocol edits lost the original file text.
 
 Found: 2026-11-15, while fixing issue 945.
@@ -15095,7 +15128,7 @@ No wait or deadline was widened.
 The orchestrator should retain this observation when assessing the full check.
 
 
-## s14-1. Stored event reads could reveal a deleted project's history.
+## 1015. Stored event reads could reveal a deleted project's history.
 
 Found while implementing project deletion in unit s14.
 The owner and service could read an agent's thread or an event directly from the durable log even after its view was removed.
@@ -15103,7 +15136,7 @@ Unit s14 keeps identifier tombstones and applies them before the general owner r
 The project history stays in the log but disappears from public event and thread reads.
 This is fixed.
 
-## s14-2. The engine has no safe worktree removal operation.
+## 1016. The engine has no safe worktree removal operation.
 
 Found while implementing project deletion in unit s14.
 The Git service can create a worktree but has no removal path that verifies engine ownership and refuses dirty files.
@@ -15114,7 +15147,7 @@ The requirements for a future operation are recorded in `docs/features.md`.
 This is open.
 
 
-## s14-3. Project deletion could redact identifiers and leave a partial result.
+## 1017. Project deletion could redact identifiers and leave a partial result.
 
 The first review found that the deletion event had no identity exemptions in the log redaction structure.
 A registered secret overlapping an identifier could leave some records behind after a successful reply.
@@ -15122,7 +15155,7 @@ The deletion event now marks every identifier position as an identity.
 A regression test uses the real writer with overlapping registered secrets.
 This is fixed.
 
-## s14-4. Project deletion missed descendant workspaces and removed shared infrastructure.
+## 1018. Project deletion missed descendant workspaces and removed shared infrastructure.
 
 Reopened by review round 2 after the first fix had marked this issue fixed.
 The first review found that descendants registered only with a parent identifier remained usable after deletion.
@@ -15142,7 +15175,7 @@ The read tests configure Git and assert the exact missing-registration refusal.
 This change corrects the reopened scope finding.
 The separately recorded terminal opening race and field-name matcher remain open.
 
-## s14-5. Late events could repopulate deleted views.
+## 1019. Late events could repopulate deleted views.
 
 The first review found that a carrier delivery finishing after deletion could recreate an alert delivery row.
 The shared fold now checks identifier tombstones before updating any core or piece view.
@@ -15150,7 +15183,7 @@ A carrier result for an absent alert cannot create an orphan delivery row.
 Regression tests append late project, agent, board, alert and delivery events and check a rebuild.
 This is fixed.
 
-## s14-6. Setting help and the lead row had focus and layout regressions.
+## 1020. Setting help and the lead row had focus and layout regressions.
 
 The first review found an interactive control inside a tooltip, a hover gap, and focus loss when tabbing to dismiss.
 The shared component now keeps the dismiss control outside the tooltip and tracks focus within its wrapper.
@@ -15159,7 +15192,7 @@ The website lead row has its own two-column rule, and the phone rule wins for bo
 This is fixed.
 
 
-## s14-7. A short registered secret can invalidate a board reply mode during redaction.
+## 1021. A short registered secret can invalidate a board reply mode during redaction.
 
 Found while extending the deletion regression fixture in fix round 1.
 Registering the synthetic secret `one` changes the fixed reply mode `none` in a board post event.
@@ -15170,7 +15203,7 @@ No board redaction rule is changed by this unit.
 This is open.
 
 
-## s14-8. A terminal can finish opening after project deletion commits.
+## 1022. A terminal can finish opening after project deletion commits.
 
 Recorded from minor 2 of review round 2.
 The terminal request resolves its workspace before the session enters the in-memory session map.
@@ -15183,7 +15216,7 @@ A future fix should reread the current workspace after session start and close t
 The round 2 brief explicitly asks to record this issue without fixing it.
 This is open.
 
-## s14-9. The tombstone gate matches metadata field names rather than ownership.
+## 1023. The tombstone gate matches metadata field names rather than ownership.
 
 Recorded from minor 6 of review round 2.
 The gate can drop a surviving agent's prompt event when its sender names a deleted agent.
@@ -15195,7 +15228,7 @@ Ownership rules also need to distinguish a record's owner from its references.
 The round 2 brief explicitly asks to record this issue without fixing it.
 This is open.
 
-## s14-10. Deletion documentation overstated access to retained posts and designs.
+## 1024. Deletion documentation overstated access to retained posts and designs.
 
 Review round 2 found that retained board rows with deleted context are omitted from channel reads.
 Their references no longer open, although the rows remain in the stored channel view.
@@ -15206,10 +15239,105 @@ The design regression uses a real dedicated project worktree and checks removal 
 No post, design or reference behaviour changes in this correction.
 This is fixed.
 
-## s14-11. Each project view change rebuilt the entire tombstone index.
+## 1025. Each project view change rebuilt the entire tombstone index.
 
 Review round 2 found that the cache used the project view object as its key.
 Unrelated project events replace that object while retaining the same deletion map.
 The cache now uses the deletion map as its key and reuses the index across those view changes.
 A regression counts deletion-map reads across distinct project views sharing that map.
 This is fixed.
+
+## 1010. Codex tool row titles exposed adapter names, quotes and shell wrappers.
+
+Found: 2026-11-15, from the owner's service inspection.
+Status: fixed in unit s15-chat2.
+
+The title mapping recognized only the double-underscore engine tool prefix.
+Codex uses a dotted prefix.
+An explicit title inventory now covers every agent tool in both forms.
+An inventory test fails when the exposed tools and title table differ.
+Quoted read and list titles now lose their display quotes.
+Exact quoted sh, bash and zsh wrappers show the inner command.
+Multiline commands end their first-line summary with an ellipsis.
+The complete original command remains inside the row.
+The display parser never evaluates a command.
+Fix round 1 adds readable fallback titles for tools outside the explicit table.
+Ask rows name the owner or lead only when a same-turn question identifies that holder.
+An uncorrelated ask row says "Asked a question".
+List titles use the past tense.
+Search titles remove display quotes while preserving apostrophes inside the query.
+
+## 1011. Question replies with recommendations escaped the echo filter.
+
+Found: 2026-11-15, from the owner's service inspection.
+Status: fixed for the supplied announcement shape in s15 fix round 1.
+
+The old filter compared only a question's body and its title plus body.
+A reply containing the title, recommendation and the lead's own sign-off remained visible.
+Fix round 1 recognizes an announcement only when its first paragraph is the title of that agent's question from the same turn.
+The announcement's recommendation paragraph is folded only when the card has a recommendation to show.
+Its directly following sign-off paragraph is folded with it.
+An ordinary message is never changed by this filter.
+Independent reply text remains visible.
+An answered card displays both the time the question was asked and the time it was answered.
+The recommendation stays visible after an answer and while the question is held by another agent.
+The thread keeps the card at the question event's sequence.
+Issue 984 tracks the missing real question recordings.
+
+## 1012. The shell summary accepted programs in arbitrary folders as known shells.
+
+Found: 2026-11-15, in review round 1 of unit s15-chat2.
+Status: fixed in s15 fix round 1.
+
+A program named zsh in an arbitrary folder could lose its executable path in the collapsed title.
+The display parser now accepts only bare sh, bash and zsh, or those names directly under `/bin/`, `/usr/bin/` and `/usr/local/bin/`.
+Other executable paths remain in the title.
+The matcher was written from that explicit list.
+It does not resolve or execute a path.
+Both quote styles are supported.
+Empty wrappers retain the original text.
+Title-only Bash wrappers now use the same parser before generic tool-name handling.
+
+## 1013. The initial announcement filter deleted an ordinary agent sentence.
+
+Found: 2026-11-15, in review round 1 of unit s15-chat2.
+Status: fixed in s15 fix round 1.
+
+The first implementation treated "Sent through LGTM Studio." as engine delivery text.
+It removed the sentence from every agent message, even without a question.
+The engine does not produce this wording.
+It is the lead's own announcement of its question.
+The replacement filter is scoped to the same agent and turn.
+It changes only messages whose first paragraph matches the question title.
+Unrelated sentences, title mentions and messages from later turns remain intact.
+The ask tool and project lead instruction now explicitly say to write nothing about the question after calling ask.
+The lead's periodic status instruction now excludes waiting for an answer.
+
+## 1014. Two more browser journeys fail when the computer is under heavy load.
+
+Found: 2026-11-15, in the full check of unit s15-chat2.
+Status: open.
+
+The full check ran while two builders were running their own tests.
+The load average of the computer was between 20 and 38.
+Seven browser journeys failed in that run.
+Five of them are named in issue 966.
+The other two are new to the list.
+The first is "live projects and board: signs in through the engine, shows its real records, and keeps the sample out".
+The second is "studio files: engine tree, editor policy, save conflicts and one-file commit".
+The Files journey waited five seconds for the "The file as it is now" region and did not see it.
+Every one of these journeys passed when it ran alone.
+The unit s15-chat2 does not change the Files screen or the projects screen.
+The fixed five-second waits in these journeys are too short for a loaded computer.
+
+## 1026. A shell wrapper with a multi-part quoted argument still shows in a chat tool title.
+
+Found: 2026-11-15, on the real service after pull request 62 was merged.
+Status: open.
+
+The chat removes a shell wrapper from a tool title only when the wrapper has one quoted argument.
+Codex wrote one command as `/usr/bin/zsh -lc` followed by an argument made of several quoted pieces joined together.
+The pieces alternate between double quotes and single quotes, to carry a literal exclamation mark.
+The title of that row still begins "Ran /usr/bin/zsh -lc".
+The matcher of issue 1012 leaves this form alone on purpose, because it does not parse shell quoting.
+A fix needs a small parser for adjacent quoted pieces, and tests for each quoting form.

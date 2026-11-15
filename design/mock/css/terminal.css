@@ -97,3 +97,13 @@
   .term-keys button[aria-pressed="true"] { background: var(--color-primary); border-color: var(--color-primary); color: var(--color-primary-contrast); }
   .term-keys button[disabled] { color: var(--color-faint); }
 }
+
+.term-launch { display: flex; align-items: center; gap: var(--space-2); min-width: 0; flex: none; }
+.term-launch label { display: flex; align-items: center; gap: var(--space-1); white-space: nowrap; }
+.term-launch select { width: 180px; max-width: 24vw; }
+.term-none .term-launch select { max-width: 45vw; }
+@media (max-width: 860px) {
+  .term-tabs { flex-wrap: wrap; height: auto; min-height: 44px; }
+  .term-tabs .term-launch { order: 3; flex-basis: 100%; padding: var(--space-1) 0; }
+  .term-launch select { max-width: 45vw; }
+}

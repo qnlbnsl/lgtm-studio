@@ -2,6 +2,7 @@
 import { html, useState, useEffect, useLayoutEffect, useRef, Icon, cx, notify, href, persist, remember } from '../lib.js';
 import { machineOf } from '../data.js';
 import { Menu } from '../ui.js';
+import { TerminalLaunch } from '../terminal-launch.js';
 import * as engine from '../engine.js';
 import * as act from '../actions.js';
 let mapping, enabled, loading, fontSize = Math.max(11, Math.min(18, persist('termFont', 13)));
@@ -106,12 +107,14 @@ export function LiveTerminalTab({ s, project }) {
     } catch (e) { setNotice(e.message); }
     finally { setOpening(false); }
   };
-  const newSession = (className = 'icon-btn', trigger = html`<${Icon} name="plus" size=${15} />`) => html`<${Menu} class=${className} label="New session" width=${360} align="start" trigger=${trigger}
-    header=${html`<div class="menu-label">Open a shell in a worktree</div>${worktrees.some(w => w.machine !== 'local') && html`<div class="menu-label">Project terminals are available only on the local machine.</div>`}`} items=${worktrees.map(w => ({ label: html`<span>${w.kind === 'project' ? project.name : w.branch}</span><span class="muted"> · ${machineOf(s, w.machine)?.name || w.machine}</span>`, hint: w.folder, icon: 'git-branch', disabled: opening || s.conn.status !== 'live' || w.machine !== 'local', why: w.machine !== 'local' ? 'Engine work needed' : s.conn.status !== 'live' ? 'The machine is offline' : null, onSelect: () => open(w) }))} />`;
+  const selected = mapping.terminalSelection(worktrees, state.openIn, project.worktree);
+  const options = worktrees.map(w => ({ value: w.id, label: (w.kind === 'project' ? project.name : w.branch) + ' · ' + (machineOf(s, w.machine)?.name || w.machine), folder: w.folder, reason: w.machine !== 'local' ? 'Engine work needed: local machine only' : null }));
+  const newSession = (className = 'btn sm') => html`<${TerminalLaunch} options=${options} value=${selected?.id}
+    disabled=${opening || s.conn.status !== 'live'} onChange=${value => { state.openIn = value; redraw(); }} onOpen=${() => selected && open(selected)} className=${className} />`;
   const font = n => { fontSize = Math.max(11, Math.min(18, n)); remember('termFont', fontSize); redraw(); };
   const rename = item => act.openDialog({ type: 'rename', title: 'Rename session', value: item.label, taken: state.sessions.filter(x => x !== item).map(x => x.label), note: 'The name is only a label for this tab. The folder and the machine stay the same.', onRename: value => { item.label = value; redraw(); } });
   if (enabled === false) return html`<div class="term"><div class="term-none"><${Icon} name="square-terminal" size=${22} class="faint" /><strong>The project terminal is turned off.</strong><a class="btn" href=${href('/settings?section=remote')}>Open Service settings</a></div></div>`;
-  if (!session) return html`<div class="term"><div class="term-none"><${Icon} name="square-terminal" size=${22} class="faint" /><strong>${enabled === undefined ? 'Reading terminal settings…' : s.conn.status !== 'live' ? 'The machine is offline.' : project.machine !== 'local' ? 'Project terminals are available only on the local machine.' : 'No sessions are open'}</strong><span class="muted">A session is a shell in one worktree on one machine. Sessions end when this page reloads or its connection is lost.</span>${notice && html`<span role="status">${notice}</span>`}${enabled && newSession('btn primary', html`<${Icon} name="plus" size=${14} /><span>New session</span>`)}</div></div>`;
+  if (!session) return html`<div class="term"><div class="term-none"><${Icon} name="square-terminal" size=${22} class="faint" /><strong>${enabled === undefined ? 'Reading terminal settings…' : s.conn.status !== 'live' ? 'The machine is offline.' : project.machine !== 'local' ? 'Project terminals are available only on the local machine.' : 'No sessions are open'}</strong><span class="muted">A session is a shell in one worktree on one machine. Sessions end when this page reloads or its connection is lost.</span>${notice && html`<span role="status">${notice}</span>`}${enabled && newSession('btn primary')}</div></div>`;
   const ended = session.ended || s.conn.status !== 'live';
   return html`<div class="term">
     <div class="term-tabs"><div class="term-tablist" role="tablist" aria-label="Terminal sessions">
@@ -127,7 +130,7 @@ export function LiveTerminalTab({ s, project }) {
       { label: 'Smaller text', icon: 'minus', disabled: fontSize <= 11, onSelect: () => font(fontSize - 1) },
       { sep: true }, { label: 'Close session', icon: 'x', danger: true, onSelect: () => close(session) }
     ]} /></div></div>
-    ${ended && html`<div class="term-bar warn"><${Icon} name="wifi-off" size=${14} /><span class="grow">${session.ended || 'The machine is offline.'} Sessions end when the page reloads or the connection drops.</span><button type="button" class="btn sm" disabled title="Engine work needed">Reconnect</button>${newSession('btn sm', 'New session')}</div>`}
+    ${ended && html`<div class="term-bar warn"><${Icon} name="wifi-off" size=${14} /><span class="grow">${session.ended || 'The machine is offline.'} Sessions end when the page reloads or the connection drops.</span><button type="button" class="btn sm" disabled title="Engine work needed">Reconnect</button></div>`}
     ${notice && html`<div class="term-bar error" role="status">${notice}</div>`}
     ${state.sessions.map(item => html`<${TerminalView} key=${item.id} session=${item} active=${item === session} sizeChanged=${redraw} />`)}
     <div class="term-keys only-phone-keys" role="group" aria-label="Extra keys">${keys.map(([label, key]) => html`<button type="button" aria-label=${label} disabled=${!!ended} aria-pressed=${key === null ? !!session.ctrl : null} onPointerDown=${e => e.preventDefault()} onClick=${() => { if (key === null) { session.ctrl = !session.ctrl; redraw(); } else { write(key); session.terminal.focus(); } }}>${label}</button>`)}</div>
