@@ -14380,3 +14380,52 @@ The lead asked the owner to accept its first plan, and the card held the whole p
 The owner asked for the same treatment as the other approval cards.
 The card should show a short, plain version first.
 "Details" should then show the full report, with proper formatting such as headings, lists and tables.
+
+## 944. The first real project lead went straight to sprints.
+
+Found: 2026-11-14, by the owner, in the project "Goal here is fully" on the real service. The orchestrator then read the lead's whole chat.
+Status: open.
+
+The owner expected the first step to be: understand what the owner wants, gather context, and agree on it.
+The lead's opening instruction is one line in `packages/engine/src/project/lifecycle.ts`: "You lead project <name>. Shape its first plan with the owner."
+Nothing in it describes a Define phase, and nothing tells the lead to ask before it plans.
+This is what the lead did, with the times the chat shows.
+
+- 18:00 to 18:09: it read the code and the build-loop plan by itself. It posted one status line at 18:06. This silent reading is the wait that the owner felt as slowness (issue 942).
+- 18:09: it asked one question that held its findings, a five-sprint proposal and a list of things left out. It asked the owner nothing about what the goal meant.
+- 18:09, after "Accepted": within a minute it created five sprints, one team named "Build team", and four tasks.
+- 18:10: it asked to build sprint 1 by itself. A lead is meant to give work to builders.
+- 18:10: the owner wrote "hold on" and "do not create teams yet". The lead stopped. It changed no code and made no commit.
+
+Problems this shows:
+
+1. The lead needs a Define step that the product enforces: restate the goal, ask what is unclear, and agree on an end result before any sprint, team or task exists.
+2. Creating sprints, a team and tasks happened on one "Accepted" for a scope question. The owner wants the start of building to be its own approval.
+3. The lead said its role advice forbids it to start agents. That sentence is the worker's advice in `packages/contracts/src/roles/role.ts`. The lead's advice says "Start your own workers". The project lead may be given the worker's advice. This is not confirmed.
+4. A task cannot be created without a team, so the lead made a team only as a placeholder.
+5. The lead has no tool to delete a team or a task, or to rename the project. The owner has to remove "Build team" and its four tasks by hand.
+6. The lead was named "Rowan" from the old name list in `packages/engine/src/project/lifecycle.ts`. Agents are meant to be named by role.
+
+## 945. The lead's chat showed noise and lost formatting.
+
+Found: 2026-11-14, by reading the same chat.
+Status: open.
+
+1. The question card showed the same long text twice, once as the summary and once under "THE QUESTION". The short version was not short.
+2. The lead wrote lists, and the card showed them as one paragraph with dashes in it.
+3. Tool calls appear as raw names, such as `mcp__lgtm__project_sprint_create`, five times in a row.
+4. One file change was shown three times, each time as a full raw difference.
+5. A reply stamped 18:06 appears after the question stamped 18:09.
+6. The lead told the owner about two notices from its own session start that have nothing to do with the project.
+
+## 946. An agent inside LGTM Studio shares this machine's Claude Code memory and hooks.
+
+Found: 2026-11-14, by reading the same chat.
+Status: open. It needs a decision by the owner.
+
+The lead ran with the owner's ordinary Claude Code settings.
+It read the memory notes of the sessions that build LGTM Studio in a terminal.
+It wrote a new note, "Lead creates no teams unasked", into that same memory folder and its index.
+It also ran the owner's session-start hooks and reported their notices in the project chat.
+So an agent in a project and a terminal session can change each other's standing rules without either one being told.
+The design of the `~/.lgtm` folder should decide which settings, memory and hooks an agent in a project gets.
