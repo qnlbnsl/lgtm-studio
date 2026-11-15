@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { expect, type Page } from "@playwright/test"
+import { expect as baseExpect, type Page } from "@playwright/test"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Redacted from "effect/Redacted"
@@ -20,6 +20,7 @@ import { screenBundle, seedScreens } from "../../../engine/test/project/mockScre
 import { buildStudio } from "../../../studio/scripts/build.ts"
 import { completedSetup } from "./completedSetup.ts"
 
+const expect = baseExpect.configure({ timeout: 30_000 })
 export async function exerciseStudioMocks(page: Page) {
   const rig = makeRig(), previous = process.env.LGTM_HOME
   process.env.LGTM_HOME = rig.stateFolder

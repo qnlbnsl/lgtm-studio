@@ -1,3 +1,4 @@
+import { exerciseStudioLeadDefinition } from './support/studioLeadDefinition.ts'
 import { exerciseStudioTerminal } from './support/studioTerminal.ts'
 import { exerciseStudioProjectSettings } from './support/studioProjectSettings.ts'
 
@@ -6,7 +7,7 @@ import { exerciseStudioSettings } from './support/studioSettings.ts'
 import { exerciseStudioGit } from './support/studioGit.ts'
 import { exerciseStudioMocks } from './support/studioMocks.ts'
 import { exerciseStudioService } from './support/studioService.ts'
-test("studio mocks: owner feedback, approval, seen versions and editor saves", async ({ page }) => exerciseStudioMocks(page))
+test("studio mocks: owner feedback, approval, seen versions and editor saves", async ({ page }) => { test.setTimeout(90_000); await exerciseStudioMocks(page) })
 // The live website from packages/studio, served by the real engine at the root, on a real
 // project log. Only the harness runner is fake. The current page stays at /.
 import { completedSetup } from "./support/completedSetup.ts"
@@ -573,9 +574,8 @@ test("live projects and board: signs in through the engine, shows its real recor
           await page.locator("#ps-goal").fill("An edited engine goal")
           await page.getByRole("button", { name: "Save goal", exact: true }).click()
           await expect(page.getByRole("button", { name: "Save goal", exact: true })).toHaveCount(0)
-          await page.getByRole("button", { name: "Rename", exact: true }).click()
-          await page.locator("#rename-field").fill("Renamed project")
-          await page.getByRole("dialog").getByRole("button", { name: "Rename", exact: true }).click()
+          await page.locator("#ps-name").fill("Renamed project")
+          await page.getByRole("button", { name: "Save name", exact: true }).click()
           await expect(sidebar.locator(".tree-row.project").filter({ hasText: "Renamed project" })).toBeVisible()
           await page.getByRole("combobox", { name: "Lead model", exact: true }).selectOption("model-next")
           await expect(page.getByRole("combobox", { name: "Lead model", exact: true })).toHaveValue("model-next")
@@ -899,7 +899,9 @@ test("live website: subscriptions, notifications and service settings persist th
 })
 
 
-test('live website: Git changes, history, remotes, integration and owner approval', async ({ page }) => { test.setTimeout(360_000); await exerciseStudioGit(page) })
+// On this host the complete real Git sequence reaches its final assertions after
+// more than seven minutes. Keep every operation's existing readiness deadline.
+test('live website: Git changes, history, remotes, integration and owner approval', async ({ page }) => { test.setTimeout(600_000); await exerciseStudioGit(page) })
 
 test("live messages: a new project has General and Leads and accepts an owner post", async ({ page }) => {
   test.setTimeout(90_000)
@@ -1121,3 +1123,5 @@ test("studio project settings: live changes, disabled controls and archive resto
 test("studio files: engine tree, editor policy, save conflicts and one-file commit", async ({ page }) => exerciseStudioFiles(page))
 
 test('studio terminal: real shell, private output and renderer policy', async ({ page }) => exerciseStudioTerminal(page))
+
+test("studio lead: Define, owner approval, rename and team deletion", async ({ page }) => { test.setTimeout(90_000); await exerciseStudioLeadDefinition(page) })

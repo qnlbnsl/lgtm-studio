@@ -108,6 +108,13 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
     case "project.ArchiveStarted": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, archiving: true })) }
     case "project.Archived": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, archiving: false, archivedAt: at })) }
     case "project.Restored": return { ...view, projects: change(view.projects, event.projectId, (row) => { const { archivedAt: _a, ...rest } = row; return { ...rest, archiving: false } }) }
+    case "project.ApprovalDecided": return !event.approved ? view : { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row,
+      ...(event.approval === "end-result" ? { endResultApproval: event.questionId, stage: "plan" as const }
+        : event.approval === "skip-planning" ? { skipPlanningApproval: event.questionId, stage: "plan" as const }
+        : event.approval === "skip-planning-and-build" ? { skipPlanningApproval: event.questionId, buildApproval: event.questionId, stage: "build" as const }
+        : { buildApproval: event.questionId, stage: "build" as const }) })) }
+    case "project.TeamDeleted": { const teams = { ...view.teams }; delete teams[projectKey(event.projectId, event.teamId)]; return { ...view, teams } }
+    case "project.TaskDeleted": { const tasks = { ...view.tasks }; delete tasks[projectKey(event.projectId, event.taskId)]; return { ...view, tasks } }
     case "project.StageChanged": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, stage: event.stage })) }
     case "project.TeamAdded": { const { _tag, ...row } = event; return { ...view, teams: { ...view.teams, [projectKey(row.projectId, row.teamId)]: row } } }
     case "project.SprintAdded": { const { _tag, ...row } = event; return { ...view, sprints: { ...view.sprints, [projectKey(row.projectId, row.sprintId)]: row } } }

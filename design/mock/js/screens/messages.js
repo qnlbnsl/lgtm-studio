@@ -218,6 +218,7 @@ function Post({ s, p, ch, pid, now, grouped, selected, onThread, inThread, showC
 
 // The owner's composer on the board: a kind, who it is for, and whether it needs a reply.
 function PostComposer({ s, ch, replyTo, placeholder }) {
+  const archived = ch.archived === true;
   const key = 'board:' + (replyTo || ch.id);
   const [text, setText] = useState(s.drafts[key] || ''); const [kind, setKind] = useState(replyTo ? 'note' : 'question');
   const [action, setAction] = useState(replyTo ? 'fyi' : 'needs-reply'); const [to, setTo] = useState([]);
@@ -225,14 +226,14 @@ function PostComposer({ s, ch, replyTo, placeholder }) {
   useEffect(() => { setText(s.drafts[key] || ''); setTo([]); }, [key]);
   useLayoutEffect(() => { const el = ta.current; if (!el) return; el.style.height = 'auto'; el.style.height = Math.min(160, el.scrollHeight) + 'px'; }, [text]);
   const set = (v) => { setText(v); act.setDraft(key, v); };
-  const send = async () => { if (!text.trim() || (live.on && board.busy('post:' + (replyTo || ch.id)))) return; const reply = await sendPost({ channel: ch.id, kind, action, to, text, replyTo }); if (!live.on || reply) set(''); };
+  const send = async () => { if (archived || !text.trim() || (live.on && board.busy('post:' + (replyTo || ch.id)))) return; const reply = await sendPost({ channel: ch.id, kind, action, to, text, replyTo }); if (!live.on || reply) set(''); };
   const members = ch.members.map((m) => agentOf(s, m)).filter(Boolean);
   const toLabel = to.length ? to.map((id) => whoName(s, id, ch.kind !== 'team')).join(', ') : ch.kind === 'dm' ? 'Both' : 'Everyone here';
   const sending = live.on && board.busy('post:' + (replyTo || ch.id));
-  const off = s.conn.status !== 'live' || sending;
+  const off = s.conn.status !== 'live' || sending || archived;
   return html`<div class="composer board-composer">
     <label class="sr" for=${'pc-' + key}>Post to ${channelLabel(s, ch)}. Enter sends, Shift and Enter adds a line.</label>
-    <textarea ref=${ta} id=${'pc-' + key} rows="1" placeholder=${placeholder || (ch.kind === 'dm' ? 'Post into this direct message…' : `Post to #${ch.name}…`)} value=${text} disabled=${off}
+    <textarea ref=${ta} id=${'pc-' + key} rows="1" placeholder=${archived ? 'Archived channel. Its history is kept.' : placeholder || (ch.kind === 'dm' ? 'Post into this direct message…' : `Post to #${ch.name}…`)} value=${text} disabled=${off}
       onInput=${(e) => set(e.target.value)} onKeyDown=${(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } }}></textarea>
     <div class="tools-row">
       <${Menu} class="pick" side="top" label="Kind of post" trigger=${html`<${Icon} name=${POST_KINDS[kind].icon} size=${13} /><span>${live.on ? '' : POST_KINDS[kind].label}</span><${Icon} name="chevron-down" size=${12} />`}

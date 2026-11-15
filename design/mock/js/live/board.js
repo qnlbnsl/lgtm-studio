@@ -4,6 +4,7 @@ import * as engine from '../engine.js';
 import { toast, nameFromGoal, closeDialog, openDialog } from '../actions.js';
 const S = () => store.state;
 const maps = () => engine.connection().board;
+export const channelArchived = (channel) => channel.archived === true;
 export const busy = (key) => !!S()?.ui?.boardBusy?.[key];
 const valid = (state, connection) => live.on && S() === state && engine.connection() === connection && state.session.status === 'in';
 export async function run(key, work, success) {

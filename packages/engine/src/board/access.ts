@@ -92,7 +92,7 @@ export const successorManager = (snapshot: Snapshot, channelId: string): BoardAd
 
 export const canManage = (snapshot: Snapshot, caller: Caller, channelId: string): boolean => {
   const channel = own(board(snapshot).channels, channelId);
-  if (channel === undefined || channel.kind === "direct" || channel.manager === undefined) return false;
+  if (channel === undefined || channel.archived || channel.kind === "direct" || channel.manager === undefined) return false;
   if (caller._tag === "owner") return true;
   if (caller._tag !== "agent" || channel.manager._tag !== "agent") return false;
   if (!unavailable(snapshot, channel.manager.agentId)) return same(caller, channel.manager);
@@ -151,7 +151,7 @@ export const canRead = (snapshot: Snapshot, caller: Caller, channelId: string): 
 
 const channelReach = (snapshot: Snapshot, channelId: string): boolean => {
   const channel = own(board(snapshot).channels, channelId);
-  if (channel === undefined) return false;
+  if (channel === undefined || channel.archived) return false;
   if (channel.kind !== "direct") return true;
   const [a, b] = channel.members;
   return channel.members.length === 2 && a !== undefined && b !== undefined && directGrant(snapshot, a, b);
@@ -187,6 +187,6 @@ export const canCarryCompletion = (snapshot: Snapshot, target: string, postId: s
   const post = own(board(snapshot).posts, postId);
   const agent = own(snapshot.agents, target);
   return post !== undefined && agent !== undefined
-    && member(snapshot, post.channelId, { _tag: "agent", agentId: agent.agentId }) && channelReach(snapshot, post.channelId)
+    && member(snapshot, post.channelId, { _tag: "agent", agentId: agent.agentId }) && (own(board(snapshot).channels, post.channelId)?.archived === true || channelReach(snapshot, post.channelId))
     && post.replies.every((id) => canReadContext(snapshot, { _tag: "agent", agentId: agent.agentId }, own(board(snapshot).posts, id)?.context));
 };

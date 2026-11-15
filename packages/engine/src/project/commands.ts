@@ -1,3 +1,5 @@
+import { completionOwed, boardView } from "../board/wake.ts"
+import { requireEndResult, requireBuilding, endResultReason, buildingReason } from "./approvals.ts"
 import { validateWorkflowFolder, workflowFolderReason } from "../workflows/folder.ts"
 import { declineMainReview } from "./gitReview.ts"
 import { randomUUID } from "node:crypto"
@@ -157,7 +159,10 @@ const preferencesSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
   return ack(p.requestId, [{ _tag: "project.PreferencesChanged", projectId: p.projectId, shell: yield* cleanName(input, p.shell) }])
 })
 const stageSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
-  const p = raw as Payload<"project.stage.set">; yield* requireProject(input, p.projectId)
+  const p = raw as Payload<"project.stage.set">; const project = yield* requireProject(input, p.projectId)
+  // Stages describe progress. Only an owner answer records consent.
+  if (input.actor._tag !== "owner" && p.stage !== "define" && project.endResultApproval === undefined && project.skipPlanningApproval === undefined) return yield* refused(endResultReason)
+  if (input.actor._tag !== "owner" && ["build", "review", "handover"].includes(p.stage) && project.buildApproval === undefined) return yield* refused(buildingReason)
   const view = projectView(input.snapshot), head = own(view.mockHeads, p.projectId)
   const revision = head === undefined ? undefined : own(view.mockRevisions, projectKey(p.projectId, head))
   if (p.stage === "design" && (revision?.bundle.screens.length ?? 0) === 0) return yield* refused("projects without screens begin in Plan")
@@ -167,6 +172,7 @@ const stageSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
 })
 const teamCreate: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.team.create">; const project = yield* requireProject(input, p.projectId)
+  yield* requireEndResult(input, project)
   if (input.runtime.lists?.boardEnabled === false) return yield* refused("board disabled")
   const view = projectView(input.snapshot)
   const workspace = own(view.workspaces, p.worktreeId)
@@ -198,7 +204,8 @@ const dependenciesValid = (input: Input, projectId: string, needs: ReadonlyArray
   return !needs.some(reachesSelf)
 }
 const sprintCreate: PiecePlanner = (input, raw) => Effect.gen(function* () {
-  const p = raw as Payload<"project.sprint.create">; yield* requireProject(input, p.projectId)
+  const p = raw as Payload<"project.sprint.create">; const project = yield* requireProject(input, p.projectId)
+  yield* requireEndResult(input, project)
   if (!member(input, p.projectId, p.owner) || !dependenciesValid(input, p.projectId, p.needs)) return yield* refused("invalid sprint owner or dependencies")
   const label = yield* cleanName(input, p.label)
   if (Object.values(projectView(input.snapshot).sprints).some((row) => row.projectId === p.projectId && row.label.toLowerCase() === label.toLowerCase())) return yield* refused("sprint label already exists")
@@ -238,6 +245,8 @@ const validTaskLinks = (input: Input, project: Project, task: Pick<Task, "owner"
 }
 const taskCreate: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.task.create">; const project = yield* requireProject(input, p.projectId)
+  yield* requireEndResult(input, project)
+  if (p.state !== "queue") yield* requireBuilding(input, project)
   if (!validTaskLinks(input, project, p)) return yield* refused("invalid task links or completed sprint")
   const label = p.label === undefined ? undefined : yield* cleanName(input, p.label)
   if (label !== undefined && Object.values(projectView(input.snapshot).tasks).some((row) => row.projectId === p.projectId && row.label?.toLowerCase() === label.toLowerCase())) return yield* refused("task label already exists")
@@ -261,12 +270,37 @@ const requireTask = (input: Input, projectId: string, taskId: string, write: boo
 })
 const taskUpdate: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.task.update">; const { project, task } = yield* requireTask(input, p.projectId, p.taskId, true)
+  if (p.state !== undefined && p.state !== "queue") yield* requireBuilding(input, project)
   const leads = canLeadProject(input.snapshot, input.actor, project)
   if (!leads && (p.owner !== undefined || p.teamId !== undefined || p.sprintId !== undefined || p.worktreeId !== undefined || p.title !== undefined)) return yield* refused("only a lead can change task assignments and titles")
   const changed = { ...task, ...p }
   if (!validTaskLinks(input, project, changed)) return yield* refused("invalid task links or completed sprint")
   const { requestId, ...fields } = p
   return ack(requestId, [{ _tag: "project.TaskChanged", ...fields, ...(p.title === undefined ? {} : { title: yield* cleanName(input, p.title) }) }])
+})
+const taskDelete: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.task.delete">
+  yield* requireProject(input, p.projectId)
+  const { task } = yield* requireTask(input, p.projectId, p.taskId, true)
+  if (task.history.some((entry) => entry.state !== "queue") || projectedTask(input.snapshot, task).state !== "queue") return yield* refused("Only a task that was never started can be deleted.")
+  return ack(p.requestId, [{ _tag: "project.TaskDeleted", projectId: p.projectId, taskId: p.taskId }])
+})
+const teamDelete: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.team.delete">
+  yield* requireProject(input, p.projectId)
+  const view = projectView(input.snapshot), team = own(view.teams, projectKey(p.projectId, p.teamId))
+  if (team === undefined) return yield* refused("The team is unavailable.")
+  const group = team.group ?? projectTeamGroup(p.projectId, p.teamId)
+  if (Object.values(input.snapshot.agents).some((agent) => own(view.agentProjects, agent.agentId) === p.projectId
+    && agent.groups.includes(group) && !["stopped", "crashed"].includes(agent.state._tag))) return yield* refused("Stop the team’s agents before deleting the team.")
+  if (Object.values(view.tasks).some((task) => task.projectId === p.projectId && task.teamId === p.teamId)) return yield* refused("Delete or move the team’s tasks before deleting the team.")
+  if (input.actor._tag !== "owner" && input.actor._tag !== "agent") return yield* refused()
+  const closer = input.actor
+  const closed = Object.values(boardView(input.snapshot).posts).filter((post) => post.channelId === team.channelId && post.status === "open")
+    .map((post) => ({ _tag: "board.PostClosed" as const, postId: post.postId, outcome: "withdrawn" as const, closer,
+      completionOwed: completionOwed(input.snapshot, post, closer, true) }))
+  return ack(p.requestId, [...closed, { _tag: "project.TeamDeleted", projectId: p.projectId, teamId: p.teamId },
+    ...(team.channelId === undefined ? [] : [{ _tag: "board.ChannelArchived" as const, channelId: team.channelId }])])
 })
 const taskNote: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.task.note">; yield* requireTask(input, p.projectId, p.taskId, true)
@@ -338,6 +372,7 @@ export const projectPlanners = {
   "project.workspace.register": workspaceRegister(), "project.rename": rename, "project.place": place,
   "project.goal.set": goalSet, "project.restore": restore, "project.preferences.set": preferencesSet, "project.stage.set": stageSet, "project.team.create": teamCreate,
   "project.sprint.create": sprintCreate, "project.sprint.update": sprintUpdate, "project.sprint.complete": sprintComplete,
+  "project.team.delete": teamDelete, "project.task.delete": taskDelete,
   "project.task.create": taskCreate, "project.task.update": taskUpdate, "project.task.note": taskNote
 } satisfies Record<string, PiecePlanner>
 const abandonCreation: PiecePlanner = (input, raw) => Effect.gen(function* () {

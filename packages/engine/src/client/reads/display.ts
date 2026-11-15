@@ -35,7 +35,7 @@ export const display = (envelope: EventEnvelope) => {
       ...(event.inputTruncated === undefined ? {} : { inputTruncated: event.inputTruncated }),
       ...(event.toolKind === undefined ? {} : { toolKind: toolKinds.has(event.toolKind) ? event.toolKind : "unknown" }),
     } : {
-      ...Object.fromEntries(["title", "recommendation", "proposedAnswer", "taskId", "sprintId"].flatMap((key) => {
+      ...Object.fromEntries(["title", "recommendation", "proposedAnswer", "taskId", "sprintId", "projectApproval"].flatMap((key) => {
         const value = event[key as keyof typeof event];
         // References stay whole. An oversized reference requires client.event.
         return typeof value !== "string" || (["taskId", "sprintId"].includes(key) && Buffer.byteLength(value) > 128)

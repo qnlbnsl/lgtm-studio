@@ -24,6 +24,9 @@ const current = () => {
 it('patches only the live output and fails closed if the target screen moves', () => {
   const source = current(), result = projectSettingsSource('js/screens/service.js', source)
   expect(result).toContain('projectSettings.loadLead')
+  expect(result).toContain('id="ps-name"')
+  expect(result).toContain('Save name')
+  expect(result).toContain('projectSettings.deleteTeam')
   expect(result).toContain('Engine work needed')
   expect(result.slice(result.indexOf('export function ProjectSettings'))).not.toContain('refuse()')
   expect(() => projectSettingsSource('js/screens/service.js', source.replace('export function ProjectSettings', 'function MovedSettings'))).toThrow('Project settings integration')

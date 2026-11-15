@@ -11,6 +11,7 @@ export const ProjectRequestLinkFields = {
 export type ProjectRequestLink = { readonly projectId?: typeof ProjectId.Type; readonly taskId?: typeof TaskId.Type; readonly sprintId?: typeof SprintId.Type }
 export const QuestionMetadataFields = {
   ...ProjectRequestLinkFields,
+  projectApproval: Schema.optionalKey(Schema.Literals(["end-result", "build", "skip-planning", "skip-planning-and-build"])),
   title: Schema.optionalKey(Schema.String),
   recommendation: Schema.optionalKey(Schema.String),
   proposedAnswer: Schema.optionalKey(Schema.String)

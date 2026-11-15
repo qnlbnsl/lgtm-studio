@@ -37,7 +37,7 @@ export interface StoreSubscription {
   readonly signedIn: boolean; readonly useForNew: boolean; readonly usage: null; readonly window: null
   readonly account: null; readonly model: string
 }
-export type StoreStage = "Design" | "Plan" | "Build" | "Review" | "Hand over"
+export type StoreStage = "Define" | "Design" | "Plan" | "Build" | "Review" | "Hand over"
 export interface StoreProject {
   readonly worktree?: string
   readonly id: string; readonly repo: string; readonly name: string; readonly prefix: string; readonly goal: string
@@ -101,7 +101,7 @@ export interface EngineRecords {
 }
 
 // ---- small pieces -------------------------------------------------------------------
-const STAGES: Record<string, StoreStage> = { design: "Design", plan: "Plan", build: "Build", review: "Review", handover: "Hand over" }
+const STAGES: Record<string, StoreStage> = { define: "Define", design: "Design", plan: "Plan", build: "Build", review: "Review", handover: "Hand over" }
 export const mapStage = (stage: string | undefined): StoreStage | "" => (stage === undefined ? "" : STAGES[stage] ?? "")
 
 // The page's own words for the engine's permission levels.

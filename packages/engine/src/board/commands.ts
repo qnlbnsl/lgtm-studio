@@ -191,6 +191,7 @@ const page = <T>(items: ReadonlyArray<T>, payload: Record<string, unknown>, key:
 };
 const channels: ReadHandler = (input, payload) => input.runtime.lists?.boardEnabled === false ? Effect.fail(refused("board disabled")) : Effect.succeed({ reply: page(
   Object.values(boardView(input.snapshot).channels).filter((channel) => canRead(input.snapshot, input.actor, channel.channelId)).map((channel) => ({
+    ...(channel.archived === undefined ? {} : { archived: channel.archived }),
     channelId: channel.channelId, name: channel.name, kind: channel.kind, members: channelMembers(input.snapshot, channel.channelId),
     ...(channel.manager === undefined ? {} : { manager: channel.manager }),
     ...(channel.group === undefined ? {} : { group: channel.group }),

@@ -52,7 +52,10 @@ for (const [label, command, key, action] of cases) for (const rejected of [false
     // records may replace the old snapshot in that one path.
     if (label !== "seen") expect(JSON.stringify(lib.store.state.mocks)).toBe(before)
     expect(lib.store.state.toasts.at(-1)).toMatchObject({ text: "mock revision changed; refresh and retry", tone: "error" })
-  } else expect(lib.store.state.mocks.project.persisted).toBe(true)
+  } else {
+    // Editor saves acknowledge before their authoritative reload finishes.
+    await vi.waitFor(() => expect(lib.store.state.mocks.project.persisted).toBe(true))
+  }
   if (label === "editor") expect(request.mock.calls.find(([tag]) => tag === command)?.[1]).toEqual({ projectId: "project", revisionId: "v1", designRevision: "design", worktreeId: "workspace", confirmed: true, content: "ZXhwb3J0" })
 })
 

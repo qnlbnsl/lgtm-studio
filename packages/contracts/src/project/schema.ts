@@ -26,7 +26,7 @@ export const isRepositoryCredentialPath = (value: string) => value.split("/").so
 export const isRepositoryArtifactPath = (value: string) => value.length <= 4096 && !/[\\\x00-\x1f\x7f%]/.test(value)
   && !value.startsWith("/") && !isRepositoryCredentialPath(value)
   && value.split("/").every((part) => part !== "" && part !== "." && part !== ".." && part.toLowerCase() !== ".git")
-export const ProjectStage = Schema.Literals(["design", "plan", "build", "review", "handover"])
+export const ProjectStage = Schema.Literals(["define", "design", "plan", "build", "review", "handover"])
 export const SprintPhase = Schema.Literals(["Define", "Design", "Plan", "Build", "Verify", "Review", "Hand over"])
 export const TaskState = Schema.Literals(["queue", "active", "review", "blocked", "done"])
 export const ProjectLeadDefaults = Schema.Struct({
@@ -48,6 +48,7 @@ export type Workspace = typeof Workspace.Type
 export const Project = Schema.Struct({
   projectId: ProjectId, repoId: RepositoryId, name: ProjectName, goal: ProjectText,
   leadAgentId: AgentId, worktreeId: WorkspaceId, machineId: ProjectName,
+  endResultApproval: Schema.optionalKey(QuestionId), skipPlanningApproval: Schema.optionalKey(QuestionId), buildApproval: Schema.optionalKey(QuestionId),
   stage: Schema.optionalKey(ProjectStage), shell: Schema.optionalKey(ProjectName), archivedAt: Schema.optionalKey(EpochMilliseconds), archiving: Schema.optionalKey(Schema.Boolean)
 })
 export type Project = typeof Project.Type

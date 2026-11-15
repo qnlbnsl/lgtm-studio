@@ -108,4 +108,4 @@ export const ProjectMockEvent = Schema.Union([
   Schema.TaggedStruct("project.MockApproved", { projectId: ProjectId, approvalId: RequestId, revisionId: RequestId, leadAgentId: AgentId, worklist: MockWorklist })
 ])
 export const projectStages = (hasScreens: boolean) => hasScreens ? ["design", "plan", "build", "review", "handover"] as const : ["plan", "build", "review", "handover"] as const
-export const stageLabel = (stage: string) => ({ design: "Design", plan: "Plan", build: "Build", review: "Review", handover: "Hand over" })[stage]
+export const stageLabel = (stage: string) => ({ define: "Define", design: "Design", plan: "Plan", build: "Build", review: "Review", handover: "Hand over" })[stage]

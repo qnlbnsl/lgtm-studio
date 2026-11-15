@@ -4,7 +4,7 @@ import { randomBytes } from "node:crypto"
 import { execFileSync } from "node:child_process"
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { expect, test, type Page } from "@playwright/test"
+import { expect as baseExpect, test, type Page } from "@playwright/test"
 import { build } from "vite"
 import * as SqliteClient from "../../../third_party/t3code/node-sqlite/src/nodeSqliteClient.ts"
 import * as Effect from "effect/Effect"
@@ -24,6 +24,8 @@ import { makeFakeRunner } from "../../engine/test/support/fakeRunner.ts"
 import { appendSetup, call, eventOf, freshRequest, harnessSettings, makeFakeSecrets, makeRig, ownerCredential, removeRig, seedAccount, seedAgent, success } from "../../engine/test/support/handlerRig.ts"
 import { registerRebuildCheck } from "../../engine/test/support/rebuildCheck.ts"
 test.describe.configure({ timeout: 120_000 })
+// A coherent Git read includes the destination and review reads on the host.
+const expect = baseExpect.configure({ timeout: 30_000 })
 
 // Build the production web root, authenticate through App, and navigate the
 // actual project Git route. Shell owns the provider, watcher and Git session.

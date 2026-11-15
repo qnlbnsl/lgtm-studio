@@ -1,3 +1,4 @@
+import { completionOwed } from "../board/wake.ts";
 import { openDefaultProjectChannels } from "../project/defaultChannels.ts";
 import { randomUUID } from "node:crypto";
 import { eventEffect, pieceNamespaces, projectTeamGroup, type Caller, type Event, type EventSequence, type PieceNamespace } from "@lgtm/contracts";
@@ -40,6 +41,23 @@ export const checkPieceBatch = (namespace: PieceNamespace, snapshot: Snapshot, b
       && !Object.hasOwn((snapshot.board as import("@lgtm/contracts").BoardView).channels, event.channelId)
       && (caller?._tag === "owner" || caller?._tag === "agent" && caller.agentId === project.leadAgentId);
   };
+  const archivedTeamChannel = (event: Event): boolean => {
+    if (namespace !== "project" || (event._tag !== "board.ChannelArchived" && event._tag !== "board.PostClosed")) return false;
+    const board = snapshot.board as import("@lgtm/contracts").BoardView;
+    const post = event._tag === "board.PostClosed" ? own(board.posts, event.postId) : undefined;
+    const channelId = event._tag === "board.ChannelArchived" ? event.channelId : post?.channelId;
+    if (event._tag === "board.PostClosed" && (post === undefined || post.status !== "open" || event.outcome !== "withdrawn"
+      || JSON.stringify(event.closer) !== JSON.stringify(caller)
+      || event.completionOwed !== completionOwed(snapshot, post, event.closer, true))) return false;
+    const view = projectView(snapshot);
+    return batch.events.some((row) => {
+      if (row._tag !== "project.TeamDeleted") return false;
+      const team = own(view.teams, projectKey(row.projectId, row.teamId));
+      const project = own(view.projects, row.projectId);
+      return team?.channelId === channelId && project !== undefined
+        && (caller?._tag === "owner" || caller?._tag === "agent" && caller.agentId === project.leadAgentId);
+    });
+  };
   // Only an owner-created, absent project can carry its complete initial set.
   // Match every field, reject duplicate ids, and leave all other board events
   // subject to the existing namespace boundary.
@@ -62,7 +80,7 @@ export const checkPieceBatch = (namespace: PieceNamespace, snapshot: Snapshot, b
       }
     }
   }
-  if (batch.events.some((event) => !event._tag.startsWith(`${namespace}.`) && event._tag !== "DeliveryWithdrawn" && !teamChannel(event) && !defaultChannels.has(event))) return yield* refused();
+  if (batch.events.some((event) => !event._tag.startsWith(`${namespace}.`) && event._tag !== "DeliveryWithdrawn" && !teamChannel(event) && !archivedTeamChannel(event) && !defaultChannels.has(event))) return yield* refused();
   const events: Array<Event> = [];
   let state = snapshot;
   for (const event of batch.events) {

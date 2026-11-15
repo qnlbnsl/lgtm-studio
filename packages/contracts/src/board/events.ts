@@ -21,6 +21,7 @@ export const BoardChannelOpened = Schema.TaggedStruct("board.ChannelOpened", {
 
 export const BoardEvent = Schema.Union([
   BoardChannelOpened,
+  Schema.TaggedStruct("board.ChannelArchived", { channelId: ChannelId }),
   Schema.TaggedStruct("board.ChannelMembersChanged", {
     channelId: ChannelId, membersAdded: Schema.Array(BoardAddressee), membersRemoved: Schema.Array(BoardAddressee)
   }),
@@ -54,6 +55,7 @@ export type BoardEvent = typeof BoardEvent.Type
 export const boardEventTags = BoardEvent.members.map((event) => event.fields._tag.schema.literal)
 export const boardVisibility = {
   "board.ChannelOpened": "owner-only",
+  "board.ChannelArchived": "owner-only",
   "board.ChannelMembersChanged": "owner-only",
   "board.ManagerChanged": "owner-only",
   "board.PostWritten": "owner-only",

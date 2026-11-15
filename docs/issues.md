@@ -14429,3 +14429,103 @@ It wrote a new note, "Lead creates no teams unasked", into that same memory fold
 It also ran the owner's session-start hooks and reported their notices in the project chat.
 So an agent in a project and a terminal session can change each other's standing rules without either one being told.
 The design of the `~/.lgtm` folder should decide which settings, memory and hooks an agent in a project gets.
+
+## s10-lead-1. Project leads received worker advice and started planning before an owner decision.
+
+Found on 2026-11-14 while implementing unit s10-lead.
+Status: fixed in this unit.
+The lifecycle launched the role `project-lead`, which the role parser treated as an unknown worker role.
+New projects now launch `lead:project-lead` with the name "Project lead".
+The old role spelling also receives lead advice when historical agents ask for orientation.
+New projects start in Define.
+Owner decisions now gate planning and building independently of the displayed stage.
+The gates also support an approved request to skip planning.
+An owner may approve skipping planning and building in one request.
+
+## s10-lead-2. A team could not be deleted, and its board had no archive event.
+
+Found on 2026-11-14 while implementing unit s10-lead.
+Status: fixed in this unit.
+Tasks require a team, so deleting a team requires deleting or moving its tasks first.
+Only tasks whose entire stored state history remains in the queue can be deleted.
+A team cannot be deleted while one of its agents is running.
+Deleting a team withdraws its open posts and archives its board channel as read-only history.
+The archived composer is disabled and explains that the history is kept.
+The stored events keep the deleted task and team history.
+The team's branch and worktree folder remain in place.
+
+## s10-lead-3. Workflow phase times still come from sample calculations.
+
+Found again on 2026-11-14 while implementing unit s10-lead.
+Status: open under issues 846 and 941.
+The new project's Define stage is now mapped to the website.
+The Workflow screen still calculates sample phase times from its created-at field.
+Unit s10-lead does not build phase timing records.
+
+## s10-lead-4. The editor control test assumed that its save waited for the reload.
+
+Found on 2026-11-14 during the remote regression run.
+Status: fixed in the test.
+Issue 936 deliberately acknowledges an editor save before reloading its records.
+The control test checked the reloaded records immediately after the acknowledgement.
+The test now waits for the authoritative read before checking those records.
+The editor's product behaviour is unchanged.
+
+## s10-lead-5. Adding the archive fixture shifted two board schema assertions.
+
+Found on 2026-11-14 during the final local check.
+Status: fixed in the fixture.
+Two schema tests address the wake fixture by its array position.
+Inserting the archive fixture before it shifted that position.
+The new archive fixture now follows the existing fixtures.
+The wake assertions and the archive event both keep their coverage.
+
+## s10-lead-6. The shared test rig depended on the host's directory mask.
+
+Found on 2026-11-14 after Addition 2 moved the tests to this computer.
+Status: fixed in the test rig.
+This computer uses a directory mask of 002.
+The shared test rig therefore made its synthetic home writable by its group.
+The sign-in security checks correctly refused that home.
+The rig now creates its temporary directories with mode 0700.
+The production ownership and symbolic link checks are unchanged.
+
+## s10-lead-7. The channel mapping assertion omitted the new archive state.
+
+Found on 2026-11-14 during the final local check.
+Status: fixed in the test.
+The website mapping now carries an explicit archive flag for each channel.
+The existing complete-object assertion still expected the older shape.
+It now includes the false flag for active channels.
+The browser journey checks the disabled composer for an archived channel.
+
+## s10-lead-8. The broader website journey still used the old rename dialog.
+
+Found on 2026-11-14 during the full local browser run.
+Status: fixed in the test.
+The project settings journey already used the new inline name field.
+The broader projects and board journey still looked for the old Rename button and dialog.
+It now saves the name through the same inline field.
+
+## s10-lead-9. Browser readiness assertions expired during real host file operations.
+
+Found on 2026-11-14 after Addition 2 moved the tests to this computer.
+Status: corrected in the browser fixtures.
+The failure artifacts showed pending Git destination reads, a pending file commit and a pending editor save.
+Several checks still had a five-second assertion limit.
+The older Git journey now uses the same thirty-second assertion limit as the website's Git journey.
+The file and editor feedback journeys also use thirty-second readiness assertions.
+The feedback journey allows ninety seconds for its sequence of editor operations.
+The website's Git journey explicitly waits for merge review to become enabled before clicking it.
+The eight-viewport design journey has the same two-minute limit as the eight-viewport creation journey.
+The full website Git trace reached every final assertion after more than seven minutes on this host.
+That journey now allows ten minutes overall while retaining its existing operation deadlines.
+All existing assertions and production time limits are retained.
+
+## s10-lead-10. The new browser fixture needed an explicit sample owner name.
+
+Found on 2026-11-14 while reviewing the browser failure artifacts.
+Status: fixed in the new fixture.
+An engine without a saved display name can suggest the host's Git user name.
+The new lead journey now explicitly saves Maya Okafor in its temporary settings.
+The journey checks that sample name after signing in.

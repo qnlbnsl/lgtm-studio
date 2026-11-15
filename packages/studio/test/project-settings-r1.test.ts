@@ -114,14 +114,14 @@ it('R1.3 a refused model change reads again and reverts the visible picker to th
   expect(f.model().options).toHaveLength(2)
   expect(f.state.toasts.at(-1)).toMatchObject({ text: 'command refused', tone: 'error' })
 })
-it('R1.4 a pending project write disables Rename, the goal, and both lead pickers and says Saving', async () => {
+it('R1.4 a pending project write disables the name, the goal, and both lead pickers and says Saving', async () => {
   const f = fixture()
   const goal = f.root.querySelector<HTMLTextAreaElement>('#ps-goal')!
   goal.value = 'A goal draft'; goal.dispatchEvent(new Event('input', { bubbles: true }))
   await flush()
   lib.update((s: any) => { s.ui.boardBusy = { ['project:' + s.projects[0].id]: true } })
   f.draw()
-  const rename = [...f.root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Rename')!
+  const rename = [...f.root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Save name')!
   expect(rename.disabled).toBe(true)
   expect(goal.disabled).toBe(true)
   expect(f.model().disabled).toBe(true)

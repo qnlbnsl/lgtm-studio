@@ -778,6 +778,8 @@ export function ServiceSettings({ s, route }) {
 export function ProjectSettings({ s, project: p }) {
   const r = repoOf(s, p); const m = machineOf(s, p.machine); const lead = agentOf(s, p.lead); const ags = agentsOfProject(s, p.id); const teams = teamsOf(s, p.id);
   const [goal, setGoal] = useState(p.goal);
+  const [name, setName] = useState(p.name);
+  useEffect(() => setName(p.name), [p.id, p.name]);
   useEffect(() => { if (live.on) void board.loadAgents([p.lead]); }, [p.id, p.lead]);
   const choices = s.boardAgents?.[p.lead];
   const projectBusy = live.on && board.busy('project:' + p.id);
@@ -788,7 +790,10 @@ export function ProjectSettings({ s, project: p }) {
   const branches = live.on ? [] : [...new Set([r.main, 'develop', 'release/next'])];
   const subs = s.subscriptions.filter((x) => x.machine === p.machine || x.id === lead.subscription);
   const running_ = ags.filter(running).length;
-  const rename = () => act.openDialog({ type: 'rename', title: 'Rename project', waitForReply: live.on, value: p.name, taken: s.projects.filter((x) => x.repo === p.repo).map((x) => x.name), note: 'The branch and the folder keep their names.', onRename: (v) => { if (live.on) return board.renameProject(p.id, v); update(() => { p.name = v; }); act.toast('Project renamed'); } });
+  const rename = () => { const value = name.trim(); if (live.on) return board.renameProject(p.id, value); if (!value || s.projects.some((x) => x.id !== p.id && x.repo === p.repo && x.name.toLowerCase() === value.toLowerCase())) return act.toast('Choose a unique project name.', 'error'); update(() => { p.name = value; }); act.toast('Project renamed'); };
+  const deleteTeam = (team) => act.confirm({ title: `Delete ${teamName(team)}?`, waitForReply: live.on, action: 'Delete team', danger: true,
+    body: 'Stop its agents and delete or move its tasks first. Its board channel becomes read-only history. Its branch and worktree folder are kept.',
+    onConfirm: () => { if (live.on) return board.deleteTeam(p.id, team.id); if (agentsOfTeam(s, team.id).some(running)) return act.toast('Stop the team’s agents before deleting the team.', 'error'); if (s.tasks.some((x) => x.team === team.id)) return act.toast('Delete or move the team’s tasks before deleting the team.', 'error'); update((st) => { st.teams = st.teams.filter((x) => x.id !== team.id); for (const c of st.channels.filter((x) => x.team === team.id)) c.archived = true; }); act.toast('Team deleted'); return true; } });
   const archive = () => act.confirm({ title: `Archive ${p.name}?`, waitForReply: live.on, pendingLabel: 'Archiving…', body: 'The project leaves the sidebar and its agents stop. Its branch, worktrees and threads are kept, and you can restore it.', action: 'Archive project', danger: false,
     lost: [running_ ? `${plural(running_, 'running agent')} will stop` : null, openRequests(s, { project: p.id }).length ? `${plural(openRequests(s, { project: p.id }).length, 'open request')} will be hidden` : null].filter(Boolean),
     onConfirm: async () => { const reply = await act.archiveProject(p.id); if (!live.on || reply) go('/r/' + r.id); return reply; } });
@@ -818,7 +823,7 @@ export function ProjectSettings({ s, project: p }) {
     ${p.archived && html`<div class="callout" style="align-items:center;margin-bottom:var(--space-3);max-width:860px"><${Icon} name="archive" size=${15} /><span class="grow">This project is archived. Its agents are stopped.</span><button type="button" class="btn sm" aria-busy=${projectBusy} disabled=${projectBusy} onClick=${() => act.archiveProject(p.id, false)}><${Icon} name="archive-restore" size=${13} />Restore</button></div>`}
     <${Section} title="Project">
       <div class="svc-rows">
-        <${Row} label="Name"><span class="row"><b style="font-weight:var(--weight-medium)">${p.name}</b><span class="tag" data-tip="Task labels start with this">${p.prefix}</span><button type="button" class="btn sm" disabled=${projectBusy} onClick=${rename}><${Icon} name="pencil" size=${12} />Rename</button></span><//>
+        <${Row} label="Name" id="ps-name" hint="The branch and the worktree folder keep their names."><span class="row"><input id="ps-name" class="input" maxlength="128" value=${name} disabled=${projectBusy} onInput=${(e) => setName(e.target.value)} /><span class="tag" data-tip="Task labels start with this">${p.prefix}</span><button type="button" class="btn sm" disabled=${projectBusy || !name.trim() || name.trim() === p.name} onClick=${rename}>Save name</button></span><//>
         <${Row} label="Goal" id="ps-goal" hint="The project lead reads this at the start of every turn." top>
           <textarea id="ps-goal" class="textarea" rows="3" value=${goal} onInput=${(e) => setGoal(e.target.value)}></textarea>
           ${goal.trim() !== p.goal && html`<span class="row" style="margin-top:6px"><button type="button" class="btn sm primary" disabled=${!goal.trim() || projectBusy} aria-busy=${projectBusy} onClick=${() => { if (live.on) return board.saveGoal(p.id, goal.trim()); set({ goal: goal.trim() }); act.toast('Goal saved. The project lead was told.'); }}>Save goal</button><button type="button" class="btn sm ghost" onClick=${() => setGoal(p.goal)}>Discard</button></span>`}<//>
@@ -876,14 +881,14 @@ export function ProjectSettings({ s, project: p }) {
       </div>
     <//>
     <${Section} title="Teams" sub=${teams.length ? null : 'None yet'}>
-      <div class="table-wrap svc-teams"><table class="table"><thead><tr><th>Team</th><th class="c-mid">Agents</th><th>Branch</th><th>Need-to-know</th></tr></thead>
-        <tbody>${teams.length === 0 && html`<tr><td colspan="4" class="muted" data-empty>No teams</td></tr>`}
+      <div class="table-wrap svc-teams"><table class="table"><thead><tr><th>Team</th><th class="c-mid">Agents</th><th>Branch</th><th>Need-to-know</th><th>Actions</th></tr></thead>
+        <tbody>${teams.length === 0 && html`<tr><td colspan="5" class="muted" data-empty>No teams</td></tr>`}
         ${teams.map((t) => { const ta = agentsOfTeam(s, t.id);
           return html`<tr key=${t.id}>
             <td><a class="link" href=${href(`/p/${p.id}/team/${t.id}`)}>${teamName(t)}</a></td>
             <td class="c-mid"><span class="row" style="gap:3px">${ta.map((a) => html`<a key=${a.id} href=${href(routeForAgent(s, a))} data-tip=${a.name}><${Avatar} agent=${a} s=${s} size="sm" /></a>`)}</span></td>
             <td class="mono muted truncate">${t.branch}</td>
-            <td><${Switch} on=${t.needToKnow} label=${'Need-to-know for ' + teamName(t)} onChange=${(v) => setTeam(t, { needToKnow: v })} /></td></tr>`; })}</tbody></table></div>
+            <td><${Switch} on=${t.needToKnow} label=${'Need-to-know for ' + teamName(t)} onChange=${(v) => setTeam(t, { needToKnow: v })} /></td><td><button type="button" class="btn sm danger" aria-label=${'Delete team ' + teamName(t)} disabled=${projectBusy} onClick=${() => deleteTeam(t)}>Delete team</button></td></tr>`; })}</tbody></table></div>
     <//>
     <${Section} title="Archive or delete">
       <div class="svc-rows svc-danger">

@@ -1,3 +1,4 @@
+import { requireAgentBuilding } from "../project/approvals.ts";
 import { safeStartFailure, type StartFailure } from "@lgtm/contracts/startFailure";
 import { randomUUID } from "node:crypto";
 import { AgentId, DeliveryId, PermissionLevel, type Event } from "@lgtm/contracts";
@@ -23,6 +24,7 @@ export const start = (input: Input, payload: Payload<"start">): Effect.Effect<Pl
     if (actor._tag !== "owner" && actor._tag !== "agent") return yield* refused();
     const parent = actor._tag === "agent" ? snapshot.agents[actor.agentId] : undefined;
     if (parent !== undefined) {
+      yield* requireAgentBuilding(input, parent.agentId);
       const view = projectView(snapshot), id = own(view.agentProjects, parent.agentId);
       const project = id === undefined ? undefined : own(view.projects, id);
       if (project?.archiving || project?.archivedAt !== undefined) return yield* refused("project is archived or archiving");

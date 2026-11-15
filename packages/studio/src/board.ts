@@ -2,7 +2,7 @@
 import type { ClientSnapshot, BoardPost, BoardAuthor, TaskHistoryEntry, AgentChoices, ContextUsage, SetupState, Discovery, ProjectSettings } from "@lgtm/contracts"
 import type { StoreSprint, EngineRecords } from "./mapping.ts"
 type Section = NonNullable<ClientSnapshot["project"]>
-type Channel = { channelId: string; name: string; kind: string; members: ReadonlyArray<BoardAuthor>; group?: string; anchorAgentId?: string }
+type Channel = { archived?: boolean; channelId: string; name: string; kind: string; members: ReadonlyArray<BoardAuthor>; group?: string; anchorAgentId?: string }
 export const sprintColumn = (sprint: Section["sprints"][number], tasks: Section["tasks"]): StoreSprint["column"] =>
   sprint.completion !== undefined ? "Done" : tasks.some((t) => t.sprintId === sprint.sprintId && ["active", "blocked"].includes(t.state)) ? "In progress"
     : tasks.some((t) => t.sprintId === sprint.sprintId && t.state === "review") ? "Review" : "Planned"
@@ -39,7 +39,7 @@ export function mapChannels(rows: ReadonlyArray<Channel>, records: Pick<EngineRe
     const anchorProject = records.projects.find((project) => project.lead === row.anchorAgentId)
     const projects = team ? [team.project] : anchorProject ? [anchorProject.id] : [...new Set(records.agents.filter((a) => members.includes(a.id) || a.id === row.anchorAgentId).map((a) => a.project))]
     return projects.map((project) => ({ id: row.channelId, project, kind: row.kind === "direct" ? "dm" : team ? "team" : "plain",
-      name: team?.name ?? row.name, team: team?.id ?? null, members }))
+      name: team?.name ?? row.name, archived: row.archived === true, team: team?.id ?? null, members }))
   })
 }
 export function mapPost(post: BoardPost, occurredAt?: number) {

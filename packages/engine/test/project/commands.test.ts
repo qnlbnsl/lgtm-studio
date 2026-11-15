@@ -85,6 +85,9 @@ it.live("roundtrips every project event and receipt identity while keeping works
     { _tag: "project.Placed", projectId, worktreeId, machineId: text },
     { _tag: "project.PreferencesChanged", projectId, shell: text },
     { _tag: "project.Renamed", projectId, name: text },
+    { _tag: "project.ApprovalDecided", projectId, questionId: `approval-${marker}`, approval: "end-result", approved: true },
+    { _tag: "project.TeamDeleted", projectId, teamId },
+    { _tag: "project.TaskDeleted", projectId, taskId },
     { _tag: "project.StageChanged", projectId, stage: "build" },
     { _tag: "project.TeamAdded", projectId, teamId, worktreeId, name: text, area: text },
     { _tag: "project.SprintAdded", projectId, sprintId, label: text, name: text, goal: text, phase: "Build", owner: ownerId, needs },
@@ -121,7 +124,8 @@ const historicProject = (fields: Record<string, unknown>, requestId = freshReque
   const log = yield* EventLog
   const projectId = Schema.decodeUnknownSync(ProjectId)(`project-${requestId}`)
   const event = eventOf({ _tag: "project.Created", ...fields, projectId })
-  yield* log.append({ _tag: "owner" }, requestId, "b".repeat(64), [event], {}, () => ({ requestId, projectId }))
+  yield* log.append({ _tag: "owner" }, requestId, "b".repeat(64), [event, eventOf({ _tag: "project.ApprovalDecided", projectId, questionId: `scope-${requestId}`, approval: "end-result", approved: true }),
+    eventOf({ _tag: "project.ApprovalDecided", projectId, questionId: `build-${requestId}`, approval: "build", approved: true })], {}, () => ({ requestId, projectId }))
   return { requestId, projectId }
 })
 const launchSettings = () => Effect.gen(function* () {

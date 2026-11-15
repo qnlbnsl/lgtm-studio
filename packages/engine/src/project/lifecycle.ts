@@ -17,9 +17,26 @@ import { leadDefaults } from "./leadDefaults.ts"
 import { cleanName, duplicateName } from "./names.ts"
 import { own, projectView, projectKey } from "./view.ts"
 
+// One opening instruction for every project creation path, including the website and CLI.
+export const projectLeadInstruction = (name: string, goal: string) => `You are the Project lead for ${name}.
+Start with Define. Within the first minute, before long reading, say in one or two sentences what you understand the goal to be.
+Gather context. Post a short status line whenever you read for more than about a minute.
+Ask the owner the questions whose answers change the plan. Ask a few at a time. Keep each question short. Wait for the answers.
+Size the work first. Say which path you propose. Define comes first in every path.
+For larger work, propose the end result: what will exist when the project is done and what is left out. Ask the owner to approve it, and stop until the owner answers.
+Use ask with projectApproval set to "end-result". Use a short title and recommendation. Put the full proposal in text, under Details. The engine sets the acceptance choice to "Accepted".
+Create no sprint, team or task before the owner approves the end result or a request to skip planning. For larger work, only after end result approval, propose sprints and wait for the owner's response.
+Small work is something known to be easy, with a handful of changes. You may propose to skip planning and build with one build team. With the owner's approval, start that team. Its build lead may do the work itself without sub-workers.
+Nitpick work is a one-off small correction. You may propose to do it yourself, with the owner's approval.
+Use ask with projectApproval set to "skip-planning" to ask to skip planning, or "skip-planning-and-build" to ask to skip planning and start building together. Describe the change and who will do it. Stop until the owner answers. Never choose to skip planning on your own.
+Unless the owner already approved skipping planning and building together, ask for a separate approval before building starts. Use ask with projectApproval set to "build", and stop until the owner approves it.
+For larger work, give the work to teams with builders. Start workers when they are needed, after building is approved.
+If the project name is poor, suggest a short name. Ask the owner first, and rename the project only when the owner agrees.
+Goal:
+${goal}`
+
 export const projectLifecycleCommand = (name: string) => name === "project.create" || name === "project.archive"
 const fresh = <S extends Schema.Top & { readonly Type: string }>(schema: S): S["Type"] => Schema.decodeUnknownSync(schema as never)(randomUUID()) as S["Type"]
-const leadNames = ["Sage", "Rowan", "Cedar", "Willow", "Aspen", "Laurel", "Hazel", "Alder"] as const
 const stem = (name: string) => name.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60).replace(/-$/, "") || "project"
 // The New project consumer treats this fixed pre-effect reason as correctable.
 export const checkoutMainReason = "check out main or master in the main repository checkout before creating a project"
@@ -84,7 +101,7 @@ const planCreation = (input: Input, payload: Payload<"project.create">, bodyHash
   return { requestId: payload.requestId, bodyHash, projectId: fresh(ProjectId), repository, workspaceFolder: root,
     workspace: { worktreeId: fresh(WorkspaceId), repoId: repository.repoId, path, branch, machineId: "local",
       checkout: "worktree" as const }, newRepository: payload.repository._tag === "new",
-    name, goal, shell: settings.shell, leadName: leadNames[Object.keys(view.projects).length % leadNames.length]!, lead,
+    name, goal, shell: settings.shell, leadName: "Project lead", lead,
     ...(repositoryIdentity === undefined ? {} : { repositoryIdentity }) } satisfies ProjectCreation
 })
 
@@ -251,8 +268,8 @@ const finishCreation = (observed: Input, observedPlan: ProjectCreation, mainBran
   const mainWorkspace = main ?? { worktreeId: plan.workspace.checkout === "main" ? plan.workspace.worktreeId : fresh(WorkspaceId),
     repoId: plan.repository.repoId, machineId: "local", path: plan.repository.path, branch: mainBranch, checkout: "main" as const }
   const lead = yield* leadDefaults(input, plan.lead)
-  const launch = yield* start(input, { requestId: p.requestId, name: plan.leadName, role: "project-lead", folder: plan.workspace.path, ...lead,
-    prompt: `You lead project ${plan.name}. Shape its first plan with the owner.\nGoal:\n${plan.goal}` })
+  const launch = yield* start(input, { requestId: p.requestId, name: "Project lead", role: "lead:project-lead", folder: plan.workspace.path, ...lead,
+    prompt: projectLeadInstruction(plan.name, plan.goal) })
   const started = launch.events.find((row) => row._tag === "AgentStarted")
   if (started?._tag !== "AgentStarted") return yield* refused()
   return { ...launch, ...(launch.afterCommit === undefined ? {} : { afterCommit: launch.afterCommit.pipe(Effect.onError(() =>
@@ -263,7 +280,7 @@ const finishCreation = (observed: Input, observedPlan: ProjectCreation, mainBran
     ...(plan.workspace.worktreeId !== mainWorkspace.worktreeId && own(projectView(input.snapshot).workspaces, plan.workspace.worktreeId) === undefined ? [{ _tag: "project.WorktreeCreated" as const, ...plan.workspace }] : []),
     ...launch.events,
     { _tag: "project.Created", projectId: plan.projectId, repoId: plan.repository.repoId, name: plan.name, goal: plan.goal,
-      leadAgentId: started.agentId, worktreeId: plan.workspace.worktreeId, machineId: plan.workspace.machineId, shell: plan.shell, stage: "plan" },
+      leadAgentId: started.agentId, worktreeId: plan.workspace.worktreeId, machineId: plan.workspace.machineId, shell: plan.shell, stage: "define" },
     ...openDefaultProjectChannels({ projectId: plan.projectId, leadAgentId: started.agentId }),
     { _tag: "project.CreationFinished", creationRequestId: p.requestId }
   ], reply: () => ({ requestId: p.requestId, projectId: plan.projectId }) }
