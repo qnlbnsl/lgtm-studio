@@ -15471,22 +15471,47 @@ A local file path must not become a clickable address in the browser.
 ## s16-1. Head-changing Git actions reread worktrees that they could not affect.
 
 Found: 2026-11-15, while measuring the Git journey for issue 966.
-Status: fixed for the owner's readbacks in part A of unit s16-gitrefresh.
+Status: fixed for the owner's readbacks in part A and fix round 1 of unit s16-gitrefresh.
 
-All five baseline journeys sent 87 state requests and 87 change-list requests.
-Each baseline also read review status 30 times.
-All five after-change journeys sent 69 state requests and 69 change-list requests.
-Each after-change journey read review status 18 times.
+The solid result of the original five-run comparison is the request reduction.
+Every baseline sent 87 state reads, 87 change-list reads, and 30 review-status reads.
+Every original after-change run sent 69 state reads, 69 change-list reads, and 18 review-status reads.
 The total Git request count fell from 298 to 250 in every run.
-The median journey time fell from 275.39 to 215.98 seconds on the recorded machine loads.
-The slowest after-change journey took 222.37 seconds against the unchanged 360-second limit.
+These counts precede the freshness fixes in fix round 1.
+The single fix-round journey sent 70 state reads, 70 change-list reads, and 18 review-status reads.
+Its total was 252 Git requests.
+The two extra requests read the base row after pull.
+The review-status increase was zero in that journey.
+The separate agent-evidence regression test covers the newly eligible background review read.
+
+The observed median journey time fell from 275.39 to 215.98 seconds.
+The after-change machine was quieter, so that full reduction cannot be attributed to the code.
+Pricing the reduced request counts at baseline per-tag costs attributes about 36 seconds per run to fewer requests.
+About 26 seconds per run came from the quieter machine in the summed engine durations.
+These are estimates from the existing measurements rather than an isolated experiment.
+At baseline load, the slowest journey would be near 260 seconds.
+Its estimated margin under the unchanged 360-second limit is near 100 seconds.
+The original observed 137.63-second margin came from the quieter after-change series.
+
 Commit, pull, push, update, integrate, abort, and approval now read only their affected worktrees.
-The affected worktrees are the source, the destination when present, and the direct children of each.
-Fetch and the explicit Refresh Git action still read every worktree in the project view.
-Review status is read on the first load, an explicit refresh, a head-changing action, or a review action.
-An unsuccessful first review read does not mark the review as loaded.
-The measurement lives in the journey's test support rather than in production code.
+The affected worktrees include the source, the destination when present, and the direct children of each.
+Fetch and Refresh Git still read every worktree in the project view.
+The measurement lives only in the journey's test support.
 The automatic refresh scheduler remains unchanged for part B, as issue 1033 describes.
+
+The first trade-off is between fewer review reads and review freshness.
+Skipping a known closed or absent review saves requests on background passes.
+A review opened by another client during the same screen visit can wait for an explicit refresh or a review or head-changing action.
+Reopening the Git screen also discovers that review.
+Fix round 1 clears the loaded mark on each screen visit and rereads every known open review during a background pass.
+That restores passing evidence and remote decisions for open reviews at the cost of some saved review reads.
+An unsuccessful first review read does not mark the review as loaded.
+
+The second trade-off is between narrow readbacks and covering indirect Git dependencies.
+Pull fetches all origin branches, so it can change the base row's upstream count outside the source's child tree.
+Fix round 1 also rereads the same repository's base row after pull.
+That adds a state read and a change-list read when the base row was outside the affected set.
+Push keeps its narrower set because it does not fetch origin.
 
 ## s16-2. A failed Git readback can hide the original mutation refusal.
 
@@ -15501,3 +15526,50 @@ The same structure exists in integration, update, abort, and reopening.
 This behavior predates part A of unit s16-gitrefresh.
 Part A preserves it because the current brief changes only readback scopes and review-status reads.
 A future fix must keep the mutation error and the failure to confirm current state distinguishable.
+
+## s16-3. An open merge review kept old evidence during background refreshes.
+
+Found: 2026-11-15, in the review of part A of unit s16-gitrefresh.
+Status: fixed in fix round 1.
+
+Part A skipped review status after the first successful read even when the review remained open.
+The loaded mark also survived leaving and reopening the Git screen.
+An agent's passing evidence therefore stayed missing in an already open review dialog.
+The screen could keep offering approval without evidence after passing evidence existed.
+Review status now refreshes for every known open review in a background pass.
+The loaded mark resets on each Git screen visit.
+Regression tests cover passing evidence reported by an agent, closed or absent reviews, and a new screen visit.
+
+## s16-4. Pull left the base row's upstream count stale.
+
+Found: 2026-11-15, in the review of part A of unit s16-gitrefresh.
+Status: fixed in fix round 1.
+
+Pull fetches all origin branches before updating the selected checkout.
+The base row can therefore change its upstream comparison even when its local head stays unchanged.
+The original narrowed set omitted that row when it was outside the source's direct children.
+Pull now includes the same repository's base row in its readback.
+Regression tests verify that pull refreshes that row and push keeps its narrower set.
+
+## s16-5. Appended Git actions could build after their source helper contracts changed.
+
+Found: 2026-11-15, in the review of part A of unit s16-gitrefresh.
+Status: fixed in fix round 1.
+
+The appended abort and update actions depend on affectedGit and the three-argument loadGit.
+The build did not verify those source signatures after part A moved them into the source.
+The build now fails when either expected signature is missing.
+Each signature has a regression test.
+The narrowed-action tests also assert review-status reads for every action after its first load.
+
+## s16-6. Test measurement could replace a browser journey's failure.
+
+Found: 2026-11-15, in the review of part A of unit s16-gitrefresh.
+Status: fixed in fix round 1.
+
+The test-only measurement finished in the journey's finally block.
+A failure to write the measurement file could replace the journey's own failure.
+The counter now catches failures in its finish method.
+A regression test preserves the original journey error when the output path cannot be used as a directory.
+Measurement is enabled only when LGTM_GIT_MEASURE_DIR is set.
+Ordinary journey runs keep the unwrapped service and install no measurement listener.

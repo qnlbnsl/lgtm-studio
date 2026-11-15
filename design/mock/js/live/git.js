@@ -51,6 +51,7 @@ export function observe(patch) {
 }
 export function openScreen(name, project) {
   if (!live.on) return () => {};
+  if (name === 'git') engineWrite({ worktrees: S().worktrees.map((w) => ({ ...w, reviewLoaded: false })) });
   screen = { name, project };
   void refreshScreen();
   const refresh = () => { if (screen) void refreshScreen(); };
@@ -290,7 +291,7 @@ async function loadGit(project, ids, reviews = false) {
     const files = mapping.mapGitChanges(changes.items);
     const merge = state.mergeHead || changes.items.some((x) => x.conflict) ? { from: state.mergeHead || '', by: null, startedAt: null, files: changes.items.filter((x) => x.conflict).map((x) => ({ ...(w.merge?.files.find((f) => f.path === x.path) || {}), id: x.path, path: x.path, parts: w.merge?.files.find((f) => f.path === x.path)?.parts || [], resolved: false, loaded: false })) } : null;
     writeWt(w.id, { ...mapping.mapGitState(state, w.parent), files, merge, ready: !changes.truncated, truncated: changes.truncated });
-    if (w.kind === 'project' && (reviews || !w.reviewLoaded)) {
+    if (w.kind === 'project' && (reviews || !w.reviewLoaded || w.review?.status === 'open')) {
       const status = read(await request('project.review.status', { ...scope(w), projectId: project }));
       if (version !== revision) return;
       writeWt(w.id, { reviewLoaded: true });
@@ -364,7 +365,12 @@ export function commit(id, message) { return run('git', async () => {
 }); }
 export function syncGit(id, operation) { return run('git', async () => {
   const w = wt(id); local(w); revision++;
-  try { await request('project.' + operation, scope(w)); } finally { await loadGit(screen?.project, operation === 'fetch' ? undefined : affectedGit(w), true); }
+  try { await request('project.' + operation, scope(w)); } finally {
+    const ids = operation === 'fetch' ? undefined : affectedGit(w);
+    // Pull fetches every origin branch, so the base row's upstream count can change.
+    if (operation === 'pull') ids.push(...S().worktrees.filter((x) => x.repo === w.repo && x.kind === 'base' && !ids.includes(x.id)).map((x) => x.id));
+    await loadGit(screen?.project, ids, true);
+  }
 }); }
 export function integrate(id) { return run('git', async () => {
   const w = wt(id); local(w); const target = destination(w); local(target);

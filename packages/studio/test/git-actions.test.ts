@@ -14,6 +14,15 @@ it("keeps unrelated copied pages unchanged", () => {
   expect(gitActionsSource("js/screens/service.js", "source")).toBe("source");
 });
 
+for (const signature of ["function affectedGit(w, target) {", "async function loadGit(project, ids, reviews = false) {"]) {
+  it(`rejects the appended Git actions when their source contract changes: ${signature}`, () => {
+    const original = readFileSync(`${process.cwd()}/design/mock/js/live/git.js`, "utf8");
+    expect(original).toContain(signature);
+    expect(() => gitActionsSource("js/live/git.js", original.replace(signature, signature.replace("(", "Changed("))))
+      .toThrow("Git actions integration no longer matches");
+  });
+}
+
 it("review 6: approval stays enabled during a held background read and disables during its own mutation", async () => {
   const project = { id: "project", repo: "repo", lead: "lead" };
   const workspace = { id: "project-wt", project: project.id, repo: project.repo, kind: "project", machine: "local", parentId: "base", branch: "project", files: [] };

@@ -37,6 +37,12 @@ const aggregate = (samples: ReadonlyArray<Sample>) => {
 }
 
 export function measureGitJourney(page: Page) {
+  const directory = process.env.LGTM_GIT_MEASURE_DIR
+  if (!directory) return {
+    lists: engineLists,
+    server<A, E, R>(effect: Effect.Effect<A, E, R>) { return effect },
+    finish() {}
+  }
   const started = performance.now(), initialLoad = loadavg(), requests: Sample[] = [], engines: EngineSample[] = []
   const browserIds = new Set<string>()
   const stamp = () => performance.now() - started
@@ -82,19 +88,20 @@ export function measureGitJourney(page: Page) {
       })))
     },
     finish() {
-      page.off('websocket', socketOpened)
-      const elapsedMs = stamp(), gitRequests = requests.filter((r) => gitTags.has(r.tag))
-      const gitEngine = engines.filter((s) => s.requestId !== undefined && browserIds.has(s.requestId))
-      const report = {
-        elapsedMs, loadStart: initialLoad, loadEnd: loadavg(), requests: aggregate(requests), gitRequests: aggregate(gitRequests), engineGit: aggregate(gitEngine),
-        browserRequestActiveMs: unionMs(requests), browserGitActiveMs: unionMs(gitRequests), engineGitActiveMs: unionMs(gitEngine),
-        beforeFirstBrowserRequestMs: requests[0]?.start ?? elapsedMs, incompleteRequests: requests.filter((s) => s.end === undefined).length
-      }
-      const directory = process.env.LGTM_GIT_MEASURE_DIR
-      if (directory) { mkdirSync(directory, { recursive: true }); writeFileSync(join(directory, 'requests.json'), JSON.stringify(report, null, 2) + '\n') }
-      console.log('Git journey measurement:', JSON.stringify({ elapsedMs, loadStart: report.loadStart, loadEnd: report.loadEnd,
-        stateRequests: gitRequests.filter((s) => s.tag === 'project.git.state').length, gitRequests: gitRequests.length,
-        engineGitActiveMs: report.engineGitActiveMs, browserRequestActiveMs: report.browserRequestActiveMs, incompleteRequests: report.incompleteRequests }))
+      try {
+        page.off('websocket', socketOpened)
+        const elapsedMs = stamp(), gitRequests = requests.filter((r) => gitTags.has(r.tag))
+        const gitEngine = engines.filter((s) => s.requestId !== undefined && browserIds.has(s.requestId))
+        const report = {
+          elapsedMs, loadStart: initialLoad, loadEnd: loadavg(), requests: aggregate(requests), gitRequests: aggregate(gitRequests), engineGit: aggregate(gitEngine),
+          browserRequestActiveMs: unionMs(requests), browserGitActiveMs: unionMs(gitRequests), engineGitActiveMs: unionMs(gitEngine),
+          beforeFirstBrowserRequestMs: requests[0]?.start ?? elapsedMs, incompleteRequests: requests.filter((s) => s.end === undefined).length
+        }
+        mkdirSync(directory, { recursive: true }); writeFileSync(join(directory, 'requests.json'), JSON.stringify(report, null, 2) + '\n')
+        console.log('Git journey measurement:', JSON.stringify({ elapsedMs, loadStart: report.loadStart, loadEnd: report.loadEnd,
+          stateRequests: gitRequests.filter((s) => s.tag === 'project.git.state').length, gitRequests: gitRequests.length,
+          engineGitActiveMs: report.engineGitActiveMs, browserRequestActiveMs: report.browserRequestActiveMs, incompleteRequests: report.incompleteRequests }))
+      } catch { /* Measurement must never replace the journey's own failure. */ }
     }
   }
 }

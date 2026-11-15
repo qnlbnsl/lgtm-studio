@@ -191,11 +191,11 @@ it("an explicit project refresh still reads every worktree", async () => {
 
 const narrowedActions = ["commit", "pull", "push", "update", "integrate", "abort", "approval"] as const;
 for (const action of narrowedActions) it(`${action} refreshes affected sibling counts without reading an unaffected worktree`, async () => {
-  const reads: string[] = [], mutations: string[] = []; let changed = false;
+  const reads: string[] = [], mutations: string[] = [], reviews: string[] = []; let changed = false;
   const f = fixture(async (tag, payload) => {
     if (tag === "project.git.state") { reads.push(payload.worktreeId); return { result: { head: "fresh", mergeHead: null, behind: changed ? 7 : 0 } }; }
     if (tag === "project.changes") return { result: { items: [], truncated: false } };
-    if (tag === "project.review.status") return { result: { review: null } };
+    if (tag === "project.review.status") { reviews.push(payload.worktreeId); return { result: { review: null } }; }
     mutations.push(tag); changed = true;
     if (tag === "project.review.approve") return { result: { id: "review", outcome: "merged" } };
     return {};
@@ -206,9 +206,10 @@ for (const action of narrowedActions) it(`${action} refreshes affected sibling c
   const add = (id: string, parentId: string | null) => ({ ...source, id, branch: id, kind: "team", parentId, merge: null, mergeHead: null, review: null, behind: 0 });
   f.state.worktrees.push(add("destination", "base"), add("source-child-a", source.id), add("source-child-b", source.id),
     add("destination-sibling", "destination"), add("unaffected", "base"), add("grandchild", "source-child-a"));
+  f.state.worktrees.find((w: any) => w.id === "source-child-a").kind = "project";
   const close = f.actions.openScreen("git", "project");
   await vi.waitFor(() => expect(f.actions.busy("git-read")).toBe(false));
-  reads.length = 0; mutations.length = 0;
+  reads.length = 0; mutations.length = 0; reviews.length = 0;
   if (action === "abort") Object.assign(f.state.worktrees[0], { mergeHead: "merge", merge: { from: "other", files: [] } });
   try {
     if (action === "commit") await f.actions.commit(source.id, "A commit");
@@ -222,6 +223,7 @@ for (const action of narrowedActions) it(`${action} refreshes affected sibling c
       ? [source.id, "destination", "source-child-a", "source-child-b", "destination-sibling"]
       : [source.id, "source-child-a", "source-child-b"];
     expect(reads).toEqual(expected);
+    expect(reviews).toEqual(expected.filter((id) => f.state.worktrees.find((w: any) => w.id === id).kind === "project"));
     expect(mutations).toEqual([`project.${({ abort: "merge.abort", approval: "review.approve" } as Record<string, string>)[action] || action}`]);
     for (const id of expected) expect(f.state.worktrees.find((w: any) => w.id === id).behind).toBe(7);
     expect(f.state.worktrees.find((w: any) => w.id === "unaffected").behind).toBe(0);
@@ -291,4 +293,100 @@ it("a refused initial review read is retried rather than marked loaded", async (
   expect(await f.actions.refreshGit("project", true)).toBe(false);
   expect(await f.actions.refreshGit("project", true)).toBe(true);
   expect(reviews).toBe(2);
+});
+
+it("a background refresh shows passing evidence reported by an agent for an open review", async () => {
+  let passed = false, reviews = 0;
+  const request = async (tag: string) => {
+    if (tag === "project.review.report") { passed = true; return {}; }
+    if (tag === "project.git.state") return { result: { head: "head", mergeHead: null } };
+    if (tag === "project.changes") return { result: { items: [], truncated: false } };
+    if (tag === "project.review.status") {
+      reviews++;
+      return { result: { review: { id: "review", status: "open", head: "head", baseHead: "base", files: [],
+        evidence: { tests: { ok: passed }, review: { ok: passed } } } } };
+    }
+    throw new Error(tag);
+  };
+  const f = fixture(request), close = f.actions.openScreen("git", "project");
+  try {
+    await vi.waitFor(() => expect(f.actions.busy("git-read")).toBe(false));
+    expect(f.state.worktrees[0].review.evidence).toMatchObject({ tests: { ok: false }, review: { ok: false } });
+    await request("project.review.report");
+    await f.actions.refreshGit("project", true);
+    expect(f.state.worktrees[0].review.evidence).toMatchObject({ tests: { ok: true }, review: { ok: true } });
+    expect(reviews).toBe(2);
+    expect(f.toasts).toEqual([]);
+  } finally { close(); }
+});
+
+for (const status of [null, "answered"]) it(`a background refresh skips an already loaded review with status ${status}`, async () => {
+  let reviews = 0;
+  const f = fixture(async (tag) => {
+    if (tag === "project.git.state") return { result: { head: "head", mergeHead: null } };
+    if (tag === "project.changes") return { result: { items: [], truncated: false } };
+    if (tag === "project.review.status") {
+      reviews++;
+      return { result: { review: status ? { id: "review", status, evidence: { tests: { ok: true }, review: { ok: true } } } : null } };
+    }
+    throw new Error(tag);
+  });
+  if (status === null) f.state.worktrees[0].review = null;
+  const close = f.actions.openScreen("git", "project");
+  try {
+    await vi.waitFor(() => expect(f.actions.busy("git-read")).toBe(false));
+    expect(reviews).toBe(1);
+    await f.actions.refreshGit("project", true);
+    expect(reviews).toBe(1);
+    expect(f.toasts).toEqual([]);
+  } finally { close(); }
+});
+
+it("opening the Git screen again reads review status once for the new visit", async () => {
+  let reviews = 0;
+  const f = fixture(async (tag) => {
+    if (tag === "project.git.state") return { result: { mergeHead: null } };
+    if (tag === "project.changes") return { result: { items: [], truncated: false } };
+    if (tag === "project.review.status") { reviews++; return { result: { review: null } }; }
+    throw new Error(tag);
+  });
+  let close = f.actions.openScreen("git", "project");
+  try {
+    await vi.waitFor(() => expect(f.actions.busy("git-read")).toBe(false));
+    expect(reviews).toBe(1);
+    close();
+    close = f.actions.openScreen("git", "project");
+    await vi.waitFor(() => expect(f.actions.busy("git-read")).toBe(false));
+    expect(reviews).toBe(2);
+    await f.actions.refreshGit("project", true);
+    expect(reviews).toBe(2);
+    expect(f.toasts).toEqual([]);
+  } finally { close(); }
+});
+
+for (const operation of ["pull", "push"]) it(`${operation} ${operation === "pull" ? "refreshes" : "does not read"} the base row while refreshing the source and its children`, async () => {
+  const reads: string[] = []; let changed = false;
+  const f = fixture(async (tag, payload) => {
+    if (tag === `project.${operation}`) { changed = true; return {}; }
+    if (tag === "project.git.state") { reads.push(payload.worktreeId); return { result: { mergeHead: null, ahead: changed ? 0 : 1 } }; }
+    if (tag === "project.changes") return { result: { items: [], truncated: false } };
+    if (tag === "project.review.status") return { result: { review: null } };
+    throw new Error(tag);
+  });
+  const source = f.state.worktrees[0];
+  Object.assign(source, { parentId: "base" });
+  f.state.worktrees.push({ ...source, id: "child", branch: "child", kind: "team", parentId: source.id },
+    { ...source, id: "base", project: undefined, branch: "main", kind: "base", parentId: null },
+    { ...source, id: "base-child", branch: "base-child", kind: "team", parentId: "base" });
+  const close = f.actions.openScreen("git", "project");
+  try {
+    await vi.waitFor(() => expect(f.actions.busy("git-read")).toBe(false));
+    expect(f.state.worktrees.find((w: any) => w.id === "base").ahead).toBe(1);
+    reads.length = 0;
+    await f.actions.syncGit(source.id, operation);
+    expect(reads).toEqual(operation === "pull" ? [source.id, "child", "base"] : [source.id, "child"]);
+    expect(f.state.worktrees.find((w: any) => w.id === "base").ahead).toBe(operation === "pull" ? 0 : 1);
+    expect(f.state.worktrees.find((w: any) => w.id === "base-child").ahead).toBe(1);
+    expect(f.toasts).toEqual([]);
+  } finally { close(); }
 });

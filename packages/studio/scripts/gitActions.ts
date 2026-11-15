@@ -12,6 +12,10 @@ export function gitActionsSource(path: string, source: string): string {
     replace("function abortMerge(s, w) { if (live.on) return refuse();", "function abortMerge(s, w) { if (live.on) return liveGit.abortMerge(w.id);")
   }
   if (path === "js/live/git.js") {
+    // Appended actions depend on these source helpers and their parameter order.
+    for (const signature of ["function affectedGit(w, target) {", "async function loadGit(project, ids, reviews = false) {"]) {
+      if (!source.includes(signature)) throw new Error(`Git actions integration no longer matches ${path}: missing ${signature}`)
+    }
     // Index and file-only actions read back their checkout. Head-changing
     // actions use the source helper to include only affected dependencies.
     replace("return gitDetail(id, commit);", "if (!tab) return run('git', () => { revision++; return loadGit(wt(id)?.project || screen?.project, [id]); });\n  return gitDetail(id, commit);")
