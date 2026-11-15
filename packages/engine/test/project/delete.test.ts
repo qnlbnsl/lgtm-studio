@@ -1,3 +1,9 @@
+import * as Server from '../../src/api/server.ts'
+import * as Redacted from 'effect/Redacted'
+import { connect } from '../support/socketClient.ts'
+import { CommandHandler } from '../../src/commands/CommandHandler.ts'
+import { terminalReads } from '../../src/harnesses/terminalRequests.ts'
+import { closeSignIns, sessions } from '../../src/harnesses/signinRequests.ts'
 import { clientView } from '../../src/client/alerts/view.ts'
 import { engineSource } from '../../src/client/alerts/sources.ts'
 import { execFileSync } from 'node:child_process'
@@ -6,9 +12,10 @@ import { join } from 'node:path'
 import { it } from '@effect/vitest'
 import * as Effect from 'effect/Effect'
 import { afterEach, beforeEach, expect, vi } from 'vitest'
-import type { BoardView } from '@lgtm/contracts'
+import { ProjectId, type BoardView } from '@lgtm/contracts'
+import * as Schema from 'effect/Schema'
 import { cleanupUnit7b } from '../../../testing/test/support/unit7b.ts'
-import { provideBoard, snapshot } from '../board/wakeFixtures.ts'
+import { provideBoard, serviceCall, snapshot } from '../board/wakeFixtures.ts'
 import { decisionProject, decisionSetup } from '../support/projectDecisionFixtures.ts'
 import { registerRebuildCheck } from '../support/rebuildCheck.ts'
 import { appendSetup, call, eventOf, failureOf, freshRequest, makeRig, ownerCredential as owner, readLog, removeRig, success, type Rig } from '../support/handlerRig.ts'
@@ -26,11 +33,14 @@ it.live('only the owner can delete, after a completed archive and an explicit co
   const p = yield* decisionSetup(), other = yield* decisionProject('other')
   const payload = { projectId: p.projectId, confirmed: true }
   expect(failureOf(yield* call(owner, 'project.delete', payload))?.reason).toBe('Archive the project before deleting it.')
-  for (const credential of [p.leadCredential, p.workerCredential, other.leadCredential, { _tag: 'service', service: 'test.board' } as never]) expect(failureOf(yield* call(credential, 'project.delete', payload))).toBeDefined()
+  for (const credential of [p.leadCredential, p.workerCredential, other.leadCredential]) expect(failureOf(yield* call(credential, 'project.delete', payload))?.reason).toBe('command refused')
+  expect(failureOf(yield* serviceCall('project.delete', payload))?.reason).toBe('command refused')
   success(yield* call(owner, 'project.archive', { projectId: p.projectId }))
-  for (const credential of [p.leadCredential, p.workerCredential, other.leadCredential, { _tag: 'service', service: 'test.board' } as never]) {
-    expect(failureOf(yield* call(credential, 'project.delete', payload))).toBeDefined()
+  for (const credential of [p.leadCredential, p.workerCredential, other.leadCredential]) {
+    expect(failureOf(yield* call(credential, 'project.delete', payload))?.reason).toBe(credential === p.leadCredential || credential === p.workerCredential ? 'invalid credential' : 'command refused')
   }
+  expect(failureOf(yield* serviceCall('project.delete', payload))?.reason).toBe('command refused')
+  success(yield* call(other.leadCredential, 'project.read', { projectId: other.projectId, collection: 'projects' }))
   expect(failureOf(yield* call(owner, 'project.delete', { projectId: p.projectId }))).toBeDefined()
   expect(failureOf(yield* call(owner, 'project.delete', { ...payload, confirmed: false }))).toBeDefined()
   const current = projectView(yield* snapshot).projects[p.projectId]!
@@ -143,4 +153,118 @@ for (const pending of ['review', 'integration'] as const) it.live(pending === 'r
     expect(projectView(yield* snapshot).projects[p.projectId]).toBeUndefined()
     expect(projectView(yield* snapshot).gitReviews[p.worktreeId]).toBeUndefined()
   } else expect(failureOf(result)?.reason).toBe("Finish the project's Git operation before deleting it.")
+})).pipe(Effect.orDie))
+
+it.live('identifier secrets do not cause a partial deletion in the real writer', () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  const p = yield* decisionSetup()
+  yield* appendSetup([
+    eventOf({ _tag: 'project.WorktreeCreated', repoId: p.repoId, worktreeId: p.worktreeId, branch: 'topic', path: rig.work, machineId: 'local' }),
+    eventOf({ _tag: 'board.PostWritten', postId: 'one-post', channelId: p.team.channelId, author: { _tag: 'agent', agentId: p.leadId }, text: 'History', to: [], reply: 'none' }),
+    eventOf({ _tag: 'client.AlertRaised', alertId: 'one-alert', alertKey: 'one:alert', kind: 'question', agentId: p.leadId, title: 'Question', sourceSequence: 1 })
+  ])
+  success(yield* call(owner, 'project.archive', { projectId: p.projectId }))
+  success(yield* call(owner, 'project.delete', { projectId: p.projectId, confirmed: true }))
+  const stored = (yield* readLog).find(row => row.event._tag === 'project.Deleted')!.event
+  expect(stored).toMatchObject({ projectId: p.projectId, agentIds: expect.arrayContaining([p.leadId, p.workerId]), channelIds: expect.arrayContaining([p.team.channelId]), postIds: ['one-post'], alertIds: ['one-alert'], worktreeIds: [p.worktreeId] })
+  const now = yield* snapshot
+  expect(projectView(now).projects[p.projectId]).toBeUndefined()
+  expect(now.agents[p.leadId]).toBeUndefined()
+  expect(now.agents[p.workerId]).toBeUndefined()
+}), ['one-project', 'one-lead', 'one-worker', 'one-workspace', 'one-post', 'one-alert', 'project-default:']).pipe(Effect.orDie))
+
+it.live('descendant workspaces without projectId disappear and every unscoped read refuses them', () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  const p = yield* decisionSetup()
+  for (const [id, parent] of [['child', p.worktreeId], ['grandchild', 'child']]) yield* appendSetup([eventOf({ _tag: 'project.WorktreeCreated', repoId: p.repoId, worktreeId: id, parentId: parent, path: rig.work, branch: 'topic', machineId: 'local' })])
+  const creation = (yield* readLog).find(row => row.event._tag === 'project.WorktreeCreated' && row.event.worktreeId === 'child')!
+  success(yield* call(owner, 'project.archive', { projectId: p.projectId }))
+  success(yield* call(owner, 'project.delete', { projectId: p.projectId, confirmed: true }))
+  const items = success(yield* call(owner, 'project.workspaces', {})).items
+  expect(items.map((row: any) => row.worktreeId)).not.toContain('child')
+  for (const worktreeId of ['child', 'grandchild']) {
+    expect(projectView(yield* snapshot).workspaces[worktreeId]).toBeUndefined()
+    for (const [name, extra] of [['project.git.state', {}], ['project.changes', {}], ['project.files.list', {}], ['project.files.read', { path: 'file.txt' }], ['project.files.write', { path: 'file.txt', text: 'keep', version: 'version' }], ['client.terminal.open', { cols: 80, rows: 24 }]] as const)
+      expect(failureOf(yield* call(owner, name, { worktreeId, ...extra })), name).toBeDefined()
+  }
+  expect(failureOf(yield* call(owner, 'client.event', { sequence: creation.sequence }))).toBeDefined()
+  const handler = yield* CommandHandler
+  const input = { ...(yield* handler.input({ _tag: 'owner' })), connectionId: 'owner', snapshot: { ...(yield* snapshot), client: { ...(yield* snapshot).client as object, webSettings: { terminalEnabled: true } } } }
+  expect(yield* terminalReads['client.terminal.open'](input, { worktreeId: 'child', cols: 80, rows: 24 }).pipe(Effect.result)).toMatchObject({ _tag: 'Failure', failure: { reason: 'The project worktree is unavailable.' } })
+  closeSignIns(input.runtime.log)
+})).pipe(Effect.orDie))
+
+it.live('late project, agent, board and alert delivery events cannot resurrect deleted views', () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  const p = yield* decisionSetup()
+  yield* appendSetup([eventOf({ _tag: 'client.AlertRaised', alertId: 'late-alert', alertKey: 'late:alert', kind: 'question', agentId: p.leadId, title: 'Late', sourceSequence: 1 })])
+  const old = (yield* readLog).filter(row => ['project.Created', 'AgentStarted'].includes(row.event._tag)).map(row => row.event)
+  success(yield* call(owner, 'project.archive', { projectId: p.projectId }))
+  success(yield* call(owner, 'project.delete', { projectId: p.projectId, confirmed: true }))
+  yield* appendSetup([...old, eventOf({ _tag: 'client.AlertRaised', alertId: 'late-new-alert', alertKey: 'late:new', kind: 'question', agentId: p.leadId, title: 'Late new alert', sourceSequence: 1 }),
+    eventOf({ _tag: 'client.AlertDelivered', alertId: 'late-new-alert', carrier: 'ntfy', generation: 0, attempt: 1 }),
+    eventOf({ _tag: 'client.AlertDelivered', alertId: 'late-alert', carrier: 'ntfy', generation: 0, attempt: 1 }),
+    eventOf({ _tag: 'board.PostWritten', postId: 'late-post', channelId: p.team.channelId, author: { _tag: 'owner' }, text: 'Late', to: [], reply: 'none' })])
+  const now = yield* snapshot
+  expect(projectView(now).projects[p.projectId]).toBeUndefined()
+  expect(now.agents[p.leadId]).toBeUndefined()
+  expect(now.threads[p.leadId]).toBeUndefined()
+  expect(clientView(now.client).delivery['late-alert']).toBeUndefined()
+  expect(clientView(now.client).alerts['late-new-alert']).toBeUndefined()
+  expect(clientView(now.client).delivery['late-new-alert']).toBeUndefined()
+  expect((now.board as BoardView).posts['late-post']).toBeUndefined()
+})).pipe(Effect.orDie))
+
+it.live('shared-channel replies and repository design registrations survive deletion', () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  const p = yield* decisionSetup(), other = yield* decisionProject('other')
+  yield* appendSetup([eventOf({ _tag: 'board.ChannelOpened', channelId: 'shared', name: 'Shared', kind: 'plain', opener: { _tag: 'owner' }, manager: { _tag: 'owner' }, members: [{ _tag: 'owner' }, { _tag: 'agent', agentId: p.leadId }, { _tag: 'agent', agentId: other.leadId }] }),
+    eventOf({ _tag: 'project.DesignRecorded', projectId: p.projectId, revisionId: 'shared-design', design: { repoId: p.repoId, worktreeId: p.worktreeId, file: 'design.fig', components: [] }, author: { _tag: 'owner' }, fileFingerprint: 'a'.repeat(64) })])
+  const postId = success(yield* call(p.leadCredential, 'board.post', { channelId: 'shared', text: 'Deleted author', to: [], reply: 'none' })).postId
+  yield* appendSetup([eventOf({ _tag: 'board.PostWritten', postId: 'owner-reply', channelId: 'shared', author: { _tag: 'owner' }, text: 'Owner reply', to: [], reply: 'none', replyToPostId: postId, context: [{ _tag: 'file', projectId: p.projectId, repoId: p.repoId, worktreeId: p.worktreeId, path: 'file.txt' }] })])
+  yield* appendSetup([eventOf({ _tag: 'board.PostWritten', postId: 'other-reply', channelId: 'shared', author: { _tag: 'agent', agentId: other.leadId }, text: 'Other reply', to: [], reply: 'none', replyToPostId: postId })])
+  const before = projectView(yield* snapshot)
+  success(yield* call(owner, 'project.archive', { projectId: p.projectId }))
+  success(yield* call(owner, 'project.delete', { projectId: p.projectId, confirmed: true }))
+  const now = yield* snapshot
+  expect(Object.values((now.board as BoardView).posts).map(row => row.text)).toEqual(['Owner reply', 'Other reply'])
+  expect(projectView(now).designs).toEqual(before.designs)
+  expect(projectView(now).designHeads).toEqual(before.designHeads)
+})).pipe(Effect.orDie))
+
+it.live('deletion refuses an open terminal until the existing close path finishes', () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  const p = yield* decisionSetup()
+  yield* appendSetup([eventOf({ _tag: 'project.WorktreeCreated', repoId: p.repoId, worktreeId: p.worktreeId, path: rig.work, branch: 'topic', machineId: 'local' })])
+  const handler = yield* CommandHandler
+  const input = { ...(yield* handler.input({ _tag: 'owner' })), connectionId: 'terminal-owner', snapshot: { ...(yield* snapshot), client: { ...(yield* snapshot).client as object, webSettings: { terminalEnabled: true } } } }
+  const manager = sessions(input); manager.terminalEnabled = true
+  try {
+    const terminal = yield* terminalReads['client.terminal.open'](input, { worktreeId: p.worktreeId, cols: 80, rows: 24 })
+    success(yield* call(owner, 'project.archive', { projectId: p.projectId }))
+    expect(failureOf(yield* call(owner, 'project.delete', { projectId: p.projectId, confirmed: true }))?.reason).toBe('Close the project terminals before deleting the project.')
+    const socket = join(rig.stateFolder, 'delete.sock'), token = 'temporary-owner-delete-fixture'
+    yield* Server.serve({ socketPath: socket, ownerCredential: Redacted.make(token), debug: false })
+    const api = yield* connect(socket, token)
+    const reply = yield* api['project.delete']({ requestId: freshRequest(), projectId: Schema.decodeUnknownSync(ProjectId)(p.projectId), confirmed: true }).pipe(Effect.result)
+    expect(reply).toMatchObject({ _tag: 'Failure', failure: { reason: 'Close the project terminals before deleting the project.' } })
+    yield* terminalReads['client.terminal.close'](input, { sessionId: terminal.reply.sessionId })
+    success(yield* call(owner, 'project.delete', { projectId: p.projectId, confirmed: true }))
+  } finally { closeSignIns(input.runtime.log) }
+})).pipe(Effect.orDie))
+
+it.live('a surviving project keeps the descendants of its shared workspace', () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  const p = yield* decisionSetup(), other = yield* decisionProject('other')
+  yield* appendSetup([
+    eventOf({ _tag: 'project.WorktreeCreated', repoId: p.repoId, worktreeId: p.worktreeId, path: rig.work, branch: 'topic', machineId: 'local' }),
+    eventOf({ _tag: 'project.WorktreeCreated', repoId: p.repoId, worktreeId: other.worktreeId, parentId: p.worktreeId, path: join(rig.work, 'other'), branch: 'other', machineId: 'local' }),
+    eventOf({ _tag: 'project.WorktreeCreated', repoId: p.repoId, worktreeId: 'other-child', parentId: other.worktreeId, path: join(rig.work, 'other-child'), branch: 'other-child', machineId: 'local' })
+  ])
+  success(yield* call(owner, 'project.archive', { projectId: p.projectId }))
+  success(yield* call(owner, 'project.delete', { projectId: p.projectId, confirmed: true }))
+  const view = projectView(yield* snapshot)
+  expect(view.workspaces[p.worktreeId]).toBeUndefined()
+  expect(view.workspaces[other.worktreeId]).toBeDefined()
+  expect(view.workspaces['other-child']).toBeDefined()
 })).pipe(Effect.orDie))

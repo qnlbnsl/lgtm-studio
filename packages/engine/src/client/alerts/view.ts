@@ -109,6 +109,8 @@ const reduce = (view: ClientView, event: Event, sequence: number): ClientView =>
     }
     case "client.AlertDelivered":
     case "client.AlertDeliveryFailed":
+      // A suppressed late alert has no row to receive carrier results.
+      if (!Object.hasOwn(view.alerts, event.alertId)) return view;
       if (event.carrier !== "ntfy") {
         const state = view.destinations[event.carrier]; if (!state || state.generation !== event.generation) return view;
         const mark: ClientView["delivery"][string] = event._tag === "client.AlertDelivered" ? { status: "delivered" as const, sequence, generation: event.generation, attempt: event.attempt }

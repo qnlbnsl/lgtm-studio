@@ -27,11 +27,10 @@ export function SettingHelp({ label, children }) {
     document.addEventListener('pointerdown', outside);
     return () => { document.removeEventListener('pointerdown', outside); };
   }, [open]);
-  return html`<span class="setting-help" ref=${root} onKeyDown=${escape} onMouseEnter=${() => { setHovered(true); setDismissed(false); }} onMouseLeave=${() => setHovered(false)}>
+  return html`<span class="setting-help" ref=${root} onKeyDown=${escape} onFocusCapture=${() => { setFocused(true); setDismissed(false); }} onBlurCapture=${(event) => { if (!root.current?.contains(event.relatedTarget)) setFocused(false); }} onMouseEnter=${() => { setHovered(true); setDismissed(false); }} onMouseLeave=${() => setHovered(false)}>
     <button ref=${button} type="button" class="setting-help-button" aria-label=${'About ' + label} aria-describedby=${id} aria-expanded=${open}
-      onFocus=${() => { setFocused(true); setDismissed(false); }} onBlur=${() => setFocused(false)}
       onClick=${() => { if (pinned) dismiss(); else { setPinned(true); setDismissed(false); } }}>?</button>
-    <span id=${id} role="tooltip" class="setting-help-text" hidden=${!open}>${children}<button type="button" class="setting-help-close" aria-label=${'Dismiss help for ' + label} onClick=${dismiss}>×</button></span>
+    <span class="setting-help-panel" hidden=${!open}><span id=${id} role="tooltip" class="setting-help-text" hidden=${!open}>${children}</span><button type="button" class="setting-help-close" aria-label=${'Dismiss help for ' + label} onClick=${() => { button.current?.focus(); dismiss(); }}>×</button></span>
   </span>`;
 }
 

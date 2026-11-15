@@ -1,3 +1,4 @@
+import { deletedEvent } from '../project/deleted.ts';
 import type { AgentChoice, AgentConfiguration } from "@lgtm/contracts";
 import { configurationMatches } from "../runner/choices.ts";
 import { safeStartFailure, type StartFailure } from "@lgtm/contracts/startFailure";
@@ -406,6 +407,8 @@ const accountsAfter = (state: State, event: Event): State["accounts"] => {
 // Live publication and rebuilding use this same pure fold.
 export const applyWith = (state: State, envelope: EventEnvelope, views: Readonly<Record<PieceNamespace, PieceView>> = pieceViews): State => {
   const event = envelope.event;
+  // One admission gate protects every core and piece fold, live and replayed.
+  if (deletedEvent(state, event)) return { ...state, sequence: envelope.sequence };
   const owner = threadAgent(event);
   const pieces = { client: state.client, board: state.board, roles: state.roles, project: state.project };
   for (const namespace of pieceNamespaces) {

@@ -1307,12 +1307,18 @@ The standalone mock keeps the complete sample design.
 - The base branch needs a stored owner setting, a read of existing local branches, and engine validation against those branches.
   Changing it must be refused while a review or integration is open.
   The repository's main checkout currently supplies the review destination.
-  `lifecycle.ts` discovers its checked-out `main` or `master` branch when the project starts.
+  The destination is a registered checkout with the branch checked out, not a stored branch name.
+  These seven independent read sites live under `packages/engine/src/project/`.
+  `lifecycle.ts:46` requires `main` or `master` at creation.
+  `gitReview.ts:27` checks the registered review destination.
+  `git/index.ts:362` checks the main comparison.
+  `git/index.ts:425` refuses ordinary integration into those branches.
+  `git/index.ts:693` checks the approved review's base.
+  `gitCommands.ts:108` resolves the registered parent for an update.
+  `files.ts:18` makes those branches read-only in Files.
+  The workspace access boundary in `gitApi.ts:56` also treats the repository checkout specially.
   The project has its own dedicated branch in `Project.worktreeId`.
-  Team integration in `gitCommands.ts` targets the project workspace.
-  Main review in `gitReview.ts` requires the registered repository checkout and a `main` or `master` branch.
-  The Git service in `git/index.ts` independently repeats that restriction in `mainComparison` and `approveMain`.
-  Its ordinary integration path refuses those branches to require owner review.
+  Team integration targets the project workspace.
   Supporting an arbitrary destination requires changes to registration, the review destination, and the execution safety boundary.
   This exceeds the brief's limit of one setting and one read site, so s14 uses its explicit fallback.
   The eventual implementation must preserve the existing default and prevent branch names from being interpreted as Git options.

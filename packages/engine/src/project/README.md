@@ -501,23 +501,31 @@ The command line and agent tools expose the same requests as the client applicat
 ## Deleting an archived project
 
 Only the owner can call `project.delete` with `projectId` and `confirmed: true`.
-The command refuses an active project, an incomplete archive, an agent that is not stopped or crashed, and an unfinished Git operation.
+The command refuses an active project, an incomplete archive, an agent that is not stopped or crashed, an unfinished Git operation, and an open terminal in any of its worktrees.
 An open merge review is removed with the rest of the project history.
 The command appends `project.Deleted` to the existing event log.
 It does not erase events from that log.
-The same fold removes the project and its agents, threads, requests, teams, sprints, tasks, mock records, Git evidence and review records from the live and rebuilt views.
+The same fold removes the project and its agents, threads, questions, requests, teams, sprints, tasks, mock records, Git evidence and review records from the live and rebuilt views.
 Identifier tombstones prevent the event and thread reads from revealing that stored history again.
+Every removed post identifier stays in the tombstone for as long as its stored events remain in the log.
+Later acknowledgements, closures and read events can identify only the post, without its channel or author.
+Forgetting a post identifier would make that stored history readable again.
+A safe bound requires coordinated log compaction and removal of every reference to the forgotten identifiers.
+This command does not compact the log.
 The deletion event itself remains readable as the identifier-only notification that clients use to refresh.
 
-The project's anchored channels, channels managed by its agents, and direct chats with its agents disappear with their posts.
-Posts authored by its agents or carrying the project's context disappear from shared channels too.
+The project's anchored channels, channels managed by its agents, and direct chats with its agents disappear with their posts when no other project's agent belongs to them.
+Posts authored by its agents disappear from shared channels too.
+Other authors keep their posts and replies, including references to the deleted project.
+Those references do not grant access to deleted records.
 Shared channels remain available to their other members.
 The deleted agents leave those channels.
 The repository remains registered for other projects.
-Design registrations recorded by the deleted project leave the views too.
+Repository design registrations and their current revision stay available to surviving projects.
 Their files remain on disk.
-An exclusively used project or team worktree leaves the workspace registry.
-A workspace used by another project stays registered.
+An exclusively used project or team worktree and its registered descendants leave the workspace registry.
+A workspace used by another project stays registered with its descendants.
+The repository checkout always stays registered, including historical records without a checkout type.
 Every worktree folder and every branch stays on disk, including dirty and externally registered folders.
 No safe worktree removal operation exists in the engine, so this command has no removal option.
 

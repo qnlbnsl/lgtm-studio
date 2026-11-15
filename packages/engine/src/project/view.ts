@@ -120,7 +120,6 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
         taskNotifications: related(view.taskNotifications), fileSaveNotices: related(view.fileSaveNotices),
         mockRevisions: related(view.mockRevisions), mockHeads: keep(view.mockHeads, (_, id) => id !== event.projectId),
         mockApprovals: related(view.mockApprovals), mockScreenReviews: related(view.mockScreenReviews),
-        designs: related(view.designs), designHeads: keep(view.designHeads, (revision, repoId) => own(view.designs, projectKey(repoId, revision))?.projectId !== event.projectId),
         setup: view.setup.projectId === event.projectId ? { step: view.setup.step, ...(view.setup.completedAt === undefined ? {} : { completedAt: view.setup.completedAt }) } : view.setup }
     }
     case "project.Restored": return { ...view, projects: change(view.projects, event.projectId, (row) => { const { archivedAt: _a, ...rest } = row; return { ...rest, archiving: false } }) }

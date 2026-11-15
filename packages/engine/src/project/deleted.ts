@@ -26,7 +26,7 @@ export const deletedEvent = (snapshot: Snapshot, event: Event): boolean => {
   if (event._tag === 'project.Deleted') return false
   const ids = index(snapshot)
   const aliases: Record<string, string> = { anchorAgentId: 'agentId', threadAgentId: 'agentId', leadAgentId: 'agentId',
-    target: 'agentId', targetAgentId: 'agentId', authorAgentId: 'agentId', destinationId: 'worktreeId', replyToPostId: 'postId', replyTo: 'postId' }
+    target: 'agentId', targetAgentId: 'agentId', authorAgentId: 'agentId', parentId: 'worktreeId', destinationId: 'worktreeId', replyToPostId: 'postId', replyTo: 'postId' }
   // Inspect protocol metadata, never agent tool input or message content.
   const nested = new Set(['caller', 'parent', 'sender', 'delivery', 'firstPromptDelivery', 'review', 'report', 'attempt', 'creation', 'workspace', 'context', 'to', 'members', 'manager', 'opener', 'author', 'closer', 'answeredBy'])
   const linked = (value: unknown): boolean => {
@@ -34,6 +34,12 @@ export const deletedEvent = (snapshot: Snapshot, event: Event): boolean => {
     if (value === null || typeof value !== 'object') return false
     return Object.entries(value).some(([key, child]) => typeof child === 'string'
       ? ids[aliases[key] ?? key]?.has(child) === true : nested.has(key) && linked(child))
+  }
+  // Other authors retain their shared-channel posts, even replies or context
+  // references to removed records. Those references grant no read authority.
+  if (event._tag === 'board.PostWritten') {
+    const { context: _context, replyToPostId: _reply, to: _to, ...owned } = event
+    return linked(owned)
   }
   return linked(event)
 }

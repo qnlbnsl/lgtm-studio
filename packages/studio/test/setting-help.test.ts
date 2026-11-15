@@ -26,7 +26,12 @@ it('shared help names its button, describes the setting, pins on click and dismi
     button.click(); button.blur(); await settle()
     expect(tip.hidden).toBe(false)
     expect(button.getAttribute('aria-expanded')).toBe('true')
-    tip.querySelector<HTMLButtonElement>('button')!.click(); await settle()
+    expect(tip.querySelector('button')).toBeNull()
+    const close = host.querySelector<HTMLButtonElement>('.setting-help-close')!
+    button.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); button.blur(); await settle()
+    button.focus(); await settle(); close.focus(); await settle()
+    expect(tip.hidden).toBe(false)
+    close.click(); await settle()
     expect(tip.hidden).toBe(true)
     expect(button.getAttribute('aria-expanded')).toBe('false')
   } finally { kit.render(null, host); host.remove() }

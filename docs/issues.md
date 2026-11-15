@@ -15112,3 +15112,48 @@ Project deletion therefore preserves all folders and branches.
 The optional folder removal checkbox is omitted, as the task permits.
 The requirements for a future operation are recorded in `docs/features.md`.
 This is open.
+
+
+## s14-3. Project deletion could redact identifiers and leave a partial result.
+
+The first review found that the deletion event had no identity exemptions in the log redaction structure.
+A registered secret overlapping an identifier could leave some records behind after a successful reply.
+The deletion event now marks every identifier position as an identity.
+A regression test uses the real writer with overlapping registered secrets.
+This is fixed.
+
+## s14-4. Project deletion missed descendant workspaces and removed shared infrastructure.
+
+The first review found that descendants registered only with a parent identifier remained usable after deletion.
+It also found that historical projects could unregister the repository checkout.
+Deletion now follows the parent chain and preserves the repository checkout.
+Other authors keep shared-channel posts and replies, and repository design registrations remain shared.
+An open terminal in a project worktree prevents deletion until the owner closes it.
+This is fixed.
+
+## s14-5. Late events could repopulate deleted views.
+
+The first review found that a carrier delivery finishing after deletion could recreate an alert delivery row.
+The shared fold now checks identifier tombstones before updating any core or piece view.
+A carrier result for an absent alert cannot create an orphan delivery row.
+Regression tests append late project, agent, board, alert and delivery events and check a rebuild.
+This is fixed.
+
+## s14-6. Setting help and the lead row had focus and layout regressions.
+
+The first review found an interactive control inside a tooltip, a hover gap, and focus loss when tabbing to dismiss.
+The shared component now keeps the dismiss control outside the tooltip and tracks focus within its wrapper.
+The shared styles live in the shared stylesheet, and the help panel touches its button.
+The website lead row has its own two-column rule, and the phone rule wins for both sample and live controls.
+This is fixed.
+
+
+## s14-7. A short registered secret can invalidate a board reply mode during redaction.
+
+Found while extending the deletion regression fixture in fix round 1.
+Registering the synthetic secret `one` changes the fixed reply mode `none` in a board post event.
+The real writer then refuses the event because its redacted reply mode fails the event schema.
+The deletion fixture now registers complete identifiers to isolate the requested identifier exemptions.
+The board event's fixed reply mode still needs its own explicit redaction position and regression test.
+No board redaction rule is changed by this unit.
+This is open.

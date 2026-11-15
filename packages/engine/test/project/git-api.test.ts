@@ -554,3 +554,13 @@ it.live("issue 597: an ordinary state read completes beside a mutation preparing
   yield* Fiber.join(read); yield* Fiber.join(mutation)
   expect(git(rig.work, "diff", "--cached")).toContain("stage after observation")
 })).pipe(Effect.orDie))
+
+it.live('deleting a historical project on main preserves base updates and main review for another project', () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), { api } = yield* wire(), i = yield* integration(api, f.repoId)
+  yield* run(api, 'project.archive', { projectId: f.projectId })
+  yield* run(api, 'project.delete', { projectId: f.projectId, confirmed: true })
+  expect(projectView(yield* snapshot).workspaces[f.worktreeId]?.checkout).toBe('main')
+  yield* run(api, 'project.update', { projectId: i.projectId, worktreeId: i.destinationId, destinationId: f.worktreeId, expectedHead: git(i.destination, 'rev-parse', 'HEAD') })
+  const review = yield* run(api, 'project.review.prepare', { projectId: i.projectId, worktreeId: i.destinationId, destinationId: f.worktreeId })
+  expect(review.result.review.destinationId).toBe(f.worktreeId)
+})).pipe(Effect.orDie))

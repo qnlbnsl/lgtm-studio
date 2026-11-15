@@ -811,7 +811,7 @@ export function ProjectSettings({ s, project: p }) {
     lost: [running_ ? `${plural(running_, 'running agent')} will stop` : null, openRequests(s, { project: p.id }).length ? `${plural(openRequests(s, { project: p.id }).length, 'open request')} will be hidden` : null].filter(Boolean),
     onConfirm: async () => { const reply = await act.archiveProject(p.id); if (!live.on || reply) go('/r/' + r.id); return reply; } });
   const del = () => act.confirm({ title: `Delete ${p.name}?`, waitForReply: live.on, pendingLabel: 'Deleting…', danger: true,
-    body: 'The project, its stopped agents, threads, chat and board channels, sprints and tasks disappear from all views. Stored events stay in the log. The worktree folders and every branch stay on disk. This cannot be undone.', action: 'Delete project',
+    body: 'The project, its stopped agents, threads, private channels, sprints and tasks disappear from all views. Its open review, questions and requests go too. Its agents’ shared-channel posts go. Other authors’ posts and replies stay. Exclusive worktree registrations go, including child worktrees. The repository checkout and shared registrations stay. Repository designs stay. Close its terminals first. Stored events stay in the log. The worktree folders and every branch stay on disk. This cannot be undone.', action: 'Delete project',
     onConfirm: async () => { if (live.on) return; if (!p.archived) return false;
       const id = p.id;
       update((st) => { const ch = new Set(st.channels.filter((c) => c.project === id).map((c) => c.id));
