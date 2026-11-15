@@ -2,7 +2,8 @@ import { projectApprovalEffects } from '@lgtm/contracts'
 // Pure adapters for Home, agent conversations, and the roster. The JavaScript screens
 // receive these functions from live.ts; the standalone mock never loads this module.
 import type { ClientRequest, EventEnvelope, ContextUsage, AgentChoices, AgentConfiguration, ContextReference } from "@lgtm/contracts"
-import { groupThreadItems, toolText } from "@lgtm/contracts/thread"
+import { groupThreadItems } from "@lgtm/contracts/thread"
+import { orderedThread, toolRow, type ToolRow } from './chatTools.ts'
 import { mapRequest, type StoreAgent, type StoreSubscription } from "./mapping.ts"
 
 // A harness often names a permission request with the command itself. The card then says what
@@ -45,7 +46,7 @@ export function mapHomeRequest(row: ClientRequest, agents: ReadonlyArray<StoreAg
     sprint: row.sprintId ?? question?.sprintId ?? permission?.sprintId ?? null,
     project: row.projectId ?? base.project, task: row.taskId ?? base.task,
     ...(row.projectApprovalOutcome === undefined ? {} : { projectApprovalOutcome: row.projectApprovalOutcome }),
-    title: question?.title ?? (row.kind === "permission" ? attemptTitle(base.title, command ?? (cut && base.body ? base.body : null), kind) : base.title),
+    title: question?.title ?? (row.kind === "permission" ? attemptTitle(base.title, command ?? (cut && base.body ? base.body : null), kind) : row.display?.title ?? "Question"),
     body: question?.text ?? permission?.description ?? base.body,
     ...(cwd ? { folder: cwd } : {}),
     recommendation: question?.recommendation ?? base.recommendation, command,
@@ -79,12 +80,18 @@ export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, 
   let lastOutputAt: number | null = null
   let runMode: string | null = null
   const rows: Array<Record<string, unknown>> = []
-  for (const item of groupThreadItems(items)) {
+  const calls = new Map<string, { row: ToolRow; content: Extract<Extract<EventEnvelope['event'], { _tag: 'ThreadItem' }>['content'], { _tag: 'tool-call' }>; files: Map<string, string>; snapshots: Map<string, Set<string>> }>()
+  const questions = items.flatMap(({ event: e }) => e._tag === 'QuestionAsked' && e.agentId === agentId ? [e] : [])
+  for (const item of groupThreadItems(orderedThread(items))) {
     const e = item.event
     if (!("agentId" in e) || e.agentId !== agentId) continue
     if (e._tag === "AgentStarted") runMode = e.runMode
     const base = { id: String(item.sequence), ts: item.occurredAt }
+    if (e._tag !== 'ThreadItem' || e.content._tag !== 'file-change') {
+      for (const key of calls.keys()) if (key.startsWith('legacy:')) calls.delete(key)
+    }
     if (e._tag === "DeliverySent") { pending = true; delivery = e.deliveryId }
+    if (e._tag === 'TurnEnded' || e._tag === 'SessionOpened') calls.clear()
     if (e._tag === "StateChanged" && e.state._tag !== "working"
       || ["TurnEnded", "AgentStopped", "AgentInterrupted", "AgentCrashed", "AgentReloadFailed"].includes(e._tag)
       || (e._tag === "DeliveryReturned" || e._tag === "DeliveryRequeued" || e._tag === "DeliveryHeld") && e.deliveryId === delivery) pending = false
@@ -100,18 +107,40 @@ export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, 
     else if (e._tag === "ThreadItem") {
       lastOutputAt = Math.max(lastOutputAt ?? 0, item.occurredAt)
       const c = e.content
-      if (c._tag === "text") rows.push({ ...base, type: "agent", text: c.text })
-      else if (c._tag === "tool-call") {
-        // The closed row shows one line. A long command and its output open in boxes that scroll.
-        const firstLine = c.title.split("\n").find((line) => line.trim() !== "")?.trim() ?? c.title
-        const output = c.output ? toolText(c.output) : ""
-        const short = output.length <= 60 && !output.includes("\n")
-        rows.push({ ...base, type: "tools", summary: firstLine,
-          lines: [{ verb: c.status ?? "", arg: c.input ? toolText(c.input) : "", res: short ? output : "" }],
-          ...(c.title.trim() !== firstLine || firstLine.length > 80 ? { full: c.title } : {}), ...(output && !short ? { output } : {}) })
+      if (c._tag === "text") {
+        const text = c.text.trim()
+        // An exact question echo belongs on its authoritative card only.
+        if (!questions.some((q) => text === q.text.trim() || text === `${q.title ?? ''}\n\n${q.text}`.trim())) rows.push({ ...base, type: "agent", text: c.text })
+      } else if (c._tag === "tool-call") {
+        const previous = calls.get(c.callId)
+        const files = previous?.files ?? new Map<string, string>()
+        const content = previous ? { ...previous.content, ...c, title: c.title || previous.content.title } : c
+        const row = toolRow(previous?.row ?? base, content, files)
+        if (previous) Object.assign(previous.row, row)
+        else rows.push(row)
+        calls.set(c.callId, { row: previous?.row ?? row, content, files, snapshots: previous?.snapshots ?? new Map() })
+      } else if (c._tag === "plan") rows.push({ ...base, type: "agent", text: c.entries.map((p) => `- ${p.status}: ${p.content}`).join("\n") })
+      else {
+        const key = c.callId ?? `legacy:${c.path}:${c.diff}`
+        const previous = calls.get(key)
+        const files = previous?.files ?? new Map<string, string>()
+        const snapshots = previous?.snapshots ?? new Map<string, Set<string>>()
+        const seen = snapshots.get(c.path) ?? new Set<string>()
+        // Compare complete update contents, never individual hunks. Equal parts
+        // inside one update can represent edits at different file positions.
+        if (!seen.has(c.diff)) {
+          const combined = files.has(c.path) ? files.get(c.path)! + '\n' + c.diff : c.diff
+          files.set(c.path, combined)
+          seen.add(c.diff)
+          seen.add(combined)
+        }
+        snapshots.set(c.path, seen)
+        const content = previous?.content ?? { _tag: 'tool-call' as const, callId: key, title: /^@@ (?:-0,0 |New file )/m.test(c.diff) ? 'Write' : 'Edit' }
+        const row = toolRow(previous?.row ?? base, content, files)
+        if (previous) Object.assign(previous.row, row)
+        else rows.push(row)
+        calls.set(key, { row: previous?.row ?? row, content, files, snapshots })
       }
-      else if (c._tag === "plan") rows.push({ ...base, type: "agent", text: c.entries.map((p) => `${p.status}: ${p.content}`).join("\n") })
-      else rows.push({ ...base, type: "agent", text: `${c.path}\n\n${c.diff}` })
     } else if (e._tag === "QuestionAsked" || e._tag === "PermissionRequested") rows.push({ ...base, type: "request", requestId: e._tag === "QuestionAsked" ? e.questionId : e.permissionRequestId })
     else if (e._tag === "TurnEnded" && e.stopped) rows.push({ ...base, type: "note", text: "This reply stopped." })
     else if (e._tag === "AgentStopped") rows.push({ ...base, type: "note", text: "The agent stopped." })

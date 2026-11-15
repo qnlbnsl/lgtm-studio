@@ -28,7 +28,7 @@ describe("Home mapping", () => {
   it("keeps a long tool call to one line and moves the rest into boxes", () => {
     const title = "python3 - <<'PY'\nprint(1)\nPY"
     const result = mapThread([{ sequence: 1, occurredAt: 1000, event: { _tag: "ThreadItem", agentId: "ag-lead", itemId: "i1", content: { _tag: "tool-call", callId: "c1", title, status: "completed", output: "x".repeat(200) } } }] as never, "ag-lead" as never)
-    expect(result.items.find((row) => row.type === "tools")).toMatchObject({ summary: "python3 - <<'PY'", full: title, output: "x".repeat(200), lines: [{ res: "" }] })
+    expect(result.items.find((row) => row.type === "tools")).toMatchObject({ summary: "Ran python3 - <<'PY'", details: [{ label: "Command", text: title }, { label: "Output", text: "x".repeat(200) }] })
   })
   it("gives a plain title to a command whose input arrived cut", () => {
     const row = { ...engineSnapshot.requests[0], kind: "permission", display: { ...engineSnapshot.requests[0]!.display, title: undefined, preview: "printf '%s' \\\n  'one'", toolKind: "execute" } } as unknown as ClientRequest
@@ -64,7 +64,7 @@ describe("thread mapping", () => {
     const result = mapThread([...items, items[2]!], "ag-worker")
     expect(result.items).toHaveLength(2)
     expect(result.items[0]).toMatchObject({ id: "2", text: "Hello owner" })
-    expect(result.items[1]).toMatchObject({ summary: "Checks", lines: [{ verb: "completed", arg: "pnpm test", res: "passed" }] })
+    expect(result.items[1]).toMatchObject({ summary: "Checks", status: "completed", details: [{ label: "Input", text: "pnpm test" }, { label: "Output", text: "passed" }] })
     expect(result).toMatchObject({ pending: true, lastOutputAt: 5000 })
     expect(mapThread([...items, envelope(6, { _tag: "TurnEnded", agentId: "ag-worker", stopped: true })], "ag-worker").pending).toBe(false)
   })
@@ -75,7 +75,7 @@ describe("thread mapping", () => {
       envelope(4, { _tag: "ThreadItem", agentId: "ag-worker", content: { _tag: "plan", entries: [{ content: "Build", status: "pending" }] } }),
       envelope(5, { _tag: "ThreadItem", agentId: "ag-worker", content: { _tag: "file-change", path: "src/a.ts", diff: "<script>data</script>" } })]
     const result = mapThread(items, "ag-worker")
-    expect(result.items).toMatchObject([{ type: "user", text: "hi" }, { type: "user", from: "ag-lead" }, { type: "request", requestId: "q1" }, { type: "agent", text: "pending: Build" }, { text: "src/a.ts\n\n<script>data</script>" }])
+    expect(result.items).toMatchObject([{ type: "user", text: "hi" }, { type: "user", from: "ag-lead" }, { type: "request", requestId: "q1" }, { type: "agent", text: "- pending: Build" }, { type: "tools", summary: "Edited a.ts", details: [{ label: "src/a.ts", text: "<script>data</script>", note: "The earlier text was not recorded.", copyLabel: "content" }] }])
     expect(mapThread(items, "other").items).toEqual([])
     expect(mapThread([envelope(1, { _tag: "AgentStarted", agentId: "ag-worker", runMode: "interactive" })], "ag-worker").runMode).toBe("interactive")
     expect(contextLabel({ _tag: "task", projectId: "p" as never, taskId: "t" as never })).toBe("t")
