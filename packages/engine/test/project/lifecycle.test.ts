@@ -64,6 +64,10 @@ it.live("creates through the authenticated API, launches saved defaults, inherit
     expect((yield* readLog).filter(({ event }) => event._tag === "AgentStarted")).toHaveLength(1)
     expect((yield* api["project.create"]({ ...payload, name: "Different" }).pipe(Effect.result))._tag).toBe("Failure")
     const leadApi = yield* connect(rig.socket, peer.env.LGTM_TOKEN!)
+    for (const projectApproval of ["end-result", "build"] as const) {
+      const { questionId } = yield* leadApi.ask({ requestId: freshRequest(), projectId: created.projectId, projectApproval, title: "Approve the next step?", text: "The agreed work." })
+      yield* api.answer({ requestId: freshRequest(), kind: "question", id: questionId, text: "Accepted" })
+    }
     const childPayload = { requestId: freshRequest(), name: "Worker", role: "worker", harness: harness.id,
       account: { _tag: "named" as const, accountId: childAccount.id }, permission: "ask" as const, folder: workspace.path }
     expect((yield* leadApi.start({ ...childPayload, permission: "full" }).pipe(Effect.result))._tag).toBe("Failure")

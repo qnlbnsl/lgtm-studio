@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema"
 import { Actor, PermissionOption } from "./events.ts"
 import { AgentId, EpochMilliseconds, EventSequence } from "./ids.ts"
-import { ProjectRequestLinkFields, QuestionMetadataFields } from "./questions.ts"
+import { ProjectApprovalOutcome, ProjectRequestLinkFields, QuestionMetadataFields } from "./questions.ts"
 const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 export const RequestDisplay = Schema.Struct({
   ...QuestionMetadataFields,
@@ -25,6 +25,7 @@ export const ClientRequest = Schema.Struct({
   answeredAt: Schema.optionalKey(EpochMilliseconds),
   answeredBy: Schema.optionalKey(Actor),
   answer: Schema.optionalKey(Schema.String),
+  projectApprovalOutcome: Schema.optionalKey(ProjectApprovalOutcome),
   optionId: Schema.optionalKey(Schema.NonEmptyString),
   reason: Schema.optionalKey(Schema.String),
   // A read confirms current state; failed client submissions are never inferred as answers.

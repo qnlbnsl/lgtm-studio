@@ -27,7 +27,7 @@ const delivery: RedactionStructure = { fields: {
 // sprint and task owners are AgentIds. Keep all new identities at their exact
 // event positions, including array elements in sprint dependencies.
 const workspace = { worktreeId: identity, repoId: identity, projectId: identity, teamId: identity, parentId: identity };
-const project = { projectId: identity, repoId: identity, leadAgentId: identity, worktreeId: identity };
+const project = { skipPlanningApproval: identity, endResultApproval: identity, buildApproval: identity, projectId: identity, repoId: identity, leadAgentId: identity, worktreeId: identity };
 const sprint = { projectId: identity, sprintId: identity, owner: identity, needs: { elements: identity } };
 const requestLinks = { projectId: identity, taskId: identity, sprintId: identity };
 const task = { story: { fields: { activity: { elements: { fields: { question: identity } } } } }, projectId: identity, taskId: identity, owner: identity, teamId: identity, sprintId: identity, worktreeId: identity };
@@ -47,7 +47,7 @@ const mockWorklist = { fields: { screens: { elements: identity }, drafts: { elem
 export const eventStructure: RedactionStructure = { taggedFields: {
   HarnessInstallStarted: { harnessId: identity, operationRequestId: identity },
   HarnessInstallFinished: { harnessId: identity, operationRequestId: identity, state: identity },
-  QuestionAsked: requestLinks, PermissionRequested: requestLinks,
+  QuestionAsked: { ...requestLinks, projectApproval: identity }, PermissionRequested: requestLinks,
   "project.OwnerTaskNotificationPlanned": { notificationId: identity, projectId: identity, taskId: identity, targetAgentId: identity },
   "project.FileSaveNoticePlanned": { noticeId: identity, projectId: identity, worktreeId: identity, targetAgentId: identity },
   "project.DesignRecorded": { projectId: identity, revisionId: identity, fileFingerprint: identity, tokensFingerprint: identity,
@@ -75,6 +75,12 @@ export const eventStructure: RedactionStructure = { taggedFields: {
     repositoryIdentity: { fields: { device: identity, inode: identity } }, folderIdentity: { fields: { device: identity, inode: identity } } } } },
   "project.CreationClaimed": { creationRequestId: identity, identity: { fields: { device: identity, inode: identity } } },
   "project.CreationFinished": { creationRequestId: identity },
+  "project.ApprovalGranted": { projectId: identity, approval: identity, requestId: identity },
+  "project.ApprovalWithdrawn": { projectId: identity, approval: identity },
+  "project.ApprovalDecided": { projectId: identity, questionId: identity, approval: identity },
+  "project.TeamDeleted": { projectId: identity, teamId: identity },
+  "project.TaskDeleted": { projectId: identity, taskId: identity },
+  "board.ChannelArchived": { channelId: identity },
   "project.GoalChanged": { projectId: identity },
   "project.ArchiveStarted": { projectId: identity },
   "project.Archived": { projectId: identity },

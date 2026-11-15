@@ -2,7 +2,16 @@
 import { store, live, engineWrite } from '../lib.js';
 import * as engine from '../engine.js';
 import { run } from './board.js';
-export { renameProject, saveGoal } from './board.js';
+export { saveGoal } from './board.js';
+export function renameProject(projectId, name) {
+  return run('project:' + projectId, () => engine.request('project.rename', mapping.projectRenamePayload(projectId, name)), 'Project renamed');
+}
+export function deleteTeam(projectId, teamId) {
+  return run('project:' + projectId, () => engine.request('project.team.delete', mapping.teamDeletePayload(projectId, teamId)), 'Team deleted');
+}
+export function changeApproval(projectId, approval, approved) {
+  return run('project:' + projectId, () => engine.request('project.approval.' + (approved ? 'grant' : 'withdraw'), mapping.projectApprovalPayload(projectId, approval)), approved ? 'Approval granted' : 'Approval withdrawn');
+}
 let mapping;
 const latestReads = new WeakMap();
 export function installMappings(value) { mapping = value; }

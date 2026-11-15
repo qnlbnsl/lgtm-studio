@@ -1,18 +1,21 @@
+import { execFileSync } from "node:child_process"
 import { randomBytes } from "node:crypto"
-import { existsSync, linkSync, readFileSync, readdirSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs"
+import { existsSync, linkSync, mkdirSync, readFileSync, readdirSync, renameSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import { afterEach, beforeEach, expect, vi } from "vitest"
 import * as Server from "../../src/api/server.ts"
+import { CommandHandler } from "../../src/commands/CommandHandler.ts"
+import { saveMockEditor } from "../../src/project/mockEditor.ts"
 import { fingerprint } from "../../src/project/artifacts.ts"
 import { saveMockEditorFile } from "../../src/project/mockEditorFile.ts"
 import { projectView } from "../../src/project/view.ts"
 import { provideBoard, snapshot } from "../board/wakeFixtures.ts"
 import { registerRebuildCheck } from "../support/rebuildCheck.ts"
 import { connect } from "../support/socketClient.ts"
-import { agentCredential, call, failureOf, freshRequest, makeRig, ownerCredential as owner, readLog, removeRig, success, type Rig } from "../support/handlerRig.ts"
+import { agentCredential, appendSetup, call, eventOf, failureOf, freshRequest, makeRig, ownerCredential as owner, readLog, removeRig, success, type Rig } from "../support/handlerRig.ts"
 import { screenBundle, seedScreens } from "./mockScreenFixtures.ts"
 
 let rig: Rig
@@ -106,4 +109,47 @@ it.live("refuses parent traversal and linked parent directories, and replaces ha
     expect(readFileSync(outside)).toEqual(original)
     expect(readFileSync(join(rig.work, "mocks/layout.pen"))).toEqual(edited)
   })
+})))
+
+const seedLinkedEditor = () => Effect.gen(function* () {
+  const f = yield* seedEditor()
+  const git = (folder: string, ...args: string[]) => execFileSync('/usr/bin/git', ['-C', folder, ...args], { stdio: 'ignore' })
+  git(rig.work, 'add', '--all')
+  git(rig.work, '-c', 'user.name=Maya Okafor', '-c', 'user.email=maya@example.test', '-c', 'commit.gpgsign=false', 'commit', '-m', 'Editor fixture')
+  const folder = join(rig.root, 'editor-worktree')
+  git(rig.work, 'worktree', 'add', '-b', 'editor', folder)
+  const worktreeId = success(yield* call(owner, 'project.workspace.register', { repoId: f.repoId, path: folder, branch: 'editor', machineId: 'local', checkout: 'worktree' })).worktreeId
+  yield* appendSetup([eventOf({ _tag: 'project.Placed', projectId: 'project', worktreeId, machineId: 'local' })])
+  const designRevision = success(yield* call(owner, 'project.design.record', { projectId: 'project', expectedRevision: f.designRevision, design: { repoId: f.repoId, worktreeId, file: 'mocks/layout.pen', components: [] } })).revisionId
+  const bundle = screenBundle()
+  const revisionId = success(yield* call(owner, 'project.mocks.record', { projectId: 'project', expectedRevision: f.revisionId, bundle: { ...bundle, designRevision, sources: bundle.sources.map((source) => ({ ...source, worktreeId })) } })).revisionId
+  return { ...f, folder, payload: { ...f.payload, worktreeId, designRevision, revisionId } }
+})
+
+it.live('r2 item 3: the editor planner reports changed design bytes before a lost project attachment', () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  const f = yield* seedLinkedEditor()
+  yield* appendSetup([eventOf({ _tag: 'project.Placed', projectId: 'project', worktreeId: 'workspace', machineId: 'local' })])
+  writeFileSync(join(f.folder, 'mocks/layout.pen'), 'external change')
+  const input = yield* (yield* CommandHandler).input({ _tag: 'owner' })
+  const result = yield* saveMockEditor(input, { requestId: freshRequest(), ...f.payload, content: Buffer.from(edited).toString('base64') }).pipe(Effect.result)
+  expect(result._tag).toBe('Failure')
+  if (result._tag === 'Failure') expect(result.failure).toMatchObject({ reason: 'registered design needs an unchanged file in a dedicated design folder' })
+})))
+
+it.live('r2 item 4: a workspace swapped between two real editor saves is refused without changing the replacement files', () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  const f = yield* seedLinkedEditor()
+  const saved = success(yield* call(owner, 'project.mocks.editor.save', { ...f.payload, content: Buffer.from(edited).toString('base64') }))
+  expect(readFileSync(join(f.folder, 'mocks/layout.pen'), 'utf8')).toBe(edited)
+  renameSync(f.folder, f.folder + '-before-swap')
+  mkdirSync(join(f.folder, 'mocks'), { recursive: true })
+  execFileSync('/usr/bin/git', ['-C', f.folder, 'init', '-b', 'editor'], { stdio: 'ignore' })
+  writeFileSync(join(f.folder, 'mocks/layout.pen'), edited)
+  writeFileSync(join(f.folder, 'mocks/page.html'), '<h1>Screen</h1>')
+  const before = yield* readLog
+  const result = yield* call(owner, 'project.mocks.editor.save', { ...f.payload, revisionId: saved.revisionId, designRevision: saved.revisionId, content: Buffer.from(original).toString('base64') })
+  expect(failureOf(result)?.reason).toBe('checkout belongs to a different repository')
+  expect(readFileSync(join(f.folder, 'mocks/layout.pen'), 'utf8')).toBe(edited)
+  expect((yield* readLog).slice(before.length)).toMatchObject([{ event: { _tag: 'CommandRefused', command: 'project.mocks.editor.save', reason: 'checkout belongs to a different repository' } }])
 })))

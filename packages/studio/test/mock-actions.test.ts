@@ -27,7 +27,7 @@ for (const [label, command, key, action] of cases) for (const rejected of [false
   const held = new Promise<void>((resolve) => { finish = resolve })
   const authoritative = { ...mocks, persisted: true }
   lib.live.on = true
-  lib.store.state = lib.guardStore({ mocks: { project: structuredClone(mocks) }, design: {}, session: { status: "in" }, ui: {}, boardRevision: 1, toasts: [] })
+  lib.store.state = lib.guardStore({ mocks: { project: structuredClone(mocks) }, design: { repository: { revisionId: "design", projectId: "project", worktreeId: "workspace" } }, session: { status: "in" }, ui: {}, boardRevision: 1, toasts: [] })
   const request = vi.fn(async (tag: string, _payload?: unknown) => {
     if (tag === command) { await held; if (rejected) throw new Error("mock revision changed; refresh and retry"); return { requestId: "ack" } }
     if (tag === "client.sequence") return { sequence: 1 }
@@ -42,6 +42,7 @@ for (const [label, command, key, action] of cases) for (const rejected of [false
   expect(lib.store.state.ui.boardBusy[key]).toBe(true)
   expect(JSON.stringify(lib.store.state.mocks)).toBe(before)
   expect(request.mock.calls.some(([tag]) => tag === command)).toBe(true)
+  if (label === "editor") expect(request.mock.calls.some(([tag]) => tag === "project.design.read")).toBe(false)
   // A repeated click while pending does not issue a second mutation.
   await action()
   expect(request.mock.calls.filter(([tag]) => tag === command)).toHaveLength(1)
@@ -52,14 +53,17 @@ for (const [label, command, key, action] of cases) for (const rejected of [false
     // records may replace the old snapshot in that one path.
     if (label !== "seen") expect(JSON.stringify(lib.store.state.mocks)).toBe(before)
     expect(lib.store.state.toasts.at(-1)).toMatchObject({ text: "mock revision changed; refresh and retry", tone: "error" })
-  } else expect(lib.store.state.mocks.project.persisted).toBe(true)
+  } else {
+    // Editor saves acknowledge before their authoritative reload finishes.
+    await vi.waitFor(() => expect(lib.store.state.mocks.project.persisted).toBe(true))
+  }
   if (label === "editor") expect(request.mock.calls.find(([tag]) => tag === command)?.[1]).toEqual({ projectId: "project", revisionId: "v1", designRevision: "design", worktreeId: "workspace", confirmed: true, content: "ZXhwb3J0" })
 })
 
 it("review item 1: marks all displayed unseen versions with one engine request", async () => {
   vi.useFakeTimers()
   lib.live.on = true
-  lib.store.state = lib.guardStore({ mocks: { project: structuredClone(mocks) }, design: {}, session: { status: "in" }, ui: {}, boardRevision: 1, toasts: [] })
+  lib.store.state = lib.guardStore({ mocks: { project: structuredClone(mocks) }, design: { repository: { revisionId: "design", projectId: "project", worktreeId: "workspace" } }, session: { status: "in" }, ui: {}, boardRevision: 1, toasts: [] })
   const request = vi.fn(async (tag: string, _payload?: unknown) => {
     if (tag === "client.sequence") return { sequence: 1 }
     if (tag === "project.mocks.read") return { items: [] }
@@ -80,7 +84,7 @@ it("review item 1: marks all displayed unseen versions with one engine request",
 it("review item 5: asks before an editor save and sends explicit confirmation only after acceptance", async () => {
   vi.useFakeTimers()
   lib.live.on = true
-  lib.store.state = lib.guardStore({ mocks: { project: structuredClone(mocks) }, design: {}, session: { status: "in" }, ui: {}, boardRevision: 1, toasts: [], dialog: null })
+  lib.store.state = lib.guardStore({ mocks: { project: structuredClone(mocks) }, design: { repository: { revisionId: "design", projectId: "project", worktreeId: "workspace" } }, session: { status: "in" }, ui: {}, boardRevision: 1, toasts: [], dialog: null })
   const request = vi.fn(async (tag: string, _payload?: unknown) => {
     if (tag === "client.sequence") return { sequence: 1 }
     if (tag === "project.mocks.read") return { items: [] }

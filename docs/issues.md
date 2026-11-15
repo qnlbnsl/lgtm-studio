@@ -14167,11 +14167,15 @@ A second fault was found by reading and is fixed too.
 The busy flags were cleared only while the page was signed in.
 A sign-out during a save could therefore leave the editor busy after the next sign-in.
 The flags are now always cleared.
-The engine still starts about eleven Git processes for each folder listing, which stays open as a cost.
+Fix round 1 of unit s10-lead reduces the workspace check from twelve Git processes to five when all registrations share one real path.
+A folder listing retains its tracked-file, status and path checks.
 The final full check of `area/terminal` then got past the save and failed later in the same journey.
 The conflict comparison did not appear within five seconds of a refused save.
 The journey passed three of three times when run alone.
-The repeated workspace check of issue 936 is the likely cause, and it stays open.
+The repeated workspace check of issue 936 was the likely cause.
+Fix round 1 removes that repetition within one uninterrupted gate.
+The later s10-lead full browser run still reproduced a busy Files save beyond five seconds.
+Issue 966 records that remaining timing failure separately from the completed process reduction.
 
 The separate full browser run during round 2 reproduced both failures.
 Its result was 60 passed and two failed in 10.0 minutes.
@@ -14267,7 +14271,7 @@ The original full check remains a failed run.
 ## 936. A mock editor save waited for about eighty Git processes before it said "saved".
 
 Found: 2026-11-14, by reading the code, after the Mocks journey missed "Editor changes saved" within five seconds in three full checks.
-Status: partly fixed.
+Status: fixed in the page and in fix round 1 of unit s10-lead.
 
 The page showed "Editor changes saved" only after four steps finished in order.
 The steps were a design read, the save, a mocks reload and a second design read.
@@ -14276,12 +14280,31 @@ Each time it checks the workspace again, and one workspace check starts about el
 The whole wait is about eighty Git processes in a row, by a count from the code.
 Under the load of a full check that takes four to five seconds.
 The page now shows the notice when the save replies, and the two reloads run in the background.
-Two parts stay open.
-The page still reads the design before the save, only to learn the worktree.
-The engine still checks the workspace five times inside one save.
+The page now takes the design worktree from its already loaded store.
+The engine reads the design, tokens, components and mock sources and stages the file inside one uninterrupted Git gate.
+The workspace is checked once in that operation.
+The earlier durable-attempt preflight retains its own check because its gate is released before staging.
+No check is reused across a gate release or between requests.
+A real counting wrapper measured twelve Git processes for one workspace check before the change and five afterwards.
+It measured sixty-six processes for one editor save before the change and fifteen afterwards, including the separate preflight.
 The same repeated workspace check is behind issue 928, and probably behind other save journeys that fail once in a full check.
-A workspace check that is done once for each request, or cached for a short time, would cut all of them.
+Each distinct real path is registered once per workspace check.
+Registration obtains both Git directories with one bounded process.
+The state read reuses that registration only within the same gate.
+All path, metadata, branch, byte and fingerprint checks remain in place.
+A swapped workspace is still refused on the next request.
 
+
+The Mocks screen now loads its recorded design when it opens.
+Its editor save uses that record and is disabled until the record is available.
+The first browser rerun exposed this missing preload after the save-time read was removed.
+With one browser worker, Mocks changed from 15.1 seconds to 10.5 seconds.
+Files changed from a failure at 25.6 seconds to a pass at 40.0 seconds.
+The website Git journey changed from a six-minute timeout to a pass in 4.5 minutes.
+These are host journey measurements, not an isolated benchmark.
+The later full browser run passed Mocks in 17.8 seconds.
+Files and website Git still failed their restored limits in that run.
+Issue 966 records these remaining timing failures.
 
 ## 937. The owner's feedback on the "Add account" dialog.
 
@@ -14429,3 +14452,337 @@ It wrote a new note, "Lead creates no teams unasked", into that same memory fold
 It also ran the owner's session-start hooks and reported their notices in the project chat.
 So an agent in a project and a terminal session can change each other's standing rules without either one being told.
 The design of the `~/.lgtm` folder should decide which settings, memory and hooks an agent in a project gets.
+
+## 947. Project leads received worker advice and started planning before an owner decision.
+
+Found on 2026-11-14 while implementing unit s10-lead.
+Status: fixed in this unit.
+The lifecycle launched the role `project-lead`, which the role parser treated as an unknown worker role.
+New projects now launch `lead:project-lead` with the name "Project lead".
+The old role spelling also receives lead advice when historical agents ask for orientation.
+New projects start in Define.
+Owner decisions now gate planning and building independently of the displayed stage.
+The gates also support an approved request to skip planning.
+An owner may approve skipping planning and building in one request.
+
+## 948. A team could not be deleted, and its board had no archive event.
+
+Found on 2026-11-14 while implementing unit s10-lead.
+Status: fixed in this unit.
+Tasks require a team, so deleting a team requires deleting or moving its tasks first.
+Only tasks whose entire stored state history remains in the queue can be deleted.
+A team cannot be deleted while one of its agents is running.
+Deleting a team withdraws its open posts and archives its board channel as read-only history.
+The archived composer is disabled and explains that the history is kept.
+The stored events keep the deleted task and team history.
+The team's branch and worktree folder remain in place.
+
+## 949. Workflow phase times still come from sample calculations.
+
+Found again on 2026-11-14 while implementing unit s10-lead.
+Status: open under issues 846 and 941.
+The new project's Define stage is now mapped to the website.
+The Workflow screen still calculates sample phase times from its created-at field.
+Unit s10-lead does not build phase timing records.
+
+## 950. The editor control test assumed that its save waited for the reload.
+
+Found on 2026-11-14 during the remote regression run.
+Status: fixed in the test.
+Issue 936 deliberately acknowledges an editor save before reloading its records.
+The control test checked the reloaded records immediately after the acknowledgement.
+The test now waits for the authoritative read before checking those records.
+The editor's product behaviour is unchanged.
+
+## 951. Adding the archive fixture shifted two board schema assertions.
+
+Found on 2026-11-14 during the final local check.
+Status: fixed in the fixture.
+Two schema tests address the wake fixture by its array position.
+Inserting the archive fixture before it shifted that position.
+The new archive fixture now follows the existing fixtures.
+The wake assertions and the archive event both keep their coverage.
+
+## 952. The shared test rig depended on the host's directory mask.
+
+Found on 2026-11-14 after Addition 2 moved the tests to this computer.
+Status: fixed in the test rig.
+This computer uses a directory mask of 002.
+The shared test rig therefore made its synthetic home writable by its group.
+The sign-in security checks correctly refused that home.
+The rig now creates its temporary directories with mode 0700.
+The production ownership and symbolic link checks are unchanged.
+
+## 953. The channel mapping assertion omitted the new archive state.
+
+Found on 2026-11-14 during the final local check.
+Status: fixed in the test.
+The website mapping now carries an explicit archive flag for each channel.
+The existing complete-object assertion still expected the older shape.
+It now includes the false flag for active channels.
+The browser journey checks the disabled composer for an archived channel.
+
+## 954. The broader website journey still used the old rename dialog.
+
+Found on 2026-11-14 during the full local browser run.
+Status: fixed in the test.
+The project settings journey already used the new inline name field.
+The broader projects and board journey still looked for the old Rename button and dialog.
+It now saves the name through the same inline field.
+
+## 955. Slow workspace checks exposed issue 936 in the browser journeys.
+
+Found on 2026-11-14 after Addition 2 moved the tests to this computer.
+Status: fixed in the workspace checks, with the broad waits reverted in fix round 1.
+This records review finding M3.
+Issue 936 tracks the expensive repeated workspace checks behind the slow saves.
+The earlier implementation widened assertions for Git, Files and Mocks to thirty seconds.
+It also enlarged the Git and Mocks journey budgets and the new project dialog-close wait.
+Those changes are reverted.
+The wait for merge review to be enabled before clicking remains.
+The two-minute budget for the eight-viewport design journey remains because no single assertion changed.
+The round fixes repeated workspace checks instead of widening operation assertions.
+Issue 936 records the measured process counts and browser times.
+
+## 956. The new browser fixture needed an explicit sample owner name.
+
+Found on 2026-11-14 while reviewing the browser failure artifacts.
+Status: fixed in the new fixture.
+An engine without a saved display name can suggest the host's Git user name.
+The new lead journey now explicitly saves Maya Okafor in its temporary settings.
+The journey checks that sample name after signing in.
+
+## 957. Existing projects needed owner controls for approvals and narrower gates.
+
+Found in review round 1 on 2026-11-14.
+This records review findings M1, m1, m2 and m4.
+Status: fixed in the owner requests and project settings.
+The owner can grant or withdraw end result and building approvals directly.
+Withdrawing the end result also withdraws building.
+Approval lasts until it is withdrawn.
+Approval never moves an existing Review or Handover project backwards.
+Round 2 found that the earlier exception still refused a worker’s finish note.
+The owner of an existing task outside the queue may now add notes and move it to review or completion with a note without a new approval.
+Changing a task title or assignment still requires end result or skip-planning approval.
+A lead’s planning notes and sprint edits, including project.sprint.complete, require that first approval too.
+An agent’s project.stage.set requires it for every stage except Define.
+Setting Build, Review or Handover also requires building approval.
+Moving a task out of the queue, starting or resuming workers and prompting idle workers require building approval.
+The owner’s own commands bypass these approval gates.
+Answering a queued task's linked question cannot bypass the building gate.
+The project settings row makes these controls available without requiring a lead to ask.
+
+## 958. Approval cards hid their authority and did not tell the lead whether approval was recorded.
+
+Found in review round 1 on 2026-11-14.
+This records review findings M2.
+Status: fixed in engine metadata, answer delivery and both card layouts.
+The engine supplies a fixed effect sentence for each approval kind.
+The website derives that sentence from projectApproval even for older requests.
+The sentence appears above the lead's own text.
+The approval button reads Accept.
+Typing another answer shows a warning before sending.
+The delivered answer and the answered card state whether approval was recorded.
+Only the exact Accepted answer grants approval.
+
+## 959. Three approval gates and two compatibility paths lacked regression tests.
+
+Found in review round 1 on 2026-11-14.
+This records review findings m3.
+Status: fixed in the regression coverage.
+Worker resume needs building approval after scope is approved.
+Creating an active task needs the same approval.
+Changing the stage to Build needs the same approval.
+The historical project-lead spelling receives lead orientation.
+The messages screen build fails when its archive replacement target is missing or duplicated.
+Temporary removal of each check makes its corresponding new test fail.
+The checks are restored before the passing verification.
+
+## 960. The opening instruction confused ordering, request fields and approval scope.
+
+Found in review round 1 on 2026-11-14.
+This records review findings m5 and m7.
+Status: fixed in the opening instruction and refusal text.
+Define comes first, and sizing happens inside it.
+Reading updates are posted in the project chat.
+The text field carries the long proposal, and the owner opens the Details control.
+Skipping planning alone cannot authorize starting workers or building.
+After a denial, the lead asks what to change and does not repeat the same request unchanged.
+The instruction and both refusal reasons name ask and the projectApproval field.
+The nitpick instruction explicitly names skip-planning-and-build.
+
+## 961. Define had no current stage dot, and an archived team channel lost its readable name.
+
+Found in review round 1 on 2026-11-14.
+This records review findings m6.
+Status: fixed in the stage list, archive record and website.
+The browser reproduced a deleted team's channel as Team followed by an internal identifier.
+Channel archival now records the last team name for display.
+The channel list shows that name with an Archived mark.
+The original channel identity and post history remain unchanged.
+Define is now the first current dot in the projects table.
+The result lists these changes and the earlier removed Rename dialog and added Actions column.
+
+## 962. Deleted teams left group labels on stopped agents, and deleted tasks vanished from history reads.
+
+Found in review round 1 on 2026-11-14.
+This records review findings m8 and m11.
+Status: fixed in the deletion and task history projections.
+The stored team deletion removes its group from the stopped or crashed members in the views.
+Other groups remain on those agents.
+Replay updates both the roster and the board views from that deletion.
+Deleted tasks move to a separate history collection and leave the active task list.
+The task history request still enforces the project's read permissions.
+Its last entry says Task deleted and carries a deleted flag.
+Deleted tasks remain unavailable for edits, reassignment and linked work.
+
+## 963. The feature quotation and the review issue records were incomplete.
+
+Found in review round 1 on 2026-11-14.
+This records review findings m9 and m10.
+Status: fixed in the feature entry and issues 955 through 962.
+The one-off repository agent entry now includes the owner's quoted words.
+It still states the undecided worktree, branch, merge and tree presentation.
+The existing-project lock, stage regression, withdrawal, approval wording, bypasses and stage dots now have issue records.
+The wait-regression entry explicitly names issue 936.
+
+## 964. The project event roundtrip fixture omitted the direct approval events.
+
+Found during fix round 1 on 2026-11-14.
+Status: fixed in the event fixture.
+The inventory named both direct approval events, but its roundtrip input omitted them.
+The focused run caught that mismatch before the full check.
+The fixture now covers their receipt identities and redaction alongside every other project event.
+
+## 965. The idle-worker gate hid a context-access refusal.
+
+Found during the full local check in fix round 1 on 2026-11-14.
+Status: fixed in the prompt admission order.
+The new building gate ran before the existing context access check.
+A revoked source therefore returned the approval refusal instead of the established context refusal.
+Prompt admission now checks context access before checking approval to queue work.
+Both checks run before a delivery can be recorded.
+The existing observation safety assertion remains unchanged.
+
+## 966. Five browser journeys still failed with their restored limits.
+
+Found during fix round 1 on 2026-11-14.
+Status: open for further timing investigation.
+The restored five-second assertion expired while two legacy Git merge dialogs still showed a pending submission.
+The cases were an owner approval into main and an approval with stale reported evidence into master.
+The broader projects and board journey also remained on All projects five seconds after pressing Create project.
+The equivalent simple master merge and the dedicated creation journeys passed.
+These failures do not establish which engine or page phase was slow.
+The website Git journey reached its six-minute overall limit while a refresh was busy after merging.
+The Files journey still showed its save as busy when the five-second assertion expired.
+The full suite passed fifty-eight journeys and failed these five in 15.8 minutes with two workers.
+The unchanged one-worker rerun passed both legacy Git cases, project creation and Files.
+Their times were 17.7 seconds, 29.7 seconds, 50.7 seconds and 35.9 seconds respectively.
+Website Git again reached its six-minute limit, with a refresh and diff still loading.
+The rerun passed four journeys and failed one in 8.3 minutes.
+The earlier one-worker website Git measurement passed in 4.5 minutes.
+The later failures leave its timing unresolved.
+No assertion or operation deadline is widened.
+Issues 928 and 936 record the completed workspace and save optimizations.
+The orchestrator supplied a baseline on 2026-11-14 from master before this unit.
+The website Git journey also reached the 360-second limit on this computer with one browser worker.
+That run used 303 seconds of system time and 116 seconds of user time.
+The timeout therefore predates this unit.
+A few unit tests ran at the same time, so this is one loaded sample.
+
+## 967. A withdrawn end result left an open building request unanswerable.
+
+Found in review round 2 on 2026-11-14.
+This records review finding m1.
+Status: fixed in the approval answer planner.
+A denial closes the request even after the first approval is withdrawn.
+Accepting it then closes the request without recording an approval event.
+The card and the delivered answer both say that building approval was not recorded because the end result or skipping planning is no longer approved.
+
+## 968. Approval outcomes described the answer text instead of the permissions that remained granted.
+
+Found in review round 2 on 2026-11-14.
+This records review findings m4 and m5.
+Status: fixed in the stored answer outcome and both card layouts.
+A direct owner grant remains effective when the owner later declines an already open request.
+The engine now records its fixed outcome on the answer event using the approvals that exist after that answer.
+The client request read and both card layouts use that same outcome.
+The ask schema refuses the engine-owned projectApprovalEffect field instead of silently ignoring it.
+The schema keeps it only as an optional impossible value in that command.
+Stored question metadata still accepts the engine-written sentence.
+The gate list in 957 now includes project.stage.set and project.sprint.complete.
+
+## 969. The editor save changed refusal order, and its shared-check helpers needed an explicit boundary.
+
+Found in review round 2 on 2026-11-14.
+This records review findings m2 and m3.
+Status: fixed without another Git process.
+The metadata-only design display checks now run before the shared gate.
+The file display and design evidence checks run before the payload workspace attachment check, as they did before round 1.
+A regression reproduces a changed design file and a lost project attachment together.
+It now returns registered design needs an unchanged file in a dedicated design folder before project is unavailable to this caller.
+The uninterrupted gate and every workspace check remain in place.
+Comments name the checking callers of the display, evidence and artifact helpers.
+A second real editor save refuses a checkout swapped since the first save and leaves the replacement bytes unchanged.
+The refusal still writes its normal audit event.
+
+## 970. A shell refresh can swallow Clear token in the retired admin page.
+
+Found during investigation round 3 on 2026-11-14.
+Status: open in the retired page under packages/web.
+The orchestrator measured five failures in thirteen runs on this branch.
+The orchestrator measured no failures in nine runs on master at 2518bfc.
+Those runs used this computer and one browser worker.
+Temporary instrumentation reproduced one failure in five more branch runs.
+The failing assertion still expected No token set within five seconds.
+After removing the instrumentation, fifteen repetitions passed seven times and failed eight times in 2.3 minutes.
+Five failures reached the No token set assertion at admin-pages.spec.ts:88.
+Three failures stopped earlier at line 85 because saving on blur left the New token input populated.
+Those three earlier failures were not instrumented, so their event sequence is not established by the Clear token trace.
+
+The failing trace records the exact interleaving using milliseconds from the browser's performance clock.
+At 731.1 milliseconds, settings committed busy false, offline false, uncertain false and tokenSet true.
+At 746.8 milliseconds, the event stream delivered client.AlertDeliveryFailed at sequence 29.
+At 747.3 milliseconds, the watcher requested client.snapshot.
+That request succeeded at 750.9 milliseconds with sequence 29.
+The shell still held collection reads from sequence 28, so complete became false.
+At 754.7 milliseconds, settings committed offline true and locked true.
+The busy and uncertain flags both remained false.
+The connection stayed Live, and its generation stayed zero.
+Here offline is the local name of useMutationDisabled, which also covers incomplete collection reads.
+It does not establish a network outage.
+
+At 762.3 milliseconds, the shell sent client.requests as request 32 on socket 18.
+At 763.5 milliseconds, Clear token received pointerdown while that read was in flight.
+The button's own disabled property was false.
+Its ancestor fieldset's disabled property was true, and the button matched :disabled.
+The same state held at pointerup at 763.7 milliseconds.
+No mousedown, mouseup, click or clearToken handler entry followed.
+Chromium suppressed the activation after the fieldset became disabled during the click.
+No token-clear request was sent.
+The client.requests read succeeded at 766.5 milliseconds with sequence 29.
+The subsequent client.alerts.list and client.sequence reads succeeded.
+At 772.9 milliseconds, settings was unlocked again, with Token set and Carrier token saved. still displayed.
+Waiting longer for the assertion cannot recover the missing action.
+A passing control trace records all five pointer and mouse events, the unlocked clearToken handler, its token-clear request and a successful reply.
+
+The uninstrumented settings page, admin API helper, ShellDataProvider, watchSituation and journey are byte-identical to master at 2518bfc.
+The alert delivery, reactor and token command files are also byte-identical to that revision.
+The watcher refreshes its snapshot for every client.Alert event.
+ShellDataProvider disables mutations until the new snapshot and collection reads agree.
+That existing sequence permits the captured loss of activation on master too.
+The finite run counts alone do not establish why the earlier branch sample failed more often.
+
+The setup's ordinary ask succeeds with only text and its question appears in the browser.
+The new approvalQuestion path immediately returns without additional approval metadata for that ordinary ask.
+The optional impossible projectApprovalEffect field permits omission.
+The journey never answers the question, so its approval answer planner is not invoked.
+The captured failure involves a successful refresh after an alert event, rather than a refused setup command, a failed collection read or a reconnect.
+No retired-page source, journey assertion or wait was changed for this investigation.
+Temporary traces contained request names, event tags, sequence numbers and lock flags, without request payloads or token values.
+
+The orchestrator then ran the same journey fifteen times in a row on `master` at `2518bfc`, with one worker.
+Four of the fifteen runs failed.
+Two failed at line 88, one at line 85 and one at line 96.
+So `master` shows the same failures on this computer, and the earlier nine clean runs were too small a sample.
+The lead definition unit did not introduce this race.

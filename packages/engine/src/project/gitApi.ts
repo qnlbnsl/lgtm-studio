@@ -1,3 +1,6 @@
+import { realpath } from "node:fs/promises"
+import { isAbsolute } from "node:path"
+import { cleanText } from "./git/paths.ts"
 import * as Effect from "effect/Effect"
 import * as Semaphore from "effect/Semaphore"
 import { type Runtime, type Input, refused, CommandUncertain } from "../commands/internal.ts"
@@ -5,7 +8,7 @@ import type { Workspace } from "@lgtm/contracts"
 import { agentReadReply } from "../api/reads.ts"
 import { canReadProject } from "./access.ts"
 import { own, projectView } from "./view.ts"
-import { makeGitService, type GitService, type GitOperation, type Conflict } from "./git/index.ts"
+import { makeGitService, type GitService, type GitOperation, type Conflict, type Repository } from "./git/index.ts"
 
 // One queue owner per command runtime. The gate survives settings replacement,
 // including overlapping roots. It never releases an active child operation early.
@@ -62,11 +65,24 @@ const checkedWorkspace = (input: Input, workspace: Workspace, git: GitService) =
   yield* localMachine(workspace.machineId)
   yield* safePath(input, workspace.path)
   const { repository, location } = yield* repositoryPath(input, workspace.repoId)
-  const main = yield* gitCall(git.register(repository.path))
-  const local = yield* gitCall(git.register(location.path))
-  const checkout = yield* gitCall(git.register(workspace.path))
+  // This map belongs to this check only. Never retain it across a gate release.
+  const registrations = new Map<string, Repository>()
+  const register = (path: string) => Effect.gen(function* () {
+    const key = yield* Effect.tryPromise({ try: async () => {
+      if (!cleanText(path) || !isAbsolute(path)) throw new Error()
+      return await realpath(path)
+    }, catch: () => refused("Git: invalid_path") })
+    const previous = registrations.get(key)
+    if (previous !== undefined) return previous
+    const checked = yield* gitCall(git.register(path))
+    registrations.set(key, checked)
+    return checked
+  })
+  const main = yield* register(repository.path)
+  const local = yield* register(location.path)
+  const checkout = yield* register(workspace.path)
   if (main.commonDirectory !== local.commonDirectory || main.commonDirectory !== checkout.commonDirectory) return yield* refused("checkout belongs to a different repository")
-  const state = yield* gitCall(git.state(checkout.path))
+  const state = yield* gitCall(git.state(checkout.path, undefined, checkout))
   if (state.branch !== workspace.branch) return yield* refused("registered workspace branch changed; restore the registered branch")
   return workspace
 })

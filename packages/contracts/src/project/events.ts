@@ -1,3 +1,4 @@
+import { QuestionId, RequestId } from "../ids.ts"
 import * as Schema from "effect/Schema"
 import { GitAttempt, GitEvidence, GitMainReview } from "./git.ts"
 import { CreationFolderIdentity, FileSaveNotice, OwnerTaskNotification, Project, ProjectCreation, ProjectId, ProjectName, ProjectSettings, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskId, TaskState, Team, Workspace } from "./schema.ts"
@@ -30,6 +31,11 @@ export const ProjectEvent = Schema.Union([
   Schema.TaggedStruct("project.Placed", { projectId: ProjectId, machineId: ProjectName, worktreeId: Workspace.fields.worktreeId }),
   Schema.TaggedStruct("project.PreferencesChanged", { projectId: ProjectId, shell: ProjectName }),
   Schema.TaggedStruct("project.Renamed", { projectId: ProjectId, name: ProjectName }),
+  Schema.TaggedStruct("project.ApprovalGranted", { projectId: ProjectId, approval: Schema.Literals(["end-result", "build"]), requestId: RequestId }),
+  Schema.TaggedStruct("project.ApprovalWithdrawn", { projectId: ProjectId, approval: Schema.Literals(["end-result", "build"]) }),
+  Schema.TaggedStruct("project.ApprovalDecided", { projectId: ProjectId, questionId: QuestionId, approval: Schema.Literals(["end-result", "build", "skip-planning", "skip-planning-and-build"]), approved: Schema.Boolean }),
+  Schema.TaggedStruct("project.TeamDeleted", { projectId: ProjectId, teamId: Team.fields.teamId }),
+  Schema.TaggedStruct("project.TaskDeleted", { projectId: ProjectId, taskId: TaskId }),
   Schema.TaggedStruct("project.StageChanged", { projectId: ProjectId, stage: ProjectStage }),
   Schema.TaggedStruct("project.TeamAdded", Team.fields),
   Schema.TaggedStruct("project.SprintAdded", Sprint.fields),

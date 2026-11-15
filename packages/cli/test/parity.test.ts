@@ -190,11 +190,15 @@ for (const { command, words, form } of invocations) {
       "project.goal.set": { projectId: "project", goal: "New goal" },
       "project.archive": { projectId: "project" },
       "project.restore": { projectId: "project" },
+      "project.approval.grant": { projectId: "project", approval: "end-result" },
+      "project.approval.withdraw": { projectId: "project", approval: "build" },
       "project.rename": { projectId: "project", name: "Renamed" },
       "project.place": { projectId: "project", worktreeId: "workspace" },
       "project.preferences.set": { projectId: "project", shell: "zsh" },
       "project.stage.set": { projectId: "project", stage: "build" },
       "project.read": { projectId: "project", collection: "tasks", after: "task", limit: 20 },
+      "project.team.delete": { projectId: "project", teamId: "team" },
+      "project.task.delete": { projectId: "project", taskId: "task" },
       "project.team.create": { projectId: "project", name: "Build", worktreeId: "workspace", stage: "build", area: "Console" },
       "project.sprint.create": { projectId: "project", label: "SP-01", name: "Foundation", goal: "Store work", phase: "Build", owner: "lead", needs: [] },
       "project.sprint.update": { projectId: "project", sprintId: "sprint", phase: "Review", needs: [] },
@@ -303,6 +307,10 @@ for (const { command, words, form } of invocations) {
         "project.workspaces": { ...base, items: [], next: "workspace" },
         "project.create": { ...base, projectId: "project" },
         "project.read": { ...base, data: "Data from another agent [project-boundary] (delivery read):\n{\"items\":[]}\nEnd data [project-boundary]" },
+        "project.approval.grant": base,
+        "project.approval.withdraw": base,
+        "project.team.delete": base,
+        "project.task.delete": base,
         "project.team.create": { ...base, teamId: "team", channelId: "channel", group: "team:project/team" },
         "project.sprint.create": { ...base, sprintId: "sprint" },
         "project.task.create": { ...base, taskId: "task" },
@@ -358,7 +366,7 @@ it("P02 (7.5) catches MCP omitting an agent command, adding an unreviewed/owner/
   // needs review, and the CLI inventory above independently catches additions.
   expect([...names].sort()).toEqual([
     "answer", "ask", "board.acknowledge", "board.channels", "board.close", "board.members",
-    "board.open", "board.post", "board.read", "board.status", "cancel-reply", "client.event", "client.roster", "client.snapshot", "client.thread", "compact", "group", "pass-up", "project.changes", "project.commit.files", "project.conflict", "project.context.search", "project.design.read", "project.design.record", "project.diff", "project.git.state", "project.history", "project.mocks.artifact", "project.mocks.read", "project.mocks.record", "project.mocks.reviews.read", "project.mocks.screen.read", "project.read", "project.requests", "project.review", "project.review.report", "project.review.status", "project.sprint.complete", "project.sprint.create", "project.sprint.update", "project.stage.set", "project.task.create", "project.task.history", "project.task.note", "project.task.update", "project.team.create", "prompt", "release", "resume", "roles.handoff", "roles.orient", "start", "stop", "wait",
+    "board.open", "board.post", "board.read", "board.status", "cancel-reply", "client.event", "client.roster", "client.snapshot", "client.thread", "compact", "group", "pass-up", "project.changes", "project.commit.files", "project.conflict", "project.context.search", "project.design.read", "project.design.record", "project.diff", "project.git.state", "project.history", "project.mocks.artifact", "project.mocks.read", "project.mocks.record", "project.mocks.reviews.read", "project.mocks.screen.read", "project.read", "project.rename", "project.requests", "project.review", "project.review.report", "project.review.status", "project.sprint.complete", "project.sprint.create", "project.sprint.update", "project.stage.set", "project.task.create", "project.task.delete", "project.task.history", "project.task.note", "project.task.update", "project.team.create", "project.team.delete", "prompt", "release", "resume", "roles.handoff", "roles.orient", "start", "stop", "wait",
   ]);
   expect(new Set(names).size).toBe(names.length);
   const nonAgent = Object.entries(commandAccess).filter(([, kinds]) => !(kinds as ReadonlyArray<string>).includes("agent")).map(([name]) => name);

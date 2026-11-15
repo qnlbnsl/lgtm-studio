@@ -15,6 +15,7 @@ export function mockControlsSource(path: string, source: string): string {
     replace("return maps().mapMocks(items, approval);", "return maps().mapMocks(items, approval, reviews);")
   }
   if (path === "js/screens/mocks.js") {
+    replace("useEffect(() => { if (live.on) void mocks.loadMocks(p.id); }, [p.id, s.boardRevision]);", "useEffect(() => { if (live.on) { void mocks.loadMocks(p.id); void mocks.loadDesign(p.repo); } }, [p.id, p.repo, s.boardRevision]);")
     source = "import * as controls from '../live/mock-controls.js';\n" + source
     replace("${live.on ? html`<${mocks.Display} key=${m.designRevision} title=\"Mock design editor\"", "${live.on ? html`<${controls.SaveEditor} project=${p} mocks=${m} /><${mocks.Display} key=${m.designRevision} title=\"Mock design editor\"")
     const approveAnchor = "          ${sc.status !== 'approved' && html`"

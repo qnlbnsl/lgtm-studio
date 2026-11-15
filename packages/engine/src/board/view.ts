@@ -143,6 +143,10 @@ export const boardAfter = (state: BoardView, envelope: Pick<EventEnvelope, "even
       }
       return next;
     }
+    case "board.ChannelArchived": {
+      const channel = get(state.channels, event.channelId);
+      return channel === undefined ? state : { ...state, channels: put(state.channels, event.channelId, { ...channel, archived: true, ...(event.displayName === undefined ? {} : { displayName: event.displayName }) }) };
+    }
     case "board.ChannelMembersChanged": {
       const channel = get(state.channels, event.channelId);
       if (channel === undefined || channel.kind !== "plain") return state;

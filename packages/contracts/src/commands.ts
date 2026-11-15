@@ -86,7 +86,7 @@ export const EngineCommandsRpcGroup = RpcGroup.make(
   }),
   Rpc.make("pass-up", { payload: { ...request, subject: Subject }, success: Ack, error: Refused }),
   Rpc.make("ask", {
-    payload: { ...request, text: Schema.String, ...QuestionMetadataFields },
+    payload: { ...request, text: Schema.String, ...QuestionMetadataFields, projectApprovalEffect: Schema.optionalKey(Schema.Never) },
     success: Schema.Struct({ ...request, questionId: QuestionId }), error: Refused
   }),
   Rpc.make("wait", {

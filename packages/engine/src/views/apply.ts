@@ -2,7 +2,7 @@ import type { AgentChoice, AgentConfiguration } from "@lgtm/contracts";
 import { configurationMatches } from "../runner/choices.ts";
 import { safeStartFailure, type StartFailure } from "@lgtm/contracts/startFailure";
 import {
-  EventSequence as EventSequenceSchema, eventEffect,
+  EventSequence as EventSequenceSchema, eventEffect, projectTeamGroup, type ProjectView,
   type ProjectRequestLink, type QuestionMetadata, type Account, type Actor, type Caller, type PermissionAction, type AgentId, type Delivery, type Event, type EventEnvelope, type EventSequence, type LifecycleState,
   pieceNamespaces, EngineEvent, type PieceNamespace, type PermissionOption, type SessionReference, type WaitMember,
 } from "@lgtm/contracts";
@@ -63,6 +63,7 @@ interface RequestRow extends RequestTimes, ProjectRequestLink {
 }
 
 interface QuestionRow extends RequestTimes, QuestionMetadata {
+  readonly projectApprovalOutcome?: import("@lgtm/contracts").ProjectApprovalOutcome;
   readonly questionId: string;
   readonly agentId: AgentId;
   readonly status: "open" | "answered";
@@ -232,6 +233,14 @@ const agentsAfter = (state: State, event: Event): State["agents"] => {
       ...row, configuration: { desired: desiredOf(row), ...(event.revision === undefined ? {} : { revision: event.revision }),
         ...(event.applied === undefined ? {} : { applied: event.applied }), status: event.status, reason: event.reason },
     }));
+    case "project.TeamDeleted": {
+      const view = state.project as ProjectView, team = lookup(view.teams, JSON.stringify([event.projectId, event.teamId]));
+      if (team === undefined) return state.agents;
+      const group = team.group ?? projectTeamGroup(event.projectId, event.teamId);
+      return Object.fromEntries(Object.entries(state.agents).map(([id, agent]) => [id,
+        lookup(view.agentProjects, id) === event.projectId && agent.groups.includes(group)
+          ? { ...agent, groups: agent.groups.filter((label) => label !== group) } : agent]));
+    }
     case "AgentGrouped": return change(state.agents, event.agentId, (row) => ({ ...row, groups: event.groups }));
     case "ModeChanged": return change(state.agents, event.agentId, (row) => ({
       ...row, mode: event.mode, permission: event.level,
@@ -304,7 +313,7 @@ const questionsAfter = (state: State, { event, sequence, occurredAt }: EventEnve
     case "QuestionAsked": return put(state.questions, event.questionId, {
       questionId: event.questionId, agentId: event.agentId, status: "open", holder: event.holder,
       deliveryId: event.deliveryId, text: event.text, sourceSequence: sequence, openedAt: occurredAt,
-      ...Object.fromEntries(["title", "recommendation", "proposedAnswer", "projectId", "taskId", "sprintId"]
+      ...Object.fromEntries(["title", "recommendation", "proposedAnswer", "projectId", "taskId", "sprintId", "projectApproval", "projectApprovalEffect"]
         .flatMap((key) => event[key as keyof typeof event] === undefined ? [] : [[key, event[key as keyof typeof event]]])),
     });
     case "QuestionMoved": return change(state.questions, event.questionId, (row) => ({
@@ -312,6 +321,7 @@ const questionsAfter = (state: State, { event, sequence, occurredAt }: EventEnve
     }));
     case "QuestionAnswered": return change(state.questions, event.questionId, (row) => ({
       ...row, status: "answered", closedSequence: sequence, answeredAt: occurredAt, answer: event.text, answeredBy: event.answeredBy, answerDeliveryId: event.deliveryId,
+      ...(event.projectApprovalOutcome === undefined ? {} : { projectApprovalOutcome: event.projectApprovalOutcome }),
     }));
     default: return state.questions;
   }

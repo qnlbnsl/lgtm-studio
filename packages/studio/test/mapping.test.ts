@@ -67,6 +67,7 @@ describe("machines, repositories and workspaces", () => {
 describe("projects and teams", () => {
   it("maps a project with its branch, folder, stage and lead", () => {
     expect(mapProject(section.projects[0]!, section.workspaces)).toEqual({
+      approvals: { endResult: false, build: false },
       worktree: "wt-project", id: "pj-orchard", repo: "rp-orchard", name: "Harvest report", prefix: "HR", goal: "Count the apples every morning.",
       stage: "Build", phase: "build", branch: "feature/harvest", folder: "/srv/repos/orchard/.worktrees/harvest", machine: "local",
       lead: "ag-lead", shell: "bash", createdAt: null, archived: false, hasMocks: false, tests: "on", agentReview: "on"

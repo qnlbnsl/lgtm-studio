@@ -7,7 +7,7 @@ const T = Date.now();
 const at = (msAgo) => T - msAgo;
 
 // ---- vocabulary ------------------------------------------------------------
-export const STAGES = ['Design', 'Plan', 'Build', 'Review', 'Hand over'];
+export const STAGES = ['Define', 'Design', 'Plan', 'Build', 'Review', 'Hand over'];
 export const PHASES = [
   { id: 'define', n: 1, name: 'Define', stage: null, what: 'Say what to change. Mockups are made if screens change, and the end-result page is written.' },
   { id: 'design', n: 2, name: 'Design and teams', stage: 'Design', what: 'The code is read, the work is split by domain, and sprints and teams are set.' },

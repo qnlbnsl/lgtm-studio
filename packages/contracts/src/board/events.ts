@@ -2,6 +2,7 @@ import * as Schema from "effect/Schema"
 import { AgentId } from "../ids.ts"
 import { BoardAddressee, BoardAuthor, ChannelId, CloseOutcome, Disposition, PostId, WakeId } from "./ids.ts"
 import { BoardChannelName, BoardPostFields } from "./schemas.ts"
+import { ProjectName } from "../project/schema.ts"
 import { DeliveryContextReferences } from "../project/context.ts"
 
 // Event identity names follow B13; command and read-page names stay unchanged.
@@ -21,6 +22,7 @@ export const BoardChannelOpened = Schema.TaggedStruct("board.ChannelOpened", {
 
 export const BoardEvent = Schema.Union([
   BoardChannelOpened,
+  Schema.TaggedStruct("board.ChannelArchived", { channelId: ChannelId, displayName: Schema.optionalKey(ProjectName) }),
   Schema.TaggedStruct("board.ChannelMembersChanged", {
     channelId: ChannelId, membersAdded: Schema.Array(BoardAddressee), membersRemoved: Schema.Array(BoardAddressee)
   }),
@@ -54,6 +56,7 @@ export type BoardEvent = typeof BoardEvent.Type
 export const boardEventTags = BoardEvent.members.map((event) => event.fields._tag.schema.literal)
 export const boardVisibility = {
   "board.ChannelOpened": "owner-only",
+  "board.ChannelArchived": "owner-only",
   "board.ChannelMembersChanged": "owner-only",
   "board.ManagerChanged": "owner-only",
   "board.PostWritten": "owner-only",

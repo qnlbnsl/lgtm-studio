@@ -13,6 +13,8 @@ export const decisionProject = (prefix = "one") => Effect.gen(function* () {
     eventOf({ _tag: "project.RepositoryAdded", repoId, name: "Repository", path: "/tmp" }),
     eventOf({ _tag: "project.WorktreeCreated", repoId, worktreeId, branch: "topic", path: "/tmp", machineId: "local" }),
     eventOf({ _tag: "project.Created", projectId, repoId, worktreeId, leadAgentId: leadId, machineId: "local", name: "Project", goal: "Real decisions" }),
+    eventOf({ _tag: "project.ApprovalDecided", projectId, questionId: `${prefix}-scope`, approval: "end-result", approved: true }),
+    eventOf({ _tag: "project.ApprovalDecided", projectId, questionId: `${prefix}-build`, approval: "build", approved: true }),
   ])
   const credential = agentCredential(lead.token)
   const team = success(yield* call(credential, "project.team.create", { projectId, name: "Build", worktreeId }))

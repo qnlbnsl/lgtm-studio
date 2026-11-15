@@ -38,6 +38,8 @@ export const snapshotFor = (caller: Caller, snapshot: Snapshot, enabled = true) 
   fill(section.completions, Object.values(board.completions));
   fill(section.noAnswers, Object.values(board.noAnswers));
   fill(section.channels, Object.values(board.channels).map((channel) => ({
+    ...(channel.archived === undefined ? {} : { archived: channel.archived }),
+    ...(channel.displayName === undefined ? {} : { displayName: channel.displayName }),
     channelId: channel.channelId, name: channel.name, kind: channel.kind, members: channel.members,
     ...(channel.manager === undefined ? {} : { manager: channel.manager }),
     ...(channel.group === undefined ? {} : { group: channel.group }),

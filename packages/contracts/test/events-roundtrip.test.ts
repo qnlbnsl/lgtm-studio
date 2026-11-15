@@ -75,7 +75,7 @@ const expectedClientTags = [
   "client.ServiceRestartRequested", "client.WebServerDown", "client.WebServerUp"
 ]
 const expectedBoardTags = [
-  "board.ChannelOpened",
+  "board.ChannelOpened", "board.ChannelArchived",
   "board.ChannelMembersChanged",
   "board.ManagerChanged",
   "board.PostWritten",
@@ -91,7 +91,7 @@ const expectedRolesTags = [
   "roles.CapacityRetried", "roles.CrashAdmitted", "roles.CrashRetried", "roles.GaveUp",
   "roles.RoleAdviceBroken", "roles.CacheFlushed", "roles.CompactRequested", "roles.StallEnded"
 ]
-const expectedProjectTags = [
+const expectedProjectTags = ["project.ApprovalGranted", "project.ApprovalWithdrawn", "project.ApprovalDecided", "project.TeamDeleted", "project.TaskDeleted",
   "project.MockScreensSeen", "project.MockScreenSeen", "project.MockScreenApprovalSet", "project.MockScreenCommented",
   "project.SetupAdvanced", "project.SetupCompleted", "project.MockRecorded", "project.MockApproved", "project.DesignRecorded",
   "project.GitAttempted", "project.GitFinished", "project.GitEvidenceReported", "project.MainReviewOpened", "project.MainReviewDecided",

@@ -58,7 +58,7 @@ export const makeRig = (): Rig => {
     root, home: join(root, "home"), stateFolder: join(root, "state"), pluginRoot: join(root, "plugin"),
     work: join(root, "work"), outside: join(root, "outside"), database: join(root, "events.sqlite"),
   };
-  for (const folder of [rig.home, rig.stateFolder, rig.pluginRoot, rig.work, rig.outside]) mkdirSync(folder);
+  for (const folder of [rig.home, rig.stateFolder, rig.pluginRoot, rig.work, rig.outside]) mkdirSync(folder, { mode: 0o700 });
   defaultFolder = rig.work;
   return rig;
 };

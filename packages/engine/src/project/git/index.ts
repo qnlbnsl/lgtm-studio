@@ -92,10 +92,10 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     const base = await root(), path = await directory(base, folder);
     if (!await exists(join(path, ".git"))) return fail("not_repository");
     const commonDirectory = await checkedMetadata(base, path);
-    const actualCommon = (await git(path, ["rev-parse", "--path-format=absolute", "--git-common-dir"], signal)).trimEnd();
-    if (await directory(base, actualCommon) !== commonDirectory) return fail("invalid_path");
-    const top = (await git(path, ["rev-parse", "--show-toplevel"], signal)).trimEnd();
-    if (await realpath(top) !== path) return fail("not_repository");
+    const identity = (await git(path, ["rev-parse", "--path-format=absolute", "--git-common-dir", "--show-toplevel"], signal)).trimEnd().split("\n");
+    if (identity.length !== 2) return fail("invalid_path");
+    if (await directory(base, identity[0]!) !== commonDirectory) return fail("invalid_path");
+    if (await realpath(identity[1]!) !== path) return fail("not_repository");
     return { path, name: basename(path), commonDirectory };
   };
   const list = <A>(items: ReadonlyArray<A>, maximum = entries): Bounded<A> => ({ items: items.slice(0, maximum), truncated: items.length > maximum });
@@ -401,7 +401,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     : /R/.test(change.index + change.worktree) ? "renamed" : /D/.test(change.index + change.worktree) ? "deleted"
     : /A/.test(change.index + change.worktree) ? "added" : "modified";
   const imageTypes: Readonly<Record<string, FileImageType>> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml" };
-  const withRepo = <A>(folder: string, body: (path: string, signal: AbortSignal) => Promise<A>, network = false) => operation(async (signal) => body((await repository(folder, signal)).path, signal), network);
+  const withRepo = <A>(folder: string, body: (path: string, signal: AbortSignal) => Promise<A>, network = false, registration?: Repository) => operation(async (signal) => body((registration?.path === folder ? registration : await repository(folder, signal)).path, signal), network);
   const excludeManagedWorktrees = async (common: string) => {
     const info = join(common, "info");
     if (!await exists(info)) await mkdir(info, { mode: 0o700 });
@@ -592,7 +592,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     diff: (folder, options = {}) => withRepo(folder, (path, signal) => diff(path, options, signal)),
     history: (folder, limit) => withRepo(folder, async (path, signal) => await head(path, signal) === null ? list([]) : history(path, "HEAD", signal, bound(limit, entries, entries))),
     commitFiles: (folder, commit, agentRead = false) => withRepo(folder, async (path, signal) => filesBetween(path, ["diff-tree", "--root", "--no-commit-id", "-r", "-m", "--first-parent", await ref(path, commit, signal)], signal, agentRead)),
-    state: (folder, target) => withRepo(folder, async (path, signal) => {
+    state: (folder, target, registration) => withRepo(folder, async (path, signal) => {
       const currentHead = await head(path, signal), currentBranch = await branch(path, signal);
       const upstreamReply = await run(path, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], signal);
       const upstreamName = upstreamReply.code === 0 ? upstreamReply.stdout.trim() : null;
@@ -612,7 +612,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
         }
       }
       return { head: currentHead, branch: currentBranch, upstream: upstreamName, mergeHead: await mergeHead(path, signal), ahead, behind, behindParent, pending, pendingSince };
-    }),
+    }, false, registration),
     stage: (folder, requested) => withRepo(folder, async (path, signal) => {
       const change = (await completeChanges(path, signal)).find((change) => change.path === requested);
       if (change === undefined) return fail("invalid_path");

@@ -433,9 +433,9 @@ test("first-run Welcome, discovery, Back, Machines detour and actual first creat
 test("mounted Mocks and repository Design expose actual immutable evidence, supported scenarios, stale refusal and one durable approval at all eight sizes", async ({ page }, info) => {
   // This serial journey builds the page and real worktree, captures Mocks and
   // Design at eight sizes, then proves stale refusal, approval and reload.
-  // The full run reached the second Approve click at the old 30-second limit.
-  // Individual action and assertion deadlines remain unchanged.
-  test.setTimeout(60_000)
+  // The local host reached the final approval near the old one-minute limit.
+  // Keep the same bound as the other journey that visits eight viewport sizes.
+  test.setTimeout(120_000)
   await fixture(page, (rig) => Effect.gen(function* () {
     const view = projectView(yield* snapshot), project = Object.values(view.projects)[0]!, folder = view.workspaces[project.worktreeId]!.path
     writeFileSync(join(folder, "screen.html"), "<h1>Owned mock evidence</h1>")

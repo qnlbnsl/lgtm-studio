@@ -1,3 +1,4 @@
+import { exerciseStudioLeadDefinition } from './support/studioLeadDefinition.ts'
 import { exerciseStudioTerminal } from './support/studioTerminal.ts'
 import { exerciseStudioProjectSettings } from './support/studioProjectSettings.ts'
 
@@ -573,9 +574,8 @@ test("live projects and board: signs in through the engine, shows its real recor
           await page.locator("#ps-goal").fill("An edited engine goal")
           await page.getByRole("button", { name: "Save goal", exact: true }).click()
           await expect(page.getByRole("button", { name: "Save goal", exact: true })).toHaveCount(0)
-          await page.getByRole("button", { name: "Rename", exact: true }).click()
-          await page.locator("#rename-field").fill("Renamed project")
-          await page.getByRole("dialog").getByRole("button", { name: "Rename", exact: true }).click()
+          await page.locator("#ps-name").fill("Renamed project")
+          await page.getByRole("button", { name: "Save name", exact: true }).click()
           await expect(sidebar.locator(".tree-row.project").filter({ hasText: "Renamed project" })).toBeVisible()
           await page.getByRole("combobox", { name: "Lead model", exact: true }).selectOption("model-next")
           await expect(page.getByRole("combobox", { name: "Lead model", exact: true })).toHaveValue("model-next")
@@ -1121,3 +1121,5 @@ test("studio project settings: live changes, disabled controls and archive resto
 test("studio files: engine tree, editor policy, save conflicts and one-file commit", async ({ page }) => exerciseStudioFiles(page))
 
 test('studio terminal: real shell, private output and renderer policy', async ({ page }) => exerciseStudioTerminal(page))
+
+test("studio lead: Define, owner approval, rename and team deletion", async ({ page }) => { test.setTimeout(90_000); await exerciseStudioLeadDefinition(page) })

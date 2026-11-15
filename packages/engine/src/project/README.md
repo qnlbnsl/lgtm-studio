@@ -392,3 +392,47 @@ The fixed correctable creation refusal for a main checkout outside main or maste
 Creation checks this before effects, including saved intent retries, and never records a feature branch as its main review destination.
 Only a current-admitted initial branch refusal with no creation intent receives a terminal refusal receipt; unavailable accounts and unfinished intents retain their existing retry behavior.
 The later New project consumer joins this fixed reason directly; unknown creation errors retain their frozen request handling.
+
+## The lead's first decisions.
+
+A newly created project starts in Define.
+The lifecycle uses `projectLeadInstruction` for the opening message on every creation path.
+The lead is named "Project lead" and receives the role `lead:project-lead`.
+Historical agents with the role `project-lead` also receive lead advice.
+
+The lead uses `ask` with `projectApproval` to request an owner's decision.
+The supported values are `end-result`, `skip-planning`, `build`, and `skip-planning-and-build`.
+The title and recommendation are the short request.
+The question text holds the full proposal.
+The engine supplies the acceptance choice "Accepted".
+Only the owner's answer with that exact text grants approval.
+Every other answer records a denial.
+An ordinary question never grants a project approval.
+Each decision appends `project.ApprovalDecided` beside the question answer.
+
+An approved end result or an approved request to skip planning allows the lead to create sprints, teams and tasks.
+A separate building approval allows agents to start or resume workers and move tasks out of the queue.
+The combined request grants both permissions in one recorded decision.
+Building approval does not require a sprint.
+Changing the displayed stage cannot grant either permission.
+The owner's own actions remain available through the client application programming interface and command line.
+Historical projects without these decisions need the same approvals before agents can plan or start work.
+
+## Project names and team deletion.
+
+`project.rename` is available to the owner and the project's own lead.
+It applies the creation name rules and appends `project.Renamed`.
+It keeps the existing branch and worktree folder names.
+
+`project.task.delete` removes a task only while its full recorded state history remains in the queue.
+It appends `project.TaskDeleted`.
+A task that was started and later returned to the queue cannot be deleted.
+
+`project.team.delete` requires that its agents have stopped and its tasks have been deleted or moved.
+It appends `project.TeamDeleted` and archives the team's board channel with `board.ChannelArchived`.
+Any open posts are withdrawn with the existing `board.PostClosed` event in the same transaction.
+The channel and its posts remain readable as history.
+New posts and membership changes are refused on the archived channel.
+The team's branch and worktree folder remain registered.
+The owner and the project's own lead can use these requests.
+The command line and agent tools expose the same requests as the client application programming interface.

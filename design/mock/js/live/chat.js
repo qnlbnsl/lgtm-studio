@@ -307,3 +307,8 @@ async function readAccountNames() {
   }).catch((e) => { if (epoch === generation) notice(e.message); }).finally(() => { if (epoch === generation) accountRead = null; });
   return accountRead;
 }
+
+// The typed mapping supplies the engine's fixed effect, including historical cards.
+export const approvalEffect = (request) => mapping.approvalEffect(request);
+
+export const approvalOutcome = (request) => mapping.approvalOutcome(request);

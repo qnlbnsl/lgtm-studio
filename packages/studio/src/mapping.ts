@@ -1,3 +1,4 @@
+import { projectApprovalEffects } from '@lgtm/contracts'
 // Pure functions that turn the engine's records into the website's store.
 //
 // The website in design/mock was written for its screens, so its store has its own shape.
@@ -37,8 +38,9 @@ export interface StoreSubscription {
   readonly signedIn: boolean; readonly useForNew: boolean; readonly usage: null; readonly window: null
   readonly account: null; readonly model: string
 }
-export type StoreStage = "Design" | "Plan" | "Build" | "Review" | "Hand over"
+export type StoreStage = "Define" | "Design" | "Plan" | "Build" | "Review" | "Hand over"
 export interface StoreProject {
+  readonly approvals: { readonly endResult: boolean; readonly build: boolean }
   readonly worktree?: string
   readonly id: string; readonly repo: string; readonly name: string; readonly prefix: string; readonly goal: string
   readonly stage: StoreStage | ""; readonly phase: string; readonly branch: string; readonly folder: string
@@ -62,6 +64,9 @@ export interface StoreAgent {
 }
 export interface StoreOption { readonly id: string; readonly label: string; readonly kind?: string; readonly primary?: boolean }
 export interface StoreRequest {
+  readonly projectApproval?: keyof typeof projectApprovalEffects
+  readonly projectApprovalEffect?: string
+  readonly projectApprovalOutcome?: import("@lgtm/contracts").ProjectApprovalOutcome
   readonly sourceSequence?: number
   readonly id: string; readonly kind: "approval" | "question"; readonly agent: string; readonly project: string
   readonly task: string | null; readonly title: string; readonly body: string; readonly command: string | null
@@ -101,7 +106,7 @@ export interface EngineRecords {
 }
 
 // ---- small pieces -------------------------------------------------------------------
-const STAGES: Record<string, StoreStage> = { design: "Design", plan: "Plan", build: "Build", review: "Review", handover: "Hand over" }
+const STAGES: Record<string, StoreStage> = { define: "Define", design: "Design", plan: "Plan", build: "Build", review: "Review", handover: "Hand over" }
 export const mapStage = (stage: string | undefined): StoreStage | "" => (stage === undefined ? "" : STAGES[stage] ?? "")
 
 // The page's own words for the engine's permission levels.
@@ -168,6 +173,7 @@ export function mapWorktree(row: EngineWorkspace, workspaces: ReadonlyArray<Engi
 export function mapProject(project: EngineProject, workspaces: ReadonlyArray<EngineWorkspace>): StoreProject {
   const workspace = workspaces.find((row) => row.worktreeId === project.worktreeId)
   return {
+    approvals: { endResult: project.endResultApproval !== undefined || project.skipPlanningApproval !== undefined, build: project.buildApproval !== undefined },
     worktree: project.worktreeId, id: project.projectId, repo: project.repoId, name: project.name, prefix: prefixOf(project.name), goal: project.goal,
     stage: mapStage(project.stage), phase: project.stage ?? "", branch: workspace?.branch ?? "", folder: workspace?.path ?? "",
     machine: project.machineId, lead: project.leadAgentId, shell: project.shell ?? "", createdAt: null,
@@ -270,6 +276,7 @@ export function mapRequest(row: EngineRow, kind: "approval" | "question", agents
     id: option.id, label: option.name, kind: option.kind, ...(option.kind === "allow_once" ? { primary: true } : {})
   }))
   return {
+    ...(display?.projectApproval ? { projectApproval: display.projectApproval, projectApprovalEffect: projectApprovalEffects[display.projectApproval] } : {}),
     sourceSequence: row.sourceSequence,
     id: row.id, kind, agent: row.agentId, project, task: display?.taskId ?? null, title, body: preview,
     command: null, folder: agent?.folder ?? "", tool: display?.toolKind ?? null, recommendation: display?.recommendation ?? null,

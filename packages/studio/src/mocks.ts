@@ -31,7 +31,7 @@ export function mapMocks(items: ReadonlyArray<MockRevision>, approval?: MockAppr
 }
 export function mapDesign(result: DesignResult) {
   if (result._tag === "unavailable") return null
-  return { file: result.record.design.file, changedAt: result.record.at, changedBy: author(result.record.author),
+  return { worktreeId: result.record.design.worktreeId, file: result.record.design.file, changedAt: result.record.at, changedBy: author(result.record.author),
     revisionId: result.record.revisionId, projectId: result.record.projectId, available: result.file._tag === "available",
     size: null, pages: null, frames: null, commit: null,
     tokens: result.tokens._tag === "available" ? result.tokens.tokens.map((t) => ({ name: t.name, value: t.value })) : [],

@@ -14,6 +14,25 @@ export function wrapProjectSettingsSwitch(screen: string, label: string): string
 
 // The standalone sample is unchanged. Apply these checks to the copied live screen.
 export function projectSettingsSource(path: string, source: string): string {
+  if (path === 'js/ui.js') {
+    const anchor = 'const approvalEffect = r.projectApprovalEffect;';
+    if (source.split(anchor).length !== 3) throw new Error('Project approval integration: cards moved');
+    const outcome = "const approvalOutcome = r.projectApprovalOutcome || (r.answer === 'Accepted' ? 'Approval recorded.' : 'Approval not recorded. Ask again if you still need it.');";
+    if (source.split(outcome).length !== 3) throw new Error('Project approval integration: outcomes moved');
+    return source.replaceAll(anchor, 'const approvalEffect = chatLive.approvalEffect(r);').replaceAll(outcome, 'const approvalOutcome = chatLive.approvalOutcome(r);');
+  }
+  if (path === 'js/data.js') {
+    const anchor = "export const STAGES = ['Define', 'Design', 'Plan', 'Build', 'Review', 'Hand over'];";
+    if (source.split(anchor).length !== 2) throw new Error('Project stages integration: stages moved');
+    return source.replace(anchor, anchor.replace('= [', '= Object.freeze([').replace('];', ']);'));
+  }
+  if (path === 'js/screens/messages.js') {
+    const anchor = 'const archived = ch.archived === true;';
+    if (source.split(anchor).length !== 2) throw new Error('Team archive integration: composer moved');
+    const mark = '${c.archived && html`<span class="badge">Archived</span>`}';
+    if (source.split(mark).length !== 2) throw new Error('Team archive integration: mark moved');
+    return source.replace(anchor, 'const archived = board.channelArchived(ch);').replace(mark, mark.replace('c.archived', 'board.channelArchived(c)'));
+  }
   if (path !== 'js/screens/service.js') return source
   const start = source.indexOf('export function ProjectSettings(')
   if (start < 0 || source.indexOf('export function ProjectSettings(', start + 1) >= 0) throw new Error('Project settings integration: screen moved')
@@ -28,7 +47,7 @@ export function projectSettingsSource(path: string, source: string): string {
   replace("const configBusy = live.on && board.busy('configure:' + p.lead);", "const configBusy = live.on && (projectBusy || board.busy('configure:' + p.lead) || !choices || p.archiving);")
   replace('useEffect(() => setGoal(p.goal), [p.id]);', 'useEffect(() => setGoal(p.goal), [p.id, p.goal]);')
   replace("const projectBusy = live.on && board.busy('project:' + p.id);", "const projectBusy = live.on && board.busy('project:' + p.id);\n  const settingsLocked = projectBusy || (live.on && p.archiving);")
-  for (const action of ['renameProject', 'saveGoal', 'configureLead']) replace('board.' + action, 'projectSettings.' + action, action === 'configureLead' ? 2 : 1)
+  for (const action of ['renameProject', 'saveGoal', 'configureLead', 'deleteTeam', 'changeApproval']) replace('board.' + action, 'projectSettings.' + action, action === 'configureLead' ? 2 : 1)
   // Unsupported callbacks are unreachable behind native disabled controls.
   replace('if (live.on) { refuse(); return; }', 'if (live.on) return;', 7)
   replace('const asg = p.assignment ||', "const asg = live.on ? { state: 'unavailable', rows: {} } : p.assignment ||")
@@ -36,7 +55,11 @@ export function projectSettingsSource(path: string, source: string): string {
   replace('<${Row} label="Goal"', '${live.on && html`<${Row} label="Task label prefix" id="ps-prefix"><input id="ps-prefix" class="input mono" disabled title="Engine work needed" placeholder="Not set" /><//>`}\n        <${Row} label="Goal"')
   replace('<textarea id="ps-goal"', '<textarea disabled=${settingsLocked} id="ps-goal"')
   replace('disabled=${!goal.trim() || projectBusy}', 'disabled=${!goal.trim() || settingsLocked}')
-  replace('disabled=${projectBusy} onClick=${rename}', 'disabled=${settingsLocked} onClick=${rename}')
+  replace('disabled=${projectBusy || !name.trim() || name.trim() === p.name}', 'disabled=${settingsLocked || !name.trim() || name.trim() === p.name}')
+  replace('value=${name} disabled=${projectBusy}', 'value=${name} disabled=${settingsLocked}')
+  replace('disabled=${projectBusy} onClick=${() => changeApproval', 'disabled=${settingsLocked} onClick=${() => changeApproval')
+  replace('disabled=${projectBusy || !p.approvals?.endResult}', 'disabled=${settingsLocked || !p.approvals?.endResult}')
+  replace('disabled=${projectBusy} onClick=${() => deleteTeam(t)}', 'disabled=${settingsLocked} onClick=${() => deleteTeam(t)}')
   replace('>Save goal</button>', ">${projectBusy ? 'Saving…' : 'Save goal'}</button>")
   replace('<select id="ps-base"', '<select disabled=${live.on} title=${live.on ? "Engine work needed" : null} id="ps-base"')
   replace('${branches.map', '${live.on && html`<option value="">Not set</option>`}${branches.map')

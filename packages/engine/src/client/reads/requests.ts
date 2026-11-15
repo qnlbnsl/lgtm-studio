@@ -60,6 +60,7 @@ export const requestRows = (snapshot: Snapshot): ClientRequest[] => [
       ...(row.closedSequence === undefined ? {} : { closedSequence: row.closedSequence, answeredAt: row.answeredAt! }),
       ...(row.answeredBy === undefined ? {} : { answeredBy: row.answeredBy }),
       ...(row.answer === undefined ? {} : { answer: cutUtf8(row.answer, 512) }),
+      ...(row.projectApprovalOutcome === undefined ? {} : { projectApprovalOutcome: row.projectApprovalOutcome }),
       canAnswer: row.status === "open" && row.holder._tag === "owner",
     })),
   ].map((row) => {

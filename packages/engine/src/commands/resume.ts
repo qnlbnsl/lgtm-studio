@@ -1,3 +1,4 @@
+import { requireBuilding } from "../project/approvals.ts";
 import type { Event } from "@lgtm/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
@@ -22,6 +23,7 @@ export const resume = ({ runtime, snapshot, actor }: Input, agent: Agent, payloa
     const view = projectView(snapshot), id = own(view.agentProjects, agent.agentId);
     const project = id === undefined ? undefined : own(view.projects, id);
     if (project?.archiving || project?.archivedAt !== undefined) return yield* refused("project is archived or archiving");
+    if (project !== undefined && agent.agentId !== project.leadAgentId) yield* requireBuilding({ runtime, snapshot, actor }, project);
     const fresh = payload.fresh === true;
     const reloads = runtime.runner.capabilities.loadSession || runtime.runner.capabilities.resumeSession;
     if (!fresh && (agent.reloadable !== true || agent.session === undefined || !reloads)) return yield* refused("cannot reload");

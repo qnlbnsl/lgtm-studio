@@ -1,3 +1,5 @@
+import { completionOwed, boardView } from "../board/wake.ts"
+import { requireEndResult, requireBuilding, endResultReason, buildingReason } from "./approvals.ts"
 import { validateWorkflowFolder, workflowFolderReason } from "../workflows/folder.ts"
 import { declineMainReview } from "./gitReview.ts"
 import { randomUUID } from "node:crypto"
@@ -137,6 +139,14 @@ export const prepareRegistration = (input: Input, name: keyof typeof registratio
   })
   return name === "project.repository.add" ? repositoryAdd(inspect) : name === "project.repository.locate" ? repositoryLocate(inspect) : workspaceRegister(inspect)
 })
+const approvalChange = (approved: boolean): PiecePlanner => (input, raw) => Effect.gen(function* () {
+  if (input.actor._tag !== "owner") return yield* refused("Only the owner can change project approvals.")
+  const p = raw as Payload<"project.approval.grant">, project = yield* requireProject(input, p.projectId)
+  if (project.archiving || project.archivedAt !== undefined) return yield* refused("The project is archived or archiving.")
+  if (approved && p.approval === "build" && project.endResultApproval === undefined && project.skipPlanningApproval === undefined) return yield* refused(endResultReason)
+  return ack(p.requestId, [approved ? { _tag: "project.ApprovalGranted", projectId: p.projectId, approval: p.approval, requestId: p.requestId }
+    : { _tag: "project.ApprovalWithdrawn", projectId: p.projectId, approval: p.approval }])
+})
 const rename: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.rename">; const project = yield* requireProject(input, p.projectId)
   const name = yield* cleanName(input, p.name)
@@ -157,7 +167,10 @@ const preferencesSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
   return ack(p.requestId, [{ _tag: "project.PreferencesChanged", projectId: p.projectId, shell: yield* cleanName(input, p.shell) }])
 })
 const stageSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
-  const p = raw as Payload<"project.stage.set">; yield* requireProject(input, p.projectId)
+  const p = raw as Payload<"project.stage.set">; const project = yield* requireProject(input, p.projectId)
+  // Stages describe progress. Only an owner answer records consent.
+  if (input.actor._tag !== "owner" && p.stage !== "define" && project.endResultApproval === undefined && project.skipPlanningApproval === undefined) return yield* refused(endResultReason)
+  if (input.actor._tag !== "owner" && ["build", "review", "handover"].includes(p.stage) && project.buildApproval === undefined) return yield* refused(buildingReason)
   const view = projectView(input.snapshot), head = own(view.mockHeads, p.projectId)
   const revision = head === undefined ? undefined : own(view.mockRevisions, projectKey(p.projectId, head))
   if (p.stage === "design" && (revision?.bundle.screens.length ?? 0) === 0) return yield* refused("projects without screens begin in Plan")
@@ -167,6 +180,7 @@ const stageSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
 })
 const teamCreate: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.team.create">; const project = yield* requireProject(input, p.projectId)
+  yield* requireEndResult(input, project)
   if (input.runtime.lists?.boardEnabled === false) return yield* refused("board disabled")
   const view = projectView(input.snapshot)
   const workspace = own(view.workspaces, p.worktreeId)
@@ -198,7 +212,8 @@ const dependenciesValid = (input: Input, projectId: string, needs: ReadonlyArray
   return !needs.some(reachesSelf)
 }
 const sprintCreate: PiecePlanner = (input, raw) => Effect.gen(function* () {
-  const p = raw as Payload<"project.sprint.create">; yield* requireProject(input, p.projectId)
+  const p = raw as Payload<"project.sprint.create">; const project = yield* requireProject(input, p.projectId)
+  yield* requireEndResult(input, project)
   if (!member(input, p.projectId, p.owner) || !dependenciesValid(input, p.projectId, p.needs)) return yield* refused("invalid sprint owner or dependencies")
   const label = yield* cleanName(input, p.label)
   if (Object.values(projectView(input.snapshot).sprints).some((row) => row.projectId === p.projectId && row.label.toLowerCase() === label.toLowerCase())) return yield* refused("sprint label already exists")
@@ -210,7 +225,8 @@ const requireSprint = (input: Input, projectId: string, sprintId: string) => {
   return row === undefined ? Effect.fail(refused("sprint not found")) : Effect.succeed(row)
 }
 const sprintUpdate: PiecePlanner = (input, raw) => Effect.gen(function* () {
-  const p = raw as Payload<"project.sprint.update">; yield* requireProject(input, p.projectId)
+  const p = raw as Payload<"project.sprint.update">; const project = yield* requireProject(input, p.projectId)
+  yield* requireEndResult(input, project)
   const sprint = yield* requireSprint(input, p.projectId, p.sprintId)
   if (sprint.completion !== undefined) return yield* refused("completed sprint cannot be changed")
   if (p.owner !== undefined && !member(input, p.projectId, p.owner) || p.needs !== undefined && !dependenciesValid(input, p.projectId, p.needs, p.sprintId)) return yield* refused("invalid sprint owner or dependencies")
@@ -218,7 +234,8 @@ const sprintUpdate: PiecePlanner = (input, raw) => Effect.gen(function* () {
   return ack(requestId, [{ _tag: "project.SprintChanged", ...fields, ...(p.name === undefined ? {} : { name: yield* cleanName(input, p.name) }) }])
 })
 const sprintComplete: PiecePlanner = (input, raw) => Effect.gen(function* () {
-  const p = raw as Payload<"project.sprint.complete">; yield* requireProject(input, p.projectId)
+  const p = raw as Payload<"project.sprint.complete">; const project = yield* requireProject(input, p.projectId)
+  yield* requireEndResult(input, project)
   const sprint = yield* requireSprint(input, p.projectId, p.sprintId)
   if (sprint.completion !== undefined) return yield* refused("sprint is already complete")
   const view = projectView(input.snapshot)
@@ -238,6 +255,8 @@ const validTaskLinks = (input: Input, project: Project, task: Pick<Task, "owner"
 }
 const taskCreate: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.task.create">; const project = yield* requireProject(input, p.projectId)
+  yield* requireEndResult(input, project)
+  if (p.state !== "queue") yield* requireBuilding(input, project)
   if (!validTaskLinks(input, project, p)) return yield* refused("invalid task links or completed sprint")
   const label = p.label === undefined ? undefined : yield* cleanName(input, p.label)
   if (label !== undefined && Object.values(projectView(input.snapshot).tasks).some((row) => row.projectId === p.projectId && row.label?.toLowerCase() === label.toLowerCase())) return yield* refused("task label already exists")
@@ -252,15 +271,19 @@ const taskCreate: PiecePlanner = (input, raw) => Effect.gen(function* () {
     reply: () => ({ requestId, taskId }) }
 
 })
-const requireTask = (input: Input, projectId: string, taskId: string, write: boolean) => Effect.gen(function* () {
+const requireTask = (input: Input, projectId: string, taskId: string, write: boolean, includeDeleted = false) => Effect.gen(function* () {
   const project = yield* requireProject(input, projectId, false)
-  const task = own(projectView(input.snapshot).tasks, projectKey(projectId, taskId))
+  const view = projectView(input.snapshot), key = projectKey(projectId, taskId)
+  const task = own(view.tasks, key) ?? (includeDeleted && !write ? own(view.deletedTasks ?? {}, key) : undefined)
   if (task === undefined || write && !canLeadProject(input.snapshot, input.actor, project)
     && !(input.actor._tag === "agent" && input.actor.agentId === task.owner)) return yield* refused("task is unavailable to this caller")
   return { project, task }
 })
 const taskUpdate: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.task.update">; const { project, task } = yield* requireTask(input, p.projectId, p.taskId, true)
+  if (p.state !== undefined && p.state !== "queue" && task.state === "queue") yield* requireBuilding(input, project)
+  const ownsStartedTask = input.actor._tag === "agent" && input.actor.agentId === task.owner && task.state !== "queue"
+  if ([p.title, p.owner, p.teamId, p.sprintId, p.worktreeId].some((value) => value !== undefined) || p.note !== undefined && !ownsStartedTask) yield* requireEndResult(input, project)
   const leads = canLeadProject(input.snapshot, input.actor, project)
   if (!leads && (p.owner !== undefined || p.teamId !== undefined || p.sprintId !== undefined || p.worktreeId !== undefined || p.title !== undefined)) return yield* refused("only a lead can change task assignments and titles")
   const changed = { ...task, ...p }
@@ -268,8 +291,33 @@ const taskUpdate: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const { requestId, ...fields } = p
   return ack(requestId, [{ _tag: "project.TaskChanged", ...fields, ...(p.title === undefined ? {} : { title: yield* cleanName(input, p.title) }) }])
 })
+const taskDelete: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.task.delete">
+  yield* requireProject(input, p.projectId)
+  const { task } = yield* requireTask(input, p.projectId, p.taskId, true)
+  if (task.history.some((entry) => entry.state !== "queue") || projectedTask(input.snapshot, task).state !== "queue") return yield* refused("Only a task that was never started can be deleted.")
+  return ack(p.requestId, [{ _tag: "project.TaskDeleted", projectId: p.projectId, taskId: p.taskId }])
+})
+const teamDelete: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.team.delete">
+  yield* requireProject(input, p.projectId)
+  const view = projectView(input.snapshot), team = own(view.teams, projectKey(p.projectId, p.teamId))
+  if (team === undefined) return yield* refused("The team is unavailable.")
+  const group = team.group ?? projectTeamGroup(p.projectId, p.teamId)
+  if (Object.values(input.snapshot.agents).some((agent) => own(view.agentProjects, agent.agentId) === p.projectId
+    && agent.groups.includes(group) && !["stopped", "crashed"].includes(agent.state._tag))) return yield* refused("Stop the team’s agents before deleting the team.")
+  if (Object.values(view.tasks).some((task) => task.projectId === p.projectId && task.teamId === p.teamId)) return yield* refused("Delete or move the team’s tasks before deleting the team.")
+  if (input.actor._tag !== "owner" && input.actor._tag !== "agent") return yield* refused()
+  const closer = input.actor
+  const closed = Object.values(boardView(input.snapshot).posts).filter((post) => post.channelId === team.channelId && post.status === "open")
+    .map((post) => ({ _tag: "board.PostClosed" as const, postId: post.postId, outcome: "withdrawn" as const, closer,
+      completionOwed: completionOwed(input.snapshot, post, closer, true) }))
+  return ack(p.requestId, [...closed, { _tag: "project.TeamDeleted", projectId: p.projectId, teamId: p.teamId },
+    ...(team.channelId === undefined ? [] : [{ _tag: "board.ChannelArchived" as const, channelId: team.channelId, displayName: team.name }])])
+})
 const taskNote: PiecePlanner = (input, raw) => Effect.gen(function* () {
-  const p = raw as Payload<"project.task.note">; yield* requireTask(input, p.projectId, p.taskId, true)
+  const p = raw as Payload<"project.task.note">; const { project, task } = yield* requireTask(input, p.projectId, p.taskId, true)
+  if (!(input.actor._tag === "agent" && input.actor.agentId === task.owner && task.state !== "queue")) yield* requireEndResult(input, project)
   return ack(p.requestId, [{ _tag: "project.TaskNoted", projectId: p.projectId, taskId: p.taskId, title: yield* cleanName(input, p.title), detail: p.detail }])
 })
 
@@ -329,15 +377,17 @@ const read: ReadHandler = (input, raw) => Effect.gen(function* () {
   return yield* page(input, raw, entries, true)
 })
 const taskHistory: ReadHandler = (input, raw) => Effect.gen(function* () {
-  const p = raw as Payload<"project.task.history">; const { task } = yield* requireTask(input, p.projectId, p.taskId, false)
+  const p = raw as Payload<"project.task.history">; const { task } = yield* requireTask(input, p.projectId, p.taskId, false, true)
   return yield* page(input, raw, decisionHistory(input.snapshot, task).map((row, index) => [String(index), row] as const), true)
 })
 export const projectPlanners = {
+  "project.approval.grant": approvalChange(true), "project.approval.withdraw": approvalChange(false),
   "project.settings.set": settingsSet, "project.repository.add": repositoryAdd(), "project.repository.locate": repositoryLocate(),
   "project.review.decline": declineMainReview,
   "project.workspace.register": workspaceRegister(), "project.rename": rename, "project.place": place,
   "project.goal.set": goalSet, "project.restore": restore, "project.preferences.set": preferencesSet, "project.stage.set": stageSet, "project.team.create": teamCreate,
   "project.sprint.create": sprintCreate, "project.sprint.update": sprintUpdate, "project.sprint.complete": sprintComplete,
+  "project.team.delete": teamDelete, "project.task.delete": taskDelete,
   "project.task.create": taskCreate, "project.task.update": taskUpdate, "project.task.note": taskNote
 } satisfies Record<string, PiecePlanner>
 const abandonCreation: PiecePlanner = (input, raw) => Effect.gen(function* () {

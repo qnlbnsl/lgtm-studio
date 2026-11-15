@@ -114,14 +114,14 @@ it('R1.3 a refused model change reads again and reverts the visible picker to th
   expect(f.model().options).toHaveLength(2)
   expect(f.state.toasts.at(-1)).toMatchObject({ text: 'command refused', tone: 'error' })
 })
-it('R1.4 a pending project write disables Rename, the goal, and both lead pickers and says Saving', async () => {
+it('R1.4 a pending project write disables the name, the goal, and both lead pickers and says Saving', async () => {
   const f = fixture()
   const goal = f.root.querySelector<HTMLTextAreaElement>('#ps-goal')!
   goal.value = 'A goal draft'; goal.dispatchEvent(new Event('input', { bubbles: true }))
   await flush()
   lib.update((s: any) => { s.ui.boardBusy = { ['project:' + s.projects[0].id]: true } })
   f.draw()
-  const rename = [...f.root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Rename')!
+  const rename = [...f.root.querySelectorAll('button')].find((b) => b.textContent?.trim() === 'Save name')!
   expect(rename.disabled).toBe(true)
   expect(goal.disabled).toBe(true)
   expect(f.model().disabled).toBe(true)
@@ -164,3 +164,10 @@ for (const [status, text] of [['applied', 'Applied'], ['pending', 'Waiting for t
     expect(f.root.textContent).not.toContain('not-acknowledged')
   })
 }
+
+it('r1 item 5: the messages archive replacement is unique and fails when its target moves', () => {
+  const original = readFileSync('design/mock/js/screens/messages.js', 'utf8')
+  expect(source.projectSettingsSource('js/screens/messages.js', original)).toContain('const archived = board.channelArchived(ch);')
+  expect(() => source.projectSettingsSource('js/screens/messages.js', original.replace('const archived = ch.archived === true;', 'const archived = false;'))).toThrow('composer moved')
+  expect(() => source.projectSettingsSource('js/screens/messages.js', original + original)).toThrow('composer moved')
+})

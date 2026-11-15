@@ -1190,3 +1190,26 @@ The owner reads the proposal on the board, because a board is easier to read tha
 "Deny" makes the agent remove the proposed cards and try again.
 Proposed cards must look different from accepted cards until the owner accepts them.
 This is for sprint and board changes only. Other approvals keep the short card with "Details".
+
+## Paths by the size of work.
+
+Requested by the owner on 2026-11-14.
+The lead may propose skipping planning when the work is small.
+The owner must approve that path before building starts.
+A build team's lead may do the work itself without starting workers.
+The project lead may do a one-off small correction with the owner's approval.
+Unit s10-lead builds the opening instruction and the engine's approval gates for these paths.
+Automatic choice of a path by the workflow is not built.
+
+## A one-off agent on a repository, without a project.
+
+Requested by the owner on 2026-11-14.
+The owner's words were: nitpicks "need one-off changes. They don't need a project. Maybe just allow launching an agent on the repository: you just tell it which harness, and it just picks up the defaults. You're just able to change it from the bottom."
+From a repository, the owner starts one agent by choosing a harness.
+The agent takes the default model and effort.
+The owner can change the model and effort in the composer bar at the bottom of the chat.
+No project, sprint or team is needed.
+The worktree and branch that the agent uses are undecided.
+How the change is merged is undecided.
+How the agent appears in the tree is undecided.
+This feature is not built in unit s10-lead.

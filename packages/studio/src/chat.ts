@@ -1,3 +1,4 @@
+import { projectApprovalEffects } from '@lgtm/contracts'
 // Pure adapters for Home, agent conversations, and the roster. The JavaScript screens
 // receive these functions from live.ts; the standalone mock never loads this module.
 import type { ClientRequest, EventEnvelope, ContextUsage, AgentChoices, AgentConfiguration, ContextReference } from "@lgtm/contracts"
@@ -30,7 +31,8 @@ export function mapHomeRequest(row: ClientRequest, agents: ReadonlyArray<StoreAg
   const question = event?._tag === "QuestionAsked" && event.questionId === row.id && event.agentId === row.agentId ? event : undefined
   const permission = event?._tag === "PermissionRequested" && event.permissionRequestId === row.id && event.agentId === row.agentId ? event : undefined
   const options = permission?.options ?? row.display?.options ?? []
-  const proposed = question?.proposedAnswer ?? row.display?.proposedAnswer
+  const approval = question?.projectApproval ?? row.display?.projectApproval
+  const proposed = approval ? "Accepted" : question?.proposedAnswer ?? row.display?.proposedAnswer
   const input = permission?.toolInput
   const kind = row.display?.toolKind ?? permission?.toolKind
   const cut = kind === "execute" && (permission?.inputTruncated ?? row.display?.inputTruncated) === true
@@ -39,9 +41,10 @@ export function mapHomeRequest(row: ClientRequest, agents: ReadonlyArray<StoreAg
   const command = input && typeof input === "object" && "command" in input && typeof input.command === "string" ? input.command
     : cut && permission?.description ? permission.description : null
   const cwd = input && typeof input === "object" && "cwd" in input && typeof input.cwd === "string" ? input.cwd : null
-  return { ...base, sourceSequence: row.sourceSequence, status: row.status, canAnswer: row.canAnswer,
+  return { ...base, ...(approval ? { projectApproval: approval, projectApprovalEffect: projectApprovalEffects[approval] } : {}), sourceSequence: row.sourceSequence, status: row.status, canAnswer: row.canAnswer,
     sprint: row.sprintId ?? question?.sprintId ?? permission?.sprintId ?? null,
     project: row.projectId ?? base.project, task: row.taskId ?? base.task,
+    ...(row.projectApprovalOutcome === undefined ? {} : { projectApprovalOutcome: row.projectApprovalOutcome }),
     title: question?.title ?? (row.kind === "permission" ? attemptTitle(base.title, command ?? (cut && base.body ? base.body : null), kind) : base.title),
     body: question?.text ?? permission?.description ?? base.body,
     ...(cwd ? { folder: cwd } : {}),
@@ -146,3 +149,8 @@ export function mapSubscriptionNames(subscriptions: ReadonlyArray<StoreSubscript
   return subscriptions.map((subscription) => ({ ...subscription,
     name: accounts.find((account) => account.id === subscription.id && account.harness === subscription.harness)?.displayName ?? subscription.id }))
 }
+
+export const approvalEffect = (request: { readonly projectApproval?: keyof typeof projectApprovalEffects }) => request.projectApproval ? projectApprovalEffects[request.projectApproval] : undefined
+
+export const approvalOutcome = (request: { readonly projectApprovalOutcome?: string; readonly answer?: string }) => request.projectApprovalOutcome
+  ?? (request.answer === "Accepted" ? "Approval recorded." : "Approval not recorded. Ask again if you still need it.")
