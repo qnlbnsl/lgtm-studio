@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect"
 import { type Event } from "@lgtm/contracts"
 import { type ReadHandler } from "../api/reads.ts"
 import { type PiecePlanner, type Input, refused, CommandUncertain } from "../commands/internal.ts"
-import { withGit, gitCall, gitReply, workspacePath, repositoryPath, selection } from "./gitApi.ts"
+import { withGit, gitCall, gitReply, workspacePath, workspaceGitState, repositoryPath, selection } from "./gitApi.ts"
 import { type GitService, type GitOperation } from "./git/index.ts"
 import { callerKey } from "../identity/caller.ts"
 import { own, projectKey, projectView } from "./view.ts"
@@ -54,7 +54,10 @@ export const gitReads = {
     ...(raw.commit === undefined ? {} : { commit: raw.commit as string }) })),
   "project.history": workspaceRead((git, path, raw) => git.history(path, raw.limit as number | undefined)),
   "project.commit.files": workspaceRead((git, path, raw, agentRead) => git.commitFiles(path, raw.commit as string, agentRead)),
-  "project.git.state": workspaceRead((git, path, raw) => git.state(path, raw.target as string | undefined)),
+  "project.git.state": (input, raw) => withGit(input, (git) => Effect.gen(function* () {
+    const result = yield* workspaceGitState(input, raw, git)
+    return { reply: yield* gitReply(input, raw.requestId, result, true) }
+  })),
   "project.review": workspaceRead((git, path, raw, agentRead) => git.review(path, raw.base as string, agentRead)),
   "project.conflict.resolved": workspaceRead((git, path) => git.resolvedConflicts(path)),
   "project.conflict": workspaceRead((git, path, raw, agentRead) => git.conflict(path, raw.path as string, agentRead)),

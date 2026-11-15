@@ -117,3 +117,14 @@ it("forgets records before logout returns and ignores an older session probe (fi
   expect(state.session?.status).toBe("out")
   expect(state.projects).toEqual([])
 })
+
+
+for (const tag of ["project.GitFinished", "project.GitEvidenceReported", "project.MainReviewOpened", "project.MainReviewDecided", "client.AlertRaised"]) {
+  for (const oversized of [false, true]) it(`invalidates Git only for a Git event: ${tag}${oversized ? " oversized" : ""}`, async () => {
+    const next = { ...engineSnapshot, sequence: 43 } as ClientSnapshot
+    const item = oversized ? { _tag: "client.Oversized", sequence: 43, tag } : { sequence: 43, occurredAt: 1, event: { _tag: tag } }
+    const h = harness({ next, items: [item] })
+    await vi.waitFor(() => expect(h.reads()).toBe(2))
+    expect(h.state.gitRevision).toBe(tag === "client.AlertRaised" ? 0 : 1)
+  })
+}

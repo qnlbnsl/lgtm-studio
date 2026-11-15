@@ -899,7 +899,9 @@ test("live website: subscriptions, notifications and service settings persist th
 })
 
 
-test('live website: Git changes, history, remotes, integration and owner approval', async ({ page }) => { test.setTimeout(360_000); await exerciseStudioGit(page) })
+test('live website: Git changes, history and remotes', async ({ page }) => { test.setTimeout(360_000); await exerciseStudioGit(page, 'changes') })
+test('live website: Git integration and owner approval', async ({ page }) => { test.setTimeout(360_000); await exerciseStudioGit(page, 'integration') })
+test('live website: Git conflicts and approval with evidence', async ({ page }) => { test.setTimeout(360_000); await exerciseStudioGit(page, 'conflicts') })
 
 test("live messages: a new project has General and Leads and accepts an owner post", async ({ page }) => {
   test.setTimeout(90_000)

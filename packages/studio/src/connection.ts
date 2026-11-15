@@ -23,6 +23,7 @@ import { mapConnection, mapOwner, mapSnapshot, type ConnectionStatus, type Engin
 
 export type SessionStatus = "checking" | "in" | "out" | "rejected" | "expired" | "unavailable" | "logout-unconfirmed"
 export interface StorePatch extends Partial<EngineRecords> {
+  readonly gitRevision?: number
   readonly chatEvent?: unknown
   readonly session?: { readonly status: SessionStatus; readonly firstRun: boolean }
   readonly conn?: StoreConn
@@ -89,6 +90,7 @@ const refreshTags = new Set([
 const accountTags = ["AccountChanged", "AccountAvailable", "AccountNeedsSignIn", "AccountOutOfUsage", "HarnessChanged"]
 const needsRefresh = (tag: string) => accountTags.includes(tag) || refreshTags.has(tag) || tag.startsWith("board.") || tag.startsWith("project.") || tag.startsWith("roles.") || tag.startsWith("client.Alert")
 
+const gitRefreshTags = new Set(["project.GitFinished", "project.GitEvidenceReported", "project.MainReviewOpened", "project.MainReviewDecided"])
 const emptyRecords: EngineRecords = { machines: [], subscriptions: [], repos: [], projects: [], teams: [], agents: [], requests: [], worktrees: [], sprints: [], tasks: [] }
 
 export interface ConnectionOptions {
@@ -120,6 +122,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
   let sessionAttempt = 0
   let closed = false
   let activeClient: Client | undefined
+  let gitRevision = 0
   let boardRevision = 0
   let accountLimits: Record<string, number | null> = {}
   let lastHeard = 0
@@ -138,7 +141,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
   }
   const setSession = (status: SessionStatus) => write({ session: { status, firstRun: false } })
   // Records leave the browser when the session ends, so no signed-out page keeps them.
-  const forget = () => { retryIds.clear(); accountLimits = {}; write({ ...emptyRecords, notifications: [], accountLimits, owner: mapOwner(undefined), channels: [], posts: [], taskDetails: {}, boardAgents: {}, projectLeadSettings: {}, setupData: null, mocks: {}, design: {}, machineDetails: null, boardUnread: {}, boardRevision: 0, boardDetails: {} }) }
+  const forget = () => { gitRevision = 0; retryIds.clear(); accountLimits = {}; write({ ...emptyRecords, gitRevision, notifications: [], accountLimits, owner: mapOwner(undefined), channels: [], posts: [], taskDetails: {}, boardAgents: {}, projectLeadSettings: {}, setupData: null, mocks: {}, design: {}, machineDetails: null, boardUnread: {}, boardRevision: 0, boardDetails: {} }) }
 
   const post = async (path: string, body?: unknown): Promise<number | undefined> => {
     try {
@@ -163,7 +166,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
     const publish = (snapshot: ClientSnapshot) => {
       current = snapshot
       const records = board.mapBoardRecords(snapshot, mapSnapshot(snapshot, now()))
-      if (!signal.aborted) write({ ...records, notifications: mapAlerts(snapshot.alerts ?? [], records.agents), channels: board.snapshotChannels(snapshot, records), boardUnread: board.mapUnread(snapshot.board), boardRevision, boardDetails: board.mapStalls(snapshot.roles),
+      if (!signal.aborted) write({ ...records, gitRevision, notifications: mapAlerts(snapshot.alerts ?? [], records.agents), channels: board.snapshotChannels(snapshot, records), boardUnread: board.mapUnread(snapshot.board), boardRevision, boardDetails: board.mapStalls(snapshot.roles),
         session: { status: "in", firstRun: snapshot.project?.setup !== undefined && snapshot.project.setup.completedAt === undefined } })
     }
     const program = Effect.gen(function* () {
@@ -242,7 +245,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
               if (item.event._tag === "project.SettingsChanged") yield* refreshOwner()
               yield* apply(item, refresh)
             }
-            else if (item._tag === "client.Oversized" && needsRefresh(item.tag)) yield* refresh(item.sequence)
+            else if (item._tag === "client.Oversized" && needsRefresh(item.tag)) { if (gitRefreshTags.has(item.tag)) gitRevision++; yield* refresh(item.sequence) }
             after = Math.max(after, item.sequence) as EventSequence
             failures = 0
           })))
@@ -263,6 +266,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
     // A pushed event either changes one agent's state in place or asks for a fresh snapshot.
     const apply = (item: ClientEnvelope, refresh: (minimum?: number) => Effect.Effect<void, unknown>) => Effect.gen(function* () {
       const event = item.event
+      if (gitRefreshTags.has(event._tag)) gitRevision++
       if (event._tag.startsWith("project.") || event._tag.startsWith("board.") && event._tag !== "board.Read") boardRevision++
       if (event._tag === "AccountOutOfUsage" || event._tag === "AccountAvailable") {
         accountLimits = { ...accountLimits, [event.accountId]: event._tag === "AccountOutOfUsage" ? event.resetAt ?? null : null }

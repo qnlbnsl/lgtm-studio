@@ -60,7 +60,14 @@ export const workspaceReference = (input: Input, raw: Record<string, unknown>, o
   return workspace
 })
 export const workspacePath = (input: Input, raw: Record<string, unknown>, git: GitService) => workspaceReference(input, raw).pipe(
-  Effect.flatMap((workspace) => checkedWorkspace(input, workspace, git)))
+  Effect.flatMap((workspace) => checkedWorkspace(input, workspace, git)), Effect.map((checked) => checked.workspace))
+// The state read consumes only the observation made by its own workspace check.
+// The caller must hold the same uninterrupted Git gate for this entire effect.
+export const workspaceGitState = (input: Input, raw: Record<string, unknown>, git: GitService) => Effect.gen(function* () {
+  const workspace = yield* workspaceReference(input, raw)
+  const checked = yield* checkedWorkspace(input, workspace, git)
+  return raw.target === undefined ? checked.state : yield* gitCall(git.state(workspace.path, raw.target as string, checked.registration, checked.state))
+})
 const checkedWorkspace = (input: Input, workspace: Workspace, git: GitService) => Effect.gen(function* () {
   yield* localMachine(workspace.machineId)
   yield* safePath(input, workspace.path)
@@ -84,7 +91,7 @@ const checkedWorkspace = (input: Input, workspace: Workspace, git: GitService) =
   if (main.commonDirectory !== local.commonDirectory || main.commonDirectory !== checkout.commonDirectory) return yield* refused("checkout belongs to a different repository")
   const state = yield* gitCall(git.state(checkout.path, undefined, checkout))
   if (state.branch !== workspace.branch) return yield* refused("registered workspace branch changed; restore the registered branch")
-  return workspace
+  return { workspace, state, registration: checkout }
 })
 // Repository Design is shared within one repository. Agents must identify an
 // actual project in that repository; normal project Git reads remain stricter.
@@ -98,7 +105,7 @@ export const designWorkspaceReference = (input: Input, raw: { repoId: string; wo
   return workspace
 })
 export const designWorkspacePath = (input: Input, raw: { repoId: string; worktreeId: string; projectId?: string }, git: GitService) => designWorkspaceReference(input, raw).pipe(
-  Effect.flatMap((workspace) => checkedWorkspace(input, workspace, git)))
+  Effect.flatMap((workspace) => checkedWorkspace(input, workspace, git)), Effect.map((checked) => checked.workspace))
 
 // A request-local byte observation is usable only with its exact registered
 // placement. Authority and project/team attachment are resolved anew above.

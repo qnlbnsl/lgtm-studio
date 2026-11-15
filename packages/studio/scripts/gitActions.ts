@@ -17,11 +17,12 @@ export function gitActionsSource(path: string, source: string): string {
     replace("async function loadGit(project) {", "async function loadGit(project, ids) {")
     replace("for (const w of list) {", "for (const w of list.filter((w) => !ids || ids.includes(w.id))) {")
     replace("if (selected) await loadGitDetail(selected.id);", "if (selected && (!ids || ids.includes(selected.id))) await loadGitDetail(selected.id);")
-    replace("return gitDetail(id, commit);", "if (!tab) return run('git', () => { revision++; return loadGit(wt(id)?.project || screen?.project, [id]); });\n  return gitDetail(id, commit);")
+    replace("if (version === revision && S().session.status === 'in') gitLoaded", "if (!ids && version === revision && S().session.status === 'in') gitLoaded")
+    replace("return gitDetail(id, commit);", "if (!tab) return run('git', () => { revision++; return loadGit(wt(id)?.project || screen?.project, [id, wt(id)?.parentId].filter(Boolean)); });\n  return gitDetail(id, commit);")
     // Automatic reads never disable an owner action. An explicit refresh must
     // start a fresh generation even when an older automatic read is pending.
     replace("if (screen.name === 'git') return refreshGit(screen.project);", "if (screen.name === 'git') return refreshGit(screen.project, true);")
-    replace("export function refreshGit(project = screen?.project) { return run('git', () => loadGit(project)); }", "export function refreshGit(project = screen?.project, background = false) {\n  if (background) { if (busy('git')) return false; return run('git-read', () => loadGit(project)); }\n  return run('git', () => { revision++; return loadGit(project); });\n}")
+    replace("export function refreshGit(project = screen?.project) { return run('git', () => loadGit(project)); }", "export function refreshGit(project = screen?.project, background = false) {\n  if (background) { if (busy('git') || busy('git-read')) { scheduleGitRefresh(); return false; } return run('git-read', () => loadGit(project)); }\n  return run('git', () => { revision++; return loadGit(project); });\n}")
     replace("lost: plan.paths, action: 'Discard', onConfirm:", "lost: plan.paths, action: 'Discard', waitForReply: true, pendingLabel: 'Discarding…', onConfirm:")
     replace("export function gitDetail(id, commit) { return run('git', () => loadGitDetail(id, commit)); }", "export function gitDetail(id, commit) { return run('git', () => { revision++; return loadGitDetail(id, commit); }); }")
     replace("const conflict = read(await request('project.conflict.choose'", "revision++;\n    const conflict = read(await request('project.conflict.choose'")

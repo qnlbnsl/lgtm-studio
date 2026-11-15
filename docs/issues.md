@@ -14667,7 +14667,8 @@ The existing observation safety assertion remains unchanged.
 ## 966. Five browser journeys still failed with their restored limits.
 
 Found during fix round 1 on 2026-11-14.
-Status: open for further timing investigation.
+Status: the website Git journey is fixed by S13.
+The four other timing failures remain open.
 The restored five-second assertion expired while two legacy Git merge dialogs still showed a pending submission.
 The cases were an owner approval into main and an approval with stale reported evidence into master.
 The broader projects and board journey also remained on All projects five seconds after pressing Create project.
@@ -14689,6 +14690,23 @@ The website Git journey also reached the 360-second limit on this computer with 
 That run used 303 seconds of system time and 116 seconds of user time.
 The timeout therefore predates this unit.
 A few unit tests ran at the same time, so this is one loaded sample.
+S13 measured the complete unchanged journey at 307.266 seconds and 4,406 engine Git processes.
+Issues s13-1 and s13-2 record the redundant refreshes and repeated state observation that were removed.
+The optimized unsplit journey still reached its 360-second budget under higher host load.
+The original actions and assertions are now covered by three independent root-address journeys.
+The parts cover changes and remotes, integration and approval without evidence, and conflicts and approval with evidence.
+Each part passed five consecutive one-worker repetitions with its original 360-second budget.
+The exact assertion mapping, process counts and every final duration are in the unit's foundry result.
+No assertion or wait was weakened.
+No measurement here establishes the cause of the other four timing failures.
+
+The final one-worker Git repetition times were as follows.
+
+| Journey | Run 1, seconds | Run 2, seconds | Run 3, seconds | Run 4, seconds | Run 5, seconds |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Changes, history and remotes | 121.913 | 115.920 | 108.856 | 105.264 | 112.945 |
+| Integration and owner approval | 78.728 | 74.320 | 74.143 | 85.780 | 99.122 |
+| Conflicts and approval with evidence | 116.386 | 114.792 | 103.574 | 96.587 | 90.749 |
 
 ## 967. A withdrawn end result left an open building request unanswerable.
 
@@ -14729,7 +14747,7 @@ The refusal still writes its normal audit event.
 ## 970. A shell refresh can swallow Clear token in the retired admin page.
 
 Found during investigation round 3 on 2026-11-14.
-Status: open in the retired page under packages/web.
+Status: fixed by S13 in the retired page under packages/web.
 The orchestrator measured five failures in thirteen runs on this branch.
 The orchestrator measured no failures in nine runs on master at 2518bfc.
 Those runs used this computer and one browser worker.
@@ -14786,6 +14804,13 @@ Four of the fifteen runs failed.
 Two failed at line 88, one at line 85 and one at line 96.
 So `master` shows the same failures on this computer, and the earlier nine clean runs were too small a sample.
 The lead definition unit did not introduce this race.
+S13 traced all three failing controls in twenty more one-worker runs.
+Eight of those runs failed.
+Issue s13-3 records the token and heartbeat blur interleavings.
+The settings page now retains its own operation and connection locks while allowing an unrelated shell refresh.
+The unchanged retired admin journey then passed thirty consecutive one-worker runs.
+The website's Service settings passed a root-address journey with a real background reply held across a blur and a switch activation.
+No assertion or wait was widened.
 
 ## 971. Many controls in "Project settings" are disabled on the website, and the page does not say why.
 
@@ -14818,3 +14843,84 @@ The owner asked for the folder choice to sit in the tab itself, as a dropdown be
 The dropdown lists the places where a session can open.
 The dialog is then not needed.
 This is open.
+
+## s13-1. Heartbeats and unrelated snapshots repeatedly refreshed the Git screen.
+
+Found on 2026-11-15 while measuring issue 966.
+Status: fixed in the live screen and its connection mapping.
+Every live connection patch scheduled an automatic Git read.
+Every pushed stream item, including a heartbeat, produced that patch.
+Unrelated project snapshots scheduled the same read too.
+An action could supersede an automatic read while the older read continued into its next request.
+The first measured journey started 3,656 Git processes and expired at 360.096 seconds.
+A second unchanged journey passed in 307.266 seconds with 4,406 Git processes.
+It sent 86 state requests, 86 change requests and 30 review-status requests.
+The counts cover engine calls, including fixture setup through the engine.
+These measurements use one browser worker.
+The connection now maps a separate Git revision for completed Git operations, evidence and owner reviews.
+The screen refreshes after that revision changes, after its workspace roster changes, or after a reconnect.
+An ordinary heartbeat or unrelated snapshot does not request Git data.
+An all-workspace readback covers the invalidations observed before it started.
+A scoped readback cannot consume an invalidation for another worktree.
+A later invalidation schedules one further read after the current read finishes.
+Superseded reads stop before starting their next request.
+Explicit refreshes and head-changing action readbacks still read every worktree.
+The successful measured split parts used 4,260 engine Git processes in total, including three independent fixture setups.
+
+## s13-2. A state request repeated the state read performed by its workspace check.
+
+Found on 2026-11-15 while measuring issue 966.
+Status: fixed within one uninterrupted Git gate.
+A real process-counting wrapper measured ten Git processes for a main-checkout state request.
+It measured fourteen for a linked-checkout state request with a target at the same commit.
+The request checked its workspace and then registered and read the same state again.
+The state request now consumes its own workspace observation after all existing refusals.
+A target comparison extends that observation inside the same gate.
+The corresponding counts are now five and nine.
+No check result survives the request or the gate.
+The existing swapped-workspace tests remain unchanged.
+An additional state request test refuses a checkout replaced since the preceding request.
+Another test preserves the registered-branch refusal before an invalid-target refusal.
+
+## s13-3. A background collection read also swallowed token and heartbeat blur saves.
+
+Found on 2026-11-15 while tracing the remaining failures in issue 970.
+Status: fixed by narrowing the retired service settings lock to its own reads and connection.
+Twenty traced runs with one browser worker failed eight times.
+The failures included all three assertions from issue 970.
+In run 5, the token input received focus at 902.1 milliseconds.
+It blurred at 920.1 milliseconds while matching the disabled selector.
+Its saveToken handler never ran.
+The subsequent render recorded busy false, offline true and uncertain false at 930.1 milliseconds.
+The lock cleared at 965.0 milliseconds, with the unsaved input still populated.
+In run 14, the heartbeat input received focus at 1986.7 milliseconds.
+It blurred at 2019.0 milliseconds while disabled.
+Its saveWeb handler never ran.
+The render recorded busy false, offline true and uncertain false at 2026.7 milliseconds.
+The lock cleared at 2061.1 milliseconds.
+The explicit settings refresh then read the old heartbeat value from the engine.
+These are browser performance-clock measurements within each run.
+The offline flag came from incomplete shell collections, as in the Clear token trace in issue 970.
+Disabling a focused input caused a blur before the intended blur could save it.
+The settings page now locks on its own pending operation, uncertain outcome or actual connection loss.
+It reads its settings independently of the shell collections.
+Other retired pages retain their existing collection-completeness gates.
+The website's Service settings already leaves its controls usable during a background read.
+A root-address journey now holds a real background reply across a field blur and a switch click.
+No wait or deadline was enlarged.
+No visual design changed.
+The unchanged retired admin journey passed thirty consecutive one-worker runs after the fix.
+A component regression also keeps the controls enabled during incomplete shell collections and disabled during an actual reconnect.
+
+## s13-4. Selecting a worktree before the first background read finished left its parent head unread.
+
+Found on 2026-11-15 while running the split integration journey.
+Status: fixed in the worktree selection readback.
+Selection superseded the initial background read before it reached every parent.
+The selection then read only its own checkout.
+Update from base used the unread parent's head and failed client-side payload validation.
+No update request reached the engine.
+The integration control stayed disabled because the checkout was still behind its parent.
+Selecting a worktree now reads both that checkout and its parent before enabling foreground actions.
+A held-parent regression checks the fresh head and the visible pending state.
+The journey's actions, assertions and deadlines remain unchanged.

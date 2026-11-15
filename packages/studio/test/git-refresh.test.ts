@@ -13,7 +13,7 @@ function fixture(request: (tag: string, payload: any) => Promise<unknown>) {
   const act: any = { confirm: (d: any) => dialogs.push(d), closeDialog: vi.fn(), toast: (s: string) => toasts.push(s) };
   const source = copied("js/live/git.js").replace(/^import .*;$/gm, "").replace(/export /g, "");
   const actions = new Function("store", "live", "engineWrite", "notify", "engine", "act", "update", "addEventListener", "removeEventListener",
-    `${source}\nreturn { installMappings, openScreen, refreshGit, busy, declineReview, discard, stage, integrate, selectGit };`)(
+    `${source}\nreturn { installMappings, openScreen, refreshGit, observe, busy, declineReview, discard, stage, integrate, selectGit };`)(
     { state }, { on: true }, (p: object) => Object.assign(state, p), () => {}, { request }, act, (f: (s: any) => void) => f(state), () => {}, () => {});
   actions.installMappings({ mapGitState: (s: any) => s, mapGitChanges: (items: any[]) => items,
     mapMainReview: (r: any) => r, mapConflict: (c: any) => ({ ...c, id: c.path, selection: c }) });
@@ -187,4 +187,102 @@ it("an explicit project refresh still reads every worktree", async () => {
   await f.actions.refreshGit("project");
   expect(reads).toEqual(["workspace", "other"]);
   expect(f.toasts).toEqual([]);
+});
+
+
+it("heartbeats and unrelated project snapshots do not repeat Git reads, while a new Git revision does", async () => {
+  let reads = 0;
+  const f = fixture(async (tag) => {
+    if (tag === "project.git.state") { reads++; return { result: { mergeHead: null } }; }
+    if (tag === "project.changes") return { result: { items: [], truncated: false } };
+    if (tag === "project.review.status") return { result: { review: null } };
+    throw new Error(tag);
+  });
+  f.state.conn = { status: "live" }; f.state.gitRevision = 0;
+  const close = f.actions.openScreen("git", "project");
+  try {
+    await vi.waitFor(() => expect(f.actions.busy("git-read")).toBe(false));
+    reads = 0; vi.useFakeTimers();
+    for (let i = 0; i < 3; i++) {
+      f.actions.observe({ conn: { status: "live", lastSeen: i } });
+      f.actions.observe({ projects: f.state.projects, worktrees: f.state.worktrees, gitRevision: 0 });
+      await vi.advanceTimersByTimeAsync(200);
+    }
+    expect(reads).toBe(0);
+    f.actions.observe({ gitRevision: 1 }); f.state.gitRevision = 1;
+    await vi.advanceTimersByTimeAsync(100);
+    expect(reads).toBe(1);
+    expect(f.actions.busy("git-read")).toBe(false);
+    f.state.conn = { status: "reconnecting" };
+    f.actions.observe({ conn: { status: "live" } }); f.state.conn = { status: "live" };
+    await vi.advanceTimersByTimeAsync(100);
+    expect(reads).toBe(2);
+  } finally { close(); vi.useRealTimers(); }
+});
+
+it("a superseded background state read stops before requesting changes", async () => {
+  const held = gate(); let states = 0, changes = 0;
+  const f = fixture(async (tag) => {
+    if (tag === "project.git.state") { if (++states === 1) await held.held; return { result: { mergeHead: null } }; }
+    if (tag === "project.changes") { changes++; return { result: { items: [], truncated: false } }; }
+    if (tag === "project.review.status") return { result: { review: null } };
+    throw new Error(tag);
+  });
+  const close = f.actions.openScreen("git", "project");
+  try {
+    await vi.waitFor(() => expect(states).toBe(1));
+    await f.actions.refreshGit("project");
+    expect(changes).toBe(1);
+    held.release();
+    await vi.waitFor(() => expect(f.actions.busy("git-read")).toBe(false));
+    expect(changes).toBe(1);
+  } finally { held.release(); close(); }
+});
+
+
+it("a scoped action readback cannot consume an invalidation for another worktree", async () => {
+  const reads: string[] = [];
+  const f = fixture(async (tag, payload) => {
+    if (tag === "project.stage.all") return {};
+    if (tag === "project.git.state") { reads.push(payload.worktreeId); return { result: { mergeHead: null } }; }
+    if (tag === "project.changes") return { result: { items: [], truncated: false } };
+    if (tag === "project.review.status") return { result: { review: null } };
+    throw new Error(tag);
+  });
+  f.state.worktrees.push({ ...f.state.worktrees[0], id: "other", branch: "other", kind: "team" });
+  const close = f.actions.openScreen("git", "project");
+  try {
+    await vi.waitFor(() => expect(f.actions.busy("git-read")).toBe(false));
+    reads.length = 0; vi.useFakeTimers();
+    f.actions.observe({ gitRevision: 1 }); f.state.gitRevision = 1;
+    await f.actions.stage("workspace", [], true, true);
+    expect(reads).toEqual(["workspace"]);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(reads).toEqual(["workspace", "workspace", "other"]);
+  } finally { close(); vi.useRealTimers(); }
+});
+
+
+it("picking a worktree also reads its parent's head before enabling an update", async () => {
+  const parent = gate(), reads: string[] = [];
+  const f = fixture(async (tag, payload) => {
+    if (tag === "project.git.state") {
+      reads.push(payload.worktreeId);
+      if (payload.worktreeId === "parent") await parent.held;
+      return { result: { head: payload.worktreeId + "-fresh", mergeHead: null } };
+    }
+    if (tag === "project.changes") return { result: { items: [], truncated: false } };
+    throw new Error(tag);
+  });
+  Object.assign(f.state.worktrees[0], { kind: "agent", parentId: "parent" });
+  f.state.worktrees.push({ ...f.state.worktrees[0], id: "parent", parentId: undefined, branch: "parent", kind: "team", head: undefined });
+  const selection = f.actions.selectGit("workspace");
+  try {
+    await vi.waitFor(() => expect(reads).toContain("parent"));
+    expect(f.actions.busy("git")).toBe(true);
+    parent.release(); await selection;
+    expect(f.state.worktrees.find((w: any) => w.id === "parent").head).toBe("parent-fresh");
+    expect(reads).toEqual(["workspace", "parent"]);
+    expect(f.toasts).toEqual([]);
+  } finally { parent.release(); await selection; }
 });

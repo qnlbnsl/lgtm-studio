@@ -52,3 +52,31 @@ it.live('a workspace swapped between two requests is checked again and refused',
   renameSync(folder, join(rig.root, 'before-swap')); mkdirSync(folder); git(folder, 'init', '-b', 'linked')
   expect(failureOf(yield* call(ownerCredential, 'project.files.list', { projectId: 'project', worktreeId }))?.reason).toBe('checkout belongs to a different repository')
 })))
+
+
+it.live('one state request reuses its own workspace observation and uses five Git processes', () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck(); yield* seedScreens(rig)
+  const processes = vi.spyOn(GitProcess, 'gitProcess')
+  success(yield* call(ownerCredential, 'project.git.state', { projectId: 'project', worktreeId: 'workspace' }))
+  expect(processes.mock.calls.length).toBe(5)
+})))
+
+it.live('one linked state request adds target counts to its own check in nine Git processes', () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck(); const f = yield* seedScreens(rig)
+  git(rig.work, '-c', 'user.name=Maya Okafor', '-c', 'user.email=maya@example.test', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'Initial')
+  const folder = join(rig.root, 'state-linked'); git(rig.work, 'worktree', 'add', '-b', 'state-linked', folder)
+  const worktreeId = success(yield* call(ownerCredential, 'project.workspace.register', { repoId: f.repoId, path: folder, branch: 'state-linked', machineId: 'local', checkout: 'worktree' })).worktreeId
+  const processes = vi.spyOn(GitProcess, 'gitProcess')
+  const reply = success(yield* call(ownerCredential, 'project.git.state', { worktreeId, target: 'state-linked' }))
+  expect(processes.mock.calls.length).toBe(9)
+  expect(reply.result).toMatchObject({ branch: 'state-linked', behindParent: 0, pending: 0 })
+  renameSync(folder, join(rig.root, 'before-state-swap')); mkdirSync(folder); git(folder, 'init', '-b', 'state-linked')
+  expect(failureOf(yield* call(ownerCredential, 'project.git.state', { worktreeId, target: 'state-linked' }))?.reason).toBe('checkout belongs to a different repository')
+})))
+
+
+it.live('a state request preserves the branch refusal before an invalid target refusal', () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck(); yield* seedScreens(rig)
+  git(rig.work, 'checkout', '-b', 'changed')
+  expect(failureOf(yield* call(ownerCredential, 'project.git.state', { projectId: 'project', worktreeId: 'workspace', target: '--invalid' }))?.reason).toBe('registered workspace branch changed; restore the registered branch')
+})))

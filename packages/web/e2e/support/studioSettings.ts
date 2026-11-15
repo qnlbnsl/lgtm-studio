@@ -50,14 +50,35 @@ export async function exerciseStudioSettings(page: Page) {
           await page.reload()
           for (const [id, value] of [['sd-a', '7'], ['sd-w', '17'], ['sd-l', '29'], ['sd-n', '1'], ['sd-r', '4']]) await expect(page.locator('#' + id)).toHaveValue(value!)
           await page.goto(`${root}#/settings?section=workflow`)
+          await page.locator('#wf-reviewers').fill('4')
+          await expect(page.locator('.svc-pane fieldset')).toHaveAttribute('aria-busy', 'false')
+          // Hold a real background read across a blur and a switch activation.
+          // Its replies still come from the test engine at the root address.
+          await page.evaluate(async () => {
+            const engine = await import('/js/engine.js' as string)
+            const connection = engine.connection(), request = connection.request.bind(connection)
+            const control = window as unknown as { settingsReadHeld: boolean; releaseSettingsRead: () => void }
+            control.settingsReadHeld = false
+            let release!: () => void
+            const held = new Promise<void>(resolve => { release = resolve })
+            control.releaseSettingsRead = release
+            connection.request = async (tag: string, payload: object) => {
+              const reply = await request(tag, payload)
+              if (tag === 'roles.settings.get' && !control.settingsReadHeld) { control.settingsReadHeld = true; await held }
+              return reply
+            }
+            window.dispatchEvent(new Event('focus'))
+          })
+          await expect.poll(() => page.evaluate(() => (window as unknown as { settingsReadHeld: boolean }).settingsReadHeld)).toBe(true)
+          await expect(page.locator('#wf-path')).toBeEnabled()
           await page.locator('#wf-path').fill(workflowFolder); await page.locator('#wf-path').press('Tab')
+          await page.getByRole('switch', { name: 'Reviewer from another vendor', exact: true }).click()
+          await expect(page.getByRole('switch', { name: 'Reviewer from another vendor', exact: true })).toHaveAttribute('aria-checked', 'false')
+          await page.evaluate(() => (window as unknown as { releaseSettingsRead: () => void }).releaseSettingsRead())
           await expect(page.locator('.svc-pane fieldset')).toHaveAttribute('aria-busy', 'false')
           await page.getByRole('button', { name: 'Check again', exact: true }).click()
           await expect(page.locator('.toasts')).toContainText('Checked the workflow folder.')
-          await page.locator('#wf-reviewers').fill('4')
-          await expect(page.locator('.svc-pane fieldset')).toHaveAttribute('aria-busy', 'false')
-          await page.getByRole('switch', { name: 'Reviewer from another vendor', exact: true }).click()
-          await expect(page.getByRole('switch', { name: 'Reviewer from another vendor', exact: true })).toHaveAttribute('aria-checked', 'false')
+
           await page.reload()
           await expect(page.locator('#wf-path')).toHaveValue(workflowFolder)
           await expect(page.locator('#wf-reviewers')).toHaveValue('4')

@@ -32,6 +32,12 @@ let revision = 0;
 let serviceRead = 0;
 let refreshTimer;
 let retryPending;
+let gitObserved = 0, gitLoaded = 0;
+const gitRoster = (rows) => JSON.stringify((rows || []).map(({ id, project, repo, branch, parentId, machine, folder, kind }) => ({ id, project, repo, branch, parentId, machine, folder, kind })).sort((a, b) => a.id.localeCompare(b.id)));
+function scheduleGitRefresh() {
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(() => { if (screen?.name === 'git' && gitLoaded < gitObserved) void refreshScreen(); }, 100);
+}
 // A connection snapshot can replace the skeletons. Keep already-read detail while refreshing.
 export function observe(patch) {
   if (patch.session && patch.session.status !== 'in') {
@@ -45,6 +51,13 @@ export function observe(patch) {
   if (patch.settings && S().session.status === 'in') patch.settings = { ...patch.settings, ...draftValues() };
   if (patch.worktrees) patch.worktrees = patch.worktrees.map((w) => ({ ...w, ...(S().worktrees?.find((x) => x.id === w.id && x.folder === w.folder && x.branch === w.branch) || {}), ...Object.fromEntries(Object.entries(w).filter(([k]) => !['files', 'commits', 'ahead', 'behind', 'merge'].includes(k))) }));
   if (patch.subscriptions && subscriptionsLoaded) patch.subscriptions = S().subscriptions;
+  if (screen?.name === 'git') {
+    const reconnected = patch.conn?.status === 'live' && S().conn?.status !== 'live';
+    const changed = patch.gitRevision !== undefined && patch.gitRevision !== S().gitRevision;
+    const rosterChanged = patch.worktrees && gitRoster(patch.worktrees) !== gitRoster(S().worktrees);
+    if (reconnected || changed || rosterChanged) { gitObserved++; scheduleGitRefresh(); }
+    return;
+  }
   if (screen && (patch.conn?.status === 'live' || patch.projects)) {
     clearTimeout(refreshTimer); refreshTimer = setTimeout(() => refreshScreen(), 100);
   }
@@ -52,6 +65,7 @@ export function observe(patch) {
 export function openScreen(name, project) {
   if (!live.on) return () => {};
   screen = { name, project };
+  if (name === 'git') gitObserved++;
   void refreshScreen();
   const refresh = () => { if (screen) void refreshScreen(); };
   addEventListener('focus', refresh);
@@ -274,11 +288,12 @@ function local(w) { if (!w || w.machine !== 'local') throw new Error('Git is ava
 function destination(w) { return S().worktrees.find((x) => x.repo === w.repo && x.id === w.parentId); }
 async function loadGit(project) {
   if (!mapping) return;
-  const version = revision;
+  const version = revision, observed = gitObserved;
   const list = S().worktrees.filter((w) => w.project === project || w.kind === 'base' && w.repo === S().projects.find((p) => p.id === project)?.repo);
   for (const w of list) {
     local(w);
     const state = read(await request('project.git.state', { ...scope(w), ...(w.parent ? { target: w.parent } : {}) }));
+    if (version !== revision || S().session.status !== 'in') return;
     const changes = read(await request('project.changes', scope(w)));
     if (version !== revision || S().session.status !== 'in') return;
     const files = mapping.mapGitChanges(changes.items);
@@ -297,6 +312,8 @@ async function loadGit(project) {
   }
   const selected = list.find((w) => w.branch === S().inspecting[project]) || list.find((w) => w.kind === 'project') || list[0];
   if (selected) await loadGitDetail(selected.id);
+  if (version === revision && S().session.status === 'in') gitLoaded = Math.max(gitLoaded, observed);
+  if (gitLoaded < gitObserved) scheduleGitRefresh();
 }
 async function loadGitDetail(id, selectedCommit) {
   const w = wt(id); local(w); const version = revision;
@@ -309,13 +326,17 @@ async function loadGitDetail(id, selectedCommit) {
     const commit = selectedCommit || ui.commit || commits[0]?.hash;
     if (commit) {
       const files = mapping.mapCommitFiles(read(await request('project.commit.files', { ...scope(w), commit })).items);
-      for (let i = 0; i < files.length; i++) files[i] = { ...files[i], ...mapping.mapGitDiff(read(await request('project.diff', { ...scope(w), path: files[i].path, commit }))), loaded: true };
+      for (let i = 0; i < files.length; i++) {
+        if (version !== revision) return;
+        files[i] = { ...files[i], ...mapping.mapGitDiff(read(await request('project.diff', { ...scope(w), path: files[i].path, commit }))), loaded: true };
+      }
       if (version !== revision) return;
       writeWt(id, { commits: wt(id).commits.map((c) => c.hash === commit ? { ...c, files, loaded: true } : c) });
     }
   } else if (tab === 'conflicts' && w.merge) {
     const files = [];
     for (const f of w.merge.files) {
+      if (version !== revision) return;
       const conflict = read(await request('project.conflict', { ...scope(w), path: f.path }));
       const old = wt(id)?.merge?.files.find((x) => x.id === f.id);
       if (old?.selection?.fingerprint === conflict.fingerprint && old.selection.head === conflict.head) conflict.choices = old.selection.choices;
@@ -325,7 +346,10 @@ async function loadGitDetail(id, selectedCommit) {
     writeWt(id, { merge: { ...w.merge, files } });
   } else {
     const files = [];
-    for (const f of w.files) files.push(f.conflict ? f : { ...f, ...mapping.mapGitDiff(read(await request('project.diff', { ...scope(w), path: f.path, staged: f.staged }))), loaded: true });
+    for (const f of w.files) {
+      if (version !== revision) return;
+      files.push(f.conflict ? f : { ...f, ...mapping.mapGitDiff(read(await request('project.diff', { ...scope(w), path: f.path, staged: f.staged }))), loaded: true });
+    }
     if (version !== revision) return;
     writeWt(id, { files });
   }

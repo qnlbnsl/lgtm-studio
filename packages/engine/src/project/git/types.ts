@@ -69,8 +69,8 @@ export interface GitService {
   diff(folder: string, options?: { readonly path?: string; readonly staged?: boolean; readonly commit?: string; readonly agentRead?: boolean }): GitOperation<Diff>;
   history(folder: string, limit?: number): GitOperation<Bounded<Commit>>;
   commitFiles(folder: string, commit: string, agentRead?: boolean): GitOperation<Bounded<CommitFile>>;
-  // A registration may be reused only within the same uninterrupted engine gate.
-  state(folder: string, target?: string, registration?: Repository): GitOperation<GitState>;
+  // A registration and checked state may be reused only within the same uninterrupted engine gate.
+  state(folder: string, target?: string, registration?: Repository, checkedState?: GitState): GitOperation<GitState>;
   stage(folder: string, path: string): GitOperation<void>;
   unstage(folder: string, path: string): GitOperation<void>;
   stageAll(folder: string): GitOperation<void>;
