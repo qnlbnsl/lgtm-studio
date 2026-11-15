@@ -11,11 +11,28 @@ const fileName = (path: string) => label(pathText(path).split(/[\\/]/).at(-1) ||
 const firstLine = (text: string) => text.split('\n').find((line) => line.trim())?.trim() ?? ''
 const unquote = (text: string) => text.trim().replace(/^`+|`+$/g, '')
 const pathText = (text: string) => unquote(text.replace(/\s*\(\d+\s*-\s*\d+\)\s*$/, '').replace(/^file\s+/i, '')).replace(/^["']+|["']+$/g, '')
-// Display parsing only. Recognize one shell and one quoted argument, never a
-// shell expression after that argument. The opened detail retains the original.
+// Written from the display rule: only these exact executable spellings may
+// lose their wrapper. This does not resolve a path or evaluate shell text.
+const shellExecutables = ['', '/bin/', '/usr/bin/', '/usr/local/bin/'].flatMap(folder => ['sh', 'bash', 'zsh'].map(shell => folder + shell))
+function shellCommand(command: string): string | undefined {
+  const prefix = shellExecutables.flatMap(shell => [`${shell} -c `, `${shell} -lc `]).find(value => command.startsWith(value))
+  if (!prefix) return undefined
+  const argument = command.slice(prefix.length), quote = argument[0]
+  if (quote !== "'" && quote !== '"') return undefined
+  let inner = ''
+  for (let i = 1; i < argument.length; i++) {
+    const character = argument[i]!
+    if (character === quote) return i === argument.length - 1 && inner.trim() ? inner : undefined
+    if (quote === '"' && character === '\\') {
+      const next = argument[++i]
+      if (next === undefined) return undefined
+      inner += ['"', '\\', '$', '`'].includes(next) ? next : '\\' + next
+    } else inner += character
+  }
+  return undefined
+}
 export function commandTitle(command: string): string {
-  const wrapper = /^(?:\/(?:[^\s/]+\/)*|)(?:sh|bash|zsh) -(?:lc|c) "((?:[^"\\]|\\[\s\S])*)"$/.exec(command.trim())
-  const inner = wrapper ? wrapper[1]!.replace(/\\(["\\$`])/g, '$1') : command
+  const inner = shellCommand(command.trim()) ?? command
   const lines = inner.trim().split('\n')
   return lines.length > 1 ? firstLine(inner).replace(/\\\s*$/, '').trimEnd() + '…' : firstLine(inner)
 }
@@ -25,7 +42,7 @@ const object = (text?: string): Record<string, unknown> => {
 const field = (value: Record<string, unknown>, ...keys: string[]) => keys.map((key) => value[key]).find((v): v is string => typeof v === 'string')
 const verbs: Record<string, string> = { read: 'Read', edit: 'Edited', write: 'Wrote', create: 'Created', delete: 'Deleted', remove: 'Removed', search: 'Searched', grep: 'Searched', glob: 'Searched', list: 'Listed', get: 'Read', set: 'Updated', update: 'Updated', post: 'Posted', ask: 'Asked', orient: 'Read', run: 'Ran', execute: 'Ran', bash: 'Ran', shell: 'Ran', exec_command: 'Ran', apply_patch: 'Edited' }
 
-export function toolRow(base: { id: string; ts: number }, content: Extract<Content, { _tag: 'tool-call' }>, files: ReadonlyMap<string, string> = new Map()): ToolRow {
+export function toolRow(base: { id: string; ts: number }, content: Extract<Content, { _tag: 'tool-call' }>, files: ReadonlyMap<string, string> = new Map(), holder?: 'owner' | 'agent'): ToolRow {
   const input = object(content.input)
   const title = label(unquote(firstLine(content.title)))
   const commandValue = input.command ?? input.cmd
@@ -37,19 +54,23 @@ export function toolRow(base: { id: string; ts: number }, content: Extract<Conte
   let summary: string
   if (command) summary = `Ran ${commandTitle(command)}`
   else if (files.size) summary = `${/write|create/i.test(title) ? 'Wrote' : 'Edited'} ${fileName(path ?? '')}${files.size > 1 ? ` and ${files.size - 1} more ${files.size === 2 ? 'file' : 'files'}` : ''}`
-  else if (engineToolTitle(title)) summary = engineToolTitle(title)!
-  else if (/^List files(?: in )?/i.test(title)) summary = title.replace(/["'`]/g, '')
+  else if (engineToolTitle(title)) summary = engineToolTitle(title, holder)!
+  else if (/^List files(?: in )?/i.test(title)) summary = title.replace(/^List/i, 'Listed').replace(/["'`]/g, '')
+  else if (/^(?:\S*\/)?(?:sh|bash|zsh) -(?:lc|c) /.test(title)) summary = `Ran ${commandTitle(unquote(content.title))}`
+  else if (/^Search(?: for | in |$)/i.test(title)) summary = title.replace(/^Search/i, 'Searched')
+    .replace(/^(Searched for |Searched in )(['"])(.*)\2(?= in |$)/, '$1$3').replace(/( in )(['"])(.*)\2$/, '$1$3')
   else if (/^mcp(?:__|\.)/.test(title)) {
-    const words = title.split('__').at(-1)!.split('_')
+    const name = title.startsWith('mcp__') ? title.split('__').slice(2).join('_') : title.split('.').slice(2).join('_')
+    const words = name.split(/[._-]+/)
     const action = words.pop()!
-    let target = words.filter((word) => !['project', 'roles'].includes(word)).join(' ')
+    let target = words.filter((word) => words.length === 1 || !['project', 'roles'].includes(word)).join(' ')
     if (action === 'list' && target && !target.endsWith('s')) target += 's'
-    summary = action === 'ask' && !target ? 'Asked the owner' : verbs[action] ? `${verbs[action]} ${target || (action === 'orient' ? 'role guidance' : action)}` : `Used ${[...words, action].join(' ')}`
+    summary = action === 'ask' && !target ? 'Asked a question' : verbs[action] ? `${verbs[action]} ${target || (action === 'orient' ? 'role guidance' : action)}` : `Used ${[...words, action].join(' ')}`
   } else if (named || verbs[token]) {
     const verb = verbs[named?.[1]?.toLowerCase() ?? token] ?? 'Used'
     const target = path ? fileName(path) : field(input, 'pattern', 'query') ?? (['Read', 'Edited', 'Wrote'].includes(verb) ? fileName(namedPath) : named?.[2]) ?? ''
     summary = `${verb} ${target || (verb === 'Ran' ? 'command' : verb === 'Searched' ? 'files' : 'file')}`
-  } else if (/^(?:pnpm|npm|git|node|python3?|rg|ls|cat|cd)\s/.test(title) || /^(?:\/[^\s]+\/)?(?:sh|bash|zsh) -(?:lc|c) /.test(title)) summary = `Ran ${commandTitle(unquote(content.title))}`
+  } else if (/^(?:pnpm|npm|git|node|python3?|rg|ls|cat|cd)\s/.test(title)) summary = `Ran ${commandTitle(unquote(content.title))}`
   else if (path) summary = `Used ${fileName(path)}`
   else summary = title || 'Used tool'
 
@@ -89,7 +110,7 @@ export function orderedThread(items: ReadonlyArray<EventEnvelope>): EventEnvelop
     if (!('agentId' in e)) return item
     const segment = segments.get(e.agentId) ?? 0
     if (e._tag === 'ThreadItem' && e.content._tag === 'text') return { ...item, event: { ...e, itemId: `${segment}:${e.itemId}` } }
-    if (e._tag === 'ThreadItem' || ['QuestionAsked', 'PermissionRequested', 'PromptSent', 'DeliverySent', 'SessionOpened', 'TurnEnded', 'AgentStopped'].includes(e._tag)) segments.set(e.agentId, segment + 1)
+    if (e._tag === 'ThreadItem' || ['QuestionAsked', 'PermissionRequested', 'PromptSent', 'DeliverySent', 'SessionOpened', 'TurnEnded', 'AgentStopped', 'AgentInterrupted', 'AgentCrashed', 'AgentStarted'].includes(e._tag)) segments.set(e.agentId, segment + 1)
     return item
   })
 }

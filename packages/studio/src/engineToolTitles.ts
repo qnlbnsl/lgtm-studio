@@ -1,7 +1,7 @@
 // Explicit inventory: the test compares these names with the agent MCP surface.
 export const engineToolTitles: Readonly<Record<string, string>> = {
   start: 'Started an agent', prompt: 'Sent a prompt', answer: 'Answered a request',
-  'pass-up': 'Passed up a request', ask: 'Asked the owner', wait: 'Waited for agents',
+  'pass-up': 'Passed up a request', ask: 'Asked a question', wait: 'Waited for agents',
   'cancel-reply': 'Cancelled a reply', stop: 'Stopped an agent', resume: 'Resumed an agent',
   release: 'Released an agent', compact: 'Compacted context', group: 'Updated group membership',
   'client.snapshot': 'Read the team snapshot', 'client.roster': 'Read the roster',
@@ -29,7 +29,8 @@ export const engineToolTitles: Readonly<Record<string, string>> = {
   'roles.orient': 'Read role guidance', 'roles.handoff': 'Read a handoff',
 }
 const aliases = new Map(Object.entries(engineToolTitles).map(([name, title]) => [name.replace(/[. -]/g, '_'), title]))
-export function engineToolTitle(title: string): string | undefined {
+export function engineToolTitle(title: string, holder?: 'owner' | 'agent'): string | undefined {
   const name = /^(?:mcp__lgtm__|mcp\.lgtm\.)(.+)$/.exec(title)?.[1]
+  if (name === 'ask' && holder) return holder === 'owner' ? 'Asked the owner' : 'Asked the lead'
   return name === undefined ? undefined : aliases.get(name.replace(/[. -]/g, '_'))
 }

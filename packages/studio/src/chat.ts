@@ -4,6 +4,8 @@ import { projectApprovalEffects } from '@lgtm/contracts'
 import type { ClientRequest, EventEnvelope, ContextUsage, AgentChoices, AgentConfiguration, ContextReference } from "@lgtm/contracts"
 import { groupThreadItems } from "@lgtm/contracts/thread"
 import { orderedThread, toolRow, type ToolRow } from './chatTools.ts'
+import { questionReply, questionTurns, askHolder } from './chatQuestions.ts'
+export { questionReply } from './chatQuestions.ts'
 import { mapRequest, type StoreAgent, type StoreSubscription } from "./mapping.ts"
 
 // A harness often names a permission request with the command itself. The card then says what
@@ -74,28 +76,6 @@ export function contextLabel(reference: ContextReference, tasks: ReadonlyArray<{
 export function unwrapDelivery(text: string): string | undefined {
   return /^Data from [^\[\n]+ \[([A-Za-z0-9_-]+)\] \(delivery [^)\n]+\):\n([\s\S]*)\nEnd data \[\1\]$/.exec(text)?.[2]
 }
-type Question = Extract<EventEnvelope['event'], { _tag: 'QuestionAsked' }>
-// Only remove an echo of authoritative question fields. Extra agent prose stays.
-// Board posts do not create agent rows here; ask stores QuestionAsked separately.
-export function questionReply(text: string, questions: ReadonlyArray<Question>): string {
-  const normalize = (value: string) => value.trim().replace(/^#{1,6}\s+/gm, '').replace(/\*\*(.*?)\*\*/g, '$1').replace(/\s+/g, ' ')
-  const speech = text.replace(/(?:^|\n)Sent through LGTM Studio\.(?=\n|$)/g, '')
-  const paragraphs = speech.trim().split(/\n\s*\n/)
-  for (const q of questions) {
-    const body = q.text.trim(), title = q.title?.trim()
-    const recommendation = q.recommendation ? `Recommendation: ${q.recommendation}` : ''
-    const proposed = q.proposedAnswer ? `Proposed answer: ${q.proposedAnswer}` : ''
-    const cores = [body, ...(title ? [`${title}\n\n${body}`] : [])]
-    const echoes = [...cores.flatMap(core => [core, ...(recommendation ? [`${core}\n\n${recommendation}`] : [])]), ...(title && recommendation ? [`${title}\n\n${recommendation}`] : [])].flatMap(core => [core, ...(proposed ? [`${core}\n\n${proposed}`] : [])]).map(normalize)
-    for (let end = paragraphs.length; end > 0; end--) {
-      const candidate = paragraphs.slice(0, end).join('\n\n').trim()
-      if (echoes.includes(normalize(candidate))) {
-        return paragraphs.slice(end).join('\n\n')
-      }
-    }
-  }
-  return speech
-}
 export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, tasks: ReadonlyArray<{ id: string; label: string }> = []) {
   let pending = false
   let delivery: string | undefined
@@ -103,8 +83,9 @@ export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, 
   let runMode: string | null = null
   const rows: Array<Record<string, unknown>> = []
   const calls = new Map<string, { row: ToolRow; content: Extract<Extract<EventEnvelope['event'], { _tag: 'ThreadItem' }>['content'], { _tag: 'tool-call' }>; files: Map<string, string>; snapshots: Map<string, Set<string>> }>()
-  const questions = items.flatMap(({ event: e }) => e._tag === 'QuestionAsked' && e.agentId === agentId ? [e] : [])
-  for (const item of groupThreadItems(orderedThread(items))) {
+  const ordered = orderedThread(items)
+  const turns = questionTurns(ordered, agentId)
+  for (const item of groupThreadItems(ordered)) {
     const e = item.event
     if (!("agentId" in e) || e.agentId !== agentId) continue
     if (e._tag === "AgentStarted") runMode = e.runMode
@@ -130,13 +111,13 @@ export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, 
       lastOutputAt = Math.max(lastOutputAt ?? 0, item.occurredAt)
       const c = e.content
       if (c._tag === "text") {
-        const text = questionReply(c.text, questions)
+        const text = questionReply(c.text, (turns.get(item.sequence) ?? []).map(q => q.event))
         if (text.trim()) rows.push({ ...base, type: "agent", text })
       } else if (c._tag === "tool-call") {
         const previous = calls.get(c.callId)
         const files = previous?.files ?? new Map<string, string>()
         const content = previous ? { ...previous.content, ...c, title: c.title || previous.content.title } : c
-        const row = toolRow(previous?.row ?? base, content, files)
+        const row = toolRow(previous?.row ?? base, content, files, askHolder(content.input, Number(previous?.row.id ?? item.sequence), turns.get(item.sequence) ?? []))
         if (previous) Object.assign(previous.row, row)
         else rows.push(row)
         calls.set(c.callId, { row: previous?.row ?? row, content, files, snapshots: previous?.snapshots ?? new Map() })

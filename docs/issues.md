@@ -14986,12 +14986,17 @@ They are not harness recordings.
 
 A real Codex project-lead recording must include `ask`, its recommendation, the later reply and the owner's answer.
 It must include the durable `QuestionAsked` and `ThreadItem` events, with their sequences and times.
-It must establish the exact repeated text and the origin of "Sent through LGTM Studio.".
-The engine's ask planner creates a question and a routed delivery, without writing a board post.
+The orchestrator supplied the observed three-paragraph message in s15 fix round 1.
+It begins with the bold question title, continues with a recommendation, and ends with "Sent through LGTM Studio.".
+That final sentence is the lead's own announcement.
+No engine delivery code produces it.
+The engine's ask planner records a question without writing a board post.
+For an owner holder, routing emits only `OwnerNeeded`.
+A prompt delivery is queued only when another agent holds the question.
 The website maps agent messages only from thread text events.
 It does not turn board posts into agent messages.
 A board-originated tool result can therefore only appear as lead speech if the harness emits it again as agent text.
-Without the service events, the reported duplicate's exact source cannot be established.
+A real event export is still needed to confirm the message's tool correlation and turn boundaries.
 A real Claude Code question recording is also still needed.
 
 ## 985. Legacy Agent Client Protocol edits lost the original file text.
@@ -15123,16 +15128,54 @@ Exact quoted sh, bash and zsh wrappers show the inner command.
 Multiline commands end their first-line summary with an ellipsis.
 The complete original command remains inside the row.
 The display parser never evaluates a command.
+Fix round 1 adds readable fallback titles for tools outside the explicit table.
+Ask rows name the owner or lead only when a same-turn question identifies that holder.
+An uncorrelated ask row says "Asked a question".
+List titles use the past tense.
+Search titles remove display quotes while preserving apostrophes inside the query.
 
 ## s15-2. Question replies with recommendations escaped the echo filter.
 
 Found: 2026-11-15, from the owner's service inspection.
-Status: fixed for reconstructed event shapes in unit s15-chat2.
+Status: fixed for the supplied announcement shape in s15 fix round 1.
 
 The old filter compared only a question's body and its title plus body.
-A reply containing the title, recommendation and delivery wording remained visible.
-The filter now recognizes exact combinations of the authoritative question fields.
+A reply containing the title, recommendation and the lead's own sign-off remained visible.
+Fix round 1 recognizes an announcement only when its first paragraph is the title of that agent's question from the same turn.
+The announcement's recommendation paragraph is folded only when the card has a recommendation to show.
+Its directly following sign-off paragraph is folded with it.
+An ordinary message is never changed by this filter.
 Independent reply text remains visible.
-An answered card now displays the time the question was asked.
+An answered card displays both the time the question was asked and the time it was answered.
+The recommendation stays visible after an answer and while the question is held by another agent.
 The thread keeps the card at the question event's sequence.
 Issue 984 tracks the missing real question recordings.
+
+## s15-3. The shell summary accepted programs in arbitrary folders as known shells.
+
+Found: 2026-11-15, in review round 1 of unit s15-chat2.
+Status: fixed in s15 fix round 1.
+
+A program named zsh in an arbitrary folder could lose its executable path in the collapsed title.
+The display parser now accepts only bare sh, bash and zsh, or those names directly under `/bin/`, `/usr/bin/` and `/usr/local/bin/`.
+Other executable paths remain in the title.
+The matcher was written from that explicit list.
+It does not resolve or execute a path.
+Both quote styles are supported.
+Empty wrappers retain the original text.
+Title-only Bash wrappers now use the same parser before generic tool-name handling.
+
+## s15-4. The initial announcement filter deleted an ordinary agent sentence.
+
+Found: 2026-11-15, in review round 1 of unit s15-chat2.
+Status: fixed in s15 fix round 1.
+
+The first implementation treated "Sent through LGTM Studio." as engine delivery text.
+It removed the sentence from every agent message, even without a question.
+The engine does not produce this wording.
+It is the lead's own announcement of its question.
+The replacement filter is scoped to the same agent and turn.
+It changes only messages whose first paragraph matches the question title.
+Unrelated sentences, title mentions and messages from later turns remain intact.
+The ask tool and project lead instruction now explicitly say to write nothing about the question after calling ask.
+The lead's periodic status instruction now excludes waiting for an answer.

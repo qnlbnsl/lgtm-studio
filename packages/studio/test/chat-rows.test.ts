@@ -46,7 +46,7 @@ it('orders by engine sequence, splits a reused text id at actions, and shows que
   const question = { sequence: 3, occurredAt: 9000, event: { _tag: 'QuestionAsked', agentId: 'ag-worker', questionId: 'q', title: 'Choose', text: 'Which rule?' } } as EventEnvelope
   const first = envelope(1, { _tag: 'text', text: 'Earlier reply.' })
   const last = envelope(4, { _tag: 'text', text: 'Later reply.' })
-  const items = [last, question, envelope(2, { _tag: 'text', text: 'Which rule?' }, { itemId: 'echo' }), first]
+  const items = [last, question, envelope(2, { _tag: 'text', text: '**Choose**' }, { itemId: 'echo' }), first]
   expect(mapThread([...items, first], 'ag-worker').items).toMatchObject([
     { id: '1', ts: 1000, text: 'Earlier reply.' }, { id: '3', type: 'request', requestId: 'q' }, { id: '4', ts: 4000, text: 'Later reply.' },
   ])
@@ -174,7 +174,7 @@ it('cleans quoted paths, ranges, engine tool names, array commands, and quoted c
   const row = (title: string, input?: object) => toolRow({ id: '1', ts: 1 }, { _tag: 'tool-call', callId: 'c', title, ...(input ? { input: JSON.stringify(input) } : {}) })
   expect(row('Read `/w/src/gitApi.ts`')).toMatchObject({ summary: 'Read gitApi.ts', details: [{ label: 'Path', text: '/w/src/gitApi.ts' }] })
   expect(row('Read /w/a.ts (1 - 40)')).toMatchObject({ summary: 'Read a.ts', details: [{ label: 'Path', text: '/w/a.ts' }] })
-  expect(row('mcp__lgtm__ask').summary).toBe('Asked the owner')
+  expect(row('mcp__lgtm__ask').summary).toBe('Asked a question')
   expect(row('mcp__lgtm__project_task_list').summary).toBe('Listed tasks')
   expect(row('Shell', { command: ['bash', '-lc', 'pnpm test'] })).toMatchObject({ summary: 'Ran bash -lc pnpm test', details: [{ label: 'Command', text: 'bash -lc pnpm test' }] })
   expect(row('`pnpm typecheck`')).toMatchObject({ summary: 'Ran pnpm typecheck', details: [{ label: 'Command', text: 'pnpm typecheck' }] })
@@ -247,9 +247,11 @@ it('shows both identical replace-all parts and deduplicates only a later whole-c
 it('dates an answered card at the question time while retaining its recorded answer', () => {
   const state = { ...mapSnapshot(engineSnapshot, 1), ui: {} }
   const createdAt = new Date(2026, 10, 15, 11, 9).getTime(), answeredAt = new Date(2026, 10, 15, 11, 21).getTime()
-  const element = render(ui.RequestBlock, { s: state, request: { id: 'q-time', agent: 'ag-worker', kind: 'question', title: 'Test denial or approval next?', body: 'Choose a test.', status: 'answered', options: [], answer: 'Denial', createdAt, answeredAt } })
+  const element = render(ui.RequestBlock, { s: state, request: { id: 'q-time', agent: 'ag-worker', kind: 'question', title: 'Test denial or approval next?', body: 'Choose a test.', status: 'answered', options: [], answer: 'Denial', recommendation: 'Test denial first.', createdAt, answeredAt } })
   expect(element.querySelector('.qc-age')?.textContent).toBe(lib.clock(createdAt))
   expect(element.textContent).toContain('Denial')
+  expect(element.textContent).toContain('Answered at ' + lib.clock(answeredAt))
+  expect(element.querySelector('.qc-rec')?.textContent).toContain('Test denial first.')
 })
 
 it('uses the shared folder dropdown in the sample and live terminal and opens directly', async () => {
@@ -271,4 +273,21 @@ it('uses the shared folder dropdown in the sample and live terminal and opens di
     expect(source).toContain('<${TerminalLaunch}')
     expect(source).not.toContain('Open a shell in a worktree')
   }
+})
+
+
+it('disables New session when the selected folder is unavailable', async () => {
+  const { TerminalLaunch } = await import('../../../design/mock/js/terminal-launch.js' as string)
+  const element = render(TerminalLaunch, { options: [{ value: 'remote', label: 'Remote', folder: '/unavailable', reason: 'Engine work needed: local machine only' }], value: 'remote', onChange() {}, onOpen() { throw new Error('A disabled folder must not open') } })
+  expect(element.querySelector('option')!.disabled).toBe(true)
+  expect(element.querySelector('option')!.textContent).toContain('Engine work needed: local machine only')
+  expect(element.querySelector('button')!.disabled).toBe(true)
+  element.querySelector('button')!.click(); await tick()
+})
+
+for (const status of ['open', 'answered']) it(`keeps a ${status} held question's recommendation on its card`, () => {
+  lib.live.on = true
+  const state = { ...mapSnapshot(engineSnapshot, 1), ui: {} }
+  const element = render(ui.RequestBlock, { s: state, request: { id: 'held-q', agent: 'ag-worker', heldBy: 'ag-worker', kind: 'question', title: 'Choose a test', body: 'Test what?', status, options: [], recommendation: 'Denial first.', createdAt: 1, answeredAt: status === 'answered' ? 2 : null } })
+  expect(element.textContent).toContain('Denial first.')
 })

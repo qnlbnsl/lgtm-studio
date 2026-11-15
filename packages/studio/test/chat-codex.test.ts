@@ -27,7 +27,7 @@ it('maps Codex read, list and MCP reports through the engine translator', () => 
   expect(row({ title: "Read file '/work/SKILL.md'", kind: 'read', locations: [{ path: '/work/SKILL.md' }] })).toMatchObject({ summary: 'Read SKILL.md', details: [{ label: 'Path', text: '/work/SKILL.md' }] })
   expect(row({ title: "Read file '/work/2026-11-06-website-and-engine-design.md'", kind: 'read' }).summary).toBe('Read 2026-11-06-website-and-engine-design.md')
   expect(row({ title: "Read SKILL.md'" }).summary).toBe('Read SKILL.md')
-  expect(row({ title: "List files in 'web'", kind: 'read' }).summary).toBe('List files in web')
+  expect(row({ title: "List files in 'web'", kind: 'read' }).summary).toBe('Listed files in web')
   expect(row({ title: 'mcp.lgtm.project.design.read', kind: 'execute', rawInput: { server: 'lgtm', tool: 'project.design.read', arguments: { projectId: 'p' } } }).summary).toBe('Read the design')
 })
 // Reconstructed from claude-agent-acp 0.99.1 ReadReporter, BashReporter and
@@ -51,17 +51,17 @@ it('unwraps only one exact quoted shell invocation and keeps complete input', ()
   expect(row({ title: 'Shell', rawInput: { command: multiline } })).toMatchObject({ summary: "Ran printf '%s\\n'…", details: [{ text: multiline }] })
   expect(row({ title: '/usr/bin/zsh -lc "nl -ba file.ts"' })).toMatchObject({ summary: 'Ran nl -ba file.ts', details: [{ label: 'Command', text: '/usr/bin/zsh -lc "nl -ba file.ts"' }] })
 })
-// Constructed durable events. The real service's repeated reply was unavailable.
+// Constructed durable events following the announcement supplied in fixes-r1.md.
 // QuestionAsked comes from routing/questions.ts; text chunks from translate.ts.
-it('folds an answered question echo with recommendation and delivery wording without losing independent prose', () => {
+it('folds an answered same-turn announcement without losing independent prose', () => {
   const q = { _tag: 'QuestionAsked', agentId: 'lead', questionId: 'q', title: 'Test denial or approval next?', text: 'Choose the next test.', recommendation: 'Denial, then approval.', holder: { _tag: 'owner' }, deliveryId: 'd' } as Extract<EventEnvelope['event'], { _tag: 'QuestionAsked' }>
   const echo = `## ${q.title}\n\nRecommendation: ${q.recommendation}\n\nSent through LGTM Studio.`
   expect(questionReply(echo, [q])).toBe('')
   expect(questionReply(echo + '\n\nIndependent progress.', [q])).toBe('Independent progress.')
   const distinct = `${q.title}\n\nRecommendation: Something different.\n\nSent through LGTM Studio.`
-  expect(questionReply(distinct, [q]).trim()).toBe(`${q.title}\n\nRecommendation: Something different.`)
-  expect(questionReply('Sent through LGTM Studio.', [])).toBe('')
-  expect(questionReply('Independent progress.\n\nSent through LGTM Studio.', []).trim()).toBe('Independent progress.')
+  expect(questionReply(distinct, [q])).toBe('')
+  expect(questionReply('Sent through LGTM Studio.', [])).toBe('Sent through LGTM Studio.')
+  expect(questionReply('Independent progress.\n\nSent through LGTM Studio.', [])).toBe('Independent progress.\n\nSent through LGTM Studio.')
   const events = [
     { sequence: 1, occurredAt: 100, event: q },
     { sequence: 2, occurredAt: 200, event: { _tag: 'ThreadItem', agentId: 'lead', itemId: 'm', content: { _tag: 'text', text: echo } } },

@@ -122,6 +122,16 @@ export async function exerciseStudioTerminal(page: Page) {
           await expect(folder).toHaveValue(selectedFolder)
           await expect(folder.locator('option[value="remote-terminal"]')).toHaveJSProperty('disabled', true)
           await expect(folder.locator('option[value="remote-terminal"]')).toContainText('Engine work needed')
+          // Simulate a remembered choice becoming unavailable. Native selection
+          // itself cannot choose a disabled option with a mouse or keyboard.
+          await folder.evaluate(element => {
+            const select = element as HTMLSelectElement
+            select.value = 'remote-terminal'; select.dispatchEvent(new Event('change', { bubbles: true }))
+          })
+          await expect(folder).toHaveValue('remote-terminal')
+          await expect(page.getByRole('button', { name: 'New session', exact: true })).toBeDisabled()
+          await folder.selectOption(selectedFolder)
+          await expect(page.getByRole('button', { name: 'New session', exact: true })).toBeEnabled()
           await page.getByRole('button', { name: 'New session', exact: true }).click()
           await expect(page.locator('.term-cwd')).toHaveText(rig.work)
           await page.getByRole('button', { name: /^Close / }).last().click()

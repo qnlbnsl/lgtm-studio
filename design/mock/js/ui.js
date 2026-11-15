@@ -309,7 +309,7 @@ function BriefCard({ s, r, openThread, who }) {
       ${standing.length > 0 && html`<${Menu} class="btn split-more" label=${'More ways to ' + label.toLowerCase()} trigger=${html`<${Icon} name="chevron-down" size=${14} />`}
         items=${standing.map((o) => ({ label: always, why: o.label, disabled: busy, onSelect: () => answer(o.id) }))} width=${320} />`}</span>`;
   };
-  if (liveMode.on && r.status === 'open' && r.heldBy) return html`<section class="req qc" id=${'req-' + r.id}><b>${brief}</b><${Rich} text=${r.body} pid=${r.project} /><p class="muted">Waiting on ${agentOf(s, r.heldBy).name}</p></section>`;
+  if (liveMode.on && r.status === 'open' && r.heldBy) return html`<section class="req qc" id=${'req-' + r.id}><b>${brief}</b><${Rich} text=${r.body} pid=${r.project} />${recShort && html`<p class="qc-rec"><${Rich} text=${recShort} pid=${r.project} /></p>`}<p class="muted">Waiting on ${agentOf(s, r.heldBy).name}</p></section>`;
   // An answered card keeps everything it showed. The answer buttons leave, and one line says
   // what the answer was.
   const done = r.status !== 'open';
@@ -324,7 +324,7 @@ function BriefCard({ s, r, openThread, who }) {
     <div class="qc-top"><b class="qc-q">${brief}</b>${done ? html`<span class="qc-age">${clock(isQ ? r.createdAt : r.answeredAt)}</span>` : html`<span class=${cx('qc-age', waited >= HOUR && 'long')}>${ago(r.createdAt, now)}</span>`}</div>
     ${summary && html`<div class="qc-sum"><${Rich} text=${summary} pid=${r.project} /></div>`}
     ${isQ && r.body && !summary && r.body !== brief && html`<div class="qc-sum"><${Rich} text=${r.body} pid=${r.project} /></div>`}
-    ${recShort && !done && html`<p class=${cx('qc-rec', declined && 'declined')}><${Icon} name="sparkles" size=${14} class="qc-star" /><span>${recShort}</span>${declined && html`<span class="qc-tag">Declined</span>`}</p>`}
+    ${recShort && html`<p class=${cx('qc-rec', declined && 'declined')}><${Icon} name="sparkles" size=${14} class="qc-star" /><span>${recShort}</span>${declined && html`<span class="qc-tag">Declined</span>`}</p>`}
     ${open && html`<div class="qc-report" id=${id}>
       <p class="qc-meta">${who && html`<${Avatar} agent=${a} s=${s} size="sm" status=${false} /><span>Asked by ${agentLabel(s, a, { withTeam: true })}</span>`}${r.blocks && html`<span>Blocks ${r.blocks}</span>`}${!isQ && r.tool && html`<span>Tool ${r.tool}</span>`}</p>
       ${isQ && summary && r.body && html`<section class="qc-part q"><h5>The question</h5><${Rich} text=${r.body} pid=${r.project} /></section>`}
@@ -343,6 +343,7 @@ function BriefCard({ s, r, openThread, who }) {
         </ul></section>`}
       ${r.refs?.length > 0 && html`<section class="qc-part refs"><h5>References</h5><ol>${r.refs.map((f, i) => html`<li key=${f}><span class="qc-cite">[${i + 1}]</span><span class="mono">${f}</span></li>`)}</ol></section>`}
     </div>`}
+    ${done && isQ && r.answeredAt != null && html`<p class="qc-meta">Answered at <time>${clock(r.answeredAt)}</time></p>`}
     ${done && r.projectApproval && html`<p role="status">${approvalOutcome}</p>`}
     <div class="req-actions qc-actions">
       ${done && html`
