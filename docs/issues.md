@@ -14818,7 +14818,12 @@ The owner said the terminal looks good and liked the font control at the top rig
 The owner asked for the folder choice to sit in the tab itself, as a dropdown beside the "New session" button.
 The dropdown lists the places where a session can open.
 The dialog is then not needed.
-This is open.
+Status: fixed in unit s15-chat2.
+A labelled "Open in" dropdown now sits beside "New session" in the tab.
+The choice stays in page memory for each project.
+The button sends the same registered-worktree request immediately.
+Remote worktrees remain disabled, with "Engine work needed: local machine only" in the option text.
+The sample mock uses the same control.
 
 ## 974. A project can be archived but not deleted.
 
@@ -14966,6 +14971,29 @@ It must also cover a diff-first file write and the raw tool titles and command a
 The repository still has no real recording of that multi-hunk shape.
 The round 1 tests use explicitly constructed protocol inputs, rather than invented recordings.
 
+Unit s15-chat2 inspected the installed `@agentclientprotocol/codex-acp` version 2.6.0.
+Its `commandActionFacts` reports quoted read and list titles.
+Its unknown command report retains the full command in `rawInput.command`.
+Its `McpToolReporter` names a call `mcp.<server>.<tool>`.
+Its renderer sends these fields as Agent Client Protocol tool updates.
+The unit also inspected the installed `@agentclientprotocol/claude-agent-acp` version 0.99.1.
+Its read reporter supplies a display path, line range and locations.
+Its Bash reporter uses the command as the title.
+Its renderer carries the tool input as `rawInput`.
+The new tests reconstruct these shapes with synthetic paths and arguments.
+Their comments distinguish adapter-derived reports from constructed command edge cases and question events.
+They are not harness recordings.
+
+A real Codex project-lead recording must include `ask`, its recommendation, the later reply and the owner's answer.
+It must include the durable `QuestionAsked` and `ThreadItem` events, with their sequences and times.
+It must establish the exact repeated text and the origin of "Sent through LGTM Studio.".
+The engine's ask planner creates a question and a routed delivery, without writing a board post.
+The website maps agent messages only from thread text events.
+It does not turn board posts into agent messages.
+A board-originated tool result can therefore only appear as lead speech if the harness emits it again as agent text.
+Without the service events, the reported duplicate's exact source cannot be established.
+A real Claude Code question recording is also still needed.
+
 ## 985. Legacy Agent Client Protocol edits lost the original file text.
 
 Found: 2026-11-15, while fixing issue 945.
@@ -15080,3 +15108,31 @@ The failure occurred while several test files were running.
 The cause of the missed startup bound has not been established.
 No wait or deadline was widened.
 The orchestrator should retain this observation when assessing the full check.
+
+## s15-1. Codex tool row titles exposed adapter names, quotes and shell wrappers.
+
+Found: 2026-11-15, from the owner's service inspection.
+Status: fixed in unit s15-chat2.
+
+The title mapping recognized only the double-underscore engine tool prefix.
+Codex uses a dotted prefix.
+An explicit title inventory now covers every agent tool in both forms.
+An inventory test fails when the exposed tools and title table differ.
+Quoted read and list titles now lose their display quotes.
+Exact quoted sh, bash and zsh wrappers show the inner command.
+Multiline commands end their first-line summary with an ellipsis.
+The complete original command remains inside the row.
+The display parser never evaluates a command.
+
+## s15-2. Question replies with recommendations escaped the echo filter.
+
+Found: 2026-11-15, from the owner's service inspection.
+Status: fixed for reconstructed event shapes in unit s15-chat2.
+
+The old filter compared only a question's body and its title plus body.
+A reply containing the title, recommendation and delivery wording remained visible.
+The filter now recognizes exact combinations of the authoritative question fields.
+Independent reply text remains visible.
+An answered card now displays the time the question was asked.
+The thread keeps the card at the question event's sequence.
+Issue 984 tracks the missing real question recordings.

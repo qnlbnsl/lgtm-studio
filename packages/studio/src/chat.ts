@@ -74,6 +74,28 @@ export function contextLabel(reference: ContextReference, tasks: ReadonlyArray<{
 export function unwrapDelivery(text: string): string | undefined {
   return /^Data from [^\[\n]+ \[([A-Za-z0-9_-]+)\] \(delivery [^)\n]+\):\n([\s\S]*)\nEnd data \[\1\]$/.exec(text)?.[2]
 }
+type Question = Extract<EventEnvelope['event'], { _tag: 'QuestionAsked' }>
+// Only remove an echo of authoritative question fields. Extra agent prose stays.
+// Board posts do not create agent rows here; ask stores QuestionAsked separately.
+export function questionReply(text: string, questions: ReadonlyArray<Question>): string {
+  const normalize = (value: string) => value.trim().replace(/^#{1,6}\s+/gm, '').replace(/\*\*(.*?)\*\*/g, '$1').replace(/\s+/g, ' ')
+  const speech = text.replace(/(?:^|\n)Sent through LGTM Studio\.(?=\n|$)/g, '')
+  const paragraphs = speech.trim().split(/\n\s*\n/)
+  for (const q of questions) {
+    const body = q.text.trim(), title = q.title?.trim()
+    const recommendation = q.recommendation ? `Recommendation: ${q.recommendation}` : ''
+    const proposed = q.proposedAnswer ? `Proposed answer: ${q.proposedAnswer}` : ''
+    const cores = [body, ...(title ? [`${title}\n\n${body}`] : [])]
+    const echoes = [...cores.flatMap(core => [core, ...(recommendation ? [`${core}\n\n${recommendation}`] : [])]), ...(title && recommendation ? [`${title}\n\n${recommendation}`] : [])].flatMap(core => [core, ...(proposed ? [`${core}\n\n${proposed}`] : [])]).map(normalize)
+    for (let end = paragraphs.length; end > 0; end--) {
+      const candidate = paragraphs.slice(0, end).join('\n\n').trim()
+      if (echoes.includes(normalize(candidate))) {
+        return paragraphs.slice(end).join('\n\n')
+      }
+    }
+  }
+  return speech
+}
 export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, tasks: ReadonlyArray<{ id: string; label: string }> = []) {
   let pending = false
   let delivery: string | undefined
@@ -108,9 +130,8 @@ export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, 
       lastOutputAt = Math.max(lastOutputAt ?? 0, item.occurredAt)
       const c = e.content
       if (c._tag === "text") {
-        const text = c.text.trim()
-        // An exact question echo belongs on its authoritative card only.
-        if (!questions.some((q) => text === q.text.trim() || text === `${q.title ?? ''}\n\n${q.text}`.trim())) rows.push({ ...base, type: "agent", text: c.text })
+        const text = questionReply(c.text, questions)
+        if (text.trim()) rows.push({ ...base, type: "agent", text })
       } else if (c._tag === "tool-call") {
         const previous = calls.get(c.callId)
         const files = previous?.files ?? new Map<string, string>()

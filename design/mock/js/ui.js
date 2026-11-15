@@ -321,7 +321,7 @@ function BriefCard({ s, r, openThread, who }) {
     : html`<button type="button" class="btn ghost qc-thread" onClick=${openThread}><${Icon} name="message-square" size=${14} />Open thread</button>`);
   return html`<section aria-busy=${liveMode.on && chatLive.requestBusy(r)} class=${cx('req qc', r.kind, open && 'open', done && 'done')} id=${'req-' + r.id} tabindex="-1" aria-label=${(done ? 'Answered: ' : isQ ? 'Question: ' : 'Approval: ') + brief}>
     ${approvalEffect && html`<p class="qc-sum">${approvalEffect}</p>`}
-    <div class="qc-top"><b class="qc-q">${brief}</b>${done ? html`<span class="qc-age">${clock(r.answeredAt)}</span>` : html`<span class=${cx('qc-age', waited >= HOUR && 'long')}>${ago(r.createdAt, now)}</span>`}</div>
+    <div class="qc-top"><b class="qc-q">${brief}</b>${done ? html`<span class="qc-age">${clock(isQ ? r.createdAt : r.answeredAt)}</span>` : html`<span class=${cx('qc-age', waited >= HOUR && 'long')}>${ago(r.createdAt, now)}</span>`}</div>
     ${summary && html`<div class="qc-sum"><${Rich} text=${summary} pid=${r.project} /></div>`}
     ${isQ && r.body && !summary && r.body !== brief && html`<div class="qc-sum"><${Rich} text=${r.body} pid=${r.project} /></div>`}
     ${recShort && !done && html`<p class=${cx('qc-rec', declined && 'declined')}><${Icon} name="sparkles" size=${14} class="qc-star" /><span>${recShort}</span>${declined && html`<span class="qc-tag">Declined</span>`}</p>`}

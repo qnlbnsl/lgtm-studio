@@ -7,6 +7,7 @@ import {
 import { teamsOf, teamName, agentsOfTeam, machineOf, repoOf } from '../data.js';
 import * as act from '../actions.js';
 import { Menu, Avatar } from '../ui.js';
+import { TerminalLaunch } from '../terminal-launch.js';
 
 // ---- lines ---------------------------------------------------------------------
 // A line is a list of [text, classes] pieces. `out` also accepts a plain string.
@@ -510,24 +511,25 @@ export function TerminalTab({ s, project }) {
   useLayoutEffect(() => { const el = screen.current; if (el && stick.current && !sess?.vim) el.scrollTop = el.scrollHeight; });
   useEffect(() => { stick.current = true; if (!phone) focus(); }, [sess?.id]);
 
-  const newItems = worktrees(s, project).flatMap((w) => {
+  const options = worktrees(s, project).flatMap(w => {
     const repo = repoOf(s, project);
-    return s.machines.filter((m) => m.id === w.machine || (!w.team && repo?.folders?.[m.id])).map((m) => ({
-      label: html`<span>${w.label}</span><span class="muted"> · ${m.name}</span>`, hint: html`<span class="mono">${m.id === w.machine ? w.root : repo.folders[m.id]}</span>`, icon: w.team ? 'git-branch' : 'folder-git-2',
-      sub: m.name, disabled: m.status !== 'online', why: m.status !== 'online' ? `${m.name} is offline` : null,
-      onSelect: () => open(m.id === w.machine ? w : { machine: m.id, root: repo.folders[m.id], branch: repo.main }),
+    return s.machines.filter(m => m.id === w.machine || (!w.team && repo?.folders?.[m.id])).map(m => ({
+      value: w.root + ':' + m.id, label: w.label + ' · ' + m.name,
+      folder: m.id === w.machine ? w.root : repo.folders[m.id],
+      reason: m.status !== 'online' ? m.name + ' is offline' : null,
+      worktree: m.id === w.machine ? w : { machine: m.id, root: repo.folders[m.id], branch: repo.main },
     }));
   });
-  const newSession = (cls = 'icon-btn', inner) => html`<${Menu} class=${cls} label="New session" width=${360} align="start"
-    trigger=${inner || html`<${Icon} name="plus" size=${15} />`}
-    header=${html`<div class="menu-label">Open a shell in a worktree</div>`} items=${newItems} />`;
+  const selected = options.find(option => option.value === term.openIn) || options[0];
+  const newSession = (className = 'btn sm') => html`<${TerminalLaunch} options=${options} value=${selected?.value}
+    onChange=${value => update(() => { term.openIn = value; })} onOpen=${() => selected && open(selected.worktree)} className=${className} />`;
 
   if (!sess) {
     return html`<div class="term"><div class="term-none">
       <${Icon} name="square-terminal" size=${22} class="faint" />
       <strong>No sessions are open</strong>
       <span class="muted">A session is a shell in one worktree on one machine. Agents keep working whether or not a session is open.</span>
-      ${newSession('btn primary', html`<${Icon} name="plus" size=${14} /><span>New session</span>`)}
+      ${newSession('btn primary')}
     </div></div>`;
   }
 

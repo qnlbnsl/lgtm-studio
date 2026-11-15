@@ -38,6 +38,9 @@ export async function exerciseStudioChatRows(page: Page) {
         const complete = translate({ sessionUpdate: 'tool_call_update', toolCallId: 'edit', status: 'completed', content: [firstHunk, secondHunk].map((text) => ({ type: 'diff', changes: [{ path: 'notes/MEMORY.md' }], patch: { text, format: 'git_patch' } })) }, false)
         const output = Array.from({ length: 40 }, (_, n) => `check ${n}: passed`).join('\n')
         const question = 'Which rule should we keep?\n- The new rule\n- The old rule'
+        // Constructed reports following the installed Codex 2.6.0 adapter's
+        // commandActionFacts and McpToolReporter, not a real recording.
+        const codex = (title: string, rawInput?: object) => translate({ sessionUpdate: 'tool_call', toolCallId: title, title, status: 'completed', ...(rawInput ? { rawInput } : {}) }, false).map(event => item(event.content))
         const item = (content: any, itemId = 'message') => eventOf({ _tag: 'ThreadItem', agentId: project.leadId, itemId, replay: false, content })
         yield* appendSetup([
           item({ _tag: 'text', text: 'Earlier reply.\n- First item\n- Second `item`\n\n```ts\nconst safe = "<b>literal</b>";\n```' }),
@@ -45,10 +48,16 @@ export async function exerciseStudioChatRows(page: Page) {
           item({ _tag: 'file-change', callId: 'edit', path: 'notes/MEMORY.md', diff }),
           item({ _tag: 'file-change', callId: 'edit', path: 'notes/MEMORY.md', diff }),
           ...complete.map((event) => item(event.content)),
-          item({ _tag: 'tool-call', callId: 'command', title: 'Bash', input: '{"command":"pnpm typecheck"}', output: JSON.stringify([{ type: 'content', content: { type: 'text', text: output } }]), status: 'completed' }),
+          ...codex("Read file '/work/SKILL.md'"),
+          ...codex("List files in 'web'"),
+          ...codex('mcp.lgtm.project.read', { server: 'lgtm', tool: 'project.read', arguments: {} }),
+          ...codex('mcp.lgtm.ask', { server: 'lgtm', tool: 'ask', arguments: {} }),
+          item({ _tag: 'tool-call', callId: 'command', title: 'pnpm typecheck', input: JSON.stringify({ command: '/usr/bin/zsh -lc "pnpm typecheck"' }), output: JSON.stringify([{ type: 'content', content: { type: 'text', text: output } }]), status: 'completed' }),
           item({ _tag: 'text', text: question }, 'question-echo'),
-          eventOf({ _tag: 'QuestionAsked', agentId: project.leadId, questionId: 'chat-row-question', holder: { _tag: 'owner' }, deliveryId: 'chat-question', title: 'Choose a rule', text: question }),
+          eventOf({ _tag: 'QuestionAsked', agentId: project.leadId, questionId: 'chat-row-question', holder: { _tag: 'owner' }, deliveryId: 'chat-question', title: 'Choose a rule', text: question, recommendation: 'Keep the new rule.' }),
+          item({ _tag: 'text', text: '## Choose a rule\n\nRecommendation: Keep the new rule.\n\nSent through LGTM Studio.' }, 'recommendation-echo'),
           item({ _tag: 'text', text: 'Later reply.' }),
+          eventOf({ _tag: 'QuestionAnswered', agentId: project.leadId, questionId: 'chat-row-question', text: 'Keep the new rule.', deliveryId: 'chat-answer', answeredBy: { _tag: 'owner' } }),
         ])
         yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
@@ -75,7 +84,10 @@ export async function exerciseStudioChatRows(page: Page) {
           await expect(edit.locator('.tool-line')).toContainText('completed')
           await expect(edit.getByRole('button', { name: 'Copy diff', exact: true })).toBeVisible()
           expect((await edit.textContent())!.split('notes/MEMORY.md')).toHaveLength(2)
+          for (const title of ['Read SKILL.md', 'List files in web', 'Read the project', 'Asked the owner']) await expect(thread.locator('summary', { hasText: title })).toHaveCount(1)
+          await expect(thread).not.toContainText('Sent through LGTM Studio.')
           await command.locator('summary').click()
+          expect(await command.locator('pre').first().textContent()).toBe('/usr/bin/zsh -lc "pnpm typecheck"')
           await expect(command.getByRole('button', { name: 'Show more', exact: true })).toBeVisible()
           await command.getByRole('button', { name: 'Show more', exact: true }).click()
           expect(await command.locator('pre').nth(1).textContent()).toBe(output)
@@ -85,12 +97,14 @@ export async function exerciseStudioChatRows(page: Page) {
           await card.getByRole('button', { name: 'Details', exact: true }).click()
           expect((await thread.textContent())!.split('Which rule should we keep?')).toHaveLength(2)
           expect(await thread.locator(':scope > .msg').evaluateAll((rows) => rows.map((row) => row.querySelector('.body')?.textContent || row.querySelector('summary')?.textContent || row.querySelector('.req')?.getAttribute('aria-label')))).toEqual([
-            expect.stringContaining('Earlier reply.'), 'Edited MEMORY.md', 'Ran pnpm typecheck', 'Question: Choose a rule', 'Later reply.',
+            expect.stringContaining('Earlier reply.'), 'Edited MEMORY.md', 'Read SKILL.md', 'List files in web', 'Read the project', 'Asked the owner', 'Ran pnpm typecheck', 'Answered: Choose a rule', 'Later reply.',
           ])
+          await expect(card).toHaveAttribute('aria-label', 'Answered: Choose a rule')
           // Reconnect and history hydration keep the same rows and deduplication.
           await page.reload()
           await expect(thread.locator('summary', { hasText: 'Edited MEMORY.md' })).toHaveCount(1)
           await expect(thread.locator('#req-chat-row-question')).toContainText('Which rule should we keep?')
+          await expect(thread).not.toContainText('Sent through LGTM Studio.')
           expect((await thread.textContent())!.split('Which rule should we keep?')).toHaveLength(2)
         })
       })).pipe(Effect.provide(buildServices(rig, engineLists).pipe(Layer.provide(dependencies))), Effect.provide(runner.layer))

@@ -63,7 +63,7 @@ it('names reads, writes, commands, searches and engine tools while retaining the
   const row = (title: string, input?: object) => toolRow({ id: '1', ts: 1 }, { _tag: 'tool-call', callId: 'c', title, ...(input ? { input: JSON.stringify(input) } : {}) })
   expect(row('Read', { file_path: '/work/src/gitApi.ts' })).toMatchObject({ summary: 'Read gitApi.ts', raw: 'Read' })
   expect(row('Write', { file_path: '/work/notes/sprint.md', content: '# Sprint' })).toMatchObject({ summary: 'Wrote sprint.md' })
-  expect(row('Bash', { command: 'pnpm typecheck\npnpm test' })).toMatchObject({ summary: 'Ran pnpm typecheck', details: [{ label: 'Command', text: 'pnpm typecheck\npnpm test' }] })
+  expect(row('Bash', { command: 'pnpm typecheck\npnpm test' })).toMatchObject({ summary: 'Ran pnpm typecheck…', details: [{ label: 'Command', text: 'pnpm typecheck\npnpm test' }] })
   expect(row('Grep', { pattern: 'ThreadItem', path: '/work/src' })).toMatchObject({ summary: 'Searched src' })
   expect(row('Read /work/src/gitApi.ts')).toMatchObject({ summary: 'Read gitApi.ts', raw: 'Read', details: [{ label: 'Path', text: '/work/src/gitApi.ts' }] })
   expect(row('mcp__lgtm__project_sprint_create')).toMatchObject({ summary: 'Created sprint', raw: 'mcp__lgtm__project_sprint_create' })
@@ -242,4 +242,33 @@ it('shows both identical replace-all parts and deduplicates only a later whole-c
   expect(element.querySelector('pre')?.textContent).toBe(both)
   expect(element.querySelectorAll('.del')).toHaveLength(2)
   expect(element.querySelectorAll('.add')).toHaveLength(2)
+})
+
+it('dates an answered card at the question time while retaining its recorded answer', () => {
+  const state = { ...mapSnapshot(engineSnapshot, 1), ui: {} }
+  const createdAt = new Date(2026, 10, 15, 11, 9).getTime(), answeredAt = new Date(2026, 10, 15, 11, 21).getTime()
+  const element = render(ui.RequestBlock, { s: state, request: { id: 'q-time', agent: 'ag-worker', kind: 'question', title: 'Test denial or approval next?', body: 'Choose a test.', status: 'answered', options: [], answer: 'Denial', createdAt, answeredAt } })
+  expect(element.querySelector('.qc-age')?.textContent).toBe(lib.clock(createdAt))
+  expect(element.textContent).toContain('Denial')
+})
+
+it('uses the shared folder dropdown in the sample and live terminal and opens directly', async () => {
+  const { TerminalLaunch } = await import('../../../design/mock/js/terminal-launch.js' as string)
+  const options = [{ value: 'project', label: 'Project', folder: '/work/project' }, { value: 'base', label: 'main', folder: '/work' }, { value: 'remote', label: 'remote', folder: '/unavailable', reason: 'Engine work needed: local machine only' }]
+  let selected = 'project', opened = ''
+  const element = render(TerminalLaunch, { options, value: selected, onChange: (value: string) => { selected = value }, onOpen: () => { opened = selected } })
+  const select = element.querySelector('select')!
+  expect(select.closest('label')?.textContent).toContain('Open in')
+  expect([...select.options].map(option => option.value)).toEqual(['project', 'base', 'remote'])
+  expect(select.options[2]!.disabled).toBe(true)
+  expect(select.options[2]!.textContent).toContain('Engine work needed')
+  select.value = 'base'; select.dispatchEvent(new Event('change', { bubbles: true })); await tick()
+  element.querySelector('button')!.click(); await tick()
+  expect(opened).toBe('base')
+  expect(element.querySelector('[role="dialog"]')).toBeNull()
+  for (const file of ['design/mock/js/screens/terminal.js', 'design/mock/js/live/terminal.js']) {
+    const source = readFileSync(file, 'utf8')
+    expect(source).toContain('<${TerminalLaunch}')
+    expect(source).not.toContain('Open a shell in a worktree')
+  }
 })

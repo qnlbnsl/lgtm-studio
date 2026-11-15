@@ -1,15 +1,24 @@
 import type { EventEnvelope } from '@lgtm/contracts'
 import { toolText } from '@lgtm/contracts/thread'
+import { engineToolTitle } from './engineToolTitles.ts'
 
 type Content = Extract<EventEnvelope['event'], { _tag: 'ThreadItem' }>['content']
 export type ToolDetail = { label: string; text: string; kind?: 'diff'; note?: string; copyLabel?: string }
 export type ToolRow = { id: string; ts: number; type: 'tools'; summary: string; raw: string; status: string; details: ToolDetail[] }
 const bidi = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g
 const label = (text: string) => text.replace(bidi, '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim()
-const fileName = (path: string) => label(path.split(/[\\/]/).at(-1) || path)
+const fileName = (path: string) => label(pathText(path).split(/[\\/]/).at(-1) || pathText(path))
 const firstLine = (text: string) => text.split('\n').find((line) => line.trim())?.trim() ?? ''
 const unquote = (text: string) => text.trim().replace(/^`+|`+$/g, '')
-const pathText = (text: string) => unquote(text.replace(/\s*\(\d+\s*-\s*\d+\)\s*$/, ''))
+const pathText = (text: string) => unquote(text.replace(/\s*\(\d+\s*-\s*\d+\)\s*$/, '').replace(/^file\s+/i, '')).replace(/^["']+|["']+$/g, '')
+// Display parsing only. Recognize one shell and one quoted argument, never a
+// shell expression after that argument. The opened detail retains the original.
+export function commandTitle(command: string): string {
+  const wrapper = /^(?:\/(?:[^\s/]+\/)*|)(?:sh|bash|zsh) -(?:lc|c) "((?:[^"\\]|\\[\s\S])*)"$/.exec(command.trim())
+  const inner = wrapper ? wrapper[1]!.replace(/\\(["\\$`])/g, '$1') : command
+  const lines = inner.trim().split('\n')
+  return lines.length > 1 ? firstLine(inner).replace(/\\\s*$/, '').trimEnd() + '…' : firstLine(inner)
+}
 const object = (text?: string): Record<string, unknown> => {
   try { const value = JSON.parse(text ?? 'null'); return value && typeof value === 'object' && !Array.isArray(value) ? value : {} } catch { return {} }
 }
@@ -26,9 +35,11 @@ export function toolRow(base: { id: string; ts: number }, content: Extract<Conte
   const named = /^(read|edit|write|search|grep|glob|bash|shell|run|execute)\b[: ]*([\s\S]*)/i.exec(title)
   const namedPath = named?.[2] ? pathText(named[2]) : ''
   let summary: string
-  if (command) summary = `Ran ${firstLine(command)}`
+  if (command) summary = `Ran ${commandTitle(command)}`
   else if (files.size) summary = `${/write|create/i.test(title) ? 'Wrote' : 'Edited'} ${fileName(path ?? '')}${files.size > 1 ? ` and ${files.size - 1} more ${files.size === 2 ? 'file' : 'files'}` : ''}`
-  else if (/^mcp__/.test(title)) {
+  else if (engineToolTitle(title)) summary = engineToolTitle(title)!
+  else if (/^List files(?: in )?/i.test(title)) summary = title.replace(/["'`]/g, '')
+  else if (/^mcp(?:__|\.)/.test(title)) {
     const words = title.split('__').at(-1)!.split('_')
     const action = words.pop()!
     let target = words.filter((word) => !['project', 'roles'].includes(word)).join(' ')
@@ -38,7 +49,7 @@ export function toolRow(base: { id: string; ts: number }, content: Extract<Conte
     const verb = verbs[named?.[1]?.toLowerCase() ?? token] ?? 'Used'
     const target = path ? fileName(path) : field(input, 'pattern', 'query') ?? (['Read', 'Edited', 'Wrote'].includes(verb) ? fileName(namedPath) : named?.[2]) ?? ''
     summary = `${verb} ${target || (verb === 'Ran' ? 'command' : verb === 'Searched' ? 'files' : 'file')}`
-  } else if (/^(?:pnpm|npm|git|node|python3?|rg|ls|cat|cd)\s/.test(title)) summary = `Ran ${title}`
+  } else if (/^(?:pnpm|npm|git|node|python3?|rg|ls|cat|cd)\s/.test(title) || /^(?:\/[^\s]+\/)?(?:sh|bash|zsh) -(?:lc|c) /.test(title)) summary = `Ran ${commandTitle(unquote(content.title))}`
   else if (path) summary = `Used ${fileName(path)}`
   else summary = title || 'Used tool'
 
@@ -62,7 +73,7 @@ export function toolRow(base: { id: string; ts: number }, content: Extract<Conte
   const cleanSummary = label(summary)
   if ((cleanSummary.length > 120 || content.title.includes('\n') && !summary.startsWith('Ran ')) && !details.some((detail) => detail.text === content.title)) details.push({ label: 'Full title', text: content.title.replace(bidi, '') })
   return { ...base, type: 'tools', summary: cleanSummary.length > 120 ? cleanSummary.slice(0, 119) + '…' : cleanSummary,
-    raw: /^mcp__/.test(title) || verbs[token] ? title : named?.[1] ?? (command || summary.startsWith('Ran ') ? 'Command' : ''), status: content.status ?? '', details }
+    raw: /^mcp(?:__|\.)/.test(title) || verbs[token] ? title : named?.[1] ?? (command || summary.startsWith('Ran ') ? 'Command' : ''), status: content.status ?? '', details }
 }
 
 // Text chunks belong to a contiguous message. Reusing a harness message id across
