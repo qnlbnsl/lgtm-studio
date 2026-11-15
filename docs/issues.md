@@ -14725,3 +14725,58 @@ The uninterrupted gate and every workspace check remain in place.
 Comments name the checking callers of the display, evidence and artifact helpers.
 A second real editor save refuses a checkout swapped since the first save and leaves the replacement bytes unchanged.
 The refusal still writes its normal audit event.
+
+## 970. A shell refresh can swallow Clear token in the retired admin page.
+
+Found during investigation round 3 on 2026-11-14.
+Status: open in the retired page under packages/web.
+The orchestrator measured five failures in thirteen runs on this branch.
+The orchestrator measured no failures in nine runs on master at 2518bfc.
+Those runs used this computer and one browser worker.
+Temporary instrumentation reproduced one failure in five more branch runs.
+The failing assertion still expected No token set within five seconds.
+After removing the instrumentation, fifteen repetitions passed seven times and failed eight times in 2.3 minutes.
+Five failures reached the No token set assertion at admin-pages.spec.ts:88.
+Three failures stopped earlier at line 85 because saving on blur left the New token input populated.
+Those three earlier failures were not instrumented, so their event sequence is not established by the Clear token trace.
+
+The failing trace records the exact interleaving using milliseconds from the browser's performance clock.
+At 731.1 milliseconds, settings committed busy false, offline false, uncertain false and tokenSet true.
+At 746.8 milliseconds, the event stream delivered client.AlertDeliveryFailed at sequence 29.
+At 747.3 milliseconds, the watcher requested client.snapshot.
+That request succeeded at 750.9 milliseconds with sequence 29.
+The shell still held collection reads from sequence 28, so complete became false.
+At 754.7 milliseconds, settings committed offline true and locked true.
+The busy and uncertain flags both remained false.
+The connection stayed Live, and its generation stayed zero.
+Here offline is the local name of useMutationDisabled, which also covers incomplete collection reads.
+It does not establish a network outage.
+
+At 762.3 milliseconds, the shell sent client.requests as request 32 on socket 18.
+At 763.5 milliseconds, Clear token received pointerdown while that read was in flight.
+The button's own disabled property was false.
+Its ancestor fieldset's disabled property was true, and the button matched :disabled.
+The same state held at pointerup at 763.7 milliseconds.
+No mousedown, mouseup, click or clearToken handler entry followed.
+Chromium suppressed the activation after the fieldset became disabled during the click.
+No token-clear request was sent.
+The client.requests read succeeded at 766.5 milliseconds with sequence 29.
+The subsequent client.alerts.list and client.sequence reads succeeded.
+At 772.9 milliseconds, settings was unlocked again, with Token set and Carrier token saved. still displayed.
+Waiting longer for the assertion cannot recover the missing action.
+A passing control trace records all five pointer and mouse events, the unlocked clearToken handler, its token-clear request and a successful reply.
+
+The uninstrumented settings page, admin API helper, ShellDataProvider, watchSituation and journey are byte-identical to master at 2518bfc.
+The alert delivery, reactor and token command files are also byte-identical to that revision.
+The watcher refreshes its snapshot for every client.Alert event.
+ShellDataProvider disables mutations until the new snapshot and collection reads agree.
+That existing sequence permits the captured loss of activation on master too.
+The finite run counts alone do not establish why the earlier branch sample failed more often.
+
+The setup's ordinary ask succeeds with only text and its question appears in the browser.
+The new approvalQuestion path immediately returns without additional approval metadata for that ordinary ask.
+The optional impossible projectApprovalEffect field permits omission.
+The journey never answers the question, so its approval answer planner is not invoked.
+The captured failure involves a successful refresh after an alert event, rather than a refused setup command, a failed collection read or a reconnect.
+No retired-page source, journey assertion or wait was changed for this investigation.
+Temporary traces contained request names, event tags, sequence numbers and lock flags, without request payloads or token values.
