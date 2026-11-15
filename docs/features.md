@@ -1179,3 +1179,14 @@ The agent that receives the message then knows exactly which object the owner me
 Still to decide: what the reference carries, for example the object's identifier, its name, its screen and the mock revision.
 Still to decide: how the reference looks in the composer and in the sent message.
 The section "Files and images sent with a message" above covers a related need.
+
+## A sprint is proposed on the board, with one approval
+
+The owner asked for this on 2026-11-14, after a long acceptance request for a first sprint.
+When an agent proposes a sprint, it should put the proposed cards on the Kanban board.
+It then asks one short question, such as "I made the following changes. Do they look fine?".
+The owner reads the proposal on the board, because a board is easier to read than a long card.
+"Accept" keeps the cards.
+"Deny" makes the agent remove the proposed cards and try again.
+Proposed cards must look different from accepted cards until the owner accepts them.
+This is for sprint and board changes only. Other approvals keep the short card with "Details".
