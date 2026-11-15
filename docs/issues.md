@@ -14800,7 +14800,11 @@ Each of these controls is disabled on purpose by `packages/studio/scripts/projec
 The engine stores no value for any of them, so the website has nothing to read or save.
 The only explanation is a hover text, "Engine work needed", which the owner did not see.
 A disabled control that looks like a setting reads as a broken page.
-This is open.
+Unit s14 hides unsupported controls and their empty sections on the website.
+The base branch uses the brief’s explicit fallback because its destination is checked in several Git safety boundaries.
+The deferred engine work is listed together in `docs/features.md`.
+The standalone mock keeps the complete sample design.
+This page problem is fixed, and the hidden engine features remain open.
 
 ## 972. A setting's explanation takes a line under its label.
 
@@ -14809,7 +14813,11 @@ The owner said the line under the label is not needed.
 The owner asked for a small question mark in a circle beside the label instead.
 The explanation appears when a person hovers over the question mark or clicks it.
 This changes the look of an existing screen, and the owner asked for it.
-This is open.
+Unit s14 replaces hint lines in Project settings with shared question-mark buttons.
+Their help appears on hover, keyboard focus, and click or tap.
+A click pins the help until dismissal.
+Both lead permission labels stay on one line beside their selectors.
+This is fixed.
 
 ## 973. "New session" in the Terminal tab opens a dialog to choose the folder.
 
@@ -14827,7 +14835,12 @@ The owner said: "I cannot delete projects. I can only archive them."
 The engine has an archive command for a project and no delete command.
 A test project therefore stays in the archive for good.
 A delete must say what happens to the project's worktree, its branch, its agents and its stored history.
-This is open.
+Unit s14 adds owner-only deletion after a completed archive, with a deliberate confirmation.
+The website, the application programming interface, and the command-line interface expose it.
+The project and its history disappear from reads and replayed views.
+Events remain in the stored log.
+All worktree folders and branches remain on disk.
+This is fixed.
 
 ## 975. The project lead was locked by default behind approval cards.
 
@@ -15080,3 +15093,22 @@ The failure occurred while several test files were running.
 The cause of the missed startup bound has not been established.
 No wait or deadline was widened.
 The orchestrator should retain this observation when assessing the full check.
+
+
+## s14-1. Stored event reads could reveal a deleted project's history.
+
+Found while implementing project deletion in unit s14.
+The owner and service could read an agent's thread or an event directly from the durable log even after its view was removed.
+Unit s14 keeps identifier tombstones and applies them before the general owner read allowance.
+The project history stays in the log but disappears from public event and thread reads.
+This is fixed.
+
+## s14-2. The engine has no safe worktree removal operation.
+
+Found while implementing project deletion in unit s14.
+The Git service can create a worktree but has no removal path that verifies engine ownership and refuses dirty files.
+The creation claims do not supply a completed-worktree removal interface.
+Project deletion therefore preserves all folders and branches.
+The optional folder removal checkbox is omitted, as the task permits.
+The requirements for a future operation are recorded in `docs/features.md`.
+This is open.

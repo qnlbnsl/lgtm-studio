@@ -59,6 +59,11 @@ export const Project = Schema.Struct({
 })
 export type Project = typeof Project.Type
 export const CreationFolderIdentity = Schema.Struct({ device: Schema.NonEmptyString, inode: Schema.NonEmptyString })
+export const ProjectDeletion = Schema.Struct({
+  projectId: ProjectId, agentIds: Schema.Array(AgentId), channelIds: Schema.Array(ChannelId),
+  alertIds: Schema.Array(Schema.NonEmptyString), postIds: Schema.Array(Schema.NonEmptyString), worktreeIds: Schema.Array(WorkspaceId)
+})
+export type ProjectDeletion = typeof ProjectDeletion.Type
 // Only unfinished creation intents live in this projection. Completed requests
 // use the engine's ordinary durable receipt instead.
 export const ProjectCreation = Schema.Struct({

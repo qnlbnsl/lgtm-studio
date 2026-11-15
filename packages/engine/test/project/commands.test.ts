@@ -78,6 +78,7 @@ it.live("roundtrips every project event and receipt identity while keeping works
     { _tag: "project.CreationFinished", creationRequestId: `creation-${marker}` },
     { _tag: "project.GoalChanged", projectId, goal: text },
     { _tag: "project.ArchiveStarted", projectId }, { _tag: "project.Archived", projectId }, { _tag: "project.Restored", projectId },
+    { _tag: "project.Deleted", projectId: "deleted-example", agentIds: [], channelIds: [], alertIds: [], postIds: [], worktreeIds: [] },
     { _tag: "project.RepositoryAdded", repoId, name: text, path: text },
     { _tag: "project.RepositoryLocated", repoId, machineId: text, path: text },
     { _tag: "project.WorktreeCreated", worktreeId, repoId, machineId: text, branch: text, path: text, projectId, teamId, parentId, owner: text, activity: text },

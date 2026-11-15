@@ -12,6 +12,29 @@ import {
 } from './data.js';
 import * as act from './actions.js';
 
+// Shared help for settings. A tap pins the explanation until dismissal.
+export function SettingHelp({ label, children }) {
+  const [id] = useState(() => uid('setting-help'));
+  const [pinned, setPinned] = useState(false), [hovered, setHovered] = useState(false), [focused, setFocused] = useState(false);
+  const root = useRef(null), button = useRef(null);
+  const [dismissed, setDismissed] = useState(false);
+  const open = !dismissed && (pinned || hovered || focused);
+  const dismiss = () => { setPinned(false); setDismissed(true); };
+  const escape = (event) => { if (event.key === 'Escape') { event.stopPropagation(); button.current?.focus(); dismiss(); } };
+  useEffect(() => {
+    if (!open) return;
+    const outside = (event) => { if (!root.current?.contains(event.target)) dismiss(); };
+    document.addEventListener('pointerdown', outside);
+    return () => { document.removeEventListener('pointerdown', outside); };
+  }, [open]);
+  return html`<span class="setting-help" ref=${root} onKeyDown=${escape} onMouseEnter=${() => { setHovered(true); setDismissed(false); }} onMouseLeave=${() => setHovered(false)}>
+    <button ref=${button} type="button" class="setting-help-button" aria-label=${'About ' + label} aria-describedby=${id} aria-expanded=${open}
+      onFocus=${() => { setFocused(true); setDismissed(false); }} onBlur=${() => setFocused(false)}
+      onClick=${() => { if (pinned) dismiss(); else { setPinned(true); setDismissed(false); } }}>?</button>
+    <span id=${id} role="tooltip" class="setting-help-text" hidden=${!open}>${children}<button type="button" class="setting-help-close" aria-label=${'Dismiss help for ' + label} onClick=${dismiss}>×</button></span>
+  </span>`;
+}
+
 // ---- identity ---------------------------------------------------------------
 export function Avatar({ agent, s, size, status = true }) {
   if (!agent) return html`<span class=${cx('avatar', size)}><${Icon} name="bot" size=${12} /></span>`;

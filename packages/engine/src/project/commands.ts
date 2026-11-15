@@ -1,3 +1,4 @@
+import { clientView } from '../client/alerts/view.ts'
 import { completionOwed, boardView } from "../board/wake.ts"
 import { requireEndResult, requireBuilding, permissionSetting, permissionOffReason } from "./approvals.ts"
 import { validateWorkflowFolder, workflowFolderReason } from "../workflows/folder.ts"
@@ -357,6 +358,44 @@ const goalSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.goal.set">; yield* requireProject(input, p.projectId)
   return ack(p.requestId, [{ _tag: "project.GoalChanged", projectId: p.projectId, goal: p.goal }])
 })
+const deleteProject: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  if (input.actor._tag !== "owner") return yield* refused()
+  const p = raw as Payload<"project.delete">, row = yield* requireProject(input, p.projectId)
+  if (row.archivedAt === undefined || row.archiving) return yield* refused("Archive the project before deleting it.")
+  const view = projectView(input.snapshot), board = boardView(input.snapshot)
+  const agentIds = Object.values(input.snapshot.agents).filter((agent) => own(view.agentProjects, agent.agentId) === p.projectId).map((agent) => agent.agentId)
+  if (agentIds.some((id) => !["stopped", "crashed"].includes(input.snapshot.agents[id]!.state._tag))) return yield* refused("Stop every project agent before deleting the project.")
+  const candidates = new Set([row.worktreeId, ...Object.values(view.teams).filter((team) => team.projectId === p.projectId).map((team) => team.worktreeId),
+    ...Object.values(view.workspaces).filter((workspace) => workspace.projectId === p.projectId).map((workspace) => workspace.worktreeId)])
+  if (Object.values(view.gitAttempts).some((attempt) => candidates.has(attempt.worktreeId))) return yield* refused("Finish the project's Git operation before deleting it.")
+  const agents = new Set<string>(agentIds)
+  const channelIds = Object.values(board.channels).filter((channel) =>
+    channel.anchorAgentId !== undefined && agents.has(channel.anchorAgentId)
+    || channel.manager?._tag === "agent" && agents.has(channel.manager.agentId)
+    || channel.kind === "direct" && channel.members.some((member) => member._tag === "agent" && agents.has(member.agentId))
+  ).map((channel) => channel.channelId)
+  const channels = new Set<string>(channelIds)
+  const deletedPosts = new Set<string>(Object.values(board.posts).filter((post) => channels.has(post.channelId)
+    || post.author._tag === "agent" && agents.has(post.author.agentId)
+    || post.context?.some((reference) => reference.projectId === p.projectId)).map((post) => post.postId))
+  let more = true
+  while (more) {
+    more = false
+    for (const post of Object.values(board.posts)) if (post.replyTo !== undefined && deletedPosts.has(post.replyTo) && !deletedPosts.has(post.postId)) { deletedPosts.add(post.postId); more = true }
+  }
+  const postIds = [...deletedPosts]
+  const subjectIds = new Set<string>([
+    ...agentIds, ...Object.values(view.sprints).filter((sprint) => sprint.projectId === p.projectId).map((sprint) => sprint.sprintId),
+    ...Object.values(view.gitReviews).filter((review) => review.projectId === p.projectId).map((review) => review.reviewId),
+    ...Object.values(input.snapshot.questions).filter((question) => agents.has(question.agentId) || question.projectId === p.projectId).map((question) => question.questionId),
+    ...Object.values(input.snapshot.requests).filter((request) => agents.has(request.agentId) || request.projectId === p.projectId).map((request) => request.permissionRequestId) ])
+  const alertIds = Object.values(clientView(input.snapshot.client).alerts).filter((alert) =>
+    alert.agentId !== undefined && agents.has(alert.agentId) || alert.subject !== undefined
+      && (alert.subject._tag !== "piece" || alert.subject.namespace === "project") && subjectIds.has(alert.subject.id)).map((alert) => alert.alertId)
+  const worktreeIds = [...candidates].filter((id) => !Object.values(view.projects).some((project) => project.projectId !== p.projectId && project.worktreeId === id)
+    && !Object.values(view.teams).some((team) => team.projectId !== p.projectId && team.worktreeId === id))
+  return ack(p.requestId, [{ _tag: "project.Deleted", projectId: p.projectId, agentIds, channelIds, alertIds, postIds, worktreeIds }])
+})
 const restore: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.restore">; const row = yield* requireProject(input, p.projectId)
   if (row.archiving) return yield* refused("finish archiving the project before restoring it")
@@ -395,7 +434,7 @@ export const projectPlanners = {
   "project.settings.set": settingsSet, "project.repository.add": repositoryAdd(), "project.repository.locate": repositoryLocate(),
   "project.review.decline": declineMainReview,
   "project.workspace.register": workspaceRegister(), "project.rename": rename, "project.place": place,
-  "project.goal.set": goalSet, "project.restore": restore, "project.preferences.set": preferencesSet, "project.stage.set": stageSet, "project.team.create": teamCreate,
+  "project.delete": deleteProject, "project.goal.set": goalSet, "project.restore": restore, "project.preferences.set": preferencesSet, "project.stage.set": stageSet, "project.team.create": teamCreate,
   "project.sprint.create": sprintCreate, "project.sprint.update": sprintUpdate, "project.sprint.complete": sprintComplete,
   "project.team.delete": teamDelete, "project.task.delete": taskDelete,
   "project.task.create": taskCreate, "project.task.update": taskUpdate, "project.task.note": taskNote

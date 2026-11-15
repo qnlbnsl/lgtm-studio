@@ -1,7 +1,7 @@
 import { QuestionId, RequestId } from "../ids.ts"
 import * as Schema from "effect/Schema"
 import { GitAttempt, GitEvidence, GitMainReview } from "./git.ts"
-import { CreationFolderIdentity, FileSaveNotice, LeadPermission, LeadPermissionSetting, OwnerTaskNotification, Project, ProjectCreation, ProjectId, ProjectName, ProjectSettings, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskId, TaskState, Team, Workspace } from "./schema.ts"
+import { CreationFolderIdentity, FileSaveNotice, LeadPermission, LeadPermissionSetting, OwnerTaskNotification, Project, ProjectCreation, ProjectDeletion, ProjectId, ProjectName, ProjectSettings, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskId, TaskState, Team, Workspace } from "./schema.ts"
 
 import { ProjectMockEvent } from "./mocks.ts"
 import { ProjectDesignEvent } from "./design.ts"
@@ -28,6 +28,7 @@ export const ProjectEvent = Schema.Union([
   Schema.TaggedStruct("project.ArchiveStarted", { projectId: ProjectId }),
   Schema.TaggedStruct("project.Archived", { projectId: ProjectId }),
   Schema.TaggedStruct("project.Restored", { projectId: ProjectId }),
+  Schema.TaggedStruct("project.Deleted", ProjectDeletion.fields),
   Schema.TaggedStruct("project.Placed", { projectId: ProjectId, machineId: ProjectName, worktreeId: Workspace.fields.worktreeId }),
   Schema.TaggedStruct("project.PreferencesChanged", { projectId: ProjectId, shell: ProjectName }),
   Schema.TaggedStruct("project.Renamed", { projectId: ProjectId, name: ProjectName }),

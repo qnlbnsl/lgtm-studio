@@ -45,6 +45,12 @@ export const clientView = (value: unknown): ClientView => value as ClientView;
 const reduce = (view: ClientView, event: Event, sequence: number): ClientView => {
   let next = view;
   switch (event._tag) {
+    case "project.Deleted": {
+      const ids = new Set<string>(event.alertIds)
+      const keep = <T>(rows: Readonly<Record<string, T>>) => Object.fromEntries(Object.entries(rows).filter(([id]) => !ids.has(id)))
+      return { ...view, alerts: keep(view.alerts), delivery: keep(view.delivery),
+        destinations: Object.fromEntries(Object.entries(view.destinations).map(([name, destination]) => [name, { ...destination, delivery: keep(destination.delivery) }])) }
+    }
     case "client.AlertQuietChanged": return { ...view, quiet: event.quiet };
     case "client.AlertCarrierEnabled": {
       if (event.name === "ntfy") return { ...view, ntfyEnabled: event.enabled };

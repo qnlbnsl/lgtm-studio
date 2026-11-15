@@ -189,6 +189,7 @@ for (const { command, words, form } of invocations) {
       "project.context.search": { projectId: "project", worktreeId: "workspace", query: "file", limit: 20 },
       "project.goal.set": { projectId: "project", goal: "New goal" },
       "project.archive": { projectId: "project" },
+      "project.delete": { projectId: "project", confirmed: true },
       "project.restore": { projectId: "project" },
       "project.permission.set": { projectId: "project", permission: "planning", setting: "ask" },
       "project.approval.grant": { projectId: "project", approval: "end-result" },

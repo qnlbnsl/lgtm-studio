@@ -36,6 +36,8 @@ export function projectSettingsSource(path: string, source: string): string {
   if (path !== 'js/screens/service.js') return source
   const start = source.indexOf('export function ProjectSettings(')
   if (start < 0 || source.indexOf('export function ProjectSettings(', start + 1) >= 0) throw new Error('Project settings integration: screen moved')
+  if (!source.includes('const ProjectSettingRow =') || !source.includes('<${SettingHelp} label=${label}>${hint}<//>')
+    || !source.includes('<${SettingHelp} label=${label}>${help}<//>')) throw new Error('Project settings integration: shared help moved')
   const before = source.slice(0, start)
   let screen = source.slice(start)
   const replace = (from: string, to: string, count = 1) => {
@@ -48,8 +50,8 @@ export function projectSettingsSource(path: string, source: string): string {
   replace('useEffect(() => setGoal(p.goal), [p.id]);', 'useEffect(() => setGoal(p.goal), [p.id, p.goal]);')
   replace("const projectBusy = live.on && board.busy('project:' + p.id);", "const projectBusy = live.on && board.busy('project:' + p.id);\n  const settingsLocked = projectBusy || (live.on && p.archiving);")
   for (const action of ['renameProject', 'saveGoal', 'configureLead', 'deleteTeam', 'changeApproval', 'changePermission']) replace('board.' + action, 'projectSettings.' + action, action === 'configureLead' ? 2 : 1)
-  // Unsupported callbacks are unreachable behind native disabled controls.
-  replace('if (live.on) { refuse(); return; }', 'if (live.on) return;', 7)
+  // Sample callbacks have no live controls after the removals below.
+  replace('if (live.on) { refuse(); return; }', 'if (live.on) return;', 6)
   replace('const asg = p.assignment ||', "const asg = live.on ? { state: 'unavailable', rows: {} } : p.assignment ||")
   replace('<span class="tag" data-tip="Task labels start with this">${p.prefix}</span>', '${!live.on && html`<span class="tag" data-tip="Task labels start with this">${p.prefix}</span>`}')
   replace('<${Row} label="Goal"', '${live.on && html`<${Row} label="Task label prefix" id="ps-prefix"><input id="ps-prefix" class="input mono" disabled title="Engine work needed" placeholder="Not set" /><//>`}\n        <${Row} label="Goal"')
@@ -92,6 +94,36 @@ export function projectSettingsSource(path: string, source: string): string {
   replace('class="btn sm" onClick=${applyAll}', 'class="btn sm" disabled=${live.on} title=${live.on ? "Engine work needed" : null} onClick=${applyAll}')
   replace('<${Switch} on=${t.needToKnow}', '<span title=${live.on ? "Engine work needed" : null}><${Switch} disabled=${live.on} on=${t.needToKnow}')
   replace('onChange=${(v) => setTeam(t, { needToKnow: v })} /></td>', 'onChange=${(v) => setTeam(t, { needToKnow: v })} /></span></td>')
-  replace('class="btn danger" onClick=${del}', 'class="btn danger" disabled=${live.on} title=${live.on ? "Engine work needed" : null} onClick=${del}')
+  replace("onConfirm: async () => { if (live.on) return; if (!p.archived) return false;", "onConfirm: async () => { if (live.on) { const reply = await projectSettings.deleteProject(p.id); if (reply) go('/r/' + r.id); return reply; } if (!p.archived) return false;")
+  // Unsupported controls are absent from the built website. Each source anchor
+  // is checked above and each complete section is checked again before removal.
+  const removeRow = (label: string) => {
+    const anchor = '<${Row} label="' + label + '"'
+    const start = screen.indexOf(anchor), end = screen.indexOf('<//>', start)
+    if (start < 0 || end < start || screen.indexOf(anchor, start + 1) >= 0) throw new Error(`Project settings integration: ${label} row moved`)
+    screen = screen.slice(0, start) + screen.slice(end + 5)
+  }
+  // The inserted prefix is a whole expression; remove its wrapper too.
+  replace('${live.on && html`<${Row} label="Task label prefix" id="ps-prefix"><input id="ps-prefix" class="input mono" disabled title="Engine work needed" placeholder="Not set" /><//>`}', '')
+  removeRow('Base branch')
+  const removeSection = (title: string, next: string) => {
+    const anchor = '<${Section} title="' + title + '"', after = '<${Section} title="' + next + '"'
+    const start = screen.indexOf(anchor), end = screen.indexOf(after, start)
+    if (start < 0 || end < start || screen.indexOf(anchor, start + 1) >= 0) throw new Error(`Project settings integration: ${title} section moved`)
+    screen = screen.slice(0, start) + screen.slice(end)
+  }
+  removeSection('Agents', 'Assignment')
+  removeSection('Assignment', 'Teams')
+  const subscriptionStart = screen.indexOf('<select disabled=${live.on} title=${live.on ? "Engine work needed" : null} id="ps-sub"')
+  const subscriptionEnd = screen.indexOf('</select>', subscriptionStart)
+  if (subscriptionStart < 0 || subscriptionEnd < subscriptionStart) throw new Error('Project settings integration: subscription picker moved')
+  screen = screen.slice(0, subscriptionStart) + '<span class="mono">${subLabel(s, lead.subscription)}</span>' + screen.slice(subscriptionEnd + 9)
+  replace('<th>Need-to-know</th>', '')
+  const needStart = screen.indexOf('<td><span title=${live.on ? "Engine work needed" : null}><${Switch}')
+  const needEnd = screen.indexOf('</td>', needStart)
+  if (needStart < 0 || needEnd < needStart) throw new Error('Project settings integration: need-to-know cell moved')
+  screen = screen.slice(0, needStart) + screen.slice(needEnd + 5)
+  replace('colspan="5"', 'colspan="4"')
+  if (screen.includes('Engine work needed')) throw new Error('Project settings integration: unsupported control remains')
   return assertProjectSettingsSource(path, "import * as projectSettings from '../live/project-settings.js';\n" + before + screen)
 }

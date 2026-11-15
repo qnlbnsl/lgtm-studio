@@ -18,7 +18,7 @@ import { decisionSetup } from '../../../engine/test/support/projectDecisionFixtu
 import { buildStudio } from '../../../studio/scripts/build.ts'
 import { completedSetup } from './completedSetup.ts'
 
-export async function exerciseStudioProjectSettings(page: Page) {
+export async function exerciseStudioProjectSettings(page: Page, deleteJourney = false) {
   const rig = makeRig(), previous = process.env.LGTM_HOME
   process.env.LGTM_HOME = rig.stateFolder
   const password = randomBytes(32).toString('base64url')
@@ -59,19 +59,72 @@ export async function exerciseStudioProjectSettings(page: Page) {
           await expect(screen.locator('.svc-teams tbody')).toContainText('Build')
           await expect(screen.locator('.svc-teams tbody a')).toHaveCount(2)
           for (const selector of ['#ps-base', '#ps-sub', '[name=ps-perm]', '[aria-label="Write tests first"]', '[aria-label="Agent review"]', '[aria-label="Remove agent credits when merging"]', '#ps-all', '#ps-prefix', '.svc-assign select', '.svc-teams [role=switch]']) {
-            const controls = screen.locator(selector)
-            expect(await controls.count()).toBeGreaterThan(0)
-            for (const control of await controls.all()) {
-              await expect(control).toBeDisabled()
-              await expect(control.locator('xpath=ancestor-or-self::*[@title="Engine work needed"]').first()).toHaveAttribute('title', 'Engine work needed')
-            }
+            await expect(screen.locator(selector)).toHaveCount(0)
           }
-          for (const name of ['Approve', 'Apply', 'Delete']) {
-            await expect(screen.getByRole('button', { name, exact: true })).toBeDisabled()
-            await expect(screen.getByRole('button', { name, exact: true })).toHaveAttribute('title', 'Engine work needed')
+          for (const name of ['Approve', 'Apply', 'Delete project']) await expect(screen.getByRole('button', { name, exact: true })).toHaveCount(0)
+          await expect(screen.locator('[title="Engine work needed"]')).toHaveCount(0)
+          await expect(screen.getByRole('heading', { name: 'Assignment', exact: true })).toHaveCount(0)
+          await expect(screen.getByRole('heading', { name: 'Agents', exact: true })).toHaveCount(0)
+          if (deleteJourney) {
+            await screen.getByRole('button', { name: 'Archive', exact: true }).click()
+            await page.getByRole('dialog').getByRole('button', { name: 'Archive project', exact: true }).click()
+            await expect(page).toHaveURL(new RegExp('#/r/'))
+            // An archived project is reachable through its existing repository list.
+            await page.getByRole('link', { name: 'Project', exact: true }).click()
+            await page.getByRole('tab', { name: 'Settings', exact: true }).click()
+            await expect(screen).toContainText('This project is archived.')
+            const remove = screen.getByRole('button', { name: 'Delete project', exact: true })
+            await remove.click()
+            const dialog = page.getByRole('dialog')
+            await expect(dialog).toContainText('Delete Project?')
+            await expect(dialog).toContainText('Stored events stay in the log.')
+            await expect(dialog).toContainText('The worktree folders and every branch stay on disk.')
+            await expect(dialog.getByRole('checkbox')).toHaveCount(0)
+            await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+            await expect(screen).toContainText('This project is archived.')
+            await page.reload()
+            await expect(remove).toBeEnabled()
+            await remove.click()
+            await dialog.getByRole('button', { name: 'Delete project', exact: true }).click()
+            await expect(page).toHaveURL(new RegExp('#/r/'))
+            await expect(page.getByRole('link', { name: 'Project', exact: true })).toHaveCount(0)
+            await page.reload()
+            await expect(page.getByRole('link', { name: 'Project', exact: true })).toHaveCount(0)
+            await page.goto(settings)
+            await expect(page.getByRole('heading', { name: 'Project settings', exact: true })).toHaveCount(0)
+            expect(errors).toEqual([])
+            return
           }
           await expect(screen.locator('#ps-machine')).toHaveCount(0)
-          await expect(screen).toContainText('The branch and the worktree folder keep their names.')
+          const help = screen.getByRole('button', { name: 'About Name', exact: true })
+          const tip = page.locator('#' + await help.getAttribute('aria-describedby'))
+          await expect(tip).toBeHidden()
+          await help.hover()
+          await expect(tip).toBeVisible()
+          await screen.getByRole('heading', { name: 'Project settings', exact: true }).hover()
+          await expect(tip).toBeHidden()
+          await help.focus()
+          await expect(tip).toBeVisible()
+          await page.keyboard.press('Escape')
+          await expect(tip).toBeHidden()
+          await help.click()
+          await screen.getByRole('heading', { name: 'Project settings', exact: true }).hover()
+          await expect(tip).toBeVisible()
+          await tip.getByRole('button', { name: 'Dismiss help for Name', exact: true }).click()
+          await expect(tip).toBeHidden()
+          await page.setViewportSize({ width: 1400, height: 900 })
+          for (const label of ['Project planning', 'Starting work']) {
+            const line = screen.locator('.ps-permission-row').filter({ has: page.getByRole('combobox', { name: label + ' permission', exact: true }) })
+            const text = await line.locator('label').boundingBox(), select = await line.locator('select').boundingBox()
+            expect(text!.height).toBeLessThan(30)
+            expect(Math.abs(text!.y + text!.height / 2 - select!.y - select!.height / 2)).toBeLessThan(5)
+          }
+          await page.setViewportSize({ width: 390, height: 844 })
+          await help.tap()
+          await expect(tip).toBeVisible()
+          await tip.getByRole('button', { name: 'Dismiss help for Name', exact: true }).click()
+          await expect(tip).toBeHidden()
+          await page.setViewportSize({ width: 1400, height: 900 })
           await page.locator('#ps-name').fill('Settings journey')
           await screen.getByRole('button', { name: 'Save name', exact: true }).click()
           await expect(page.locator('.sidebar .tree-row.project')).toContainText('Settings journey')
@@ -118,3 +171,5 @@ export async function exerciseStudioProjectSettings(page: Page) {
     })).pipe(Effect.provide(SqliteClient.layer({ filename: rig.database, readerWorker: true }))))
   } finally { if (previous === undefined) delete process.env.LGTM_HOME; else process.env.LGTM_HOME = previous; removeRig(rig) }
 }
+
+export const exerciseStudioProjectDelete = (page: Page) => exerciseStudioProjectSettings(page, true)

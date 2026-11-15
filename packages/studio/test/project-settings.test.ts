@@ -31,7 +31,7 @@ it('patches only the live output and fails closed if the target screen moves', (
   expect(result).toContain('projectSettings.changePermission')
   expect(() => projectSettingsSource('js/screens/service.js', source.replace('board.changePermission', 'board.movedPermission'))).toThrow('Project settings integration')
   expect(() => projectSettingsSource('js/screens/service.js', source.replace('board.changeApproval', 'board.movedApproval'))).toThrow('Project settings integration')
-  expect(result).toContain('Engine work needed')
+  expect(result.slice(result.indexOf('export function ProjectSettings'))).not.toContain('Engine work needed')
   expect(result.slice(result.indexOf('export function ProjectSettings'))).not.toContain('refuse()')
   expect(() => projectSettingsSource('js/screens/service.js', source.replace('export function ProjectSettings', 'function MovedSettings'))).toThrow('Project settings integration')
   expect(projectSettingsSource('js/screens/other.js', 'unchanged')).toBe('unchanged')
@@ -89,7 +89,7 @@ it('a lead read arriving after sign-out cannot restore private settings', async 
   expect(lib.store.state.projectLeadSettings).toEqual({})
 })
 
-it('draws every unsupported setting disabled with its hover reason, while keeping facts and teams', async () => {
+it('omits every unsupported setting and empty section, while keeping facts and teams', async () => {
   const kit = await import('../../../design/mock/vendor/htm-preact/standalone.module.js' as string)
   const data = await import('../../../design/mock/js/data.js' as string)
   const ui = await import('../../../design/mock/js/ui.js' as string)
@@ -107,17 +107,16 @@ it('draws every unsupported setting disabled with its hover reason, while keepin
     kit.render(kit.h(Component, { s: state, project: state.projects[0] }), element)
     for (const selector of ['#ps-base', '#ps-sub', '[name=ps-perm]', '[aria-label="Write tests first"]', '[aria-label="Agent review"]', '[aria-label="Remove agent credits when merging"]', '#ps-all', '[aria-label="Plan harness"]', '[aria-label="Plan model"]', '[aria-label="Plan effort"]', '[aria-label="Need-to-know for Alpha team"]', '#ps-prefix']) {
       const controls = element.querySelectorAll<HTMLInputElement>(selector)
-      expect(controls.length, selector).toBeGreaterThan(0)
-      for (const control of controls) {
-        expect(control.matches(':disabled'), selector).toBe(true)
-        expect(control.closest('[title="Engine work needed"]'), selector).not.toBeNull()
-      }
+      expect(controls.length, selector).toBe(0)
     }
-    for (const label of ['Approve', 'Apply', 'Delete']) {
-      const control = [...element.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === label)!
-      expect(control?.disabled, label).toBe(true)
-      expect(control.closest('[title="Engine work needed"]')).not.toBeNull()
+    for (const label of ['Approve', 'Apply', 'Delete project']) {
+      expect([...element.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent?.trim() === label), label).toBeUndefined()
     }
+    expect(element.querySelector('[title="Engine work needed"]')).toBeNull()
+    expect(element.querySelector('.svc-assign')).toBeNull()
+    expect(element.querySelector('.svc-label small')).toBeNull()
+    expect([...element.querySelectorAll('h2')].map((h) => h.textContent)).not.toContain('Agents')
+    expect([...element.querySelectorAll('h2')].map((h) => h.textContent)).not.toContain('Assignment')
     expect(element.querySelector('#ps-machine')).toBeNull()
     expect(element.textContent).toContain('feature/harvest/alpha')
     expect(element.querySelectorAll('.svc-teams tbody a')).toHaveLength(4)

@@ -496,3 +496,36 @@ New posts and membership changes are refused on the archived channel.
 The team's branch and worktree folder remain registered.
 The owner and the project's own lead can use these requests.
 The command line and agent tools expose the same requests as the client application programming interface.
+
+
+## Deleting an archived project
+
+Only the owner can call `project.delete` with `projectId` and `confirmed: true`.
+The command refuses an active project, an incomplete archive, an agent that is not stopped or crashed, and an unfinished Git operation.
+An open merge review is removed with the rest of the project history.
+The command appends `project.Deleted` to the existing event log.
+It does not erase events from that log.
+The same fold removes the project and its agents, threads, requests, teams, sprints, tasks, mock records, Git evidence and review records from the live and rebuilt views.
+Identifier tombstones prevent the event and thread reads from revealing that stored history again.
+The deletion event itself remains readable as the identifier-only notification that clients use to refresh.
+
+The project's anchored channels, channels managed by its agents, and direct chats with its agents disappear with their posts.
+Posts authored by its agents or carrying the project's context disappear from shared channels too.
+Shared channels remain available to their other members.
+The deleted agents leave those channels.
+The repository remains registered for other projects.
+Design registrations recorded by the deleted project leave the views too.
+Their files remain on disk.
+An exclusively used project or team worktree leaves the workspace registry.
+A workspace used by another project stays registered.
+Every worktree folder and every branch stays on disk, including dirty and externally registered folders.
+No safe worktree removal operation exists in the engine, so this command has no removal option.
+
+The command-line interface exposes the same operation:
+
+```sh
+./bin/lgtm project.delete --projectId PROJECT_ID --confirmed true
+```
+
+An archived project remains reachable through All projects and its repository's project list.
+Open its Settings tab to restore or delete it.

@@ -103,6 +103,7 @@ const samples: Record<string, (a: string, n: string) => Record<string, unknown>>
   "project.GoalChanged": () => ({ projectId: "project-one", goal: "Exercise updated goal privacy" }),
   "project.ArchiveStarted": () => ({ projectId: "project-one" }),
   "project.Archived": () => ({ projectId: "project-one" }),
+  "project.Deleted": () => ({ projectId: "deleted-project-fixture", agentIds: [], channelIds: [], alertIds: [], postIds: [], worktreeIds: [] }),
   "project.Restored": () => ({ projectId: "project-one" }),
   "project.Placed": () => ({ projectId: "project-one", worktreeId: "project-workspace", machineId: "local" }),
   "project.PreferencesChanged": () => ({ projectId: "project-one", shell: "zsh" }),

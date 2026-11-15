@@ -1,5 +1,8 @@
 // Fixed public reasons contain no caller-controlled text or host error output.
 export const projectRefusalReasons = new Set([
+  "Archive the project before deleting it.",
+  "Stop every project agent before deleting the project.",
+  "Finish the project's Git operation before deleting it.",
   "mock revision changed; refresh and retry", "mock revision identity is already recorded",
   "mock artifact changed; record a new revision", "invalid mock artifact reference", "artifact unavailable",
   "registered project design is unavailable", "registered design format cannot open in the editor",

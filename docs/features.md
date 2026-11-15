@@ -1294,3 +1294,47 @@ An unrelated permission card and an ordinary question stay open.
 The lead receives the closure through the ordinary question-answer delivery.
 A combined card closes when either of its requested permissions changes.
 The lead can request the other permission in a new card.
+
+
+## Project settings controls awaiting engine support
+
+Unit s14 hides unsupported settings on the website through its build-time replacement.
+This is the orchestrator's choice for the owner's question about hiding controls or labelling them “Not built yet”.
+The owner can overrule that choice.
+The standalone mock keeps the complete sample design.
+
+- The task label prefix needs a stored project prefix and task label allocation that uses it.
+- The base branch needs a stored owner setting, a read of existing local branches, and engine validation against those branches.
+  Changing it must be refused while a review or integration is open.
+  The repository's main checkout currently supplies the review destination.
+  `lifecycle.ts` discovers its checked-out `main` or `master` branch when the project starts.
+  The project has its own dedicated branch in `Project.worktreeId`.
+  Team integration in `gitCommands.ts` targets the project workspace.
+  Main review in `gitReview.ts` requires the registered repository checkout and a `main` or `master` branch.
+  The Git service in `git/index.ts` independently repeats that restriction in `mainComparison` and `approveMain`.
+  Its ordinary integration path refuses those branches to require owner review.
+  Supporting an arbitrary destination requires changes to registration, the review destination, and the execution safety boundary.
+  This exceeds the brief's limit of one setting and one read site, so s14 uses its explicit fallback.
+  The eventual implementation must preserve the existing default and prevent branch names from being interpreted as Git options.
+- The project permission picker needs an owner setting and a defined way to apply it across existing agents without exceeding their permission ceilings.
+- Write tests first needs a stored project policy and enforcement by the build workflow.
+- Agent review needs a stored project policy and enforcement when assigning reviewers and handing off work.
+- Remove agent credits when merging needs a stored project policy and a merge path that applies it without rewriting unrelated commits.
+- Assignment needs stored work-kind choices for the harness, model and effort.
+  It needs owner approval, delivery of that approval to the lead, and enforcement when agents start.
+  Its Approve action, Every row model picker and Apply action need that same engine support.
+- The lead subscription picker needs a supported account reassignment command and defined handling for the running lead's session.
+  The website keeps the current subscription as a read-only fact beside its working model and effort controls.
+- Need-to-know needs a stored team policy and enforcement in the board's read and delivery rules.
+
+The machine row already shows the registered machine as a read-only fact.
+Changing project placement remains unavailable until machine pairing exists.
+
+## Optional removal of a deleted project's worktree folder
+
+Project deletion currently keeps all folders and branches on disk.
+The engine has no existing worktree removal operation.
+The website therefore has no removal checkbox.
+A future removal path must prove that the engine created the exact worktree for that project.
+It must verify the worktree's identity and refuse uncommitted changes.
+It must never remove a branch or an externally registered folder.
