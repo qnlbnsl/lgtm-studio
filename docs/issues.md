@@ -14818,7 +14818,12 @@ The owner said the terminal looks good and liked the font control at the top rig
 The owner asked for the folder choice to sit in the tab itself, as a dropdown beside the "New session" button.
 The dropdown lists the places where a session can open.
 The dialog is then not needed.
-This is open.
+Status: fixed in unit s15-chat2.
+A labelled "Open in" dropdown now sits beside "New session" in the tab.
+The choice stays in page memory for each project.
+The button sends the same registered-worktree request immediately.
+Remote worktrees remain disabled, with "Engine work needed: local machine only" in the option text.
+The sample mock uses the same control.
 
 ## 974. A project can be archived but not deleted.
 
@@ -14966,6 +14971,34 @@ It must also cover a diff-first file write and the raw tool titles and command a
 The repository still has no real recording of that multi-hunk shape.
 The round 1 tests use explicitly constructed protocol inputs, rather than invented recordings.
 
+Unit s15-chat2 inspected the installed `@agentclientprotocol/codex-acp` version 2.6.0.
+Its `commandActionFacts` reports quoted read and list titles.
+Its unknown command report retains the full command in `rawInput.command`.
+Its `McpToolReporter` names a call `mcp.<server>.<tool>`.
+Its renderer sends these fields as Agent Client Protocol tool updates.
+The unit also inspected the installed `@agentclientprotocol/claude-agent-acp` version 0.99.1.
+Its read reporter supplies a display path, line range and locations.
+Its Bash reporter uses the command as the title.
+Its renderer carries the tool input as `rawInput`.
+The new tests reconstruct these shapes with synthetic paths and arguments.
+Their comments distinguish adapter-derived reports from constructed command edge cases and question events.
+They are not harness recordings.
+
+A real Codex project-lead recording must include `ask`, its recommendation, the later reply and the owner's answer.
+It must include the durable `QuestionAsked` and `ThreadItem` events, with their sequences and times.
+The orchestrator supplied the observed three-paragraph message in s15 fix round 1.
+It begins with the bold question title, continues with a recommendation, and ends with "Sent through LGTM Studio.".
+That final sentence is the lead's own announcement.
+No engine delivery code produces it.
+The engine's ask planner records a question without writing a board post.
+For an owner holder, routing emits only `OwnerNeeded`.
+A prompt delivery is queued only when another agent holds the question.
+The website maps agent messages only from thread text events.
+It does not turn board posts into agent messages.
+A board-originated tool result can therefore only appear as lead speech if the harness emits it again as agent text.
+A real event export is still needed to confirm the message's tool correlation and turn boundaries.
+A real Claude Code question recording is also still needed.
+
 ## 985. Legacy Agent Client Protocol edits lost the original file text.
 
 Found: 2026-11-15, while fixing issue 945.
@@ -15080,3 +15113,86 @@ The failure occurred while several test files were running.
 The cause of the missed startup bound has not been established.
 No wait or deadline was widened.
 The orchestrator should retain this observation when assessing the full check.
+
+## 1010. Codex tool row titles exposed adapter names, quotes and shell wrappers.
+
+Found: 2026-11-15, from the owner's service inspection.
+Status: fixed in unit s15-chat2.
+
+The title mapping recognized only the double-underscore engine tool prefix.
+Codex uses a dotted prefix.
+An explicit title inventory now covers every agent tool in both forms.
+An inventory test fails when the exposed tools and title table differ.
+Quoted read and list titles now lose their display quotes.
+Exact quoted sh, bash and zsh wrappers show the inner command.
+Multiline commands end their first-line summary with an ellipsis.
+The complete original command remains inside the row.
+The display parser never evaluates a command.
+Fix round 1 adds readable fallback titles for tools outside the explicit table.
+Ask rows name the owner or lead only when a same-turn question identifies that holder.
+An uncorrelated ask row says "Asked a question".
+List titles use the past tense.
+Search titles remove display quotes while preserving apostrophes inside the query.
+
+## 1011. Question replies with recommendations escaped the echo filter.
+
+Found: 2026-11-15, from the owner's service inspection.
+Status: fixed for the supplied announcement shape in s15 fix round 1.
+
+The old filter compared only a question's body and its title plus body.
+A reply containing the title, recommendation and the lead's own sign-off remained visible.
+Fix round 1 recognizes an announcement only when its first paragraph is the title of that agent's question from the same turn.
+The announcement's recommendation paragraph is folded only when the card has a recommendation to show.
+Its directly following sign-off paragraph is folded with it.
+An ordinary message is never changed by this filter.
+Independent reply text remains visible.
+An answered card displays both the time the question was asked and the time it was answered.
+The recommendation stays visible after an answer and while the question is held by another agent.
+The thread keeps the card at the question event's sequence.
+Issue 984 tracks the missing real question recordings.
+
+## 1012. The shell summary accepted programs in arbitrary folders as known shells.
+
+Found: 2026-11-15, in review round 1 of unit s15-chat2.
+Status: fixed in s15 fix round 1.
+
+A program named zsh in an arbitrary folder could lose its executable path in the collapsed title.
+The display parser now accepts only bare sh, bash and zsh, or those names directly under `/bin/`, `/usr/bin/` and `/usr/local/bin/`.
+Other executable paths remain in the title.
+The matcher was written from that explicit list.
+It does not resolve or execute a path.
+Both quote styles are supported.
+Empty wrappers retain the original text.
+Title-only Bash wrappers now use the same parser before generic tool-name handling.
+
+## 1013. The initial announcement filter deleted an ordinary agent sentence.
+
+Found: 2026-11-15, in review round 1 of unit s15-chat2.
+Status: fixed in s15 fix round 1.
+
+The first implementation treated "Sent through LGTM Studio." as engine delivery text.
+It removed the sentence from every agent message, even without a question.
+The engine does not produce this wording.
+It is the lead's own announcement of its question.
+The replacement filter is scoped to the same agent and turn.
+It changes only messages whose first paragraph matches the question title.
+Unrelated sentences, title mentions and messages from later turns remain intact.
+The ask tool and project lead instruction now explicitly say to write nothing about the question after calling ask.
+The lead's periodic status instruction now excludes waiting for an answer.
+
+## 1014. Two more browser journeys fail when the computer is under heavy load.
+
+Found: 2026-11-15, in the full check of unit s15-chat2.
+Status: open.
+
+The full check ran while two builders were running their own tests.
+The load average of the computer was between 20 and 38.
+Seven browser journeys failed in that run.
+Five of them are named in issue 966.
+The other two are new to the list.
+The first is "live projects and board: signs in through the engine, shows its real records, and keeps the sample out".
+The second is "studio files: engine tree, editor policy, save conflicts and one-file commit".
+The Files journey waited five seconds for the "The file as it is now" region and did not see it.
+Every one of these journeys passed when it ran alone.
+The unit s15-chat2 does not change the Files screen or the projects screen.
+The fixed five-second waits in these journeys are too short for a loaded computer.

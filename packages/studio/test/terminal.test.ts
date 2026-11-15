@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { terminalSize, terminalWorktrees, terminalState } from '../src/terminal.ts'
+import { terminalSize, terminalWorktrees, terminalState, terminalSelection } from '../src/terminal.ts'
 import { terminalSource, xtermSource } from '../scripts/terminalSource.ts'
 import { readFileSync } from 'node:fs'
 describe('project terminal mapping and build boundary', () => {
@@ -11,6 +11,13 @@ describe('project terminal mapping and build boundary', () => {
     expect(terminalState(true, 'offline', 'local')).toBe('offline')
     expect(terminalState(true, 'live', 'remote')).toBe('remote')
     expect(terminalState(false, 'live', 'local')).toBe('off')
+  })
+  it('keeps the selected worktree across tab mounts and defaults to the project folder', () => {
+    const worktrees = [{ id: 'base' }, { id: 'project' }, { id: 'remote' }]
+    expect(terminalSelection(worktrees, undefined, 'project')?.id).toBe('project')
+    expect(terminalSelection(worktrees, 'base', 'project')?.id).toBe('base')
+    expect(terminalSelection(worktrees, 'removed', 'project')?.id).toBe('project')
+    expect(terminalSelection([], undefined, 'project')).toBeUndefined()
   })
   it('refuses missing or duplicated screen integration anchors', () => {
     const source = readFileSync('design/mock/js/screens/terminal.js', 'utf8')

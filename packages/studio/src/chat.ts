@@ -4,6 +4,8 @@ import { projectApprovalEffects } from '@lgtm/contracts'
 import type { ClientRequest, EventEnvelope, ContextUsage, AgentChoices, AgentConfiguration, ContextReference } from "@lgtm/contracts"
 import { groupThreadItems } from "@lgtm/contracts/thread"
 import { orderedThread, toolRow, type ToolRow } from './chatTools.ts'
+import { questionReply, questionTurns, askHolder } from './chatQuestions.ts'
+export { questionReply } from './chatQuestions.ts'
 import { mapRequest, type StoreAgent, type StoreSubscription } from "./mapping.ts"
 
 // A harness often names a permission request with the command itself. The card then says what
@@ -81,8 +83,9 @@ export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, 
   let runMode: string | null = null
   const rows: Array<Record<string, unknown>> = []
   const calls = new Map<string, { row: ToolRow; content: Extract<Extract<EventEnvelope['event'], { _tag: 'ThreadItem' }>['content'], { _tag: 'tool-call' }>; files: Map<string, string>; snapshots: Map<string, Set<string>> }>()
-  const questions = items.flatMap(({ event: e }) => e._tag === 'QuestionAsked' && e.agentId === agentId ? [e] : [])
-  for (const item of groupThreadItems(orderedThread(items))) {
+  const ordered = orderedThread(items)
+  const turns = questionTurns(ordered, agentId)
+  for (const item of groupThreadItems(ordered)) {
     const e = item.event
     if (!("agentId" in e) || e.agentId !== agentId) continue
     if (e._tag === "AgentStarted") runMode = e.runMode
@@ -108,14 +111,13 @@ export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, 
       lastOutputAt = Math.max(lastOutputAt ?? 0, item.occurredAt)
       const c = e.content
       if (c._tag === "text") {
-        const text = c.text.trim()
-        // An exact question echo belongs on its authoritative card only.
-        if (!questions.some((q) => text === q.text.trim() || text === `${q.title ?? ''}\n\n${q.text}`.trim())) rows.push({ ...base, type: "agent", text: c.text })
+        const text = questionReply(c.text, (turns.get(item.sequence) ?? []).map(q => q.event))
+        if (text.trim()) rows.push({ ...base, type: "agent", text })
       } else if (c._tag === "tool-call") {
         const previous = calls.get(c.callId)
         const files = previous?.files ?? new Map<string, string>()
         const content = previous ? { ...previous.content, ...c, title: c.title || previous.content.title } : c
-        const row = toolRow(previous?.row ?? base, content, files)
+        const row = toolRow(previous?.row ?? base, content, files, askHolder(content.input, Number(previous?.row.id ?? item.sequence), turns.get(item.sequence) ?? []))
         if (previous) Object.assign(previous.row, row)
         else rows.push(row)
         calls.set(c.callId, { row: previous?.row ?? row, content, files, snapshots: previous?.snapshots ?? new Map() })

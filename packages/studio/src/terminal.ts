@@ -10,3 +10,9 @@ export function terminalWorktrees<W extends Worktree>(state: { worktrees?: Reado
 export function terminalState(enabled: boolean, connection: string, machine: string) {
   return !enabled ? 'off' : connection !== 'live' ? 'offline' : machine !== 'local' ? 'remote' : 'ready'
 }
+
+// Keep the current choice while it exists. A new tab starts in the project's
+// worktree, as the former folder chooser did.
+export function terminalSelection<W extends { id: string }>(worktrees: ReadonlyArray<W>, selectedId: string | undefined, projectWorktree: string | undefined): W | undefined {
+  return worktrees.find(w => w.id === selectedId) ?? worktrees.find(w => w.id === projectWorktree) ?? worktrees[0]
+}

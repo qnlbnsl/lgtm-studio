@@ -28,7 +28,7 @@ describe("Home mapping", () => {
   it("keeps a long tool call to one line and moves the rest into boxes", () => {
     const title = "python3 - <<'PY'\nprint(1)\nPY"
     const result = mapThread([{ sequence: 1, occurredAt: 1000, event: { _tag: "ThreadItem", agentId: "ag-lead", itemId: "i1", content: { _tag: "tool-call", callId: "c1", title, status: "completed", output: "x".repeat(200) } } }] as never, "ag-lead" as never)
-    expect(result.items.find((row) => row.type === "tools")).toMatchObject({ summary: "Ran python3 - <<'PY'", details: [{ label: "Command", text: title }, { label: "Output", text: "x".repeat(200) }] })
+    expect(result.items.find((row) => row.type === "tools")).toMatchObject({ summary: "Ran python3 - <<'PY'…", details: [{ label: "Command", text: title }, { label: "Output", text: "x".repeat(200) }] })
   })
   it("gives a plain title to a command whose input arrived cut", () => {
     const row = { ...engineSnapshot.requests[0], kind: "permission", display: { ...engineSnapshot.requests[0]!.display, title: undefined, preview: "printf '%s' \\\n  'one'", toolKind: "execute" } } as unknown as ClientRequest
