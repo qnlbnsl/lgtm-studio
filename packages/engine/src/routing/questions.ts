@@ -38,6 +38,7 @@ export const answerQuestion = (
   const task = linkedTask(snapshot, row);
   const mayFinishTask = task !== undefined && canChangeLinkedTask(snapshot, row.agentId, task);
   if (mayFinishTask && task.state === "queue") yield* requireBuilding(input, projectView(snapshot).projects[task.projectId]!);
+  const outcome = row.projectApproval === undefined ? "" : "\n" + (payload.text === "Accepted" ? "Approval recorded." : "Approval not recorded. Ask again if you still need it.");
   const deliveryId = freshDelivery();
   return { events: [{
     _tag: "QuestionAnswered", agentId: row.agentId, questionId: payload.id, answeredBy: actor, text: payload.text, deliveryId,
@@ -46,7 +47,7 @@ export const answerQuestion = (
     _tag: "DeliveryQueued", delivery: {
       id: deliveryId, target: row.agentId, sender: senderOf(actor), source: { _tag: "question", id: payload.id },
       content: { _tag: "prompt", text: envelope(deliveryId,
-        `Answer to question ${payload.id}:\n${actor._tag === "agent" ? escapeLeadingSlash(payload.text) : payload.text}`) },
+        `Answer to question ${payload.id}:\n${actor._tag === "agent" ? escapeLeadingSlash(payload.text) : payload.text}${outcome}`) },
     },
   }] };
 });

@@ -1,3 +1,4 @@
+import { projectApprovalEffects } from '@lgtm/contracts'
 import type { Event, Project, QuestionMetadata } from '@lgtm/contracts'
 import * as Effect from 'effect/Effect'
 import { refused, type Input, type Snapshot } from '../commands/internal.ts'
@@ -27,7 +28,7 @@ export const approvalQuestion = (snapshot: Snapshot, agentId: string, metadata: 
   if (metadata.projectApproval === 'build' && project.endResultApproval === undefined && project.skipPlanningApproval === undefined) return yield* refused(endResultReason)
   if (metadata.projectApproval === 'build' ? project.buildApproval !== undefined : project.endResultApproval !== undefined || project.skipPlanningApproval !== undefined) return yield* refused('The owner has already approved this step.')
   if (Object.values(snapshot.questions).some((q) => q.status === 'open' && q.projectId === projectId && (metadata.projectApproval === 'build' ? q.projectApproval === 'build' : q.projectApproval !== undefined && q.projectApproval !== 'build'))) return yield* refused('The owner already has a request for this approval.')
-  return { projectApproval: metadata.projectApproval, proposedAnswer: 'Accepted' }
+  return { projectApproval: metadata.projectApproval, projectApprovalEffect: projectApprovalEffects[metadata.projectApproval], proposedAnswer: 'Accepted' }
 })
 
 export const approvalAnswer = (input: Input, questionId: string, text: string): Effect.Effect<ReadonlyArray<Event>, ReturnType<typeof refused>> => Effect.gen(function* () {

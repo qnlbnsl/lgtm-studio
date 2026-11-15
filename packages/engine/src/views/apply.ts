@@ -304,7 +304,7 @@ const questionsAfter = (state: State, { event, sequence, occurredAt }: EventEnve
     case "QuestionAsked": return put(state.questions, event.questionId, {
       questionId: event.questionId, agentId: event.agentId, status: "open", holder: event.holder,
       deliveryId: event.deliveryId, text: event.text, sourceSequence: sequence, openedAt: occurredAt,
-      ...Object.fromEntries(["title", "recommendation", "proposedAnswer", "projectId", "taskId", "sprintId", "projectApproval"]
+      ...Object.fromEntries(["title", "recommendation", "proposedAnswer", "projectId", "taskId", "sprintId", "projectApproval", "projectApprovalEffect"]
         .flatMap((key) => event[key as keyof typeof event] === undefined ? [] : [[key, event[key as keyof typeof event]]])),
     });
     case "QuestionMoved": return change(state.questions, event.questionId, (row) => ({

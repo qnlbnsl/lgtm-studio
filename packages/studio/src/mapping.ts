@@ -1,3 +1,4 @@
+import { projectApprovalEffects } from '@lgtm/contracts'
 // Pure functions that turn the engine's records into the website's store.
 //
 // The website in design/mock was written for its screens, so its store has its own shape.
@@ -63,6 +64,8 @@ export interface StoreAgent {
 }
 export interface StoreOption { readonly id: string; readonly label: string; readonly kind?: string; readonly primary?: boolean }
 export interface StoreRequest {
+  readonly projectApproval?: keyof typeof projectApprovalEffects
+  readonly projectApprovalEffect?: string
   readonly sourceSequence?: number
   readonly id: string; readonly kind: "approval" | "question"; readonly agent: string; readonly project: string
   readonly task: string | null; readonly title: string; readonly body: string; readonly command: string | null
@@ -272,6 +275,7 @@ export function mapRequest(row: EngineRow, kind: "approval" | "question", agents
     id: option.id, label: option.name, kind: option.kind, ...(option.kind === "allow_once" ? { primary: true } : {})
   }))
   return {
+    ...(display?.projectApproval ? { projectApproval: display.projectApproval, projectApprovalEffect: projectApprovalEffects[display.projectApproval] } : {}),
     sourceSequence: row.sourceSequence,
     id: row.id, kind, agent: row.agentId, project, task: display?.taskId ?? null, title, body: preview,
     command: null, folder: agent?.folder ?? "", tool: display?.toolKind ?? null, recommendation: display?.recommendation ?? null,

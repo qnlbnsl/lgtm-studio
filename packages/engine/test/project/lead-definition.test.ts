@@ -227,3 +227,27 @@ it.live('r1 item 1: answering a historical approval never moves Review backwards
   yield* approve(f.lead, projectId, 'build')
   expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('review')
 })).pipe(Effect.orDie))
+
+it.live('r1 item 2: approval effects and answer outcomes are written by the engine, including misleading prose', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), projectId = f.project.projectId
+  const cases = [
+    ['end-result', 'Accepting lets the lead create sprints, teams and tasks.'],
+    ['skip-planning', 'Accepting lets the lead skip planning and create sprints, teams and tasks.'],
+    ['skip-planning-and-build', 'Accepting lets the lead skip planning, create sprints, teams and tasks, and start building.']
+  ] as const
+  for (const [projectApproval, effect] of cases) {
+    const id = success(yield* call(f.lead, 'ask', { projectId, projectApproval, projectApprovalEffect: 'Only changes the name.', proposedAnswer: 'Harmless', title: 'Quick check on naming', text: 'A harmless recommendation.' })).questionId
+    const asked = (yield* readLog).map((row) => row.event).find((event) => event._tag === 'QuestionAsked' && event.questionId === id)!
+    expect(asked).toMatchObject({ projectApprovalEffect: effect, proposedAnswer: 'Accepted' })
+    success(yield* call(owner, 'answer', { kind: 'question', id, text: 'Yes, accepted. Go ahead.' }))
+    const answer = (yield* readLog).map((row) => row.event).filter((event) => event._tag === 'DeliveryQueued' && event.delivery.target === f.project.leadAgentId).at(-1)!
+    expect(JSON.stringify(answer)).toContain('Approval not recorded. Ask again if you still need it.')
+    expect(projectView(yield* snapshot).projects[projectId]?.buildApproval).toBeUndefined()
+  }
+  yield* approve(f.lead, projectId, 'end-result')
+  const id = success(yield* call(f.lead, 'ask', { projectId, projectApproval: 'build', text: 'Build the agreed result.' })).questionId
+  expect((yield* readLog).map((row) => row.event).find((event) => event._tag === 'QuestionAsked' && event.questionId === id)).toMatchObject({ projectApprovalEffect: 'Accepting lets building start.' })
+  success(yield* call(owner, 'answer', { kind: 'question', id, text: 'Accepted' }))
+  const answer = (yield* readLog).map((row) => row.event).filter((event) => event._tag === 'DeliveryQueued' && event.delivery.target === f.project.leadAgentId).at(-1)!
+  expect(JSON.stringify(answer)).toContain('Approval recorded.')
+})).pipe(Effect.orDie))

@@ -14563,3 +14563,15 @@ Existing active tasks can still reach review or completion without a new approva
 Planning edits require scope approval, and idle worker prompts require building approval.
 Answering a queued task's linked question cannot bypass the building gate.
 The project settings row makes these controls available without requiring a lead to ask.
+
+## s10-lead-12. Approval cards hid their authority and did not tell the lead whether approval was recorded.
+
+Found in review round 1 on 2026-11-14.
+Status: fixed in engine metadata, answer delivery and both card layouts.
+The engine supplies a fixed effect sentence for each approval kind.
+The website derives that sentence from projectApproval even for older requests.
+The sentence appears above the lead's own text.
+The approval button reads Accept.
+Typing another answer shows a warning before sending.
+The delivered answer and the answered card state whether approval was recorded.
+Only the exact Accepted answer grants approval.

@@ -14,6 +14,11 @@ export function wrapProjectSettingsSwitch(screen: string, label: string): string
 
 // The standalone sample is unchanged. Apply these checks to the copied live screen.
 export function projectSettingsSource(path: string, source: string): string {
+  if (path === 'js/ui.js') {
+    const anchor = 'const approvalEffect = r.projectApprovalEffect;';
+    if (source.split(anchor).length !== 3) throw new Error('Project approval integration: cards moved');
+    return source.replaceAll(anchor, 'const approvalEffect = chatLive.approvalEffect(r);');
+  }
   if (path === 'js/screens/messages.js') {
     const anchor = 'const archived = ch.archived === true;';
     if (source.split(anchor).length !== 2) throw new Error('Team archive integration: composer moved');
