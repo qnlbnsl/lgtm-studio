@@ -15179,3 +15179,20 @@ It changes only messages whose first paragraph matches the question title.
 Unrelated sentences, title mentions and messages from later turns remain intact.
 The ask tool and project lead instruction now explicitly say to write nothing about the question after calling ask.
 The lead's periodic status instruction now excludes waiting for an answer.
+
+## 1014. Two more browser journeys fail when the computer is under heavy load.
+
+Found: 2026-11-15, in the full check of unit s15-chat2.
+Status: open.
+
+The full check ran while two builders were running their own tests.
+The load average of the computer was between 20 and 38.
+Seven browser journeys failed in that run.
+Five of them are named in issue 966.
+The other two are new to the list.
+The first is "live projects and board: signs in through the engine, shows its real records, and keeps the sample out".
+The second is "studio files: engine tree, editor policy, save conflicts and one-file commit".
+The Files journey waited five seconds for the "The file as it is now" region and did not see it.
+Every one of these journeys passed when it ran alone.
+The unit s15-chat2 does not change the Files screen or the projects screen.
+The fixed five-second waits in these journeys are too short for a loaded computer.
