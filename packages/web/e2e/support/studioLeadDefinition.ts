@@ -62,7 +62,7 @@ export async function exerciseStudioLeadDefinition(page: Page) {
           await expect(tree).toContainText('Define')
           const sprint = { projectId, label: 'SP-1', name: 'First sprint', goal: 'Deliver the agreed scope', phase: 'Build', owner: spawn.agentId, needs: [] }
           const refused = await execute(lead, 'project.sprint.create', sprint)
-          expect(refused._tag === 'Failure' && refused.failure.reason).toBe('The owner must approve the end result or skipping planning before work is planned.')
+          expect(refused._tag === 'Failure' && refused.failure.reason).toBe('The owner must approve the end result or skipping planning before work is planned; use ask with projectApproval set to "end-result" or "skip-planning".')
           expect((await execute(lead, 'ask', { projectId, projectApproval: 'end-result', title: 'Approve the end result?', recommendation: 'Build the agreed product without deployment.', text: 'The product will provide the agreed page. Deployment is left out.' }))._tag).toBe('Success')
           await page.goto(`${root}#/home`)
           await page.getByRole('button', { name: 'Show Approve the end result?', exact: true }).click()

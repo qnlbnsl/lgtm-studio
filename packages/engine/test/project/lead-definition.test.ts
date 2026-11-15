@@ -61,11 +61,11 @@ it.live('s10 item 2: only explicit owner decisions unlock planning and building,
   expect(projectView(yield* snapshot).projects[p.projectId]?.stage).toBe('define')
   const sprint = { projectId: p.projectId, label: 'SP-1', name: 'First', goal: 'Deliver', phase: 'Build', owner: p.leadAgentId, needs: [] }
   const team = { projectId: p.projectId, name: 'Builders', worktreeId: p.worktreeId }
-  expect(failureOf(yield* call(f.lead, 'project.sprint.create', sprint))?.reason).toBe('The owner must approve the end result or skipping planning before work is planned.')
-  expect(failureOf(yield* call(f.lead, 'project.team.create', team))?.reason).toBe('The owner must approve the end result or skipping planning before work is planned.')
+  expect(failureOf(yield* call(f.lead, 'project.sprint.create', sprint))?.reason).toBe('The owner must approve the end result or skipping planning before work is planned; use ask with projectApproval set to "end-result" or "skip-planning".')
+  expect(failureOf(yield* call(f.lead, 'project.team.create', team))?.reason).toBe('The owner must approve the end result or skipping planning before work is planned; use ask with projectApproval set to "end-result" or "skip-planning".')
   expect(failureOf(yield* call(f.lead, 'project.stage.set', { projectId: p.projectId, stage: 'build' }))).toBeDefined()
   success(yield* call(owner, 'project.stage.set', { projectId: p.projectId, stage: 'build' }))
-  expect(failureOf(yield* call(f.lead, 'project.sprint.create', sprint))?.reason).toBe('The owner must approve the end result or skipping planning before work is planned.')
+  expect(failureOf(yield* call(f.lead, 'project.sprint.create', sprint))?.reason).toBe('The owner must approve the end result or skipping planning before work is planned; use ask with projectApproval set to "end-result" or "skip-planning".')
   success(yield* call(owner, 'project.stage.set', { projectId: p.projectId, stage: 'define' }))
   yield* approve(f.lead, p.projectId, 'end-result', false)
   expect(projectView(yield* snapshot).projects[p.projectId]?.stage).toBe('define')
@@ -80,9 +80,9 @@ it.live('s10 item 2: only explicit owner decisions unlock planning and building,
   const teamId = success(yield* call(f.lead, 'project.team.create', team)).teamId
   const task = { projectId: p.projectId, sprintId, teamId, owner: p.leadAgentId, worktreeId: p.worktreeId, title: 'Deliver', state: 'queue' }
   const taskId = success(yield* call(f.lead, 'project.task.create', task)).taskId
-  expect(failureOf(yield* call(f.lead, 'project.task.update', { projectId: p.projectId, taskId, state: 'active' }))?.reason).toBe('The owner must approve building before work starts.')
+  expect(failureOf(yield* call(f.lead, 'project.task.update', { projectId: p.projectId, taskId, state: 'active' }))?.reason).toBe('The owner must approve building before work starts; use ask with projectApproval set to "build".')
   const start = { name: 'Builder', role: 'worker:builder', harness: 'cursor', account: { _tag: 'any' }, permission: 'ask', folder: projectView(yield* snapshot).workspaces[p.worktreeId]!.path }
-  expect(failureOf(yield* call(f.lead, 'start', start))?.reason).toBe('The owner must approve building before work starts.')
+  expect(failureOf(yield* call(f.lead, 'start', start))?.reason).toBe('The owner must approve building before work starts; use ask with projectApproval set to "build".')
   yield* approve(f.lead, p.projectId, 'build', false)
   expect(projectView(yield* snapshot).projects[p.projectId]?.stage).toBe('plan')
   yield* approve(f.lead, p.projectId, 'build')
@@ -136,7 +136,7 @@ for (const projectApproval of ['skip-planning', 'skip-planning-and-build']) it.l
   success(yield* call(f.lead, 'project.team.create', { projectId: p.projectId, name: 'Build team', worktreeId: p.worktreeId }))
   const start = { name: 'Build lead', role: 'lead:builder', harness: 'cursor', account: { _tag: 'any' }, permission: 'ask', folder: projectView(yield* snapshot).workspaces[p.worktreeId]!.path }
   if (projectApproval === 'skip-planning') {
-    expect(failureOf(yield* call(f.lead, 'start', start))?.reason).toBe('The owner must approve building before work starts.')
+    expect(failureOf(yield* call(f.lead, 'start', start))?.reason).toBe('The owner must approve building before work starts; use ask with projectApproval set to "build".')
     yield* approve(f.lead, p.projectId, 'build')
   }
   success(yield* call(f.lead, 'start', start))
@@ -260,7 +260,7 @@ it.live('r1 item 5: resume of an existing worker needs building approval after s
   const agentId = success(yield* call(f.lead, 'start', { name: 'Existing builder', role: 'worker:builder', harness: 'cursor', account: { _tag: 'any' }, permission: 'ask', folder })).agentId
   success(yield* call(owner, 'stop', { agentId }))
   success(yield* call(owner, 'project.approval.withdraw', { projectId, approval: 'build' }))
-  expect(failureOf(yield* call(f.lead, 'resume', { agentId }))?.reason).toBe('The owner must approve building before work starts.')
+  expect(failureOf(yield* call(f.lead, 'resume', { agentId }))?.reason).toBe('The owner must approve building before work starts; use ask with projectApproval set to "build".')
   yield* approve(f.lead, projectId, 'build')
   success(yield* call(f.lead, 'resume', { agentId }))
 })).pipe(Effect.orDie))
@@ -271,7 +271,7 @@ it.live('r1 item 5: a nonqueue task needs building approval after scope approval
   const sprintId = success(yield* call(f.lead, 'project.sprint.create', { projectId, label: 'SP-1', name: 'First', goal: 'Deliver', phase: 'Build', owner: f.project.leadAgentId, needs: [] })).sprintId
   const teamId = success(yield* call(f.lead, 'project.team.create', { projectId, name: 'Builders', worktreeId: f.project.worktreeId })).teamId
   const payload = { projectId, sprintId, teamId, worktreeId: f.project.worktreeId, title: 'Start immediately', owner: f.project.leadAgentId, state: 'active' }
-  expect(failureOf(yield* call(f.lead, 'project.task.create', payload))?.reason).toBe('The owner must approve building before work starts.')
+  expect(failureOf(yield* call(f.lead, 'project.task.create', payload))?.reason).toBe('The owner must approve building before work starts; use ask with projectApproval set to "build".')
   yield* approve(f.lead, projectId, 'build')
   success(yield* call(f.lead, 'project.task.create', payload))
 })).pipe(Effect.orDie))
@@ -279,7 +279,7 @@ it.live('r1 item 5: a nonqueue task needs building approval after scope approval
 it.live('r1 item 5: setting Build needs building approval after scope approval', () => provideBoard(rig, (runner) => Effect.gen(function* () {
   const f = yield* setup(runner), projectId = f.project.projectId
   yield* approve(f.lead, projectId, 'end-result')
-  expect(failureOf(yield* call(f.lead, 'project.stage.set', { projectId, stage: 'build' }))?.reason).toBe('The owner must approve building before work starts.')
+  expect(failureOf(yield* call(f.lead, 'project.stage.set', { projectId, stage: 'build' }))?.reason).toBe('The owner must approve building before work starts; use ask with projectApproval set to "build".')
   expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('plan')
   yield* approve(f.lead, projectId, 'build')
   success(yield* call(f.lead, 'project.stage.set', { projectId, stage: 'build' }))
@@ -289,4 +289,12 @@ it.live('r1 item 5: historical project-lead spelling gets lead orientation', () 
   yield* registerRebuildCheck()
   const legacy = yield* seedAgent({ id: 'historical-lead', name: 'Project lead', role: 'project-lead', state: 'idle' })
   expect(unwrap(success(yield* call(agentCredential(legacy.token), 'roles.orient', {})))).toMatchObject({ kind: 'lead', roleName: 'project-lead', advice: expect.stringContaining('Start your own workers') })
+})).pipe(Effect.orDie))
+
+it.live('r1 item 6: the opening distinguishes fields, controls, denial and building authority', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  yield* setup(runner)
+  const started = (yield* readLog).find(({ event }) => event._tag === 'AgentStarted' && event.firstPromptDelivery)!.event
+  const text = JSON.stringify(started)
+  for (const phrase of ['During Define, gather context and size the work', 'in the project chat', 'text field', 'Details control', 'If the owner denies', 'ask what to change', 'unchanged', 'Skipping planning alone does not permit starting workers or building']) expect(text).toContain(phrase)
+  expect(text).not.toContain('Size the work first')
 })).pipe(Effect.orDie))

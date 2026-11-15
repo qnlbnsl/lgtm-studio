@@ -4,8 +4,8 @@ import * as Effect from 'effect/Effect'
 import { refused, type Input, type Snapshot } from '../commands/internal.ts'
 import { own, projectView } from './view.ts'
 
-export const endResultReason = 'The owner must approve the end result or skipping planning before work is planned.'
-export const buildingReason = 'The owner must approve building before work starts.'
+export const endResultReason = 'The owner must approve the end result or skipping planning before work is planned; use ask with projectApproval set to "end-result" or "skip-planning".'
+export const buildingReason = 'The owner must approve building before work starts; use ask with projectApproval set to "build".'
 export const requireEndResult = (input: Input, project: Project) => input.actor._tag === 'owner' || (project.endResultApproval !== undefined || project.skipPlanningApproval !== undefined)
   ? Effect.void : Effect.fail(refused(endResultReason))
 export const requireBuilding = (input: Input, project: Project) => input.actor._tag === 'owner' || project.buildApproval !== undefined

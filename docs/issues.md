@@ -14587,3 +14587,14 @@ The historical project-lead spelling receives lead orientation.
 The messages screen build fails when its archive replacement target is missing or duplicated.
 Temporary removal of each check makes its corresponding new test fail.
 The checks are restored before the passing verification.
+
+## s10-lead-14. The opening instruction confused ordering, request fields and approval scope.
+
+Found in review round 1 on 2026-11-14.
+Status: fixed in the opening instruction and refusal text.
+Define comes first, and sizing happens inside it.
+Reading updates are posted in the project chat.
+The text field carries the long proposal, and the owner opens the Details control.
+Skipping planning alone cannot authorize starting workers or building.
+After a denial, the lead asks what to change and does not repeat the same request unchanged.
+The instruction and both refusal reasons name ask and the projectApproval field.
