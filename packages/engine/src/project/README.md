@@ -503,6 +503,8 @@ The command line and agent tools expose the same requests as the client applicat
 Only the owner can call `project.delete` with `projectId` and `confirmed: true`.
 The command refuses an active project, an incomplete archive, and an agent that is not stopped or crashed.
 It also refuses an unfinished Git operation or an open terminal in a workspace that deletion would unregister.
+An unfinished Git attempt by one of the project's agents also prevents deletion, even in a kept workspace.
+That attempt must finish before its caller is deleted, so its finish event can still clear it.
 An open merge review is removed with the rest of the project history.
 The command appends `project.Deleted` to the existing event log.
 It does not erase events from that log.
@@ -530,13 +532,21 @@ A registration can open its artifacts only while its worktree remains registered
 When deletion unregisters that worktree, design reads can still return the registration with unavailable artifacts.
 The design head stays on that recorded revision.
 Its files remain on disk.
-The repository checkout always stays registered, including historical records without a checkout type.
+The repository checkout stays registered when identified by its checkout type or its repository path.
+A parentless workspace whose repository row is missing also stays registered as a legacy checkout.
 A worktree named by a surviving project or team also stays registered.
 Deletion starts at the other worktrees named by the deleted project or its teams, and at workspaces carrying its project identifier.
 It follows their registered descendants and stops at a kept workspace.
 It never walks through a kept workspace.
 A separate team or explicitly marked project workspace below a kept worktree still starts its own removal walk.
+A workspace with an exclusive team identifier from the deleted project also starts its own removal walk.
 Workspaces outside those walks remain registered, including unowned children of the repository checkout.
+In the default layout, a team can share a kept worktree while its builders have only that worktree as their parent.
+The workspace registration command does not record the builders' owning project or team.
+Those builder registrations remain because their parent alone cannot establish exclusive ownership.
+Issue 1028 records this accepted residue.
+Issue 1029 records that a surviving project identifier alone does not protect a workspace under a removed root.
+Issue 1030 records that a kept workspace can retain a parent identifier naming a removed workspace.
 Every worktree folder and every branch stays on disk, including dirty and externally registered folders.
 No safe worktree removal operation exists in the engine, so this command has no removal option.
 

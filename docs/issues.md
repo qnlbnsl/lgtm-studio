@@ -15168,8 +15168,10 @@ The earlier refusal assertions could pass on a missing Git configuration instead
 The revised rule computes the kept identifiers first and excludes them from the removal roots.
 Each walk stops at a kept workspace.
 Independent team and explicitly marked project workspaces still start their own walks below a kept root.
-Terminal and Git checks use only the final removal set.
-Twelve explicit cases in `.foundry/delete-scope.md` each have a separate regression test.
+The terminal check uses only the final removal set.
+The Git check also refuses an unfinished attempt whose caller is one of the deleted agents.
+A parentless workspace without its repository row is kept as a legacy checkout.
+Sixteen explicit cases in `.foundry/delete-scope.md` each have a separate regression test.
 They cover the two review probes, sibling projects, shared worktrees, cycles, and retained terminals and Git operations.
 The read tests configure Git and assert the exact missing-registration refusal.
 This change corrects the reopened scope finding.
@@ -15341,3 +15343,48 @@ The pieces alternate between double quotes and single quotes, to carry a literal
 The title of that row still begins "Ran /usr/bin/zsh -lc".
 The matcher of issue 1012 leaves this form alone on purpose, because it does not parse shell quoting.
 A fix needs a small parser for adjacent quoted pieces, and tests for each quoting form.
+
+
+## 1027. Deleting an agent could strand its unfinished Git attempt in a kept worktree.
+
+Review round 3 found that the deletion precondition checked only the attempt's worktree.
+An attempt by the deleted project's agent could remain in a kept shared worktree.
+The tombstone gate then discarded its finish event because that event named the deleted caller.
+The pending attempt could prevent the surviving project from being deleted indefinitely.
+Deletion now refuses an unfinished attempt by any of its agents, regardless of the worktree.
+The existing Git refusal sentence is unchanged.
+A handler regression refuses the first delete, finishes the attempt, and then deletes both projects successfully.
+An owner's attempt in a kept worktree still does not block deletion.
+This is fixed.
+
+## 1028. Default builder registrations below a kept team worktree have no exclusive owner.
+
+Recorded from minor 1 of review round 3.
+A project's team can sit on a worktree shared with a surviving project.
+The workspace registration command records the builder's parent but no owning project or team.
+Deletion cannot distinguish that builder from another project's builder under the same root.
+Those unmarked builder registrations remain, as a documented and tested limitation.
+A row with an exclusive team identifier from the deleted project now starts its own removal walk.
+The workspaces named by surviving projects and teams still form retention barriers.
+The missing ownership on default registrations remains open.
+
+## 1029. A surviving project identifier alone does not protect a workspace below a removed root.
+
+Recorded from minor 2 of review round 3.
+A raw workspace row can carry a surviving project's identifier below a root removed by another project's deletion.
+The kept set protects worktrees named by surviving project and team rows, rather than every workspace carrying a surviving project identifier.
+The descendant walk can therefore remove and tombstone that marked workspace.
+The current commands cannot construct this case because a marked workspace is its project's own worktree.
+The round 3 brief explicitly asks to record this issue without fixing it.
+This is open.
+
+## 1030. A kept workspace can retain a parent identifier naming a removed workspace.
+
+Recorded from minor 5 of review round 3.
+A surviving team's kept workspace can sit below another project's removal root in a raw registry row.
+Deletion keeps that workspace and its parent identifier while removing the parent workspace.
+The registry remains readable and replay agrees with the live view.
+A later update can fail because its parent is no longer registered.
+The current commands cannot construct this layout.
+The round 3 brief explicitly asks to record this issue without fixing it.
+This is open.

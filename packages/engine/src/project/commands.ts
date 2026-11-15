@@ -369,12 +369,16 @@ const deleteProject: PiecePlanner = (input, raw) => Effect.gen(function* () {
   // Retained identifiers are barriers, not roots from which to discover owners.
   const kept = new Set<string>([
     ...Object.values(view.workspaces).filter((workspace) => workspace.checkout === "main"
-      || workspace.path === own(view.repositories, workspace.repoId)?.path).map((workspace) => workspace.worktreeId),
+      || workspace.path === own(view.repositories, workspace.repoId)?.path
+      || workspace.parentId === undefined && own(view.repositories, workspace.repoId) === undefined).map((workspace) => workspace.worktreeId),
     ...Object.values(view.projects).filter((project) => project.projectId !== p.projectId).map((project) => project.worktreeId),
     ...Object.values(view.teams).filter((team) => team.projectId !== p.projectId).map((team) => team.worktreeId)
   ])
-  const removed = new Set([row.worktreeId, ...Object.values(view.teams).filter((team) => team.projectId === p.projectId).map((team) => team.worktreeId),
-    ...Object.values(view.workspaces).filter((workspace) => workspace.projectId === p.projectId).map((workspace) => workspace.worktreeId)]
+  const teams = Object.values(view.teams).filter((team) => team.projectId === p.projectId)
+  const teamIds = new Set(teams.map((team) => team.teamId).filter((id) => !Object.values(view.teams).some((team) => team.projectId !== p.projectId && team.teamId === id)))
+  const removed = new Set([row.worktreeId, ...teams.map((team) => team.worktreeId),
+    ...Object.values(view.workspaces).filter((workspace) => workspace.projectId === p.projectId
+      || workspace.teamId !== undefined && teamIds.has(workspace.teamId)).map((workspace) => workspace.worktreeId)]
     .filter((id) => !kept.has(id)))
   // A team below a retained project worktree still seeds its own walk.
   // Visiting an identifier once bounds cycles, and a kept child stops a walk.
@@ -388,7 +392,8 @@ const deleteProject: PiecePlanner = (input, raw) => Effect.gen(function* () {
   }
   const worktreeIds = [...removed]
   if (sessions(input).hasProjectTerminal(removed)) return yield* refused("Close the project terminals before deleting the project.")
-  if (Object.values(view.gitAttempts).some((attempt) => removed.has(attempt.worktreeId))) return yield* refused("Finish the project's Git operation before deleting it.")
+  if (Object.values(view.gitAttempts).some((attempt) => removed.has(attempt.worktreeId)
+    || attempt.caller._tag === "agent" && agentIds.includes(attempt.caller.agentId))) return yield* refused("Finish the project's Git operation before deleting it.")
   const agents = new Set<string>(agentIds)
   const channelIds = Object.values(board.channels).filter((channel) =>
     (channel.anchorAgentId !== undefined && agents.has(channel.anchorAgentId)
