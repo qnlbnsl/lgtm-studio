@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { requestId, useAdminApi } from "./api.ts"
-import { useMutationDisabled } from "../data/ShellDataProvider.tsx"
+import { useShellData } from "../data/ShellDataProvider.tsx"
 import { applyTheme, themeChoice, writePreference, type ThemeChoice } from "../shell/preferences.ts"
 import { AdminConfirm } from "./confirm.tsx"
 import "./admin.css"
@@ -37,7 +37,10 @@ function PushSetting({ kind, push, busy, saving, onChange }: {
 
 export function Settings({ onSessionExpired }: { readonly onSessionExpired: () => void }) {
   const { run, busy, message, setMessage } = useAdminApi(onSessionExpired)
-  const offline = useMutationDisabled()
+  // These controls use their own canonical settings reads. A live shell's
+  // background collection refresh does not invalidate those settings.
+  const { connection } = useShellData()
+  const offline = connection !== "Live"
   const [alerts, setAlerts] = useState<AlertSettings>()
   const [web, setWeb] = useState<Web>()
   const [theme, setTheme] = useState(themeChoice)

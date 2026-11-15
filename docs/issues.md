@@ -15196,3 +15196,71 @@ The Files journey waited five seconds for the "The file as it is now" region and
 Every one of these journeys passed when it ran alone.
 The unit s15-chat2 does not change the Files screen or the projects screen.
 The fixed five-second waits in these journeys are too short for a loaded computer.
+
+
+## 1031. A state request repeated the state read performed by its workspace check.
+
+Found on 2026-11-15 while measuring issue 966.
+Status: fixed within one uninterrupted Git gate.
+A real process-counting wrapper measured ten Git processes for a main-checkout state request.
+It measured fourteen for a linked-checkout state request with a target at the same commit.
+The request checked its workspace and then registered and read the same state again.
+The state request now consumes its own workspace observation after all existing refusals.
+A target comparison extends that observation inside the same gate.
+It reuses the request's own registration and head instead of registering and reading the head again.
+This lengthens the observation window by the count reads inside that same gate.
+No result is retained after the gate is released.
+The corresponding counts are now five and nine.
+No check result survives the request or the gate.
+The existing swapped-workspace tests remain unchanged.
+An additional state request test refuses a checkout replaced since the preceding request.
+Another test preserves the registered-branch refusal before an invalid-target refusal.
+
+## 1032. A background collection read also swallowed token and heartbeat blur saves.
+
+Found on 2026-11-15 while tracing the remaining failures in issue 970.
+Status: fixed by narrowing the retired service settings lock to its own reads and connection.
+Twenty traced runs with one browser worker failed eight times.
+The failures included all three assertions from issue 970.
+In run 5, the token input received focus at 902.1 milliseconds.
+It blurred at 920.1 milliseconds while matching the disabled selector.
+Its saveToken handler never ran.
+The subsequent render recorded busy false, offline true and uncertain false at 930.1 milliseconds.
+The lock cleared at 965.0 milliseconds, with the unsaved input still populated.
+In run 14, the heartbeat input received focus at 1986.7 milliseconds.
+It blurred at 2019.0 milliseconds while disabled.
+Its saveWeb handler never ran.
+The render recorded busy false, offline true and uncertain false at 2026.7 milliseconds.
+The lock cleared at 2061.1 milliseconds.
+The explicit settings refresh then read the old heartbeat value from the engine.
+These are browser performance-clock measurements within each run.
+The offline flag came from incomplete shell collections, as in the Clear token trace in issue 970.
+Disabling a focused input caused a blur before the intended blur could save it.
+The settings page now locks on its own pending operation, uncertain outcome or actual connection loss.
+It reads its settings independently of the shell collections.
+Other retired pages retain their existing collection-completeness gates.
+The website's Service settings already leaves its controls usable during a background read.
+A root-address journey now holds a real background reply across a field blur and a switch click.
+No wait or deadline was enlarged.
+No visual design changed.
+The unchanged retired admin journey passed thirty consecutive one-worker runs after the fix.
+A component regression also keeps the controls enabled during incomplete shell collections and disabled during an actual reconnect.
+
+## 1033. The Git screen's refresh scheduling was reworked four times and is not merged.
+
+Found: 2026-11-15, in review round 4 of unit s13-journeys.
+Status: open. The work is kept on the branch `area/s13-journeys` and is not in `master`.
+
+The unit s13-journeys tried to cut the requests that the website's Git screen sends to the engine.
+The aim was to make the Git journey of issue 966 finish inside its 360-second limit.
+Four fix rounds each closed their review findings.
+Each round also introduced a new fault in the same refresh scheduling.
+Round 4 added a cache of refused reads and a limit of 120 automatic requests per minute for each worktree.
+The cache kept a refusal after its cause was gone, and "Refresh Git" could not clear it.
+The limit left the diffs of a large change list blank for up to a minute while agents were active.
+The reviewer judged the scheduler too tangled to maintain: thirteen module-level collections with overlapping lifetimes.
+The engine's cheaper state read of issue 1031 and the retired settings fix of issue 1032 are sound and are merged on their own.
+The Git screen in `master` keeps its earlier refresh behaviour.
+The Git journey of issue 966 therefore still runs close to its limit.
+A rebuild should start from a written design: one record per worktree with a named state, one function that decides the next read time, and file detail loading kept outside the scheduler.
+The branch's test file `packages/studio/test/git-refresh.test.ts` is a usable acceptance suite for that rebuild.
