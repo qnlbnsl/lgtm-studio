@@ -367,8 +367,8 @@ export function syncGit(id, operation) { return run('git', async () => {
   const w = wt(id); local(w); revision++;
   try { await request('project.' + operation, scope(w)); } finally {
     const ids = operation === 'fetch' ? undefined : affectedGit(w);
-    // Pull fetches every origin branch, so the base row's upstream count can change.
-    if (operation === 'pull') ids.push(...S().worktrees.filter((x) => x.repo === w.repo && x.kind === 'base' && !ids.includes(x.id)).map((x) => x.id));
+    // Pull fetches every origin branch, so every parentless row's upstream count can change.
+    if (operation === 'pull') ids.push(...S().worktrees.filter((x) => x.repo === w.repo && !x.parentId && !ids.includes(x.id)).map((x) => x.id));
     await loadGit(screen?.project, ids, true);
   }
 }); }

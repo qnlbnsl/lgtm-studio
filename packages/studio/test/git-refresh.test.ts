@@ -295,7 +295,10 @@ it("a refused initial review read is retried rather than marked loaded", async (
   expect(reviews).toBe(2);
 });
 
-it("a background refresh shows passing evidence reported by an agent for an open review", async () => {
+it("a background refresh rereads status for a known open review", async () => {
+  // This synthetic reply changes review.evidence to make the second read observable.
+  // The engine does not send this reply shape today: fresh evidence is separate in result.evidence.
+  // This test proves that the read happens, not that the live dialog receives fresh evidence.
   let passed = false, reviews = 0;
   const request = async (tag: string) => {
     if (tag === "project.review.report") { passed = true; return {}; }
@@ -387,6 +390,33 @@ for (const operation of ["pull", "push"]) it(`${operation} ${operation === "pull
     expect(reads).toEqual(operation === "pull" ? [source.id, "child", "base"] : [source.id, "child"]);
     expect(f.state.worktrees.find((w: any) => w.id === "base").ahead).toBe(operation === "pull" ? 0 : 1);
     expect(f.state.worktrees.find((w: any) => w.id === "base-child").ahead).toBe(1);
+    expect(f.toasts).toEqual([]);
+  } finally { close(); }
+});
+
+it("pull refreshes the upstream count of a parentless project worktree", async () => {
+  const reads: string[] = []; let pulled = false;
+  const f = fixture(async (tag, payload) => {
+    if (tag === "project.pull") { pulled = true; return {}; }
+    if (tag === "project.git.state") { reads.push(payload.worktreeId); return { result: { mergeHead: null, ahead: pulled ? 0 : 1 } }; }
+    if (tag === "project.changes") return { result: { items: [], truncated: false } };
+    if (tag === "project.review.status") return { result: { review: null } };
+    throw new Error(tag);
+  });
+  const source = f.state.worktrees[0];
+  Object.assign(source, { kind: "team", parentId: "parentless-project" });
+  f.state.worktrees.push({ ...source, id: "child", branch: "child", parentId: source.id },
+    { ...source, id: "parentless-project", branch: "project", kind: "project", parentId: null },
+    { ...source, id: "sibling", branch: "sibling", parentId: "parentless-project" });
+  const close = f.actions.openScreen("git", "project");
+  try {
+    await vi.waitFor(() => expect(f.actions.busy("git-read")).toBe(false));
+    expect(f.state.worktrees.find((w: any) => w.id === "parentless-project").ahead).toBe(1);
+    reads.length = 0;
+    await f.actions.syncGit(source.id, "pull");
+    expect(reads).toEqual([source.id, "child", "parentless-project"]);
+    expect(f.state.worktrees.find((w: any) => w.id === "parentless-project").ahead).toBe(0);
+    expect(f.state.worktrees.find((w: any) => w.id === "sibling").ahead).toBe(1);
     expect(f.toasts).toEqual([]);
   } finally { close(); }
 });

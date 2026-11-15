@@ -28,8 +28,10 @@ it('preserves the journey failure when the measurement cannot be written in fina
     writeFileSync(blocked, 'This file cannot be used as a directory.')
     vi.stubEnv('LGTM_GIT_MEASURE_DIR', blocked)
     vi.spyOn(console, 'log').mockImplementation(() => {})
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const measurement = measureGitJourney({ on: vi.fn(), off: vi.fn() } as unknown as Page)
     const failure = new Error('The original journey failure')
     expect(() => { try { throw failure } finally { measurement.finish() } }).toThrow(failure)
+    expect(warn.mock.calls).toEqual([['Git journey measurement failed:', 'EEXIST']])
   } finally { rmSync(directory, { recursive: true, force: true }) }
 })

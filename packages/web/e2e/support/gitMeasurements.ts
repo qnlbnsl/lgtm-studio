@@ -101,7 +101,12 @@ export function measureGitJourney(page: Page) {
         console.log('Git journey measurement:', JSON.stringify({ elapsedMs, loadStart: report.loadStart, loadEnd: report.loadEnd,
           stateRequests: gitRequests.filter((s) => s.tag === 'project.git.state').length, gitRequests: gitRequests.length,
           engineGitActiveMs: report.engineGitActiveMs, browserRequestActiveMs: report.browserRequestActiveMs, incompleteRequests: report.incompleteRequests }))
-      } catch { /* Measurement must never replace the journey's own failure. */ }
+      } catch (error) {
+        // Report only the failure kind, never an error message, path, or payload.
+        const code = typeof error === 'object' && error !== null && 'code' in error ? error.code : undefined
+        const kind = typeof code === 'string' && /^E[A-Z0-9_]+$/.test(code) ? code : error instanceof Error ? 'Error' : typeof error
+        console.warn('Git journey measurement failed:', kind)
+      }
     }
   }
 }
