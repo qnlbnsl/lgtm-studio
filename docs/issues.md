@@ -14528,20 +14528,16 @@ It now saves the name through the same inline field.
 ## s10-lead-9. Slow workspace checks exposed issue 936 in the browser journeys.
 
 Found on 2026-11-14 after Addition 2 moved the tests to this computer.
-Status: the broad wait changes were reverted in fix round 1.
+Status: fixed in the workspace checks, with the broad waits reverted in fix round 1.
+This records review finding M3.
 Issue 936 tracks the expensive repeated workspace checks behind the slow saves.
-The round now fixes those checks instead of widening every assertion.
-The following wait changes describe the earlier implementation and have all been reverted unless stated above.
-The failure artifacts showed pending Git destination reads, a pending file commit and a pending editor save.
-Several checks still had a five-second assertion limit.
-The older Git journey now uses the same thirty-second assertion limit as the website's Git journey.
-The file and editor feedback journeys also use thirty-second readiness assertions.
-The feedback journey allows ninety seconds for its sequence of editor operations.
-The website's Git journey explicitly waits for merge review to become enabled before clicking it.
-The eight-viewport design journey has the same two-minute limit as the eight-viewport creation journey.
-The full website Git trace reached every final assertion after more than seven minutes on this host.
-That journey now allows ten minutes overall while retaining its existing operation deadlines.
-All existing assertions and production time limits are retained.
+The earlier implementation widened assertions for Git, Files and Mocks to thirty seconds.
+It also enlarged the Git and Mocks journey budgets and the new project dialog-close wait.
+Those changes are reverted.
+The wait for merge review to be enabled before clicking remains.
+The two-minute budget for the eight-viewport design journey remains because no single assertion changed.
+The round fixes repeated workspace checks instead of widening operation assertions.
+Issue 936 records the measured process counts and browser times.
 
 ## s10-lead-10. The new browser fixture needed an explicit sample owner name.
 
@@ -14554,6 +14550,7 @@ The journey checks that sample name after signing in.
 ## s10-lead-11. Existing projects needed owner controls for approvals and narrower gates.
 
 Found in review round 1 on 2026-11-14.
+This records review findings M1, m1, m2 and m4.
 Status: fixed in the owner requests and project settings.
 The owner can grant or withdraw end result and building approvals directly.
 Withdrawing the end result also withdraws building.
@@ -14567,6 +14564,7 @@ The project settings row makes these controls available without requiring a lead
 ## s10-lead-12. Approval cards hid their authority and did not tell the lead whether approval was recorded.
 
 Found in review round 1 on 2026-11-14.
+This records review findings M2.
 Status: fixed in engine metadata, answer delivery and both card layouts.
 The engine supplies a fixed effect sentence for each approval kind.
 The website derives that sentence from projectApproval even for older requests.
@@ -14579,6 +14577,7 @@ Only the exact Accepted answer grants approval.
 ## s10-lead-13. Three approval gates and two compatibility paths lacked regression tests.
 
 Found in review round 1 on 2026-11-14.
+This records review findings m3.
 Status: fixed in the regression coverage.
 Worker resume needs building approval after scope is approved.
 Creating an active task needs the same approval.
@@ -14591,6 +14590,7 @@ The checks are restored before the passing verification.
 ## s10-lead-14. The opening instruction confused ordering, request fields and approval scope.
 
 Found in review round 1 on 2026-11-14.
+This records review findings m5 and m7.
 Status: fixed in the opening instruction and refusal text.
 Define comes first, and sizing happens inside it.
 Reading updates are posted in the project chat.
@@ -14598,10 +14598,12 @@ The text field carries the long proposal, and the owner opens the Details contro
 Skipping planning alone cannot authorize starting workers or building.
 After a denial, the lead asks what to change and does not repeat the same request unchanged.
 The instruction and both refusal reasons name ask and the projectApproval field.
+The nitpick instruction explicitly names skip-planning-and-build.
 
 ## s10-lead-15. Define had no current stage dot, and an archived team channel lost its readable name.
 
 Found in review round 1 on 2026-11-14.
+This records review findings m6.
 Status: fixed in the stage list, archive record and website.
 The browser reproduced a deleted team's channel as Team followed by an internal identifier.
 Channel archival now records the last team name for display.
@@ -14623,3 +14625,20 @@ The task history request still enforces the project's read permissions.
 Its last entry says Task deleted and carries a deleted flag.
 Deleted tasks remain unavailable for edits, reassignment and linked work.
 
+## s10-lead-17. The feature quotation and the review issue records were incomplete.
+
+Found in review round 1 on 2026-11-14.
+This records review findings m9 and m10.
+Status: fixed in the feature entry and issues s10-lead-9 through s10-lead-16.
+The one-off repository agent entry now includes the owner's quoted words.
+It still states the undecided worktree, branch, merge and tree presentation.
+The existing-project lock, stage regression, withdrawal, approval wording, bypasses and stage dots now have issue records.
+The wait-regression entry explicitly names issue 936.
+
+## s10-lead-18. The project event roundtrip fixture omitted the direct approval events.
+
+Found during fix round 1 on 2026-11-14.
+Status: fixed in the event fixture.
+The inventory named both direct approval events, but its roundtrip input omitted them.
+The focused run caught that mismatch before the full check.
+The fixture now covers their receipt identities and redaction alongside every other project event.

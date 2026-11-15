@@ -1204,6 +1204,7 @@ Automatic choice of a path by the workflow is not built.
 ## A one-off agent on a repository, without a project.
 
 Requested by the owner on 2026-11-14.
+The owner's words were: nitpicks "need one-off changes. They don't need a project. Maybe just allow launching an agent on the repository: you just tell it which harness, and it just picks up the defaults. You're just able to change it from the bottom."
 From a repository, the owner starts one agent by choosing a harness.
 The agent takes the default model and effort.
 The owner can change the model and effort in the composer bar at the bottom of the chat.

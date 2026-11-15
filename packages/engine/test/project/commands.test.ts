@@ -86,6 +86,8 @@ it.live("roundtrips every project event and receipt identity while keeping works
     { _tag: "project.PreferencesChanged", projectId, shell: text },
     { _tag: "project.Renamed", projectId, name: text },
     { _tag: "project.ApprovalDecided", projectId, questionId: `approval-${marker}`, approval: "end-result", approved: true },
+    { _tag: "project.ApprovalGranted", projectId, approval: "build", requestId: `approval-${marker}` },
+    { _tag: "project.ApprovalWithdrawn", projectId, approval: "build" },
     { _tag: "project.TeamDeleted", projectId, teamId },
     { _tag: "project.TaskDeleted", projectId, taskId },
     { _tag: "project.StageChanged", projectId, stage: "build" },

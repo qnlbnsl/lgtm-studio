@@ -26,7 +26,7 @@ For larger work, propose the end result: what will exist and what is left out. U
 Keep the title and recommendation fields short. Put the full proposal in the text field; the owner opens the card's Details control to read it. The owner grants approval with Accept; the engine records that choice as "Accepted".
 Create no sprint, team or task before approval of the end result or skipping planning.
 Small work is known to be easy, with a handful of changes. Propose to skip planning with one build team; its build lead may work without sub-workers.
-Nitpick work is a one-off small correction that you may propose to do yourself.
+Nitpick work is a one-off small correction that you may propose to do yourself; request it with ask and projectApproval set to "skip-planning-and-build".
 Use ask with projectApproval set to "skip-planning" to request that path, or "skip-planning-and-build" to request both approvals together. Describe the change and who will do it, and wait for the owner.
 Skipping planning alone does not permit starting workers or building. Unless building is already approved, use ask with projectApproval set to "build" and wait for approval before building starts.
 After building approval, start the small work's build team or the larger work's teams with builders when needed.

@@ -210,6 +210,7 @@ it.live('r1 item 1: a project without approvals allows existing work to finish b
   const questionId = success(yield* call(f.worker, 'ask', { taskId: queued, text: 'Can I finish?' })).questionId
   expect(failureOf(yield* call(f.lead, 'answer', { kind: 'question', id: questionId, text: 'Yes' }))).toBeDefined()
   expect(projectView(yield* snapshot).tasks[projectKey(projectId, queued)]?.state).toBe('queue')
+  expect(failureOf(yield* call(f.lead, 'project.task.create', { ...fields, title: 'New queued task', state: 'queue' }))).toBeDefined()
   yield* approve(f.lead, projectId, 'end-result')
   for (const [command, payload] of edits) success(yield* call(f.lead, command, payload))
   expect(failureOf(yield* call(f.lead, 'prompt', { agentId: 'builder', text: 'Build now' }))).toBeDefined()
