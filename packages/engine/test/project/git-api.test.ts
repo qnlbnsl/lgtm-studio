@@ -106,7 +106,7 @@ it.live("traces every public operation to a real handler and preserves the exact
   for (const name of reads) { expect(Object.hasOwn(engineLists.reads, name), name).toBe(true); expect(Object.hasOwn(engineLists.planners, name), name).toBe(false) }
   for (const name of writes) { expect(Object.hasOwn(engineLists.planners, name), name).toBe(true); expect(Object.hasOwn(engineLists.reads, name), name).toBe(false) }
   expect([...CommandsRpcGroup.requests.keys()].filter((name) => reads.includes(name) || writes.includes(name)).sort()).toEqual([...reads, ...writes].sort())
-  expect(projectEventTags).toEqual(["project.GitAttempted", "project.GitFinished", "project.GitEvidenceReported", "project.MainReviewOpened", "project.MainReviewDecided", "project.MockScreensSeen", "project.MockScreenSeen", "project.MockScreenApprovalSet", "project.MockScreenCommented", "project.SetupAdvanced", "project.SetupCompleted", "project.MockRecorded", "project.MockApproved", "project.DesignRecorded", "project.SettingsChanged", "project.RepositoryAdded", "project.RepositoryLocated", "project.WorktreeCreated", "project.Created", "project.CreationPlanned", "project.CreationClaimed", "project.CreationFinished", "project.GoalChanged", "project.ArchiveStarted", "project.Archived", "project.Restored", "project.Placed", "project.PreferencesChanged", "project.Renamed", "project.PermissionChanged", "project.PermissionDecided", "project.PermissionWithdrawn", "project.ApprovalGranted", "project.ApprovalWithdrawn", "project.ApprovalDecided", "project.TeamDeleted", "project.TaskDeleted", "project.StageChanged", "project.TeamAdded", "project.SprintAdded", "project.SprintChanged", "project.SprintCompleted", "project.TaskAdded", "project.OwnerTaskNotificationPlanned", "project.FileSaveNoticePlanned", "project.TaskChanged", "project.TaskNoted"])
+  expect(projectEventTags).toEqual(["project.GitAttempted", "project.GitFinished", "project.GitEvidenceReported", "project.MainReviewOpened", "project.MainReviewDecided", "project.MockScreensSeen", "project.MockScreenSeen", "project.MockScreenApprovalSet", "project.MockScreenCommented", "project.SetupAdvanced", "project.SetupCompleted", "project.MockRecorded", "project.MockApproved", "project.DesignRecorded", "project.SettingsChanged", "project.RepositoryAdded", "project.RepositoryLocated", "project.WorktreeCreated", "project.Created", "project.CreationPlanned", "project.CreationClaimed", "project.CreationFinished", "project.GoalChanged", "project.ArchiveStarted", "project.Archived", "project.Restored", "project.Deleted", "project.Placed", "project.PreferencesChanged", "project.Renamed", "project.PermissionChanged", "project.PermissionDecided", "project.PermissionWithdrawn", "project.ApprovalGranted", "project.ApprovalWithdrawn", "project.ApprovalDecided", "project.TeamDeleted", "project.TaskDeleted", "project.StageChanged", "project.TeamAdded", "project.SprintAdded", "project.SprintChanged", "project.SprintCompleted", "project.TaskAdded", "project.OwnerTaskNotificationPlanned", "project.FileSaveNoticePlanned", "project.TaskChanged", "project.TaskNoted"])
 })).pipe(Effect.orDie))
 
 it.live("uses the real authenticated client to register, enumerate, stage, unstage, commit, read history and rename paths", () => provideBoard(rig, Effect.gen(function* () {
@@ -553,4 +553,14 @@ it.live("issue 597: an ordinary state read completes beside a mutation preparing
   rmSync(hold)
   yield* Fiber.join(read); yield* Fiber.join(mutation)
   expect(git(rig.work, "diff", "--cached")).toContain("stage after observation")
+})).pipe(Effect.orDie))
+
+it.live('deleting a historical project on main preserves base updates and main review for another project', () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), { api } = yield* wire(), i = yield* integration(api, f.repoId)
+  yield* run(api, 'project.archive', { projectId: f.projectId })
+  yield* run(api, 'project.delete', { projectId: f.projectId, confirmed: true })
+  expect(projectView(yield* snapshot).workspaces[f.worktreeId]?.checkout).toBe('main')
+  yield* run(api, 'project.update', { projectId: i.projectId, worktreeId: i.destinationId, destinationId: f.worktreeId, expectedHead: git(i.destination, 'rev-parse', 'HEAD') })
+  const review = yield* run(api, 'project.review.prepare', { projectId: i.projectId, worktreeId: i.destinationId, destinationId: f.worktreeId })
+  expect(review.result.review.destinationId).toBe(f.worktreeId)
 })).pipe(Effect.orDie))

@@ -18,3 +18,5 @@ export const teamDeletePayload = (projectId: string, teamId: string) => ({ proje
 export const projectApprovalPayload = (projectId: string, approval: 'end-result' | 'build') => ({ projectId: projectId as ProjectId, approval })
 
 export const projectPermissionPayload = (projectId: string, permission: LeadPermission, setting: LeadPermissionSetting) => ({ projectId: projectId as ProjectId, permission, setting })
+
+export const projectDeletePayload = (projectId: string) => ({ projectId: projectId as ProjectId, confirmed: true as const })

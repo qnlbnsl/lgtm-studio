@@ -6,8 +6,8 @@ import { terminalReasons } from './terminalReasons.ts'
 import { signInReasons } from './signinReasons.ts'
 export type SignInItem = SignInOutput
 type Check = Extract<SignInOutput, { _tag: 'ended' }>['check']
-type Start = { kind?: 'project'; cols?: number; rows?: number; allowed?: () => boolean; accountId: string; connectionId: string; executable: string; args: ReadonlyArray<string>; cwd: string; environment: Record<string, string>; check: () => Promise<Check>; onEnd?: () => void }
-type Session = { id: string; accountId: string; connectionId: string; child: IPty; queue: SignInItem[]; bytes: number; paused?: boolean; draining?: boolean; exitWatch?: ReturnType<typeof setInterval> | undefined; wake?: (() => void) | undefined; kind?: 'project'; timer?: ReturnType<typeof setTimeout>; grace?: ReturnType<typeof setTimeout> | undefined; processExited: boolean; ending: boolean; done: boolean; attached: boolean; check: Start['check']; onEnd: Start['onEnd']; exited: Promise<void> }
+type Start = { kind?: 'project'; worktreeId?: string; cols?: number; rows?: number; allowed?: () => boolean; accountId: string; connectionId: string; executable: string; args: ReadonlyArray<string>; cwd: string; environment: Record<string, string>; check: () => Promise<Check>; onEnd?: () => void }
+type Session = { id: string; accountId: string; connectionId: string; child: IPty; queue: SignInItem[]; bytes: number; paused?: boolean; draining?: boolean; exitWatch?: ReturnType<typeof setInterval> | undefined; wake?: (() => void) | undefined; kind?: 'project'; worktreeId?: string; timer?: ReturnType<typeof setTimeout>; grace?: ReturnType<typeof setTimeout> | undefined; processExited: boolean; ending: boolean; done: boolean; attached: boolean; check: Start['check']; onEnd: Start['onEnd']; exited: Promise<void> }
 // Ephemeral only. No logger, event-store, board or alert dependency is available here.
 export class SignInSessions {
   private sessions = new Map<string, Session>()
@@ -37,7 +37,7 @@ export class SignInSessions {
     let resolveExit!: () => void
     const exited = new Promise<void>(resolve => { resolveExit = resolve })
     const id = randomUUID()
-    const session: Session = { id, ...(input.kind ? { kind: input.kind } : {}), accountId: input.accountId, connectionId: input.connectionId, child, queue: [], bytes: 0, processExited: false, ending: false, done: false, attached: false, check: input.check, onEnd: input.onEnd, exited,
+    const session: Session = { id, ...(input.kind ? { kind: input.kind } : {}), ...(input.worktreeId === undefined ? {} : { worktreeId: input.worktreeId }), accountId: input.accountId, connectionId: input.connectionId, child, queue: [], bytes: 0, processExited: false, ending: false, done: false, attached: false, check: input.check, onEnd: input.onEnd, exited,
       ...(input.kind === 'project' ? {} : { timer: setTimeout(() => this.finish(session, 'The sign-in reached its time limit.'), this.options.limitMs ?? 5 * 60_000) }) }
     session.timer?.unref()
     this.sessions.set(id, session)
@@ -110,6 +110,7 @@ export class SignInSessions {
   write(id: string, connection: string, text: string, kind?: 'project') { const s = this.get(id, connection, kind); if (s.ending) throw new Error(kind ? terminalReasons.ended : signInReasons.ended); if (Buffer.byteLength(text) > 4096) throw new Error(kind ? terminalReasons.bounds : signInReasons.bounds); s.child.write(text) }
   resize(id: string, connection: string, cols: number, rows: number, kind?: 'project') { const s = this.get(id, connection, kind); if (s.ending) throw new Error(kind ? terminalReasons.ended : signInReasons.ended); if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 20 || cols > 240 || rows < 5 || rows > 100) throw new Error(kind ? terminalReasons.bounds : signInReasons.bounds); s.child.resize(cols, rows) }
   stop(id: string, connection: string, kind?: 'project') { this.finish(this.get(id, connection, kind), kind ? 'The owner closed the terminal.' : 'The owner stopped the sign-in.') }
+  hasProjectTerminal(worktrees: ReadonlySet<string>) { return [...this.sessions.values()].some(s => s.kind === 'project' && !s.ending && s.worktreeId !== undefined && worktrees.has(s.worktreeId)) }
   stopTerminals(reason: string) { this.terminalGeneration++; this.terminalEnabled = false; for (const s of this.sessions.values()) if (s.kind === 'project') this.finish(s, reason) }
   detach(id: string, connection: string) { const s = this.sessions.get(id); if (s && s.connectionId === connection && !s.ending && !s.grace) { s.grace = setTimeout(() => this.finish(s, 'The terminal disconnected.'), this.options.graceMs ?? 5000); s.grace.unref() } }
   disconnect(connection: string) { for (const s of this.sessions.values()) this.detach(s.id, connection) }

@@ -10,7 +10,7 @@ import {
 import * as act from '../actions.js';
 import * as board from '../live/board.js';
 import * as mocks from '../live/mocks.js';
-import { Avatar, Menu, Dialog, registerDialog, Empty, StateWord, CodeBox } from '../ui.js';
+import { Avatar, Menu, Dialog, registerDialog, Empty, StateWord, CodeBox, SettingHelp } from '../ui.js';
 
 // ---- seed ----------------------------------------------------------------------
 export function seedService(st) {
@@ -775,7 +775,9 @@ export function ServiceSettings({ s, route }) {
 }
 
 // ---- one project's settings --------------------------------------------------------
+const ProjectSettingRow = ({ label, hint, children, id, top }) => html`<div class=${cx('svc-row', top && 'top')}><div class="svc-label"><span class="setting-label"><label for=${id}>${label}</label>${hint && html`<${SettingHelp} label=${label}>${hint}<//>`}</span></div><div class="svc-control">${children}</div></div>`;
 export function ProjectSettings({ s, project: p }) {
+  const Row = ProjectSettingRow;
   const r = repoOf(s, p); const m = machineOf(s, p.machine); const lead = agentOf(s, p.lead); const ags = agentsOfProject(s, p.id); const teams = teamsOf(s, p.id);
   const [goal, setGoal] = useState(p.goal);
   const [name, setName] = useState(p.name);
@@ -808,14 +810,15 @@ export function ProjectSettings({ s, project: p }) {
   const archive = () => act.confirm({ title: `Archive ${p.name}?`, waitForReply: live.on, pendingLabel: 'Archiving…', body: 'The project leaves the sidebar and its agents stop. Its branch, worktrees and threads are kept, and you can restore it.', action: 'Archive project', danger: false,
     lost: [running_ ? `${plural(running_, 'running agent')} will stop` : null, openRequests(s, { project: p.id }).length ? `${plural(openRequests(s, { project: p.id }).length, 'open request')} will be hidden` : null].filter(Boolean),
     onConfirm: async () => { const reply = await act.archiveProject(p.id); if (!live.on || reply) go('/r/' + r.id); return reply; } });
-  const del = () => act.confirm({ title: `Delete ${p.name}?`, body: 'This cannot be undone.', action: 'Delete project',
-    lost: [`${plural(ags.length, 'agent')} and ${ags.length === 1 ? 'its thread' : 'their threads'}`, `${plural(1 + teams.length, 'worktree')} under ${p.folder}`, p.merged ? null : `The branch ${p.branch} and its unmerged commits`, `${plural(s.sprints.filter((x) => x.project === p.id).length, 'sprint')} and ${plural(s.tasks.filter((x) => x.project === p.id).length, 'task')}`].filter(Boolean),
-    onConfirm: () => { if (live.on) { refuse(); return; } const id = p.id; go('/r/' + r.id);
+  const del = () => act.confirm({ title: `Delete ${p.name}?`, waitForReply: live.on, pendingLabel: 'Deleting…', danger: true,
+    body: 'The project, its stopped agents, threads, private channels, sprints and tasks disappear from all views. Its open review, questions and requests go too. Its agents’ shared-channel posts go. Other authors’ posts and replies remain stored in the channel. Posts with references to this project no longer appear in channel reads. Those references no longer open. Its exclusive worktree registrations and their children go. Close terminals in those worktrees first. Removal stops at the repository checkout and worktrees named by other projects or teams. Unrelated registrations stay. Design registrations stay recorded. Their files cannot be opened through the engine if their worktree registration goes. Stored events stay in the log. The worktree folders and every branch stay on disk. This cannot be undone.', action: 'Delete project',
+    onConfirm: async () => { if (live.on) return; if (!p.archived) return false;
+      const id = p.id;
       update((st) => { const ch = new Set(st.channels.filter((c) => c.project === id).map((c) => c.id));
-        for (const k of ['projects']) st[k] = st[k].filter((x) => x.id !== id);
+        st.projects = st.projects.filter((x) => x.id !== id);
         for (const k of ['agents', 'teams', 'sprints', 'tasks', 'requests', 'channels']) st[k] = st[k].filter((x) => x.project !== id);
         st.posts = st.posts.filter((x) => !ch.has(x.channel)); st.notifications = st.notifications.filter((n) => n.project !== id); });
-      act.toast(`Deleted ${p.name}`); } });
+      go('/r/' + r.id); act.toast(`Deleted ${p.name}`); return true; } });
   const signed = new Set(s.subscriptions.filter((x) => x.signedIn && x.enabled).map((x) => x.harness));
   const asg = p.assignment || { state: 'proposed', rows: proposeAssignment(s), changed: [] };
   const saveAsg = (next) => { if (live.on) { refuse(); return; } update(() => { p.assignment = next; }); markSaved(); };
@@ -841,9 +844,9 @@ export function ProjectSettings({ s, project: p }) {
             ['starting-work', 'Starting work', 'The lead can start workers and move tasks out of the queue.']
           ].map(([permission, label, help]) => {
             const value = p.permissions?.[permission] || { setting: 'allowed', granted: false };
-            return html`<div><div class="row"><label for=${'ps-permission-' + permission}>${label}</label><select id=${'ps-permission-' + permission} class="select" aria-label=${label + ' permission'} value=${value.setting} disabled=${projectBusy} onChange=${(e) => changePermission(permission, e.target.value)}>
+            return html`<div><div class="row ps-permission-row"><span class="setting-label"><label for=${'ps-permission-' + permission}>${label}</label><${SettingHelp} label=${label}>${help}<//></span><select id=${'ps-permission-' + permission} class="select" aria-label=${label + ' permission'} value=${value.setting} disabled=${projectBusy} onChange=${(e) => changePermission(permission, e.target.value)}>
               <option value="allowed">Allowed</option><option value="denied">Not allowed</option><option value="ask">Always ask for permission</option>
-            </select>${value.setting === 'ask' && html`<span role="status" aria-label=${label + ' grant'}>${value.granted ? 'Granted' : 'Not granted'}</span>${value.granted && html`<button type="button" class="btn sm" aria-label=${'Withdraw ' + label} disabled=${projectBusy} onClick=${() => changeApproval(permission === 'planning' ? 'end-result' : 'build', false)}>Withdraw</button>`}`}</div><div class="muted">${help}</div></div>`;
+            </select>${value.setting === 'ask' && html`<span role="status" aria-label=${label + ' grant'}>${value.granted ? 'Granted' : 'Not granted'}</span>${value.granted && html`<button type="button" class="btn sm" aria-label=${'Withdraw ' + label} disabled=${projectBusy} onClick=${() => changeApproval(permission === 'planning' ? 'end-result' : 'build', false)}>Withdraw</button>`}`}</div></div>`;
           })}<//>
         <${Row} label="Goal" id="ps-goal" hint="The project lead reads this at the start of every turn." top>
           <textarea id="ps-goal" class="textarea" rows="3" value=${goal} onInput=${(e) => setGoal(e.target.value)}></textarea>
@@ -916,7 +919,7 @@ export function ProjectSettings({ s, project: p }) {
         ${p.archived
           ? html`<${Row} label="Restore this project" hint="It returns to the sidebar. Its agents stay stopped until you resume them."><button type="button" class="btn" aria-busy=${projectBusy} disabled=${projectBusy} onClick=${() => act.archiveProject(p.id, false)}><${Icon} name="archive-restore" size=${13} />Restore</button><//>`
           : html`<${Row} label="Archive this project" hint="Stops its agents and hides it. Nothing is deleted."><button type="button" class="btn" disabled=${projectBusy} onClick=${archive}><${Icon} name="archive" size=${13} />Archive</button><//>`}
-        <${Row} label="Delete this project" hint="Removes its agents, threads, worktrees and branch."><button type="button" class="btn danger" onClick=${del}><${Icon} name="trash-2" size=${13} />Delete</button><//>
+        ${p.archived && html`<${Row} label="Delete this project" hint="Hides the project and its history. Stored events, worktree folders and branches are kept."><button type="button" class="btn danger" disabled=${projectBusy} onClick=${del}><${Icon} name="trash-2" size=${13} />Delete project</button><//>`}
       </div>
     <//>
   </div>`;

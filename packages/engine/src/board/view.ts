@@ -128,6 +128,29 @@ const deliveryWake = (state: BoardView, deliveryId: string, agentId: AgentId): B
 export const boardAfter = (state: BoardView, envelope: Pick<EventEnvelope, "event" | "sequence">): BoardView => {
   const { event, sequence } = envelope;
   switch (event._tag) {
+    case "project.Deleted": {
+      const agents = new Set<string>(event.agentIds), channels = new Set<string>(event.channelIds), posts = new Set<string>(event.postIds);
+      const surviving = filter(state.posts, (post) => !posts.has(post.postId));
+      const members = <T>(rows: Keyed<T>) => Object.fromEntries(Object.entries(rows).filter(([id]) => !agents.has(id)));
+      return { ...state,
+        channels: Object.fromEntries(Object.entries(state.channels).filter(([id]) => !channels.has(id)).map(([id, channel]) => [id, { ...channel,
+          members: channel.members.filter((member) => member._tag !== "agent" || !agents.has(member.agentId)) }])),
+        posts: Object.fromEntries(Object.entries(surviving).map(([id, post]) => [id, { ...post,
+          to: post.to.filter((member) => member._tag !== "agent" || !agents.has(member.agentId)),
+          dispositions: members(post.dispositions), takenAt: members(post.takenAt), reminderAcceptedAt: members(post.reminderAcceptedAt),
+          ...(post.returns === undefined ? {} : { returns: members(post.returns) }),
+          acknowledged: post.acknowledged.filter((member) => member._tag !== "agent" || !agents.has(member.agentId)),
+          decidingReplies: Object.fromEntries(Object.entries(post.decidingReplies).filter(([id, reply]) => !agents.has(id) && !posts.has(reply))),
+          replies: post.replies.filter((reply) => !posts.has(reply)) }])),
+        completions: filter(state.completions, (row) => !posts.has(row.postId) && !agents.has(row.authorAgentId)),
+        noAnswers: filter(state.noAnswers, (row) => !posts.has(row.postId) && !agents.has(row.authorAgentId)),
+        wakes: filter(state.wakes, (row) => !agents.has(row.targetAgentId)),
+        labels: Object.fromEntries(Object.entries(state.labels).filter(([id]) => !agents.has(id))),
+        stopped: state.stopped.filter((id) => !agents.has(id)),
+        readState: Object.fromEntries(Object.entries(state.readState).filter(([id]) => !agents.has(id)).map(([id, rows]) =>
+          [id, Object.fromEntries(Object.entries(rows).filter(([channel]) => !channels.has(channel)))])) }
+    }
+
     case "board.ChannelOpened": {
       const members = event.kind === "plain" && event.opener._tag === "agent" && !event.members.some((member) => sameAuthor(member, event.opener))
         ? [...event.members, event.opener] : event.members;

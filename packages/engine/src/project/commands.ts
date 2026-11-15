@@ -1,3 +1,5 @@
+import { sessions } from '../harnesses/signinRequests.ts'
+import { clientView } from '../client/alerts/view.ts'
 import { completionOwed, boardView } from "../board/wake.ts"
 import { requireEndResult, requireBuilding, permissionSetting, permissionOffReason } from "./approvals.ts"
 import { validateWorkflowFolder, workflowFolderReason } from "../workflows/folder.ts"
@@ -357,6 +359,63 @@ const goalSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.goal.set">; yield* requireProject(input, p.projectId)
   return ack(p.requestId, [{ _tag: "project.GoalChanged", projectId: p.projectId, goal: p.goal }])
 })
+const deleteProject: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  if (input.actor._tag !== "owner") return yield* refused()
+  const p = raw as Payload<"project.delete">, row = yield* requireProject(input, p.projectId)
+  if (row.archivedAt === undefined || row.archiving) return yield* refused("Archive the project before deleting it.")
+  const view = projectView(input.snapshot), board = boardView(input.snapshot)
+  const agentIds = Object.values(input.snapshot.agents).filter((agent) => own(view.agentProjects, agent.agentId) === p.projectId).map((agent) => agent.agentId)
+  if (agentIds.some((id) => !["stopped", "crashed"].includes(input.snapshot.agents[id]!.state._tag))) return yield* refused("Stop every project agent before deleting the project.")
+  // Retained identifiers are barriers, not roots from which to discover owners.
+  const kept = new Set<string>([
+    ...Object.values(view.workspaces).filter((workspace) => workspace.checkout === "main"
+      || workspace.path === own(view.repositories, workspace.repoId)?.path
+      || workspace.parentId === undefined && own(view.repositories, workspace.repoId) === undefined).map((workspace) => workspace.worktreeId),
+    ...Object.values(view.projects).filter((project) => project.projectId !== p.projectId).map((project) => project.worktreeId),
+    ...Object.values(view.teams).filter((team) => team.projectId !== p.projectId).map((team) => team.worktreeId)
+  ])
+  const teams = Object.values(view.teams).filter((team) => team.projectId === p.projectId)
+  const teamIds = new Set(teams.map((team) => team.teamId).filter((id) => !Object.values(view.teams).some((team) => team.projectId !== p.projectId && team.teamId === id)))
+  const removed = new Set([row.worktreeId, ...teams.map((team) => team.worktreeId),
+    ...Object.values(view.workspaces).filter((workspace) => workspace.projectId === p.projectId
+      || workspace.teamId !== undefined && teamIds.has(workspace.teamId)).map((workspace) => workspace.worktreeId)]
+    .filter((id) => !kept.has(id)))
+  // A team below a retained project worktree still seeds its own walk.
+  // Visiting an identifier once bounds cycles, and a kept child stops a walk.
+  let added = true
+  while (added) {
+    added = false
+    for (const workspace of Object.values(view.workspaces)) if (workspace.parentId !== undefined && removed.has(workspace.parentId)
+      && !kept.has(workspace.worktreeId) && !removed.has(workspace.worktreeId)) {
+      removed.add(workspace.worktreeId); added = true
+    }
+  }
+  const worktreeIds = [...removed]
+  if (sessions(input).hasProjectTerminal(removed)) return yield* refused("Close the project terminals before deleting the project.")
+  if (Object.values(view.gitAttempts).some((attempt) => removed.has(attempt.worktreeId)
+    || attempt.caller._tag === "agent" && agentIds.includes(attempt.caller.agentId))) return yield* refused("Finish the project's Git operation before deleting it.")
+  const agents = new Set<string>(agentIds)
+  const channelIds = Object.values(board.channels).filter((channel) =>
+    (channel.anchorAgentId !== undefined && agents.has(channel.anchorAgentId)
+    || channel.manager?._tag === "agent" && agents.has(channel.manager.agentId)
+    || channel.kind === "direct" && channel.members.some((member) => member._tag === "agent" && agents.has(member.agentId)))
+    && !channel.members.some((member) => member._tag === "agent" && !agents.has(member.agentId))
+  ).map((channel) => channel.channelId)
+  const channels = new Set<string>(channelIds)
+  const deletedPosts = new Set<string>(Object.values(board.posts).filter((post) => channels.has(post.channelId)
+    || post.author._tag === "agent" && agents.has(post.author.agentId)
+  ).map((post) => post.postId))
+  const postIds = [...deletedPosts]
+  const subjectIds = new Set<string>([
+    ...agentIds, ...Object.values(view.sprints).filter((sprint) => sprint.projectId === p.projectId).map((sprint) => sprint.sprintId),
+    ...Object.values(view.gitReviews).filter((review) => review.projectId === p.projectId).map((review) => review.reviewId),
+    ...Object.values(input.snapshot.questions).filter((question) => agents.has(question.agentId) || question.projectId === p.projectId).map((question) => question.questionId),
+    ...Object.values(input.snapshot.requests).filter((request) => agents.has(request.agentId) || request.projectId === p.projectId).map((request) => request.permissionRequestId) ])
+  const alertIds = Object.values(clientView(input.snapshot.client).alerts).filter((alert) =>
+    alert.agentId !== undefined && agents.has(alert.agentId) || alert.subject !== undefined
+      && (alert.subject._tag !== "piece" || alert.subject.namespace === "project") && subjectIds.has(alert.subject.id)).map((alert) => alert.alertId)
+  return ack(p.requestId, [{ _tag: "project.Deleted", projectId: p.projectId, agentIds, channelIds, alertIds, postIds, worktreeIds }])
+})
 const restore: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.restore">; const row = yield* requireProject(input, p.projectId)
   if (row.archiving) return yield* refused("finish archiving the project before restoring it")
@@ -395,7 +454,7 @@ export const projectPlanners = {
   "project.settings.set": settingsSet, "project.repository.add": repositoryAdd(), "project.repository.locate": repositoryLocate(),
   "project.review.decline": declineMainReview,
   "project.workspace.register": workspaceRegister(), "project.rename": rename, "project.place": place,
-  "project.goal.set": goalSet, "project.restore": restore, "project.preferences.set": preferencesSet, "project.stage.set": stageSet, "project.team.create": teamCreate,
+  "project.delete": deleteProject, "project.goal.set": goalSet, "project.restore": restore, "project.preferences.set": preferencesSet, "project.stage.set": stageSet, "project.team.create": teamCreate,
   "project.sprint.create": sprintCreate, "project.sprint.update": sprintUpdate, "project.sprint.complete": sprintComplete,
   "project.team.delete": teamDelete, "project.task.delete": taskDelete,
   "project.task.create": taskCreate, "project.task.update": taskUpdate, "project.task.note": taskNote

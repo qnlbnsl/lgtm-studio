@@ -611,3 +611,11 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--color-
 .tool-diff .add { color: var(--color-success); }
 .tool-diff .del { color: var(--color-error); }
 .tools > .tool-line { overflow-wrap: anywhere; }
+
+/* Shared help uses the same neutral palette as the setting label. */
+.setting-label { display:inline-flex; align-items:center; gap:6px; }
+.setting-help { position:relative; display:inline-flex; flex:none; }
+.setting-help-button { border:1px solid currentColor; border-radius:50%; width:17px; height:17px; padding:0; color:var(--color-muted); background:transparent; font:inherit; font-size:11px; line-height:15px; cursor:pointer; }
+.setting-help-panel { position:absolute; z-index:50; top:100%; left:0; width:260px; max-width:65vw; padding:10px 28px 10px 12px; border:1px solid var(--color-line); border-radius:6px; background:var(--color-surface); color:var(--color-text); box-shadow:var(--shadow-2); font-size:12px; font-weight:normal; white-space:normal; }
+.setting-help-panel[hidden], .setting-help-text[hidden] { display:none; }
+.setting-help-close { position:absolute; top:3px; right:5px; border:0; background:transparent; color:inherit; cursor:pointer; font-size:18px; }
