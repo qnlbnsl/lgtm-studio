@@ -32,9 +32,10 @@ export async function exerciseStudioChatRows(page: Page) {
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck()
         const project = yield* decisionSetup(); yield* completedSetup(project.projectId)
-        const diff = '@@ -1 +1 @@\n-old rule\n+new rule'
+        const firstHunk = '@@ -1 +1 @@\n-old rule\n+new rule'
         const secondHunk = '@@ -8 +8 @@\n-second old rule\n+second new rule'
-        const complete = translate({ sessionUpdate: 'tool_call_update', toolCallId: 'edit', status: 'completed', content: [diff, secondHunk].map((text) => ({ type: 'diff', changes: [{ path: 'notes/MEMORY.md' }], patch: { text, format: 'git_patch' } })) }, false)
+        const diff = firstHunk + '\n' + secondHunk
+        const complete = translate({ sessionUpdate: 'tool_call_update', toolCallId: 'edit', status: 'completed', content: [firstHunk, secondHunk].map((text) => ({ type: 'diff', changes: [{ path: 'notes/MEMORY.md' }], patch: { text, format: 'git_patch' } })) }, false)
         const output = Array.from({ length: 40 }, (_, n) => `check ${n}: passed`).join('\n')
         const question = 'Which rule should we keep?\n- The new rule\n- The old rule'
         const item = (content: any, itemId = 'message') => eventOf({ _tag: 'ThreadItem', agentId: project.leadId, itemId, replay: false, content })
@@ -68,7 +69,7 @@ export async function exerciseStudioChatRows(page: Page) {
           await expect(thread.locator('.body b')).toHaveCount(0)
           await edit.locator('summary').click()
           await expect(edit.locator('pre')).toHaveCount(1)
-          expect(await edit.locator('pre').textContent()).toBe(diff + '\n' + secondHunk)
+          expect(await edit.locator('pre').textContent()).toBe(diff)
           await expect(edit.locator('.del')).toHaveText(['-old rule', '-second old rule'])
           await expect(edit.locator('.add')).toHaveText(['+new rule', '+second new rule'])
           await expect(edit.locator('.tool-line')).toContainText('completed')

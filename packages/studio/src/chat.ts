@@ -80,7 +80,7 @@ export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, 
   let lastOutputAt: number | null = null
   let runMode: string | null = null
   const rows: Array<Record<string, unknown>> = []
-  const calls = new Map<string, { row: ToolRow; content: Extract<Extract<EventEnvelope['event'], { _tag: 'ThreadItem' }>['content'], { _tag: 'tool-call' }>; files: Map<string, string> }>()
+  const calls = new Map<string, { row: ToolRow; content: Extract<Extract<EventEnvelope['event'], { _tag: 'ThreadItem' }>['content'], { _tag: 'tool-call' }>; files: Map<string, string>; snapshots: Map<string, Set<string>> }>()
   const questions = items.flatMap(({ event: e }) => e._tag === 'QuestionAsked' && e.agentId === agentId ? [e] : [])
   for (const item of groupThreadItems(orderedThread(items))) {
     const e = item.event
@@ -118,20 +118,28 @@ export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, 
         const row = toolRow(previous?.row ?? base, content, files)
         if (previous) Object.assign(previous.row, row)
         else rows.push(row)
-        calls.set(c.callId, { row: previous?.row ?? row, content, files })
+        calls.set(c.callId, { row: previous?.row ?? row, content, files, snapshots: previous?.snapshots ?? new Map() })
       } else if (c._tag === "plan") rows.push({ ...base, type: "agent", text: c.entries.map((p) => `- ${p.status}: ${p.content}`).join("\n") })
       else {
         const key = c.callId ?? `legacy:${c.path}:${c.diff}`
         const previous = calls.get(key)
         const files = previous?.files ?? new Map<string, string>()
-        const parts = files.has(c.path) ? files.get(c.path)!.split(/\n(?=@@)/) : []
-        for (const part of c.diff.split(/\n(?=@@)/)) if (!parts.includes(part)) parts.push(part)
-        files.set(c.path, parts.join('\n'))
+        const snapshots = previous?.snapshots ?? new Map<string, Set<string>>()
+        const seen = snapshots.get(c.path) ?? new Set<string>()
+        // Compare complete update contents, never individual hunks. Equal parts
+        // inside one update can represent edits at different file positions.
+        if (!seen.has(c.diff)) {
+          const combined = files.has(c.path) ? files.get(c.path)! + '\n' + c.diff : c.diff
+          files.set(c.path, combined)
+          seen.add(c.diff)
+          seen.add(combined)
+        }
+        snapshots.set(c.path, seen)
         const content = previous?.content ?? { _tag: 'tool-call' as const, callId: key, title: /^@@ (?:-0,0 |New file )/m.test(c.diff) ? 'Write' : 'Edit' }
         const row = toolRow(previous?.row ?? base, content, files)
         if (previous) Object.assign(previous.row, row)
         else rows.push(row)
-        calls.set(key, { row: previous?.row ?? row, content, files })
+        calls.set(key, { row: previous?.row ?? row, content, files, snapshots })
       }
     } else if (e._tag === "QuestionAsked" || e._tag === "PermissionRequested") rows.push({ ...base, type: "request", requestId: e._tag === "QuestionAsked" ? e.questionId : e.permissionRequestId })
     else if (e._tag === "TurnEnded" && e.stopped) rows.push({ ...base, type: "note", text: "This reply stopped." })

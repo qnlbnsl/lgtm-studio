@@ -14885,3 +14885,20 @@ Old content states that the earlier text was not recorded.
 New legacy change fragments no longer claim file positions or end-of-file metadata that the adapter did not supply.
 Copy buttons use action labels such as "Copy diff" and "Copy path".
 The redundant live build guard was removed.
+
+
+## s12-6. Identical replace-all parts were lost while folding diffs.
+
+Found: 2026-11-15, in the orchestrator's read of commit `5c25eb6`.
+Status: fixed in s12 fix round 2.
+
+A replace-all edit can report identical change fragments for several positions in one file.
+The translator discarded a fragment whose text matched an earlier fragment in that update.
+The viewer also folded individual hunks by their text.
+Both operations could hide a deliberate repeated edit.
+The translator now joins every part for a path in recorded order, including identical parts.
+Only the viewer folds later snapshots for the same call and path.
+It compares the complete incoming content with earlier complete contents or the complete accumulated detail.
+It never splits the payload into hunks to deduplicate it.
+Regression tests check that the engine stores two identical parts and that the row renders both.
+A later repeat of that whole two-part snapshot renders once.

@@ -55,9 +55,9 @@ export const translate = (value: unknown, replay: boolean): ReadonlyArray<Transl
     if (item.content._tag !== 'file-change') continue;
     const previous = files.get(item.content.path);
     if (previous?.content._tag === 'file-change') {
-      const parts = previous.content.diff.split(/\n(?=@@)/);
-      for (const part of item.content.diff.split(/\n(?=@@)/)) if (!parts.includes(part)) parts.push(part);
-      const diff = parts.join('\n');
+      // Equal fragments can be a replace-all at different positions.
+      // The durable event keeps every part; only viewers fold repeated updates.
+      const diff = previous.content.diff + '\n' + item.content.diff;
       files.set(item.content.path, { ...item, text: diff, content: { ...item.content, diff } });
     } else files.set(item.content.path, item);
   }

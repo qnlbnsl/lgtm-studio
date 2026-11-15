@@ -226,3 +226,20 @@ it('marks literal triple-sign lines inside a hunk while leaving file headers unm
   const element = render(ui.ToolGroup, { item: toolRow({ id: '1', ts: 1 }, { _tag: 'tool-call', callId: 'c', title: 'Edit' }, new Map([['file', patch]])) })
   expect([...element.querySelectorAll('.add,.del')].map((line) => line.textContent)).toEqual(['--- old heading\n', '+++ new heading'])
 })
+
+it('shows both identical replace-all parts and deduplicates only a later whole-content snapshot', () => {
+  const part = { type: 'diff', path: 'notes/MEMORY.md', oldText: 'old', newText: 'new' }
+  const translated = translate({ sessionUpdate: 'tool_call_update', toolCallId: 'edit', status: 'completed', content: [part, part] }, false)
+  const fragment = '@@ Change (line numbers unavailable) @@\n-old\n+new'
+  const both = fragment + '\n' + fragment
+  const snapshot = translated.find((item) => item.content._tag === 'file-change')!.content
+  expect(snapshot).toMatchObject({ diff: both })
+  const items = translated.map((item, i) => envelope(i + 1, item.content))
+  const mapped = mapThread([...items, envelope(3, snapshot), change(4, fragment)], 'ag-worker').items
+  expect(mapped).toHaveLength(1)
+  expect(mapped[0]).toMatchObject({ summary: 'Edited MEMORY.md', status: 'completed', details: [{ text: both + '\n' + fragment }] })
+  const element = render(ui.ToolGroup, { item: mapThread(items, 'ag-worker').items[0] })
+  expect(element.querySelector('pre')?.textContent).toBe(both)
+  expect(element.querySelectorAll('.del')).toHaveLength(2)
+  expect(element.querySelectorAll('.add')).toHaveLength(2)
+})
