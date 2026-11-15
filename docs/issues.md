@@ -15124,12 +15124,23 @@ This is fixed.
 
 ## s14-4. Project deletion missed descendant workspaces and removed shared infrastructure.
 
+Reopened by review round 2 after the first fix had marked this issue fixed.
 The first review found that descendants registered only with a parent identifier remained usable after deletion.
 It also found that historical projects could unregister the repository checkout.
-Deletion now follows the parent chain and preserves the repository checkout.
-Other authors keep shared-channel posts and replies, and repository design registrations remain shared.
-An open terminal in a project worktree prevents deletion until the owner closes it.
-This is fixed.
+The first fix kept that checkout but still walked through it and removed unrelated owner-registered descendants.
+Its global protection of shared-root descendants also kept the deleted project's own team and builder workspaces.
+Terminal and unfinished Git checks used that overbroad candidate set.
+The earlier refusal assertions could pass on a missing Git configuration instead of a removed registration.
+
+The revised rule computes the kept identifiers first and excludes them from the removal roots.
+Each walk stops at a kept workspace.
+Independent team and explicitly marked project workspaces still start their own walks below a kept root.
+Terminal and Git checks use only the final removal set.
+Twelve explicit cases in `.foundry/delete-scope.md` each have a separate regression test.
+They cover the two review probes, sibling projects, shared worktrees, cycles, and retained terminals and Git operations.
+The read tests configure Git and assert the exact missing-registration refusal.
+This change corrects the reopened scope finding.
+The separately recorded terminal opening race and field-name matcher remain open.
 
 ## s14-5. Late events could repopulate deleted views.
 
@@ -15157,3 +15168,48 @@ The deletion fixture now registers complete identifiers to isolate the requested
 The board event's fixed reply mode still needs its own explicit redaction position and regression test.
 No board redaction rule is changed by this unit.
 This is open.
+
+
+## s14-8. A terminal can finish opening after project deletion commits.
+
+Recorded from minor 2 of review round 2.
+The terminal request resolves its workspace before the session enters the in-memory session map.
+Environment redaction and loading the terminal module leave a gap before that insertion.
+Deletion can check for terminals and commit during that gap.
+The terminal can then open in a folder whose registration was removed.
+The folder remains on disk, and the terminal remains restricted to its authenticated owner connection.
+This is a consistency gap rather than a new access gap.
+A future fix should reread the current workspace after session start and close the session through the existing close path if its registration is gone.
+The round 2 brief explicitly asks to record this issue without fixing it.
+This is open.
+
+## s14-9. The tombstone gate matches metadata field names rather than ownership.
+
+Recorded from minor 6 of review round 2.
+The gate can drop a surviving agent's prompt event when its sender names a deleted agent.
+It can also drop a surviving project's workspace event when its parent identifier names a deleted workspace.
+The current authenticated commands cannot write those two cases, but raw replay can contain them.
+An identifier under an unrecognised field or nested object can pass the same gate.
+A future contracts test should check every event schema's identifier fields against the matcher.
+Ownership rules also need to distinguish a record's owner from its references.
+The round 2 brief explicitly asks to record this issue without fixing it.
+This is open.
+
+## s14-10. Deletion documentation overstated access to retained posts and designs.
+
+Review round 2 found that retained board rows with deleted context are omitted from channel reads.
+Their references no longer open, although the rows remain in the stored channel view.
+A retained design registration can also point at a worktree that deletion unregisters.
+Its registration and head remain recorded, but its artifacts become unavailable through the engine.
+The project documentation and confirmation now describe these limits.
+The design regression uses a real dedicated project worktree and checks removal of its registration.
+No post, design or reference behaviour changes in this correction.
+This is fixed.
+
+## s14-11. Each project view change rebuilt the entire tombstone index.
+
+Review round 2 found that the cache used the project view object as its key.
+Unrelated project events replace that object while retaining the same deletion map.
+The cache now uses the deletion map as its key and reuses the index across those view changes.
+A regression counts deletion-map reads across distinct project views sharing that map.
+This is fixed.

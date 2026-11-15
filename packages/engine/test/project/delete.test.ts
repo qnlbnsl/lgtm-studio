@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+import { designWorkspaceReference } from '../../src/project/gitApi.ts'
 import * as Server from '../../src/api/server.ts'
 import * as Redacted from 'effect/Redacted'
 import { connect } from '../support/socketClient.ts'
@@ -20,7 +22,7 @@ import { decisionProject, decisionSetup } from '../support/projectDecisionFixtur
 import { registerRebuildCheck } from '../support/rebuildCheck.ts'
 import { appendSetup, call, eventOf, failureOf, freshRequest, makeRig, ownerCredential as owner, readLog, removeRig, success, type Rig } from '../support/handlerRig.ts'
 import { projectView } from '../../src/project/view.ts'
-import { deletedEvent } from '../../src/project/deleted.ts'
+import { deletedAgent, deletedEvent } from '../../src/project/deleted.ts'
 import { visibleTo } from '../../src/api/visibility.ts'
 import { unwrap } from '../client/support/readRig.ts'
 
@@ -140,6 +142,7 @@ it.live('deletion removes every project view and read, preserves events, branche
 for (const pending of ['review', 'integration'] as const) it.live(pending === 'review' ? 'deletes an archived project with its open review' : 'refuses deletion during an unfinished integration', () => provideBoard(rig, Effect.gen(function* () {
   yield* registerRebuildCheck()
   const p = yield* decisionSetup()
+  yield* appendSetup([eventOf({ _tag: 'project.WorktreeCreated', repoId: p.repoId, worktreeId: p.worktreeId, path: rig.work, branch: 'topic', machineId: 'local' })])
   success(yield* call(owner, 'project.archive', { projectId: p.projectId }))
   yield* appendSetup([eventOf(pending === 'review' ? { _tag: 'project.MainReviewOpened', review: {
     reviewId: 'open-review', projectId: p.projectId, worktreeId: p.worktreeId, destinationId: 'main', head: 'a', baseHead: 'b', branch: 'topic', base: 'main',
@@ -176,7 +179,9 @@ it.live('identifier secrets do not cause a partial deletion in the real writer',
 it.live('descendant workspaces without projectId disappear and every unscoped read refuses them', () => provideBoard(rig, Effect.gen(function* () {
   yield* registerRebuildCheck()
   const p = yield* decisionSetup()
+  yield* appendSetup([eventOf({ _tag: 'project.WorktreeCreated', repoId: p.repoId, worktreeId: p.worktreeId, path: join(rig.root, 'parent'), branch: 'topic', machineId: 'local', checkout: 'worktree', projectId: p.projectId })])
   for (const [id, parent] of [['child', p.worktreeId], ['grandchild', 'child']]) yield* appendSetup([eventOf({ _tag: 'project.WorktreeCreated', repoId: p.repoId, worktreeId: id, parentId: parent, path: rig.work, branch: 'topic', machineId: 'local' })])
+  success(yield* call(owner, 'project.settings.set', { settings: { workspaceFolder: rig.root, shell: 'zsh' } }))
   const creation = (yield* readLog).find(row => row.event._tag === 'project.WorktreeCreated' && row.event.worktreeId === 'child')!
   success(yield* call(owner, 'project.archive', { projectId: p.projectId }))
   success(yield* call(owner, 'project.delete', { projectId: p.projectId, confirmed: true }))
@@ -184,13 +189,13 @@ it.live('descendant workspaces without projectId disappear and every unscoped re
   expect(items.map((row: any) => row.worktreeId)).not.toContain('child')
   for (const worktreeId of ['child', 'grandchild']) {
     expect(projectView(yield* snapshot).workspaces[worktreeId]).toBeUndefined()
-    for (const [name, extra] of [['project.git.state', {}], ['project.changes', {}], ['project.files.list', {}], ['project.files.read', { path: 'file.txt' }], ['project.files.write', { path: 'file.txt', text: 'keep', version: 'version' }], ['client.terminal.open', { cols: 80, rows: 24 }]] as const)
-      expect(failureOf(yield* call(owner, name, { worktreeId, ...extra })), name).toBeDefined()
+    for (const [name, extra] of [['project.git.state', {}], ['project.changes', {}], ['project.files.list', {}], ['project.files.read', { path: 'file.txt' }], ['project.files.write', { projectId: p.projectId, path: 'file.txt', text: 'keep', version: 'version' }]] as const)
+      expect(failureOf(yield* call(owner, name, { worktreeId, ...extra }))?.reason, name).toBe('registered workspace not found')
   }
-  expect(failureOf(yield* call(owner, 'client.event', { sequence: creation.sequence }))).toBeDefined()
+  expect(failureOf(yield* call(owner, 'client.event', { sequence: creation.sequence }))?.reason).toBe('command refused')
   const handler = yield* CommandHandler
   const input = { ...(yield* handler.input({ _tag: 'owner' })), connectionId: 'owner', snapshot: { ...(yield* snapshot), client: { ...(yield* snapshot).client as object, webSettings: { terminalEnabled: true } } } }
-  expect(yield* terminalReads['client.terminal.open'](input, { worktreeId: 'child', cols: 80, rows: 24 }).pipe(Effect.result)).toMatchObject({ _tag: 'Failure', failure: { reason: 'The project worktree is unavailable.' } })
+  for (const worktreeId of ['child', 'grandchild']) expect(yield* terminalReads['client.terminal.open'](input, { worktreeId, cols: 80, rows: 24 }).pipe(Effect.result)).toMatchObject({ _tag: 'Failure', failure: { reason: 'The project worktree is unavailable.' } })
   closeSignIns(input.runtime.log)
 })).pipe(Effect.orDie))
 
@@ -218,8 +223,24 @@ it.live('late project, agent, board and alert delivery events cannot resurrect d
 it.live('shared-channel replies and repository design registrations survive deletion', () => provideBoard(rig, Effect.gen(function* () {
   yield* registerRebuildCheck()
   const p = yield* decisionSetup(), other = yield* decisionProject('other')
+  execFileSync('git', ['init', '-b', 'main', rig.work], { stdio: 'ignore' })
+  execFileSync('git', ['-C', rig.work, '-c', 'user.name=Test Author', '-c', 'user.email=test@example.test', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'Initial'], { stdio: 'ignore' })
+  const projectFolder = join(rig.root, 'design-project'), survivorFolder = join(rig.root, 'design-survivor')
+  execFileSync('git', ['-C', rig.work, 'worktree', 'add', '-b', 'topic', projectFolder], { stdio: 'ignore' })
+  execFileSync('git', ['-C', rig.work, 'worktree', 'add', '-b', 'survivor', survivorFolder], { stdio: 'ignore' })
+  writeFileSync(join(projectFolder, 'design.fig'), 'Design remains on disk')
+  success(yield* call(owner, 'project.settings.set', { settings: { workspaceFolder: rig.root, shell: 'zsh' } }))
+  yield* appendSetup([
+    eventOf({ _tag: 'project.RepositoryAdded', repoId: p.repoId, name: 'Design repository', path: rig.work }),
+    eventOf({ _tag: 'project.RepositoryLocated', repoId: p.repoId, path: rig.work, machineId: 'local' }),
+    eventOf({ _tag: 'project.WorktreeCreated', repoId: p.repoId, worktreeId: other.worktreeId, path: survivorFolder, branch: 'survivor', machineId: 'local', checkout: 'worktree', projectId: other.projectId }),
+    eventOf({ _tag: 'project.Created', ...projectView(yield* snapshot).projects[other.projectId]!, repoId: p.repoId }),
+    eventOf({ _tag: 'project.WorktreeCreated', repoId: p.repoId, worktreeId: p.worktreeId, path: projectFolder, branch: 'topic', machineId: 'local', checkout: 'worktree', projectId: p.projectId })
+  ])
   yield* appendSetup([eventOf({ _tag: 'board.ChannelOpened', channelId: 'shared', name: 'Shared', kind: 'plain', opener: { _tag: 'owner' }, manager: { _tag: 'owner' }, members: [{ _tag: 'owner' }, { _tag: 'agent', agentId: p.leadId }, { _tag: 'agent', agentId: other.leadId }] }),
-    eventOf({ _tag: 'project.DesignRecorded', projectId: p.projectId, revisionId: 'shared-design', design: { repoId: p.repoId, worktreeId: p.worktreeId, file: 'design.fig', components: [] }, author: { _tag: 'owner' }, fileFingerprint: 'a'.repeat(64) })])
+    eventOf({ _tag: 'project.DesignRecorded', projectId: p.projectId, revisionId: 'shared-design', design: { repoId: p.repoId, worktreeId: p.worktreeId, file: 'design.fig', components: [] }, author: { _tag: 'owner' }, fileFingerprint: createHash('sha256').update('Design remains on disk').digest('hex') })])
+  expect(success(yield* call(owner, 'project.design.read', { repoId: p.repoId })).result.file._tag).toBe('available')
+  expect(unwrap(success(yield* call(other.leadCredential, 'project.design.read', { repoId: p.repoId, projectId: other.projectId }))).result.file._tag).toBe('available')
   const postId = success(yield* call(p.leadCredential, 'board.post', { channelId: 'shared', text: 'Deleted author', to: [], reply: 'none' })).postId
   yield* appendSetup([eventOf({ _tag: 'board.PostWritten', postId: 'owner-reply', channelId: 'shared', author: { _tag: 'owner' }, text: 'Owner reply', to: [], reply: 'none', replyToPostId: postId, context: [{ _tag: 'file', projectId: p.projectId, repoId: p.repoId, worktreeId: p.worktreeId, path: 'file.txt' }] })])
   yield* appendSetup([eventOf({ _tag: 'board.PostWritten', postId: 'other-reply', channelId: 'shared', author: { _tag: 'agent', agentId: other.leadId }, text: 'Other reply', to: [], reply: 'none', replyToPostId: postId })])
@@ -230,6 +251,16 @@ it.live('shared-channel replies and repository design registrations survive dele
   expect(Object.values((now.board as BoardView).posts).map(row => row.text)).toEqual(['Owner reply', 'Other reply'])
   expect(projectView(now).designs).toEqual(before.designs)
   expect(projectView(now).designHeads).toEqual(before.designHeads)
+  expect(projectView(now).workspaces[p.worktreeId]).toBeUndefined()
+  expect(success(yield* call(owner, 'project.design.read', { repoId: p.repoId })).result).toMatchObject({ _tag: 'registered', record: { revisionId: 'shared-design' }, file: { _tag: 'unavailable', reason: 'artifact unavailable' } })
+  const input = yield* (yield* CommandHandler).input({ _tag: 'owner' })
+  expect(yield* designWorkspaceReference(input, { repoId: p.repoId, worktreeId: p.worktreeId }).pipe(Effect.result)).toMatchObject({ _tag: 'Failure', failure: { reason: 'registered design workspace is unavailable' } })
+  expect(unwrap(success(yield* call(other.leadCredential, 'project.design.read', { repoId: p.repoId, projectId: other.projectId }))).result.file).toEqual({ _tag: 'unavailable', reason: 'artifact unavailable' })
+  expect(existsSync(join(projectFolder, 'design.fig'))).toBe(true)
+  // The context-bearing row stays stored, while board.read cannot open it.
+  const shared = success(yield* call(owner, 'board.read', { channelId: 'shared' }))
+  expect(JSON.stringify(shared)).not.toContain('Owner reply')
+  expect(JSON.stringify(shared)).toContain('Other reply')
 })).pipe(Effect.orDie))
 
 it.live('deletion refuses an open terminal until the existing close path finishes', () => provideBoard(rig, Effect.gen(function* () {
@@ -267,4 +298,18 @@ it.live('a surviving project keeps the descendants of its shared workspace', () 
   expect(view.workspaces[p.worktreeId]).toBeUndefined()
   expect(view.workspaces[other.worktreeId]).toBeDefined()
   expect(view.workspaces['other-child']).toBeDefined()
+})).pipe(Effect.orDie))
+
+
+it.live('the tombstone index is reused across project views sharing the deletion map', () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  const p = yield* decisionSetup()
+  success(yield* call(owner, 'project.archive', { projectId: p.projectId }))
+  success(yield* call(owner, 'project.delete', { projectId: p.projectId, confirmed: true }))
+  const now = yield* snapshot, view = projectView(now), deletion = view.deletions![p.projectId]!
+  let visits = 0
+  const deletions = Object.defineProperty({}, p.projectId, { enumerable: true, get: () => { visits++; return deletion } })
+  for (let i = 0; i < 3; i++) expect(deletedAgent({ ...now, project: { ...view, deletions } }, p.leadId)).toBe(true)
+  expect(visits).toBe(1)
+  expect(deletedAgent({ ...now, project: { ...view, deletions: {} } }, p.leadId)).toBe(false)
 })).pipe(Effect.orDie))

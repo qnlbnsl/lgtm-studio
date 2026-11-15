@@ -366,18 +366,29 @@ const deleteProject: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const view = projectView(input.snapshot), board = boardView(input.snapshot)
   const agentIds = Object.values(input.snapshot.agents).filter((agent) => own(view.agentProjects, agent.agentId) === p.projectId).map((agent) => agent.agentId)
   if (agentIds.some((id) => !["stopped", "crashed"].includes(input.snapshot.agents[id]!.state._tag))) return yield* refused("Stop every project agent before deleting the project.")
-  const candidates = new Set([row.worktreeId, ...Object.values(view.teams).filter((team) => team.projectId === p.projectId).map((team) => team.worktreeId),
-    ...Object.values(view.workspaces).filter((workspace) => workspace.projectId === p.projectId).map((workspace) => workspace.worktreeId)])
-  // Registered descendants often carry only parentId, without projectId.
+  // Retained identifiers are barriers, not roots from which to discover owners.
+  const kept = new Set<string>([
+    ...Object.values(view.workspaces).filter((workspace) => workspace.checkout === "main"
+      || workspace.path === own(view.repositories, workspace.repoId)?.path).map((workspace) => workspace.worktreeId),
+    ...Object.values(view.projects).filter((project) => project.projectId !== p.projectId).map((project) => project.worktreeId),
+    ...Object.values(view.teams).filter((team) => team.projectId !== p.projectId).map((team) => team.worktreeId)
+  ])
+  const removed = new Set([row.worktreeId, ...Object.values(view.teams).filter((team) => team.projectId === p.projectId).map((team) => team.worktreeId),
+    ...Object.values(view.workspaces).filter((workspace) => workspace.projectId === p.projectId).map((workspace) => workspace.worktreeId)]
+    .filter((id) => !kept.has(id)))
+  // A team below a retained project worktree still seeds its own walk.
+  // Visiting an identifier once bounds cycles, and a kept child stops a walk.
   let added = true
   while (added) {
     added = false
-    for (const workspace of Object.values(view.workspaces)) if (workspace.parentId !== undefined && candidates.has(workspace.parentId) && !candidates.has(workspace.worktreeId)) {
-      candidates.add(workspace.worktreeId); added = true
+    for (const workspace of Object.values(view.workspaces)) if (workspace.parentId !== undefined && removed.has(workspace.parentId)
+      && !kept.has(workspace.worktreeId) && !removed.has(workspace.worktreeId)) {
+      removed.add(workspace.worktreeId); added = true
     }
   }
-  if (sessions(input).hasProjectTerminal(candidates)) return yield* refused("Close the project terminals before deleting the project.")
-  if (Object.values(view.gitAttempts).some((attempt) => candidates.has(attempt.worktreeId))) return yield* refused("Finish the project's Git operation before deleting it.")
+  const worktreeIds = [...removed]
+  if (sessions(input).hasProjectTerminal(removed)) return yield* refused("Close the project terminals before deleting the project.")
+  if (Object.values(view.gitAttempts).some((attempt) => removed.has(attempt.worktreeId))) return yield* refused("Finish the project's Git operation before deleting it.")
   const agents = new Set<string>(agentIds)
   const channelIds = Object.values(board.channels).filter((channel) =>
     (channel.anchorAgentId !== undefined && agents.has(channel.anchorAgentId)
@@ -398,25 +409,6 @@ const deleteProject: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const alertIds = Object.values(clientView(input.snapshot.client).alerts).filter((alert) =>
     alert.agentId !== undefined && agents.has(alert.agentId) || alert.subject !== undefined
       && (alert.subject._tag !== "piece" || alert.subject.namespace === "project") && subjectIds.has(alert.subject.id)).map((alert) => alert.alertId)
-  // A surviving project's workspace protects its descendants as well.
-  const shared = new Set<string>([
-    ...Object.values(view.projects).filter((project) => project.projectId !== p.projectId).map((project) => project.worktreeId),
-    ...Object.values(view.teams).filter((team) => team.projectId !== p.projectId).map((team) => team.worktreeId)
-  ])
-  added = true
-  while (added) {
-    added = false
-    for (const workspace of Object.values(view.workspaces)) if (workspace.parentId !== undefined && shared.has(workspace.parentId) && !shared.has(workspace.worktreeId)) {
-      shared.add(workspace.worktreeId); added = true
-    }
-  }
-  const worktreeIds = [...candidates].filter((id) => {
-    const workspace = own(view.workspaces, id)
-    // The repository checkout is shared infrastructure, including legacy rows
-    // that predate the explicit checkout discriminator.
-    return !shared.has(id) && workspace?.checkout !== "main"
-      && (workspace === undefined || workspace.path !== own(view.repositories, workspace.repoId)?.path)
-  })
   return ack(p.requestId, [{ _tag: "project.Deleted", projectId: p.projectId, agentIds, channelIds, alertIds, postIds, worktreeIds }])
 })
 const restore: PiecePlanner = (input, raw) => Effect.gen(function* () {

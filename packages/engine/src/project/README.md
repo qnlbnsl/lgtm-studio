@@ -501,7 +501,8 @@ The command line and agent tools expose the same requests as the client applicat
 ## Deleting an archived project
 
 Only the owner can call `project.delete` with `projectId` and `confirmed: true`.
-The command refuses an active project, an incomplete archive, an agent that is not stopped or crashed, an unfinished Git operation, and an open terminal in any of its worktrees.
+The command refuses an active project, an incomplete archive, and an agent that is not stopped or crashed.
+It also refuses an unfinished Git operation or an open terminal in a workspace that deletion would unregister.
 An open merge review is removed with the rest of the project history.
 The command appends `project.Deleted` to the existing event log.
 It does not erase events from that log.
@@ -516,16 +517,26 @@ The deletion event itself remains readable as the identifier-only notification t
 
 The project's anchored channels, channels managed by its agents, and direct chats with its agents disappear with their posts when no other project's agent belongs to them.
 Posts authored by its agents disappear from shared channels too.
-Other authors keep their posts and replies, including references to the deleted project.
-Those references do not grant access to deleted records.
+Other authors' posts and replies remain in the channel's stored view.
+Channel reads omit a kept post whose context refers to the deleted project.
+Those references no longer open.
+A kept reply without that context remains readable even when its parent post was deleted.
+The reply's parent identifier then names nothing, and a new reply to that deleted parent is refused.
 Shared channels remain available to their other members.
 The deleted agents leave those channels.
 The repository remains registered for other projects.
-Repository design registrations and their current revision stay available to surviving projects.
-Their files remain on disk.
-An exclusively used project or team worktree and its registered descendants leave the workspace registry.
-A workspace used by another project stays registered with its descendants.
+Repository design registrations and their current revision remain recorded.
+A registration can open its artifacts only while its worktree remains registered.
+When deletion unregisters that worktree, design reads can still return the registration with unavailable artifacts.
+The design head stays on that recorded revision.
+Its files remain on disk.
 The repository checkout always stays registered, including historical records without a checkout type.
+A worktree named by a surviving project or team also stays registered.
+Deletion starts at the other worktrees named by the deleted project or its teams, and at workspaces carrying its project identifier.
+It follows their registered descendants and stops at a kept workspace.
+It never walks through a kept workspace.
+A separate team or explicitly marked project workspace below a kept worktree still starts its own removal walk.
+Workspaces outside those walks remain registered, including unowned children of the repository checkout.
 Every worktree folder and every branch stays on disk, including dirty and externally registered folders.
 No safe worktree removal operation exists in the engine, so this command has no removal option.
 

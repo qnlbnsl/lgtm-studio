@@ -5,19 +5,20 @@ import type { Snapshot } from '../commands/internal.ts'
 // may reintroduce a deleted project's records by reading the log directly.
 const emptyIndex = () => Object.fromEntries(['projectId', 'agentId', 'channelId', 'postId', 'worktreeId', 'alertId'].map((key) => [key, new Set<string>()]))
 const absent = emptyIndex()
-const cache = new WeakMap<ProjectView, Record<string, Set<string>>>()
+const cache = new WeakMap<NonNullable<ProjectView['deletions']>, Record<string, Set<string>>>()
 const index = (snapshot: Snapshot) => {
   if (snapshot.project === null || typeof snapshot.project !== 'object') return absent
-  const view = snapshot.project as ProjectView
-  let ids = cache.get(view)
+  const deletions = (snapshot.project as ProjectView).deletions
+  if (deletions === undefined) return absent
+  let ids = cache.get(deletions)
   if (ids !== undefined) return ids
   ids = emptyIndex()
-  for (const row of Object.values(view.deletions ?? {})) {
+  for (const row of Object.values(deletions)) {
     ids.projectId!.add(row.projectId)
     for (const [field, values] of [['agentId', row.agentIds], ['channelId', row.channelIds], ['postId', row.postIds], ['alertId', row.alertIds], ['worktreeId', row.worktreeIds]] as const)
       for (const value of values) ids[field]!.add(value)
   }
-  cache.set(view, ids)
+  cache.set(deletions, ids)
   return ids
 }
 export const deletedAgent = (snapshot: Snapshot, agentId: string) => index(snapshot).agentId!.has(agentId)
