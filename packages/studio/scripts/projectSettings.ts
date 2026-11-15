@@ -19,10 +19,17 @@ export function projectSettingsSource(path: string, source: string): string {
     if (source.split(anchor).length !== 3) throw new Error('Project approval integration: cards moved');
     return source.replaceAll(anchor, 'const approvalEffect = chatLive.approvalEffect(r);');
   }
+  if (path === 'js/data.js') {
+    const anchor = "export const STAGES = ['Define', 'Design', 'Plan', 'Build', 'Review', 'Hand over'];";
+    if (source.split(anchor).length !== 2) throw new Error('Project stages integration: stages moved');
+    return source.replace(anchor, anchor.replace('= [', '= Object.freeze([').replace('];', ']);'));
+  }
   if (path === 'js/screens/messages.js') {
     const anchor = 'const archived = ch.archived === true;';
     if (source.split(anchor).length !== 2) throw new Error('Team archive integration: composer moved');
-    return source.replace(anchor, 'const archived = board.channelArchived(ch);');
+    const mark = '${c.archived && html`<span class="badge">Archived</span>`}';
+    if (source.split(mark).length !== 2) throw new Error('Team archive integration: mark moved');
+    return source.replace(anchor, 'const archived = board.channelArchived(ch);').replace(mark, mark.replace('c.archived', 'board.channelArchived(c)'));
   }
   if (path !== 'js/screens/service.js') return source
   const start = source.indexOf('export function ProjectSettings(')

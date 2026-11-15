@@ -311,7 +311,7 @@ const teamDelete: PiecePlanner = (input, raw) => Effect.gen(function* () {
     .map((post) => ({ _tag: "board.PostClosed" as const, postId: post.postId, outcome: "withdrawn" as const, closer,
       completionOwed: completionOwed(input.snapshot, post, closer, true) }))
   return ack(p.requestId, [...closed, { _tag: "project.TeamDeleted", projectId: p.projectId, teamId: p.teamId },
-    ...(team.channelId === undefined ? [] : [{ _tag: "board.ChannelArchived" as const, channelId: team.channelId }])])
+    ...(team.channelId === undefined ? [] : [{ _tag: "board.ChannelArchived" as const, channelId: team.channelId, displayName: team.name }])])
 })
 const taskNote: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.task.note">; const { project } = yield* requireTask(input, p.projectId, p.taskId, true)

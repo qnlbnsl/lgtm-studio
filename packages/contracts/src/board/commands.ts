@@ -21,6 +21,7 @@ const post = {
 }
 const channel = Schema.Struct({
   archived: Schema.optionalKey(Schema.Boolean),
+  displayName: Schema.optionalKey(Schema.String),
   channelId: ChannelId, name: BoardChannelName, kind: Schema.Literals(["plain", "group", "direct"]),
   manager: Schema.optionalKey(BoardAddressee), members: Schema.Array(BoardAuthor),
   group: Schema.optionalKey(Schema.NonEmptyString), anchorAgentId: Schema.optionalKey(AgentId)

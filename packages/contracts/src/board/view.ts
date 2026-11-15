@@ -6,6 +6,7 @@ import type { BoardCompletion } from "./schemas.ts"
 
 export type BoardChannelView = Extract<BoardEvent, { _tag: "board.ChannelOpened" }> & {
   readonly archived?: boolean
+  readonly displayName?: string
   readonly ownName?: string
   readonly seatSequence: EventSequence
 }

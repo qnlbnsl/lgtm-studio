@@ -60,6 +60,9 @@ export async function exerciseStudioLeadDefinition(page: Page) {
           expect(unwrap(orientation.success as { data: string })).toMatchObject({ kind: 'lead', name: 'Project lead' })
           await expect(tree).toContainText('First goal')
           await expect(tree).toContainText('Define')
+          await page.goto(`${root}#/projects`)
+          await expect(page.locator('.stage-dots[title="Stage: Define"] i.now')).toHaveCount(1)
+          await expect(page.locator('.stage-dots[title="Stage: Define"] i:first-child')).toHaveClass('now')
           const sprint = { projectId, label: 'SP-1', name: 'First sprint', goal: 'Deliver the agreed scope', phase: 'Build', owner: spawn.agentId, needs: [] }
           const refused = await execute(lead, 'project.sprint.create', sprint)
           expect(refused._tag === 'Failure' && refused.failure.reason).toBe('The owner must approve the end result or skipping planning before work is planned; use ask with projectApproval set to "end-result" or "skip-planning".')
@@ -100,6 +103,8 @@ export async function exerciseStudioLeadDefinition(page: Page) {
           if (team._tag !== 'Success') throw new Error('Team unavailable')
           await page.goto(`${root}#/p/${projectId}/messages/${team.success.channelId}`)
           await expect(page.getByPlaceholder('Archived channel. Its history is kept.')).toBeDisabled()
+          await expect(page.locator('.mb-stream h2')).toContainText('Build team')
+          await expect(page.locator('.ch-row[aria-current="page"]')).toContainText('Archived')
           expect(errors).toEqual([])
         })
       }).pipe(Effect.provide(buildServices(rig).pipe(Layer.provide(dependencies))), Effect.provide(runner.layer)))

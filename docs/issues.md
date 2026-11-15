@@ -14598,3 +14598,14 @@ The text field carries the long proposal, and the owner opens the Details contro
 Skipping planning alone cannot authorize starting workers or building.
 After a denial, the lead asks what to change and does not repeat the same request unchanged.
 The instruction and both refusal reasons name ask and the projectApproval field.
+
+## s10-lead-15. Define had no current stage dot, and an archived team channel lost its readable name.
+
+Found in review round 1 on 2026-11-14.
+Status: fixed in the stage list, archive record and website.
+The browser reproduced a deleted team's channel as Team followed by an internal identifier.
+Channel archival now records the last team name for display.
+The channel list shows that name with an Archived mark.
+The original channel identity and post history remain unchanged.
+Define is now the first current dot in the projects table.
+The result lists these changes and the earlier removed Rename dialog and added Actions column.
