@@ -15468,7 +15468,7 @@ The message is hard to read, because each such link takes three lines.
 The chat should show the link's label only, or the label with a short path.
 A local file path must not become a clickable address in the browser.
 
-## s16-1. Head-changing Git actions reread worktrees that they could not affect.
+## 1035. Head-changing Git actions reread worktrees that they could not affect.
 
 Found: 2026-11-15, while measuring the Git journey for issue 966.
 Status: fixed for the owner's readbacks in part A and its two fix rounds.
@@ -15512,13 +15512,13 @@ The first trade-off is between fewer review reads and review freshness.
 Skipping a known closed or absent review saves requests on background passes.
 A review opened by another client during the same screen visit can wait for an explicit refresh or a review or head-changing action.
 A successful first pass on a new Git screen visit also discovers that review.
-Issue s16-8 tracks this regression as open.
+Issue 1042 tracks this regression as open.
 Fix round 1 clears the loaded mark on each screen visit.
 A background pass rereads every known open review.
 A review decided from another client is then seen again on that pass.
 These status reads reduce the original request savings when they become eligible.
 An unsuccessful first review read does not mark the review as loaded.
-The separate evidence-mapping defect remains open in issue s16-7.
+The separate evidence-mapping defect remains open in issue 1041.
 
 The second trade-off is between narrow readbacks and covering indirect Git dependencies.
 Pull fetches all origin branches.
@@ -15530,7 +15530,7 @@ Each extra row costs one change-list read.
 Push keeps its narrower set.
 Push does not fetch origin.
 
-## s16-2. A failed Git readback can hide the original mutation refusal.
+## 1036. A failed Git readback can hide the original mutation refusal.
 
 Found: 2026-11-15, while checking the narrowed Git readbacks against the earlier reviews.
 Status: open.
@@ -15544,7 +15544,7 @@ This behavior predates part A of unit s16-gitrefresh.
 Part A preserves it because the current brief changes only readback scopes and review-status reads.
 A future fix must keep the mutation error and the failure to confirm current state distinguishable.
 
-## s16-3. An open merge review hid decisions made from another client.
+## 1037. An open merge review hid decisions made from another client.
 
 Found: 2026-11-15, in the review of part A of unit s16-gitrefresh.
 Status: fixed in fix round 1 for remote decisions and the first-load requirement per screen visit.
@@ -15558,15 +15558,15 @@ Review status now refreshes for every known open review in a background pass.
 An approval, refusal, or send-back from another client is then seen again.
 The loaded mark resets on each Git screen visit.
 The first successful pass of that visit reads review status.
-Issue s16-9 records the pre-existing case where a busy background pass drops that first attempt.
+Issue 1043 records the pre-existing case where a busy background pass drops that first attempt.
 The synthetic open-review test proves that another status read happens.
 The test does not prove that the dialog receives passing evidence from the real engine.
-Issue s16-7 records that separate defect as open.
+Issue 1041 records that separate defect as open.
 Other regression tests cover skipping closed or absent reviews.
 A regression test covers the first review read on a new screen visit.
 The narrowed-action tests also assert review-status reads for every action after its first load.
 
-## s16-4. Pull left parentless rows' upstream counts stale.
+## 1038. Pull left parentless rows' upstream counts stale.
 
 Found: 2026-11-15, in the reviews of part A of unit s16-gitrefresh.
 Status: fixed for base rows in fix round 1 and other parentless rows in fix round 2.
@@ -15581,7 +15581,7 @@ The new test covers a parentless project worktree.
 The existing tests cover the base row.
 The push test keeps its narrower set.
 
-## s16-5. Appended Git actions could build after their source helper contracts changed.
+## 1039. Appended Git actions could build after their source helper contracts changed.
 
 Found: 2026-11-15, in the review of part A of unit s16-gitrefresh.
 Status: fixed in fix round 1.
@@ -15593,7 +15593,7 @@ The build did not verify those signatures.
 The build now fails when either expected signature is missing.
 Each signature has a regression test.
 
-## s16-6. Test measurement could replace a browser journey's failure.
+## 1040. Test measurement could replace a browser journey's failure.
 
 Found: 2026-11-15, in the review of part A of unit s16-gitrefresh.
 Status: fixed in fix round 1.
@@ -15607,7 +15607,7 @@ A regression test preserves the original journey error when the output path cann
 Measurement is enabled only when LGTM_GIT_MEASURE_DIR is set.
 Ordinary journey runs keep the unwrapped service and install no measurement listener.
 
-## s16-7. Fresh evidence from review status never reaches an already open merge dialog.
+## 1041. Fresh evidence from review status never reaches an already open merge dialog.
 
 Found: 2026-11-15, by the reviewer's real-engine probe in review-a2.
 Status: open, awaiting the owner's approval for a change to what the dialog shows.
@@ -15631,7 +15631,7 @@ A later fix must map the separate fresh evidence while the review is open.
 That fix changes what the dialog shows.
 It waits for the owner's approval.
 
-## s16-8. A review opened elsewhere stays unseen while the known review is absent or answered.
+## 1042. A review opened elsewhere stays unseen while the known review is absent or answered.
 
 Found: 2026-11-15, in review-a2 of unit s16-gitrefresh.
 Status: open for part B.
@@ -15648,7 +15648,7 @@ Opening the merge review dialog prepares fresh review state.
 A successful first pass on a new Git screen visit can discover it.
 A decision made elsewhere for a known open review remains eligible for background refresh.
 
-## s16-9. Reopening the Git screen can lose its first load while an old background pass is busy.
+## 1043. Reopening the Git screen can lose its first load while an old background pass is busy.
 
 Found: 2026-11-15, by reading the screen lifecycle and background-read guard in review-a2.
 Status: open.
