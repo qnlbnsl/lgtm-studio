@@ -1,6 +1,6 @@
 import { exerciseStudioLeadDefinition } from './support/studioLeadDefinition.ts'
 import { exerciseStudioTerminal } from './support/studioTerminal.ts'
-import { exerciseStudioProjectSettings } from './support/studioProjectSettings.ts'
+import { exerciseStudioProjectSettings, exerciseStudioProjectDelete } from './support/studioProjectSettings.ts'
 
 import { exerciseStudioFiles } from './support/studioFiles.ts'
 import { exerciseStudioSettings } from './support/studioSettings.ts'
@@ -1116,10 +1116,12 @@ test('live website: Harnesses installs a missing harness with a fake recipe and 
 test('Harnesses sign-in runs a strict fake terminal and checks the added account', async ({ page }) => { test.setTimeout(90_000); await (await import('./support/studioSignIn.ts')).exerciseStudioSignIn(page) })
 test('Harnesses then project Chat keeps the composer visible', async ({ page }) => { test.setTimeout(90_000); await (await import('./support/studioSignIn.ts')).exerciseHarnessesThenChat(page) })
 
-test("studio project settings: live changes, disabled controls and archive restore", async ({ page }) => { test.setTimeout(90_000); await exerciseStudioProjectSettings(page) })
+test("studio project settings: live changes, shared help, hidden controls and archive restore", async ({ browser }) => { test.setTimeout(90_000); const context = await browser.newContext({ hasTouch: true }); try { await exerciseStudioProjectSettings(await context.newPage()) } finally { await context.close() } })
 
 test("studio files: engine tree, editor policy, save conflicts and one-file commit", async ({ page }) => exerciseStudioFiles(page))
 
 test('studio terminal: real shell, private output and renderer policy', async ({ page }) => exerciseStudioTerminal(page))
 
 test("studio lead: Define, owner approval, rename and team deletion", async ({ page }) => { test.setTimeout(90_000); await exerciseStudioLeadDefinition(page) })
+
+test("studio project delete: archived confirmation, cancellation and persistent removal", async ({ page }) => { test.setTimeout(90_000); await exerciseStudioProjectDelete(page) })

@@ -6,6 +6,9 @@ export { saveGoal } from './board.js';
 export function renameProject(projectId, name) {
   return run('project:' + projectId, () => engine.request('project.rename', mapping.projectRenamePayload(projectId, name)), 'Project renamed');
 }
+export function deleteProject(projectId) {
+  return run('project:' + projectId, () => engine.request('project.delete', mapping.projectDeletePayload(projectId)), 'Project deleted');
+}
 export function deleteTeam(projectId, teamId) {
   return run('project:' + projectId, () => engine.request('project.team.delete', mapping.teamDeletePayload(projectId, teamId)), 'Team deleted');
 }

@@ -107,6 +107,21 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
     case "project.GoalChanged": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, goal: event.goal })) }
     case "project.ArchiveStarted": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, archiving: true })) }
     case "project.Archived": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, archiving: false, archivedAt: at })) }
+    case "project.Deleted": {
+      const keep = <T>(rows: Readonly<Record<string, T>>, test: (row: T, key: string) => boolean) => Object.fromEntries(Object.entries(rows).filter(([key, row]) => test(row, key)))
+      const related = <T extends { readonly projectId: string }>(rows: Readonly<Record<string, T>>) => keep(rows, (row) => row.projectId !== event.projectId)
+      const agents = new Set<string>(event.agentIds), worktrees = new Set<string>(event.worktreeIds)
+      const { _tag, ...deletion } = event
+      return { ...view, deletions: { ...view.deletions, [event.projectId]: deletion },
+        projects: related(view.projects), teams: related(view.teams), sprints: related(view.sprints), tasks: related(view.tasks), deletedTasks: related(view.deletedTasks ?? {}),
+        workspaces: keep(view.workspaces, (_, id) => !worktrees.has(id)),
+        agentProjects: keep(view.agentProjects, (id) => id !== event.projectId), parents: keep(view.parents, (parent, id) => !agents.has(parent) && !agents.has(id)),
+        gitAttempts: keep(view.gitAttempts, (attempt) => !worktrees.has(attempt.worktreeId)), gitReviews: related(view.gitReviews), gitEvidence: related(view.gitEvidence),
+        taskNotifications: related(view.taskNotifications), fileSaveNotices: related(view.fileSaveNotices),
+        mockRevisions: related(view.mockRevisions), mockHeads: keep(view.mockHeads, (_, id) => id !== event.projectId),
+        mockApprovals: related(view.mockApprovals), mockScreenReviews: related(view.mockScreenReviews),
+        setup: view.setup.projectId === event.projectId ? { step: view.setup.step, ...(view.setup.completedAt === undefined ? {} : { completedAt: view.setup.completedAt }) } : view.setup }
+    }
     case "project.Restored": return { ...view, projects: change(view.projects, event.projectId, (row) => { const { archivedAt: _a, ...rest } = row; return { ...rest, archiving: false } }) }
     case "project.PermissionChanged":
     case "project.PermissionWithdrawn": return { ...view, projects: change(view.projects, event.projectId, (row) => {

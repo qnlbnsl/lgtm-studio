@@ -34,7 +34,7 @@ const open = (input: Input, p: Record<string, unknown>) => Effect.gen(function* 
     if ((yield* input.runtime.log.redactText(value)) === value) environment[name] = value
   }
   const disconnected = () => manager.disconnect(connection)
-  const session = yield* Effect.tryPromise({ try: () => manager.start({ kind: 'project', accountId: '', connectionId: connection, executable: shell, args: ['-l'], cwd: workspace.path, environment,
+  const session = yield* Effect.tryPromise({ try: () => manager.start({ kind: 'project', worktreeId: workspace.worktreeId, accountId: '', connectionId: connection, executable: shell, args: ['-l'], cwd: workspace.path, environment,
     cols: p.cols as number, rows: p.rows as number, allowed: () => manager.terminalGeneration === generation && !input.connectionSignal?.aborted,
     check: async () => ({ state: 'unavailable' }), onEnd: () => input.connectionSignal?.removeEventListener('abort', disconnected) }), catch: failure })
   input.connectionSignal?.addEventListener('abort', disconnected, { once: true })

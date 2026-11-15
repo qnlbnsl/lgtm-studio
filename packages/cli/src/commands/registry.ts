@@ -156,6 +156,7 @@ const summaries: Record<CommandName, string> = {
   "project.creations": "Read unfinished project creations and their owned folders for recovery.",
   "project.goal.set": "Change a project's goal.",
   "project.archive": "Stop every project agent and archive the project after confirmed stops.",
+  "project.delete": "Permanently hide an archived project and its history. Keep all worktree folders and branches. Requires --confirmed true.",
   "project.restore": "Restore an archived project without launching another lead.",
   "project.permission.set": "Set Project planning or Starting work to Allowed, Not allowed or Always ask for permission as the owner.",
   "project.approval.grant": "Grant an ask permission as the owner.",

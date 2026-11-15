@@ -82,6 +82,14 @@ const actionTags = new Set<string>(rolesActionKinds.map((kind) => `roles.${kind}
 // This fold deliberately receives no clock or envelope metadata. Projection,
 // live publication and replay all compute the same timer origins.
 export const apply = (view: RolesView, event: Event, sequence: number): RolesView => {
+  if (event._tag === "project.Deleted") {
+    const agents = new Set<string>(event.agentIds), posts = new Set<string>(event.postIds);
+    return { ...view, agents: Object.fromEntries(Object.entries(view.agents).filter(([id]) => !agents.has(id))),
+      actions: view.actions.filter((row) => !agents.has(row.agentId)),
+      pendingStallNotices: view.pendingStallNotices.filter((row) => !agents.has(row.agentId)),
+      stalls: Object.fromEntries(Object.entries(view.stalls).filter(([, row]) => !agents.has(row.agentId) && !posts.has(row.postId))),
+      wakes: Object.fromEntries(Object.entries(view.wakes).filter(([, row]) => !agents.has(row.agentId))) }
+  }
   if (actionTags.has(event._tag)) {
     const action = event as RolesAction;
     const record = { ...event, sequence, noticeRead: action.notice === "sent" && action.postId !== undefined

@@ -1,3 +1,4 @@
+import { deletedEvent } from '../project/deleted.ts';
 import type { AgentChoice, AgentConfiguration } from "@lgtm/contracts";
 import { configurationMatches } from "../runner/choices.ts";
 import { safeStartFailure, type StartFailure } from "@lgtm/contracts/startFailure";
@@ -406,6 +407,8 @@ const accountsAfter = (state: State, event: Event): State["accounts"] => {
 // Live publication and rebuilding use this same pure fold.
 export const applyWith = (state: State, envelope: EventEnvelope, views: Readonly<Record<PieceNamespace, PieceView>> = pieceViews): State => {
   const event = envelope.event;
+  // One admission gate protects every core and piece fold, live and replayed.
+  if (deletedEvent(state, event)) return { ...state, sequence: envelope.sequence };
   const owner = threadAgent(event);
   const pieces = { client: state.client, board: state.board, roles: state.roles, project: state.project };
   for (const namespace of pieceNamespaces) {
@@ -430,7 +433,17 @@ export const applyWith = (state: State, envelope: EventEnvelope, views: Readonly
       return observe === undefined ? next[namespace] : observe(next, event, envelope.sequence);
     }, next[namespace]);
   }
-  return { ...next, ...pieces };
+  const result = { ...next, ...pieces };
+  if (event._tag !== "project.Deleted") return result;
+  const agents = new Set<string>(event.agentIds);
+  const keep = <T>(rows: Keyed<T>, test: (row: T, key: string) => boolean): Keyed<T> => Object.fromEntries(Object.entries(rows).filter(([key, row]) => test(row, key)));
+  return { ...result,
+    agents: keep(result.agents, (_, id) => !agents.has(id)), threads: keep(result.threads, (_, id) => !agents.has(id)),
+    requests: keep(result.requests, (row) => !agents.has(row.agentId) && row.projectId !== event.projectId),
+    questions: keep(result.questions, (row) => !agents.has(row.agentId) && row.projectId !== event.projectId),
+    waits: keep(result.waits, (row) => !agents.has(row.agentId)),
+    deliveries: keep(result.deliveries, (row) => !agents.has(row.target)) };
+
 };
 
 export const apply = (state: State, envelope: EventEnvelope): State => applyWith(state, envelope);

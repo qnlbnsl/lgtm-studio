@@ -14800,7 +14800,11 @@ Each of these controls is disabled on purpose by `packages/studio/scripts/projec
 The engine stores no value for any of them, so the website has nothing to read or save.
 The only explanation is a hover text, "Engine work needed", which the owner did not see.
 A disabled control that looks like a setting reads as a broken page.
-This is open.
+Unit s14 hides unsupported controls and their empty sections on the website.
+The base branch uses the brief’s explicit fallback because its destination is checked in several Git safety boundaries.
+The deferred engine work is listed together in `docs/features.md`.
+The standalone mock keeps the complete sample design.
+This page problem is fixed, and the hidden engine features remain open.
 
 ## 972. A setting's explanation takes a line under its label.
 
@@ -14809,7 +14813,11 @@ The owner said the line under the label is not needed.
 The owner asked for a small question mark in a circle beside the label instead.
 The explanation appears when a person hovers over the question mark or clicks it.
 This changes the look of an existing screen, and the owner asked for it.
-This is open.
+Unit s14 replaces hint lines in Project settings with shared question-mark buttons.
+Their help appears on hover, keyboard focus, and click or tap.
+A click pins the help until dismissal.
+Both lead permission labels stay on one line beside their selectors.
+This is fixed.
 
 ## 973. "New session" in the Terminal tab opens a dialog to choose the folder.
 
@@ -14832,7 +14840,12 @@ The owner said: "I cannot delete projects. I can only archive them."
 The engine has an archive command for a project and no delete command.
 A test project therefore stays in the archive for good.
 A delete must say what happens to the project's worktree, its branch, its agents and its stored history.
-This is open.
+Unit s14 adds owner-only deletion after a completed archive, with a deliberate confirmation.
+The website, the application programming interface, and the command-line interface expose it.
+The project and its history disappear from reads and replayed views.
+Events remain in the stored log.
+All worktree folders and branches remain on disk.
+This is fixed.
 
 ## 975. The project lead was locked by default behind approval cards.
 
@@ -15114,6 +15127,128 @@ The cause of the missed startup bound has not been established.
 No wait or deadline was widened.
 The orchestrator should retain this observation when assessing the full check.
 
+
+## 1015. Stored event reads could reveal a deleted project's history.
+
+Found while implementing project deletion in unit s14.
+The owner and service could read an agent's thread or an event directly from the durable log even after its view was removed.
+Unit s14 keeps identifier tombstones and applies them before the general owner read allowance.
+The project history stays in the log but disappears from public event and thread reads.
+This is fixed.
+
+## 1016. The engine has no safe worktree removal operation.
+
+Found while implementing project deletion in unit s14.
+The Git service can create a worktree but has no removal path that verifies engine ownership and refuses dirty files.
+The creation claims do not supply a completed-worktree removal interface.
+Project deletion therefore preserves all folders and branches.
+The optional folder removal checkbox is omitted, as the task permits.
+The requirements for a future operation are recorded in `docs/features.md`.
+This is open.
+
+
+## 1017. Project deletion could redact identifiers and leave a partial result.
+
+The first review found that the deletion event had no identity exemptions in the log redaction structure.
+A registered secret overlapping an identifier could leave some records behind after a successful reply.
+The deletion event now marks every identifier position as an identity.
+A regression test uses the real writer with overlapping registered secrets.
+This is fixed.
+
+## 1018. Project deletion missed descendant workspaces and removed shared infrastructure.
+
+Reopened by review round 2 after the first fix had marked this issue fixed.
+The first review found that descendants registered only with a parent identifier remained usable after deletion.
+It also found that historical projects could unregister the repository checkout.
+The first fix kept that checkout but still walked through it and removed unrelated owner-registered descendants.
+Its global protection of shared-root descendants also kept the deleted project's own team and builder workspaces.
+Terminal and unfinished Git checks used that overbroad candidate set.
+The earlier refusal assertions could pass on a missing Git configuration instead of a removed registration.
+
+The revised rule computes the kept identifiers first and excludes them from the removal roots.
+Each walk stops at a kept workspace.
+Independent team and explicitly marked project workspaces still start their own walks below a kept root.
+The terminal check uses only the final removal set.
+The Git check also refuses an unfinished attempt whose caller is one of the deleted agents.
+A parentless workspace without its repository row is kept as a legacy checkout.
+Sixteen explicit cases in `.foundry/delete-scope.md` each have a separate regression test.
+They cover the two review probes, sibling projects, shared worktrees, cycles, and retained terminals and Git operations.
+The read tests configure Git and assert the exact missing-registration refusal.
+This change corrects the reopened scope finding.
+The separately recorded terminal opening race and field-name matcher remain open.
+
+## 1019. Late events could repopulate deleted views.
+
+The first review found that a carrier delivery finishing after deletion could recreate an alert delivery row.
+The shared fold now checks identifier tombstones before updating any core or piece view.
+A carrier result for an absent alert cannot create an orphan delivery row.
+Regression tests append late project, agent, board, alert and delivery events and check a rebuild.
+This is fixed.
+
+## 1020. Setting help and the lead row had focus and layout regressions.
+
+The first review found an interactive control inside a tooltip, a hover gap, and focus loss when tabbing to dismiss.
+The shared component now keeps the dismiss control outside the tooltip and tracks focus within its wrapper.
+The shared styles live in the shared stylesheet, and the help panel touches its button.
+The website lead row has its own two-column rule, and the phone rule wins for both sample and live controls.
+This is fixed.
+
+
+## 1021. A short registered secret can invalidate a board reply mode during redaction.
+
+Found while extending the deletion regression fixture in fix round 1.
+Registering the synthetic secret `one` changes the fixed reply mode `none` in a board post event.
+The real writer then refuses the event because its redacted reply mode fails the event schema.
+The deletion fixture now registers complete identifiers to isolate the requested identifier exemptions.
+The board event's fixed reply mode still needs its own explicit redaction position and regression test.
+No board redaction rule is changed by this unit.
+This is open.
+
+
+## 1022. A terminal can finish opening after project deletion commits.
+
+Recorded from minor 2 of review round 2.
+The terminal request resolves its workspace before the session enters the in-memory session map.
+Environment redaction and loading the terminal module leave a gap before that insertion.
+Deletion can check for terminals and commit during that gap.
+The terminal can then open in a folder whose registration was removed.
+The folder remains on disk, and the terminal remains restricted to its authenticated owner connection.
+This is a consistency gap rather than a new access gap.
+A future fix should reread the current workspace after session start and close the session through the existing close path if its registration is gone.
+The round 2 brief explicitly asks to record this issue without fixing it.
+This is open.
+
+## 1023. The tombstone gate matches metadata field names rather than ownership.
+
+Recorded from minor 6 of review round 2.
+The gate can drop a surviving agent's prompt event when its sender names a deleted agent.
+It can also drop a surviving project's workspace event when its parent identifier names a deleted workspace.
+The current authenticated commands cannot write those two cases, but raw replay can contain them.
+An identifier under an unrecognised field or nested object can pass the same gate.
+A future contracts test should check every event schema's identifier fields against the matcher.
+Ownership rules also need to distinguish a record's owner from its references.
+The round 2 brief explicitly asks to record this issue without fixing it.
+This is open.
+
+## 1024. Deletion documentation overstated access to retained posts and designs.
+
+Review round 2 found that retained board rows with deleted context are omitted from channel reads.
+Their references no longer open, although the rows remain in the stored channel view.
+A retained design registration can also point at a worktree that deletion unregisters.
+Its registration and head remain recorded, but its artifacts become unavailable through the engine.
+The project documentation and confirmation now describe these limits.
+The design regression uses a real dedicated project worktree and checks removal of its registration.
+No post, design or reference behaviour changes in this correction.
+This is fixed.
+
+## 1025. Each project view change rebuilt the entire tombstone index.
+
+Review round 2 found that the cache used the project view object as its key.
+Unrelated project events replace that object while retaining the same deletion map.
+The cache now uses the deletion map as its key and reuses the index across those view changes.
+A regression counts deletion-map reads across distinct project views sharing that map.
+This is fixed.
+
 ## 1010. Codex tool row titles exposed adapter names, quotes and shell wrappers.
 
 Found: 2026-11-15, from the owner's service inspection.
@@ -15264,3 +15399,71 @@ The Git screen in `master` keeps its earlier refresh behaviour.
 The Git journey of issue 966 therefore still runs close to its limit.
 A rebuild should start from a written design: one record per worktree with a named state, one function that decides the next read time, and file detail loading kept outside the scheduler.
 The branch's test file `packages/studio/test/git-refresh.test.ts` is a usable acceptance suite for that rebuild.
+
+## 1026. A shell wrapper with a multi-part quoted argument still shows in a chat tool title.
+
+Found: 2026-11-15, on the real service after pull request 62 was merged.
+Status: open.
+
+The chat removes a shell wrapper from a tool title only when the wrapper has one quoted argument.
+Codex wrote one command as `/usr/bin/zsh -lc` followed by an argument made of several quoted pieces joined together.
+The pieces alternate between double quotes and single quotes, to carry a literal exclamation mark.
+The title of that row still begins "Ran /usr/bin/zsh -lc".
+The matcher of issue 1012 leaves this form alone on purpose, because it does not parse shell quoting.
+A fix needs a small parser for adjacent quoted pieces, and tests for each quoting form.
+
+
+## 1027. Deleting an agent could strand its unfinished Git attempt in a kept worktree.
+
+Review round 3 found that the deletion precondition checked only the attempt's worktree.
+An attempt by the deleted project's agent could remain in a kept shared worktree.
+The tombstone gate then discarded its finish event because that event named the deleted caller.
+The pending attempt could prevent the surviving project from being deleted indefinitely.
+Deletion now refuses an unfinished attempt by any of its agents, regardless of the worktree.
+The existing Git refusal sentence is unchanged.
+A handler regression refuses the first delete, finishes the attempt, and then deletes both projects successfully.
+An owner's attempt in a kept worktree still does not block deletion.
+This is fixed.
+
+## 1028. Default builder registrations below a kept team worktree have no exclusive owner.
+
+Recorded from minor 1 of review round 3.
+A project's team can sit on a worktree shared with a surviving project.
+The workspace registration command records the builder's parent but no owning project or team.
+Deletion cannot distinguish that builder from another project's builder under the same root.
+Those unmarked builder registrations remain, as a documented and tested limitation.
+A row with an exclusive team identifier from the deleted project now starts its own removal walk.
+The workspaces named by surviving projects and teams still form retention barriers.
+The missing ownership on default registrations remains open.
+
+## 1029. A surviving project identifier alone does not protect a workspace below a removed root.
+
+Recorded from minor 2 of review round 3.
+A raw workspace row can carry a surviving project's identifier below a root removed by another project's deletion.
+The kept set protects worktrees named by surviving project and team rows, rather than every workspace carrying a surviving project identifier.
+The descendant walk can therefore remove and tombstone that marked workspace.
+The current commands cannot construct this case because a marked workspace is its project's own worktree.
+The round 3 brief explicitly asks to record this issue without fixing it.
+This is open.
+
+## 1030. A kept workspace can retain a parent identifier naming a removed workspace.
+
+Recorded from minor 5 of review round 3.
+A surviving team's kept workspace can sit below another project's removal root in a raw registry row.
+Deletion keeps that workspace and its parent identifier while removing the parent workspace.
+The registry remains readable and replay agrees with the live view.
+A later update can fail because its parent is no longer registered.
+The current commands cannot construct this layout.
+The round 3 brief explicitly asks to record this issue without fixing it.
+This is open.
+
+## 1034. The chat shows a markdown link to a local file as raw text.
+
+Found: 2026-11-15, on the real service after pull request 63 was merged.
+Status: open.
+
+The project lead wrote a link to a file in its worktree, with a line number after the path.
+The chat shows the square brackets, the round brackets and the full path as plain text.
+The message is hard to read, because each such link takes three lines.
+The chat should show the link's label only, or the label with a short path.
+A local file path must not become a clickable address in the browser.

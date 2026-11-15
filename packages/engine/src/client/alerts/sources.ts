@@ -1,3 +1,4 @@
+import { deletedEvent } from '../../project/deleted.ts';
 import type { AlertSourceRequest, Event, EventEnvelope, PermissionRequestId, QuestionId } from "@lgtm/contracts";
 import type { Snapshot } from "../../commands/internal.ts";
 import { alertKeyPart } from "./keys.ts";
@@ -51,6 +52,7 @@ export const subjectClosed = (source: AlertSourceRequest, snapshot: Snapshot): b
 
 export const engineSource = (envelope: EventEnvelope, snapshot: Snapshot): AlertSourceRequest | undefined => {
   const event = envelope.event;
+  if (deletedEvent(snapshot, event)) return undefined;
   let source: AlertSourceRequest | undefined;
   if (event._tag === "project.SprintCompleted") {
     source = { kind: "sprint", key: `sprint:${alertKeyPart(event.projectId)}:${alertKeyPart(event.sprintId)}`, subject: { _tag: "piece", namespace: "project", id: event.sprintId } };
