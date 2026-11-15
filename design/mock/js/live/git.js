@@ -48,7 +48,7 @@ let gitFullReadAt, gitRetryAt = 0, gitFailures = 0, gitScopeVersion = 0;
 const gitFailureKinds = new Set(), gitScopes = new Map(), gitWaitingAgents = new Map();
 function resetGitRetry() { gitRetryAt = gitFailures = 0; clearTimeout(refreshTimer); }
 const gitInvalidations = new Map(), gitReadbacks = new Map();
-const gitVisible = () => document.visibilityState !== 'hidden';
+const gitVisible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden';
 const gitFullPending = () => gitLoaded < gitObserved || gitInvalidations.size > 0;
 const gitNeedsRead = () => gitFullPending() || gitScopes.size > 0;
 const gitRoster = (rows) => JSON.stringify((rows || []).map(({ id, project, repo, branch, parentId, machine, folder, kind }) => ({ id, project, repo, branch, parentId, machine, folder, kind })).sort((a, b) => a.id.localeCompare(b.id)));
@@ -127,9 +127,9 @@ export function openScreen(name, project) {
     if (gitVisible()) invalidateGit();
     else { revision++; gitObserved++; clearTimeout(refreshTimer); }
   };
-  addEventListener('focus', refresh);
-  document.addEventListener('visibilitychange', visible);
-  return () => { screen = undefined; revision++; clearTimeout(refreshTimer); removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', visible); };
+  const page = typeof document === 'undefined' ? undefined : document;
+  if (page) { addEventListener('focus', refresh); page.addEventListener('visibilitychange', visible); }
+  return () => { screen = undefined; revision++; clearTimeout(refreshTimer); if (page) { removeEventListener('focus', refresh); page.removeEventListener('visibilitychange', visible); } };
 }
 async function refreshScreen() {
   if (!mapping || !screen || S().session.status !== 'in') return;

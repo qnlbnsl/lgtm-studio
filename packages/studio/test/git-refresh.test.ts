@@ -721,3 +721,18 @@ it("retires a queued agent refresh when its worktree leaves the roster", async (
     expect(reads).toEqual(["other"]); expect(vi.getTimerCount()).toBe(0);
   } finally { close(); vi.useRealTimers(); }
 });
+
+it("treats a missing document as visible and skips screen listeners", async () => {
+  vi.useFakeTimers();
+  const f = fixture(async tag => emptyGitReply(tag));
+  let close: (() => void) | undefined;
+  vi.stubGlobal("document", undefined);
+  try {
+    close = f.actions.openScreen("git", "project");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.state.worktrees[0].ready).toBe(true);
+    expect(f.listeners.size).toBe(0);
+    expect(f.toasts).toEqual([]);
+    close!(); close = undefined;
+  } finally { close?.(); vi.unstubAllGlobals(); vi.useRealTimers(); }
+});

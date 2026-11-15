@@ -15338,3 +15338,16 @@ A queued agent refresh retained the removed worktree's identity.
 The next full read could not clear it because it visited only current worktrees.
 Successful reads now retire the captured scopes that they cover, including removed worktrees.
 A newer scoped event retains its later version and still receives another read.
+
+
+## 1004. The live page assumed that a browser document always existed.
+
+Found by the orchestrator's full unit check after the S13 merge on 2026-11-15.
+Status: fixed in the live page's visibility and listener guards.
+Both harness integration cases failed when openScreen attached a document listener in a Node.js process.
+The Git visibility helper also read document without a guard.
+A missing document now counts as visible.
+Screen listeners are attached only when a document exists.
+Cleanup uses the document captured when the screen opened.
+The existing harness integration test remains unchanged.
+A new regression also opens and reads Git without a document, then closes the screen without attaching listeners.
