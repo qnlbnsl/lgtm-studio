@@ -13,15 +13,12 @@ export function gitActionsSource(path: string, source: string): string {
   }
   if (path === "js/live/git.js") {
     // Index and file-only actions read back their checkout. Head-changing
-    // actions retain all-workspace reads because parent-relative counts change.
-    replace("async function loadGit(project) {", "async function loadGit(project, ids) {")
-    replace("for (const w of list) {", "for (const w of list.filter((w) => !ids || ids.includes(w.id))) {")
-    replace("if (selected) await loadGitDetail(selected.id);", "if (selected && (!ids || ids.includes(selected.id))) await loadGitDetail(selected.id);")
+    // actions use the source helper to include only affected dependencies.
     replace("return gitDetail(id, commit);", "if (!tab) return run('git', () => { revision++; return loadGit(wt(id)?.project || screen?.project, [id]); });\n  return gitDetail(id, commit);")
     // Automatic reads never disable an owner action. An explicit refresh must
     // start a fresh generation even when an older automatic read is pending.
     replace("if (screen.name === 'git') return refreshGit(screen.project);", "if (screen.name === 'git') return refreshGit(screen.project, true);")
-    replace("export function refreshGit(project = screen?.project) { return run('git', () => loadGit(project)); }", "export function refreshGit(project = screen?.project, background = false) {\n  if (background) { if (busy('git')) return false; return run('git-read', () => loadGit(project)); }\n  return run('git', () => { revision++; return loadGit(project); });\n}")
+    replace("export function refreshGit(project = screen?.project) { return run('git', () => loadGit(project)); }", "export function refreshGit(project = screen?.project, background = false) {\n  if (background) { if (busy('git')) return false; return run('git-read', () => loadGit(project)); }\n  return run('git', () => { revision++; return loadGit(project, undefined, true); });\n}")
     replace("lost: plan.paths, action: 'Discard', onConfirm:", "lost: plan.paths, action: 'Discard', waitForReply: true, pendingLabel: 'Discarding…', onConfirm:")
     replace("export function gitDetail(id, commit) { return run('git', () => loadGitDetail(id, commit)); }", "export function gitDetail(id, commit) { return run('git', () => { revision++; return loadGitDetail(id, commit); }); }")
     replace("const conflict = read(await request('project.conflict.choose'", "revision++;\n    const conflict = read(await request('project.conflict.choose'")
@@ -46,7 +43,7 @@ export function abortMerge(id) {
     onConfirm: () => run('git', async () => {
       revision++;
       try { await request('project.merge.abort', { ...scope(w), expectedHead, expectedMergeHead, confirmed: true }); }
-      finally { await loadGit(screen?.project); }
+      finally { await loadGit(screen?.project, affectedGit(w), true); }
     }) });
 }
 function reopen(id, fid) {
@@ -64,14 +61,14 @@ function reopen(id, fid) {
 export function updateFromBase(id) { return run('git', async () => {
   const w = wt(id); local(w); const parent = destination(w); local(parent); revision++;
   try { await request('project.update', { ...scope(w), destinationId: parent.id, expectedHead: parent.head }); }
-  finally { await loadGit(screen?.project); }
+  finally { await loadGit(screen?.project, affectedGit(w, parent), true); }
 }); }
 export async function declineReview(id, reason) { const completed = await run('git', async () => {
   const w = S().worktrees.find((w) => w.review?.id === id); local(w); const r = w.review; revision++;
   if (!reason?.trim()) throw new Error('Give a reason for sending the review back.');
   const review = read(await request('project.review.decline', { ...scope(w), projectId: r.project, reviewId: r.id, expectedHead: r.head, expectedBaseHead: r.baseHead, reason: reason.trim() }));
   writeWt(w.id, { review: mapping.mapMainReview(review, undefined, r.agent) });
-  await loadGit(r.project, [w.id]);
+  await loadGit(r.project, [w.id], true);
 }); if (completed) act.closeDialog(); return completed; }
 `
   }

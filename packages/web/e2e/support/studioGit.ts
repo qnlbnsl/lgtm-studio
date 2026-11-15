@@ -19,10 +19,12 @@ import { appendSetup, call, eventOf, harnessSettings, makeFakeSecrets, makeRig, 
 import { registerRebuildCheck } from '../../../engine/test/support/rebuildCheck.ts'
 import { buildStudio } from '../../../studio/scripts/build.ts'
 import { completedSetup } from './completedSetup.ts'
+import { measureGitJourney } from './gitMeasurements.ts'
 const expect = baseExpect.configure({ timeout: 30_000 })
 const git = (folder: string, ...args: string[]) => execFileSync('/usr/bin/git', ['-C', folder, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 const commit = (folder: string, message: string) => { git(folder, 'add', '--all'); git(folder, 'commit', '-m', message) }
 export async function exerciseStudioGit(page: Page) {
+  const measurement = measureGitJourney(page)
   const rig = makeRig(), previous = process.env.LGTM_HOME
   process.env.LGTM_HOME = rig.stateFolder
   const password = randomBytes(32).toString('base64url'), port = await unusedPort()
@@ -56,7 +58,7 @@ export async function exerciseStudioGit(page: Page) {
         writeFileSync(join(builderPath, 'builder.txt'), 'Builder change\n'); commit(builderPath, 'Builder contribution')
         writeFileSync(join(teamPath, 'team.txt'), 'Team change\n'); commit(teamPath, 'Team contribution')
         writeFileSync(join(source.path, 'file.txt'), 'browser change\n'); writeFileSync(join(source.path, 'discard.txt'), 'remove me\n')
-        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
+        yield* measurement.server(serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: measurement.lists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } }))
         yield* Effect.promise(async () => {
           const url = `http://127.0.0.1:${port}/#/p/${encodeURIComponent(project.projectId)}/git`
           await page.goto(url); await page.locator('#login-password').fill(password); await page.getByRole('button', { name: 'Sign in', exact: true }).click(); await expect(page.locator('.tree-row.project')).toBeVisible(); await page.goto(url)
@@ -196,5 +198,5 @@ export async function exerciseStudioGit(page: Page) {
         })
       })).pipe(Effect.provide(buildServices(rig, engineLists).pipe(Layer.provide(dependencies))), Effect.provide(runner.layer))
     })).pipe(Effect.provide(SqliteClient.layer({ filename: rig.database, readerWorker: true })), Effect.scoped) as Effect.Effect<void, unknown>)
-  } finally { if (previous === undefined) delete process.env.LGTM_HOME; else process.env.LGTM_HOME = previous; removeRig(rig) }
+  } finally { if (previous === undefined) delete process.env.LGTM_HOME; else process.env.LGTM_HOME = previous; removeRig(rig); measurement.finish() }
 }

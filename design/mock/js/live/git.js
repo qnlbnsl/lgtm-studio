@@ -272,11 +272,17 @@ const read = (reply) => { if (!('result' in reply)) throw new Error('The service
 const writeWt = (id, patch) => engineWrite({ worktrees: S().worktrees.map((w) => w.id === id ? { ...w, ...patch } : w) });
 function local(w) { if (!w || w.machine !== 'local') throw new Error('Git is available only for a workspace on local.'); }
 function destination(w) { return S().worktrees.find((x) => x.repo === w.repo && x.id === w.parentId); }
-async function loadGit(project) {
+// A changed head affects its checkout and each direct child's parent-relative counts.
+// Include both endpoints for operations that can change the destination too.
+function affectedGit(w, target) {
+  const roots = new Set(target ? [w.id, target.id] : [w.id]);
+  return S().worktrees.filter((x) => x.repo === w.repo && (roots.has(x.id) || roots.has(x.parentId))).map((x) => x.id);
+}
+async function loadGit(project, ids, reviews = false) {
   if (!mapping) return;
   const version = revision;
   const list = S().worktrees.filter((w) => w.project === project || w.kind === 'base' && w.repo === S().projects.find((p) => p.id === project)?.repo);
-  for (const w of list) {
+  for (const w of list.filter((w) => !ids || ids.includes(w.id))) {
     local(w);
     const state = read(await request('project.git.state', { ...scope(w), ...(w.parent ? { target: w.parent } : {}) }));
     const changes = read(await request('project.changes', scope(w)));
@@ -284,9 +290,10 @@ async function loadGit(project) {
     const files = mapping.mapGitChanges(changes.items);
     const merge = state.mergeHead || changes.items.some((x) => x.conflict) ? { from: state.mergeHead || '', by: null, startedAt: null, files: changes.items.filter((x) => x.conflict).map((x) => ({ ...(w.merge?.files.find((f) => f.path === x.path) || {}), id: x.path, path: x.path, parts: w.merge?.files.find((f) => f.path === x.path)?.parts || [], resolved: false, loaded: false })) } : null;
     writeWt(w.id, { ...mapping.mapGitState(state, w.parent), files, merge, ready: !changes.truncated, truncated: changes.truncated });
-    if (w.kind === 'project') {
+    if (w.kind === 'project' && (reviews || !w.reviewLoaded)) {
       const status = read(await request('project.review.status', { ...scope(w), projectId: project }));
       if (version !== revision) return;
+      writeWt(w.id, { reviewLoaded: true });
       if (status.review) {
         const fresh = mapping.mapMainReview(status.review, undefined, S().projects.find((p) => p.id === project)?.lead || '');
         const old = wt(w.id).review;
@@ -296,7 +303,7 @@ async function loadGit(project) {
     }
   }
   const selected = list.find((w) => w.branch === S().inspecting[project]) || list.find((w) => w.kind === 'project') || list[0];
-  if (selected) await loadGitDetail(selected.id);
+  if (selected && (!ids || ids.includes(selected.id))) await loadGitDetail(selected.id);
 }
 async function loadGitDetail(id, selectedCommit) {
   const w = wt(id); local(w); const version = revision;
@@ -353,17 +360,17 @@ export function commit(id, message) { return run('git', async () => {
   const w = wt(id); local(w); revision++;
   await request('project.commit', { ...scope(w), message });
   update((s) => { s.gitUi[id] = { ...s.gitUi[id], message: '' }; });
-  await loadGit(screen?.project);
+  await loadGit(screen?.project, affectedGit(w), true);
 }); }
 export function syncGit(id, operation) { return run('git', async () => {
   const w = wt(id); local(w); revision++;
-  try { await request('project.' + operation, scope(w)); } finally { await loadGit(screen?.project); }
+  try { await request('project.' + operation, scope(w)); } finally { await loadGit(screen?.project, operation === 'fetch' ? undefined : affectedGit(w), true); }
 }); }
 export function integrate(id) { return run('git', async () => {
   const w = wt(id); local(w); const target = destination(w); local(target);
   if (w.kind !== 'team') { refuse(); return; }
   revision++;
-  try { await request('project.integrate', { ...scope(w), destinationId: target.id, expectedHead: w.head }); } finally { await loadGit(screen?.project); }
+  try { await request('project.integrate', { ...scope(w), destinationId: target.id, expectedHead: w.head }); } finally { await loadGit(screen?.project, affectedGit(w, target), true); }
 }); }
 export function openReview(w, project) { return run('git', async () => {
   local(w); const target = destination(w); local(target); revision++;
@@ -379,7 +386,7 @@ export function answerReview(id, option) {
       decision: r.evidence.tests.ok && r.evidence.review.ok ? 'approve' : 'approve_without_evidence' }));
     writeWt(w.id, { review: mapping.mapMainReview(review, undefined, r.agent) });
     if (review.outcome === 'merged') act.closeDialog();
-    await loadGit(r.project);
+    await loadGit(r.project, affectedGit(w, wt(r.destinationId) || destination(w)), true);
     if (review.outcome !== 'merged') throw new Error(review.reason || 'The merge was refused.');
   });
 }

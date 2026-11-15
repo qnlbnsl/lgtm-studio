@@ -15467,3 +15467,37 @@ The chat shows the square brackets, the round brackets and the full path as plai
 The message is hard to read, because each such link takes three lines.
 The chat should show the link's label only, or the label with a short path.
 A local file path must not become a clickable address in the browser.
+
+## s16-1. Head-changing Git actions reread worktrees that they could not affect.
+
+Found: 2026-11-15, while measuring the Git journey for issue 966.
+Status: fixed for the owner's readbacks in part A of unit s16-gitrefresh.
+
+All five baseline journeys sent 87 state requests and 87 change-list requests.
+Each baseline also read review status 30 times.
+All five after-change journeys sent 69 state requests and 69 change-list requests.
+Each after-change journey read review status 18 times.
+The total Git request count fell from 298 to 250 in every run.
+The median journey time fell from 275.39 to 215.98 seconds on the recorded machine loads.
+The slowest after-change journey took 222.37 seconds against the unchanged 360-second limit.
+Commit, pull, push, update, integrate, abort, and approval now read only their affected worktrees.
+The affected worktrees are the source, the destination when present, and the direct children of each.
+Fetch and the explicit Refresh Git action still read every worktree in the project view.
+Review status is read on the first load, an explicit refresh, a head-changing action, or a review action.
+An unsuccessful first review read does not mark the review as loaded.
+The measurement lives in the journey's test support rather than in production code.
+The automatic refresh scheduler remains unchanged for part B, as issue 1033 describes.
+
+## s16-2. A failed Git readback can hide the original mutation refusal.
+
+Found: 2026-11-15, while checking the narrowed Git readbacks against the earlier reviews.
+Status: open.
+
+Some Git actions read back their state in a finally block.
+If the mutation fails and that readback also fails, the readback error replaces the original error.
+The owner therefore sees the failure to read current state instead of the mutation's refusal.
+A controlled probe reproduced this with a refused pull followed by a failed state read.
+The same structure exists in integration, update, abort, and reopening.
+This behavior predates part A of unit s16-gitrefresh.
+Part A preserves it because the current brief changes only readback scopes and review-status reads.
+A future fix must keep the mutation error and the failure to confirm current state distinguishable.
