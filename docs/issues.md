@@ -14726,6 +14726,22 @@ The last three runs used the final hidden-reply guard.
 The state and changes request counts remain above the completed baseline.
 The reduction is in total Git processes and measured duration.
 The original 360-second limit and every assertion remain unchanged.
+The one-worker passes do not establish reliability under full parallel load.
+The 360-second limit remains likely to fail intermittently in that run.
+
+Fix round 2 measured the unchanged single journey after bounding read retries and scoping working transitions.
+The first run preceded the final roster-removal guard.
+The last three used the final refresh source.
+
+| Run | Duration, seconds | Git processes |
+| --- | ---: | ---: |
+| 1 | 272.908 | 3,969 |
+| 2 | 260.949 | 3,987 |
+| 3 | 245.968 | 3,996 |
+| 4 | 246.482 | 3,983 |
+
+The retired admin journey also passed fifteen consecutive one-worker repetitions in fix round 2.
+The raw tables and every duration are recorded in the foundry result.
 
 ## 967. A withdrawn end result left an open building request unanswerable.
 
@@ -14965,7 +14981,11 @@ Tests hold the first state reply across each view selection and require the rema
 Found in review round 1 on 2026-11-15.
 Status: automatic refresh coverage is restored with a bounded fallback.
 Plain Git commands from an agent do not emit the engine's Git completion event.
-The visible Git screen now refreshes when an agent in a shown worktree ends a turn or changes state.
+The visible Git screen refreshes when an agent in a shown worktree ends a turn.
+A transition into or out of working refreshes only that agent's shown worktree.
+Other known state transitions do not request Git data.
+An event for an agent missing from the roster is retained until its folder appears.
+A matching shown folder then receives one refresh.
 It also refreshes on opening, returning to visibility, window focus, reconnection, roster changes and relevant Git or review events.
 Explicit refreshes and action readbacks remain.
 A heartbeat invalidates the screen only when no full read completed in the last sixty seconds.
@@ -14990,4 +15010,70 @@ A scoped read covers only its own workspace requests.
 Another caller's event arriving during the read stays pending for a further read.
 Unidentified or oversized events remain conservative invalidations.
 A failed or superseded action readback does not consume its completion.
+A head-changing action requires a successful full readback.
+A later scoped selection cannot cover it.
+Index and file-only actions retain their scoped readback coverage.
 The bounded identity maps belong to the browser and retain no engine workspace-check result.
+
+## s13-8. Persistent Git read failures caused a retry and toast storm.
+
+Found in review round 2 on 2026-11-15.
+Status: fixed with bounded backoff and independent worktree reads.
+The round 1 finally block retried a failed read every one hundred milliseconds.
+The reviewer's probe counted 202 state requests and 101 toasts in ten seconds.
+A failed read now waits one second before retrying.
+The delay doubles after each consecutive failure and stops growing at sixty seconds.
+A fake-clock regression permits exactly six attempts per worktree in the first sixty seconds.
+The first failure of a given kind shows a toast.
+Later consecutive failures stay silent until recovery.
+A successful read clears its error and resets the retry sequence when no shown worktree remains in error.
+Explicit refresh, focus, reconnection and owner actions bypass the delay and restart it at one second if they fail.
+An unreadable worktree is marked without preventing other worktrees from loading.
+No worktree-level error display existed before this fix.
+The selected worktree now retains an error message after its toast disappears.
+Worktrees on another machine receive a local-only status message.
+They cause no read request, error toast or retry.
+Hidden tabs retain pending work without starting reads.
+
+## s13-9. A scoped selection could cover an integration whose full readback failed.
+
+Found in review round 2 on 2026-11-15.
+Status: fixed by retaining the action's required readback scope.
+Integration can change sibling counts as well as its own worktree.
+Reading only the selected worktree and its parent cannot cover its completion.
+Head-changing operations now require a successful full readback before their completion can be covered.
+Index and file-only operations keep their existing scoped coverage.
+A regression fails the full read on a sibling and then selects the integrated worktree.
+The sibling still receives a full retry before the completion is covered.
+
+## s13-10. Every state transition of a shown agent refreshed every worktree.
+
+Found in review round 2 on 2026-11-15.
+Status: fixed by filtering working transitions and scoping their reads.
+The connection compares the previous and next working state.
+Only a transition into or out of working invalidates Git for a known agent.
+The same rule applies to oversized events after their snapshot refresh.
+That invalidation reads only the agent's matching shown worktree.
+Turn-ended events retain their existing full refresh for a shown agent.
+An unknown agent's event is retained in a bounded waiting map.
+The event triggers one matching refresh when its folder appears in the roster.
+An unchanged sequence still emits the slow heartbeat fallback.
+A real authenticated socket regression also confirms that an engine stage reply and its encoded completion carry the same operation identity through the website connection.
+
+## s13-11. A pending Git invalidation polled every one hundred milliseconds while an action was busy.
+
+Found in review round 2 on 2026-11-15.
+Status: fixed by waking the scheduler when the action ends.
+A busy action now leaves no polling timer.
+Its finally block schedules the pending work once the busy keys have cleared.
+The same wake applies when an older background read finishes.
+A held-action fake-clock regression requires zero requests and zero timers while the action remains busy.
+
+## s13-12. A removed worktree could leave its scoped refresh timer running.
+
+Found while implementing fix round 2 on 2026-11-15.
+Status: fixed with a failing-first roster-removal regression.
+A queued agent refresh retained the removed worktree's identity.
+The next full read could not clear it because it visited only current worktrees.
+Successful reads now retire the captured scopes that they cover, including removed worktrees.
+A newer scoped event retains its later version and still receives another read.

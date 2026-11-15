@@ -75,6 +75,8 @@ export interface StoreRequest {
   readonly heldBy: string | null
 }
 export interface StoreWorktree {
+  gitError?: string | null
+  gitUnsupported?: boolean
   readonly checkout?: "main" | "worktree"
   readonly id: string; readonly repo: string; readonly kind: "base" | "project" | "team" | "agent"; readonly branch: string
   readonly parent: string | null; readonly parentId: string | null; readonly machine: string; readonly folder: string

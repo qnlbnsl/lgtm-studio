@@ -756,11 +756,12 @@ export function GitTab({ s, project }) {
         <button type="button" aria-pressed=${mode === 'split'} aria-label="Split diff" data-tip=${narrow ? 'Split, best on a wide window' : 'Split'} onClick=${() => setMode('split')}><${Icon} name="columns-2" size=${14} /></button>
       </div>`}
     </div>
-    <${Integrate} s=${s} w=${w} project=${project} />
+    ${live.on && (w.gitError || w.gitUnsupported) && html`<div class="diff-note" role=${w.gitError ? 'alert' : 'status'}>${w.gitError ? 'Git state could not be read: ' + w.gitError : 'Git is available only for a workspace on local.'}</div>`}
+    ${(!live.on || !w.gitError && !w.gitUnsupported) && html`<${Integrate} s=${s} w=${w} project=${project} />`}
     ${w.merge && tab !== 'conflicts' && html`<div class="git-integrate warn"><${Icon} name="triangle-alert" size=${14} class="warn-text" /><span class="grow"><b>A merge stopped on ${plural(conflictCount || w.merge.files.length, 'conflicted file')}.</b> Commits wait until it is finished or aborted.</span>
       <button type="button" class="btn sm warn" onClick=${() => setTab('conflicts')}>Resolve conflicts</button></div>`}
-    ${tab === 'changes' ? html`<${Changes} key=${w.id} s=${s} w=${w} mode=${mode} phone=${phone} />`
+    ${(!live.on || !w.gitError && !w.gitUnsupported) && (tab === 'changes' ? html`<${Changes} key=${w.id} s=${s} w=${w} mode=${mode} phone=${phone} />`
       : tab === 'history' ? html`<${History} key=${w.id} s=${s} w=${w} mode=${mode} phone=${phone} />`
-      : html`<${Conflicts} key=${w.id} s=${s} w=${w} phone=${phone} />`}
+      : html`<${Conflicts} key=${w.id} s=${s} w=${w} phone=${phone} />`)}
   </fieldset>`;
 }

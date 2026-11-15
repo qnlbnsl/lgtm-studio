@@ -24,7 +24,7 @@ import { mapConnection, mapOwner, mapSnapshot, type ConnectionStatus, type Engin
 export type SessionStatus = "checking" | "in" | "out" | "rejected" | "expired" | "unavailable" | "logout-unconfirmed"
 export interface StorePatch extends Partial<EngineRecords> {
   readonly gitRevision?: number
-  readonly gitChange?: { readonly requestId?: string; readonly agentId?: string }
+  readonly gitChange?: { readonly requestId?: string; readonly agentId?: string; readonly scoped?: boolean }
   readonly gitHeartbeat?: number
   readonly chatEvent?: unknown
   readonly session?: { readonly status: SessionStatus; readonly firstRun: boolean }
@@ -250,9 +250,12 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
               yield* apply(item, refresh)
             }
             else if (item._tag === "client.Oversized" && needsRefresh(item.tag)) {
+              const previous = current?.agents.find((a) => a.agentId === item.agentId)
               yield* refresh(item.sequence)
-              if (gitRefreshTags.has(item.tag) || gitActivityTags.has(item.tag)) write({ gitRevision: ++gitRevision,
-                gitChange: gitActivityTags.has(item.tag) && item.agentId !== undefined ? { agentId: item.agentId } : {} })
+              const next = current?.agents.find((a) => a.agentId === item.agentId)
+              const workingChanged = previous === undefined || next === undefined || (previous.state._tag === "working") !== (next.state._tag === "working")
+              if (gitRefreshTags.has(item.tag) || item.tag === "TurnEnded" || item.tag === "StateChanged" && workingChanged) write({ gitRevision: ++gitRevision,
+                gitChange: gitActivityTags.has(item.tag) && item.agentId !== undefined ? { agentId: item.agentId, ...(item.tag === "StateChanged" ? { scoped: true } : {}) } : {} })
             }
             after = Math.max(after, item.sequence) as EventSequence
             failures = 0
@@ -274,6 +277,8 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
     // A pushed event either changes one agent's state in place or asks for a fresh snapshot.
     const apply = (item: ClientEnvelope, refresh: (minimum?: number) => Effect.Effect<void, unknown>) => Effect.gen(function* () {
       const event = item.event
+      const previous = event._tag === "StateChanged" ? current?.agents.find((a) => a.agentId === event.agentId) : undefined
+      const workingChanged = event._tag === "StateChanged" && (previous === undefined || (previous.state._tag === "working") !== (event.state._tag === "working"))
       if (event._tag.startsWith("project.") || event._tag.startsWith("board.") && event._tag !== "board.Read") boardRevision++
       if (event._tag === "AccountOutOfUsage" || event._tag === "AccountAvailable") {
         accountLimits = { ...accountLimits, [event.accountId]: event._tag === "AccountOutOfUsage" ? event.resetAt ?? null : null }
@@ -286,8 +291,8 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
           return { ...updated, displayedState: displayedState(updated) }
         }) })
       } else if (needsRefresh(event._tag)) yield* refresh(item.sequence)
-      if (gitRefreshTags.has(event._tag) || gitActivityTags.has(event._tag)) {
-        const change = (event._tag === "TurnEnded" || event._tag === "StateChanged") ? { agentId: event.agentId }
+      if (gitRefreshTags.has(event._tag) || event._tag === "TurnEnded" || workingChanged) {
+        const change = (event._tag === "TurnEnded" || event._tag === "StateChanged") ? { agentId: event.agentId, ...(event._tag === "StateChanged" ? { scoped: true } : {}) }
           : { ...(event._tag === "project.GitFinished" ? event.operationRequestId !== undefined ? { requestId: event.operationRequestId } : {}
             : item.requestId !== undefined ? { requestId: item.requestId } : {}) }
         if (!signal.aborted) write({ gitRevision: ++gitRevision, gitChange: change })

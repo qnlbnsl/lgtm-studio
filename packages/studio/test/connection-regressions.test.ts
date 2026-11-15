@@ -132,12 +132,12 @@ for (const tag of ["project.GitFinished", "project.GitEvidenceReported", "projec
 
 for (const tag of ["TurnEnded", "StateChanged"]) for (const oversized of [false, true]) {
   it(`maps Git activity for ${tag}${oversized ? " oversized" : ""}`, async () => {
-    const next = { ...engineSnapshot, sequence: 43 } as ClientSnapshot;
-    const event = tag === "StateChanged" ? { _tag: tag, agentId: "ag-lead", state: { _tag: "idle" } } : { _tag: tag, agentId: "ag-lead", compact: false };
+    const next = { ...engineSnapshot, sequence: 43, agents: engineSnapshot.agents.map(a => a.agentId === "ag-lead" ? { ...a, state: { _tag: "working" } } : a) } as unknown as ClientSnapshot;
+    const event = tag === "StateChanged" ? { _tag: tag, agentId: "ag-lead", state: { _tag: "working" } } : { _tag: tag, agentId: "ag-lead", compact: false };
     const item = oversized ? { _tag: "client.Oversized", sequence: 43, tag, agentId: "ag-lead" } : { sequence: 43, occurredAt: 1, event };
     const h = harness({ next, items: [item] });
     await vi.waitFor(() => expect(h.state.gitRevision).toBe(1));
-    expect((h.state as any).gitChange).toEqual({ agentId: "ag-lead" });
+    expect((h.state as any).gitChange).toEqual({ agentId: "ag-lead", ...(tag === "StateChanged" ? { scoped: true } : {}) });
   });
 }
 
@@ -159,4 +159,18 @@ it("publishes an unchanged-sequence heartbeat for the Git fallback", async () =>
   const h = harness({ items: [{ _tag: "client.Checkpoint", sequence: 42 }] });
   await vi.waitFor(() => expect((h.state as any).gitHeartbeat).toBeTypeOf("number"));
   expect(h.state.gitRevision).toBe(0);
+});
+
+for (const oversized of [false, true]) for (const [before, after, refresh] of [
+  ["idle", "working", true], ["working", "idle", true], ["idle", "paused", false], ["working", "working", false]
+] as const) it(`scopes only working transitions ${before} to ${after}${oversized ? " oversized" : ""}`, async () => {
+  const agents = (state: string) => engineSnapshot.agents.map(a => a.agentId === "ag-lead" ? { ...a, state: { _tag: state } } : a);
+  const snapshot = { ...engineSnapshot, agents: agents(before) } as ClientSnapshot;
+  const next = { ...engineSnapshot, sequence: 43, agents: agents(after) } as unknown as ClientSnapshot;
+  const item = oversized ? { _tag: "client.Oversized", sequence: 43, tag: "StateChanged", agentId: "ag-lead" }
+    : { sequence: 43, occurredAt: 1, event: { _tag: "StateChanged", agentId: "ag-lead", state: { _tag: after } } };
+  const h = harness({ snapshot, next, items: [item] });
+  await vi.waitFor(() => expect(h.state.agents?.[0]?.state).toBe(after === "paused" ? "paused" : after));
+  expect(h.state.gitRevision).toBe(refresh ? 1 : 0);
+  if (refresh) expect(h.state.gitChange).toEqual({ agentId: "ag-lead", scoped: true });
 });

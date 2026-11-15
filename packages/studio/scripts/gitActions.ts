@@ -5,6 +5,7 @@ export function gitActionsSource(path: string, source: string): string {
     source = source.replace(from, to)
   }
   if (path === "js/screens/git.js") {
+    replace('class="diff-note" role=${w.gitError ?', 'class="diff-note" aria-atomic="true" role=${w.gitError ?')
     replace("<div class=\"cf-body\">${(() =>", "<div class=\"cf-body\">${live.on && !sel.loaded && html`<div class=\"diff-note\" role=\"status\">Loading conflicts…</div>`}${(() =>")
     replace("f.resolved ? 'Resolved' : left(f)", "f.resolved ? 'Resolved' : live.on && !f.loaded ? 'Loading…' : left(f)")
     replace("disabled=${sel.resolved} onClick=${() => choose", "disabled=${sel.resolved || (live.on && !sel.loaded)} onClick=${() => choose")
@@ -18,7 +19,7 @@ export function gitActionsSource(path: string, source: string): string {
     // Automatic reads never disable an owner action. An explicit refresh must
     // start a fresh generation even when an older automatic read is pending.
     replace("if (gitVisible()) return refreshGit(screen.project);", "if (gitVisible()) return refreshGit(screen.project, true);")
-    replace("export function refreshGit(project = screen?.project) { return run('git', () => loadGit(project)); }", "export function refreshGit(project = screen?.project, background = false) {\n  if (background) { if (busy('git') || busy('git-read')) { scheduleGitRefresh(); return false; } return run('git-read', () => loadGit(project)); }\n  return run('git', () => { revision++; return loadGit(project); });\n}")
+    replace("export function refreshGit(project = screen?.project) { return run('git', () => loadGit(project)); }", "export function refreshGit(project = screen?.project, background = false) {\n  if (background) { if (busy('git') || busy('git-read') || busy('git-plan')) return false; return run('git-read', () => loadGit(project, gitFullPending() ? undefined : [...gitScopes.keys()])); }\n  return run('git', () => { revision++; return loadGit(project); });\n}")
     replace("lost: plan.paths, action: 'Discard', onConfirm:", "lost: plan.paths, action: 'Discard', waitForReply: true, pendingLabel: 'Discarding…', onConfirm:")
     replace("export function gitDetail(id, commit) { return run('git', () => loadGitDetail(id, commit)); }", "export function gitDetail(id, commit) { return run('git', () => { revision++; return loadGitDetail(id, commit); }); }")
     replace("const conflict = read(await request('project.conflict.choose'", "revision++;\n    const conflict = read(await request('project.conflict.choose'")
