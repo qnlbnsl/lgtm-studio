@@ -28,6 +28,8 @@ it('patches only the live output and fails closed if the target screen moves', (
   expect(result).toContain('Save name')
   expect(result).toContain('projectSettings.deleteTeam')
   expect(result).toContain('projectSettings.changeApproval')
+  expect(result).toContain('projectSettings.changePermission')
+  expect(() => projectSettingsSource('js/screens/service.js', source.replace('board.changePermission', 'board.movedPermission'))).toThrow('Project settings integration')
   expect(() => projectSettingsSource('js/screens/service.js', source.replace('board.changeApproval', 'board.movedApproval'))).toThrow('Project settings integration')
   expect(result).toContain('Engine work needed')
   expect(result.slice(result.indexOf('export function ProjectSettings'))).not.toContain('refuse()')
@@ -50,7 +52,7 @@ function setup(request: (tag: string, payload: any) => Promise<unknown>) {
   engine.setConnection({ request })
 }
 for (const [label, tag, key, action] of [
-  ['grant approval', 'project.approval.grant', 'project:project', () => actions.changeApproval('project', 'end-result', true)],
+  ['change permission', 'project.permission.set', 'project:project', () => actions.changePermission('project', 'planning', 'ask')],
   ['withdraw approval', 'project.approval.withdraw', 'project:project', () => actions.changeApproval('project', 'build', false)],
   ['rename', 'project.rename', 'project:project', () => actions.renameProject('project', 'New name')],
   ['goal', 'project.goal.set', 'project:project', () => actions.saveGoal('project', 'New goal')],
@@ -121,5 +123,38 @@ it('draws every unsupported setting disabled with its hover reason, while keepin
     expect(element.querySelectorAll('.svc-teams tbody a')).toHaveLength(4)
     expect(element.textContent).toContain('/srv/repos/orchard/.worktrees/harvest')
     expect(element.querySelector('[aria-label="Lead model"]')).not.toBeNull()
+  } finally { kit.render(null, element); element.remove() }
+})
+
+it('the standalone mock changes each permission and withdraws a sample grant independently', async () => {
+  const kit = await import('../../../design/mock/vendor/htm-preact/standalone.module.js' as string)
+  const data = await import('../../../design/mock/js/data.js' as string)
+  const screen = await import('../../../design/mock/js/screens/service.js' as string)
+  lib.live.on = false; vi.useFakeTimers()
+  const state = { ...data.seed(), ui: {}, toasts: [] }; screen.seedService(state); lib.store.state = state
+  const project = state.projects[0], stage = project.stage
+  const element = document.createElement('div'); document.body.append(element)
+  const draw = () => kit.render(kit.h(screen.ProjectSettings, { s: state, project }), element)
+  const control = (permission: string) => element.querySelector<HTMLSelectElement>('#ps-permission-' + permission)!
+  const change = (permission: string, value: string) => { control(permission).value = value; control(permission).dispatchEvent(new Event('change', { bubbles: true })); draw() }
+  try {
+    draw()
+    for (const permission of ['planning', 'starting-work']) {
+      expect(control(permission).value).toBe('allowed')
+      expect([...control(permission).options].map((o) => o.text)).toEqual(['Allowed', 'Not allowed', 'Always ask for permission'])
+    }
+    change('planning', 'denied')
+    expect(project.permissions.planning).toEqual({ setting: 'denied', granted: false })
+    expect(control('starting-work').value).toBe('allowed')
+    change('planning', 'ask')
+    expect(element.querySelector('[aria-label="Project planning grant"]')?.textContent).toBe('Not granted')
+    expect(element.querySelector('[aria-label="Withdraw Project planning"]')).toBeNull()
+    project.permissions = { planning: { setting: 'ask', granted: true }, 'starting-work': { setting: 'ask', granted: true } }; draw()
+    element.querySelector<HTMLButtonElement>('[aria-label="Withdraw Project planning"]')!.click(); draw()
+    expect(project.permissions.planning.granted).toBe(false)
+    expect(project.permissions['starting-work'].granted).toBe(true)
+    change('starting-work', 'allowed')
+    expect(element.querySelector('[aria-label="Starting work grant"]')).toBeNull()
+    expect(project.stage).toBe(stage)
   } finally { kit.render(null, element); element.remove() }
 })

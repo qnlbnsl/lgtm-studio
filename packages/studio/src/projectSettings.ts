@@ -1,5 +1,5 @@
 // The lead's requested configuration and applied configuration are separate facts.
-import type { AgentChoices, AgentConfiguration, ProjectId, TeamId } from '@lgtm/contracts'
+import type { AgentChoices, AgentConfiguration, ProjectId, TeamId, LeadPermission, LeadPermissionSetting } from '@lgtm/contracts'
 export function mapLeadSettings(report: AgentChoices & { readonly configuration: AgentConfiguration }) {
   const options = (list: AgentChoices['models']) => list.options.map((option) => ({ id: option.id, label: option.label ?? option.id }))
   return {
@@ -16,3 +16,5 @@ export const projectRenamePayload = (projectId: string, name: string) => ({ proj
 export const teamDeletePayload = (projectId: string, teamId: string) => ({ projectId: projectId as ProjectId, teamId: teamId as TeamId })
 
 export const projectApprovalPayload = (projectId: string, approval: 'end-result' | 'build') => ({ projectId: projectId as ProjectId, approval })
+
+export const projectPermissionPayload = (projectId: string, permission: LeadPermission, setting: LeadPermissionSetting) => ({ projectId: projectId as ProjectId, permission, setting })

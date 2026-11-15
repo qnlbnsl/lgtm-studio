@@ -1195,9 +1195,10 @@ This is for sprint and board changes only. Other approvals keep the short card w
 
 Requested by the owner on 2026-11-14.
 The lead may propose skipping planning when the work is small.
-The owner must approve that path before building starts.
+The lead agrees that path with the owner before building starts.
+The permission settings added on 2026-11-15 determine whether a separate permission card is needed.
 A build team's lead may do the work itself without starting workers.
-The project lead may do a one-off small correction with the owner's approval.
+The project lead may propose doing a one-off small correction itself.
 Unit s10-lead builds the opening instruction and the engine's approval gates for these paths.
 Automatic choice of a path by the workflow is not built.
 
@@ -1213,3 +1214,54 @@ The worktree and branch that the agent uses are undecided.
 How the change is merged is undecided.
 How the agent appears in the tree is undecided.
 This feature is not built in unit s10-lead.
+
+## The lead has two independent permissions, allowed by default.
+
+Requested by the owner on 2026-11-15.
+The owner's words were:
+
+> "These are not just approvals, but lead permissions, and it should say what it allows the lead to do. The end result needs to say something more like project planning, which, by the way, needs to be approved by default now. Otherwise, what else is the lead going to do? The whole point was to create sprints, teams, and tasks."
+
+> "What I had a problem with was that it directly jumped to that. It should work with me to first understand what I'm talking about before it goes on to build all of that stuff."
+
+> "Yes, both permissions should be enabled by default. Honestly, building permission shouldn't be dependent on the end result, but it's fine. Just make those cosmetic changes and, by default, set both of those grants to approved."
+
+> "We can also add a checkbox or a dropdown with options like "Allowed," "Not allowed," or "Always ask for permission.""
+
+Unit s11-permissions builds this change.
+"Lead permissions" replaces "Approvals" in Project settings.
+"Project planning" says, "The lead can create sprints, teams and tasks."
+"Starting work" says, "The lead can start workers and move tasks out of the queue."
+Each dropdown offers "Allowed", "Not allowed" and "Always ask for permission", in that order.
+Both permissions default to "Allowed" on new projects and existing projects without a recorded setting.
+Only the owner can change a setting through the website, the command-line interface or the client application programming interface (API).
+A permission set to "Not allowed" refuses its gated actions and any request to grant it.
+The refusal tells the lead that the owner turned it off and that it cannot be requested.
+The permissions are independent.
+Withdrawing Project planning leaves Starting work intact.
+Starting work can be granted before Project planning.
+The gated actions are unchanged from unit s10-lead.
+An owner action remains ungated.
+A worker can still finish or annotate its own started task.
+
+The orchestrator interprets "Always ask for permission" as requiring one explicit owner grant that lasts until the owner changes that setting or withdraws the grant.
+It does not mean asking again before each action.
+The engine continues to require the owner's exact "Accepted" when granting through a card.
+An ask permission displays "Granted" or "Not granted" beside its dropdown.
+Only a granted ask permission shows "Withdraw".
+Changing a setting clears that permission's grant and invalidates its earlier cards.
+The other permission is unchanged.
+Old approval events still replay and retain their recorded grants.
+Historical grants do not override an explicit denied setting.
+No permission change moves the project stage backwards.
+The engine writes fixed card sentences using the new permission names and the same words as the help lines.
+The two outcome sentences remain "Approval recorded." and "Approval not recorded. Ask again if you still need it."
+The old scope-withdrawn outcome is no longer produced.
+
+A new project still starts in Define.
+The lead first works with the owner to understand the goal and agree the end result.
+It asks an ordinary confirmation question before creating sprints, teams or tasks.
+A permission allowed by default does not remove that conversation.
+The opening instruction keeps the small-work and nitpick paths requested on 2026-11-14.
+If an action is refused because a permission requires a request, the lead uses `ask` with `projectApproval`.
+If an action is refused because the permission is off, the lead tells the owner and stops.

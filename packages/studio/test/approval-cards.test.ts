@@ -19,7 +19,7 @@ for (const variant of ['card', 'detail']) it(`approval ${variant} states its fix
   const request: any = mapHomeRequest({ ...original, kind: 'question', status: 'open', canAnswer: true,
     display: { ...original.display, projectApproval: 'skip-planning-and-build', proposedAnswer: 'Accepted', title: 'A harmless title' } } as never, state.agents)
   expect(request.projectApproval).toBe('skip-planning-and-build')
-  expect(request.projectApprovalEffect).toBe('Accepting lets the lead skip planning, create sprints, teams and tasks, and start building.')
+  expect(request.projectApprovalEffect).toBe('Accepting grants Project planning and Starting work. The lead can create sprints, teams and tasks. The lead can start workers and move tasks out of the queue.')
   const element = document.createElement('div'); document.body.append(element)
   try {
     kit.render(kit.h(RequestBlock, { s: state, request, variant }), element)

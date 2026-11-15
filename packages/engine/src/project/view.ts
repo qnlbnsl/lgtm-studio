@@ -108,6 +108,21 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
     case "project.ArchiveStarted": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, archiving: true })) }
     case "project.Archived": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, archiving: false, archivedAt: at })) }
     case "project.Restored": return { ...view, projects: change(view.projects, event.projectId, (row) => { const { archivedAt: _a, ...rest } = row; return { ...rest, archiving: false } }) }
+    case "project.PermissionChanged":
+    case "project.PermissionWithdrawn": return { ...view, projects: change(view.projects, event.projectId, (row) => {
+      if (event.permission === "planning") {
+        const { endResultApproval: _end, skipPlanningApproval: _skip, ...rest } = row
+        return { ...rest, planningPermissionChangedAt: seq, ...(event._tag === "project.PermissionChanged" ? { planningPermission: event.setting } : {}) }
+      }
+      const { buildApproval: _build, ...rest } = row
+      return { ...rest, workPermissionChangedAt: seq, ...(event._tag === "project.PermissionChanged" ? { workPermission: event.setting } : {}) }
+    }) }
+    case "project.PermissionDecided": {
+      let next = view
+      for (const permission of event.granted) next = projectAfter(next, { _tag: "project.ApprovalDecided", projectId: event.projectId,
+        questionId: event.questionId, approval: permission === "planning" ? "end-result" : "build", approved: true }, sequence, occurredAt)
+      return next
+    }
     case "project.ApprovalGranted":
     case "project.ApprovalDecided": return event._tag === "project.ApprovalDecided" && !event.approved ? view : { ...view, projects: change(view.projects, event.projectId, (row) => {
       const approvalId = event._tag === "project.ApprovalGranted" ? event.requestId : event.questionId

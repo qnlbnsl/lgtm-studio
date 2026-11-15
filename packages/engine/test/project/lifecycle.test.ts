@@ -65,6 +65,8 @@ it.live("creates through the authenticated API, launches saved defaults, inherit
     expect((yield* api["project.create"]({ ...payload, name: "Different" }).pipe(Effect.result))._tag).toBe("Failure")
     const leadApi = yield* connect(rig.socket, peer.env.LGTM_TOKEN!)
     for (const projectApproval of ["end-result", "build"] as const) {
+      yield* api["project.permission.set"]({ requestId: freshRequest(), projectId: created.projectId,
+        permission: projectApproval === "end-result" ? "planning" : "starting-work", setting: "ask" })
       const { questionId } = yield* leadApi.ask({ requestId: freshRequest(), projectId: created.projectId, projectApproval, title: "Approve the next step?", text: "The agreed work." })
       yield* api.answer({ requestId: freshRequest(), kind: "question", id: questionId, text: "Accepted" })
     }

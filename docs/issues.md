@@ -14786,3 +14786,56 @@ Four of the fifteen runs failed.
 Two failed at line 88, one at line 85 and one at line 96.
 So `master` shows the same failures on this computer, and the earlier nine clean runs were too small a sample.
 The lead definition unit did not introduce this race.
+
+## s11-1. The project lead was locked by default behind approval cards.
+
+Found while implementing the owner's permission change on 2026-11-15.
+Status: fixed in unit s11-permissions.
+New projects and historical projects without approval events could not plan or start workers.
+The owner wants both lead permissions allowed by default.
+Project settings now offers three settings for each permission.
+Only the owner can change a setting.
+A denied permission refuses its actions and approval requests with the same explanation.
+The lead still confirms the end result through an ordinary owner question before planning.
+Regression tests cover the defaults, denied actions, exact card acceptance and four refused caller kinds.
+
+## s11-2. Building consent depended on planning consent and shared its withdrawal.
+
+Found while implementing the owner's permission change on 2026-11-15.
+Status: fixed in unit s11-permissions.
+The owner could not grant building first.
+Withdrawing the end result also withdrew building.
+An open building card could close with the scope-withdrawn outcome described in issue 968.
+The two permissions now operate independently.
+New withdrawals use `project.PermissionWithdrawn`.
+The old withdrawal event retains its historical replay meaning.
+The three old approval event types remain readable.
+An open Starting work request can now grant that permission after Project planning is withdrawn.
+Tests cover both answer outcomes and grants in reverse order.
+
+## s11-3. A pending permission card must not restore a grant after its setting changes.
+
+Found while implementing permission settings on 2026-11-15.
+Status: fixed in unit s11-permissions.
+An owner can change a setting while an earlier card remains open.
+Accepting that card must not undo the later setting or withdrawal.
+The projection records each permission's latest change sequence.
+The answer planner compares the card's opening sequence with that change.
+An older card closes without granting the permission.
+A newer request remains available when the permission requires a request.
+Tests cover changing each permission off and back to ask before accepting an older card.
+Tests also cover withdrawal while another request is open.
+A combined card decides each permission separately.
+Changing one setting does not invalidate the other permission on that card.
+
+## s11-4. New permission events needed explicit redaction positions.
+
+Found during unit s11-permissions regression checks on 2026-11-15.
+Status: fixed in the same unit.
+The initial permission events lacked the redaction structure for their project identifiers and fixed enum values.
+A registered secret colliding with a permission value made the stored event fail schema validation.
+A failing roundtrip test reproduced the missing permission position.
+The new events now preserve only their schema identities and fixed enum values.
+Project records preserve the two fixed permission settings too.
+Ordinary prose continues to pass through secret redaction.
+The project event test covers every event type and collisions with the new enum values.
