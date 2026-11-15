@@ -15114,7 +15114,7 @@ The cause of the missed startup bound has not been established.
 No wait or deadline was widened.
 The orchestrator should retain this observation when assessing the full check.
 
-## s15-1. Codex tool row titles exposed adapter names, quotes and shell wrappers.
+## 1010. Codex tool row titles exposed adapter names, quotes and shell wrappers.
 
 Found: 2026-11-15, from the owner's service inspection.
 Status: fixed in unit s15-chat2.
@@ -15134,7 +15134,7 @@ An uncorrelated ask row says "Asked a question".
 List titles use the past tense.
 Search titles remove display quotes while preserving apostrophes inside the query.
 
-## s15-2. Question replies with recommendations escaped the echo filter.
+## 1011. Question replies with recommendations escaped the echo filter.
 
 Found: 2026-11-15, from the owner's service inspection.
 Status: fixed for the supplied announcement shape in s15 fix round 1.
@@ -15151,7 +15151,7 @@ The recommendation stays visible after an answer and while the question is held 
 The thread keeps the card at the question event's sequence.
 Issue 984 tracks the missing real question recordings.
 
-## s15-3. The shell summary accepted programs in arbitrary folders as known shells.
+## 1012. The shell summary accepted programs in arbitrary folders as known shells.
 
 Found: 2026-11-15, in review round 1 of unit s15-chat2.
 Status: fixed in s15 fix round 1.
@@ -15165,7 +15165,7 @@ Both quote styles are supported.
 Empty wrappers retain the original text.
 Title-only Bash wrappers now use the same parser before generic tool-name handling.
 
-## s15-4. The initial announcement filter deleted an ordinary agent sentence.
+## 1013. The initial announcement filter deleted an ordinary agent sentence.
 
 Found: 2026-11-15, in review round 1 of unit s15-chat2.
 Status: fixed in s15 fix round 1.
