@@ -253,7 +253,8 @@ export function createProject({ repo, goal, machine, subscription, newRepo }) {
     delete st.pending[leadId];
     lead.state = 'waiting'; lead.activity = 'Waiting for your answer';
     threadOf(st, leadId).push(
-      { id: uid('m'), type: 'tools', ts: Date.now(), summary: 'Named the project · made its worktree', lines: [{ verb: 'Name', arg: name, res: '' }, { verb: 'Branch', arg: 'feat/' + sl, res: `from ${r.main}` }] },
+      { id: uid('m'), type: 'tools', ts: Date.now(), summary: 'Named the project', raw: 'project.name', status: 'completed', details: [{ label: 'Name', text: name }] },
+      { id: uid('m'), type: 'tools', ts: Date.now(), summary: 'Created worktree', raw: 'project.worktree.create', status: 'completed', details: [{ label: 'Branch', text: 'feat/' + sl }, { label: 'Base', text: r.main }] },
       { id: uid('m'), type: 'agent', ts: Date.now(), text: `I named this project **${name}**.\n\nTwo questions before I plan. Who uses this? Does it change any screens? If it does, a Design team draws them first.` });
   }), 2600);
   return id;

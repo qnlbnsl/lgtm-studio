@@ -85,6 +85,9 @@ it.live("roundtrips every project event and receipt identity while keeping works
     { _tag: "project.Placed", projectId, worktreeId, machineId: text },
     { _tag: "project.PreferencesChanged", projectId, shell: text },
     { _tag: "project.Renamed", projectId, name: text },
+    { _tag: "project.PermissionChanged", projectId, permission: "planning", setting: "denied" },
+    { _tag: "project.PermissionDecided", projectId, questionId: `permission-${marker}`, granted: ["starting-work"] },
+    { _tag: "project.PermissionWithdrawn", projectId, permission: "starting-work" },
     { _tag: "project.ApprovalDecided", projectId, questionId: `approval-${marker}`, approval: "end-result", approved: true },
     { _tag: "project.ApprovalGranted", projectId, approval: "build", requestId: `approval-${marker}` },
     { _tag: "project.ApprovalWithdrawn", projectId, approval: "build" },
@@ -121,7 +124,7 @@ it.live("roundtrips every project event and receipt identity while keeping works
   expect(receipt.reply).toEqual({ requestId, ...receiptIds, owner: "[REDACTED]", needs: ["[REDACTED]"], text: "[REDACTED]", nested: { projectId: "[REDACTED]" }, envelopes: batch })
   // A repeated receipt must replay the original identities and envelope times.
   expect(yield* log.append({ _tag: "owner" }, requestId, "a".repeat(64), input, {}, () => reply)).toEqual(batch)
-}), ["collision-marker"]).pipe(Effect.orDie))
+}), ["collision-marker", "planning", "denied", "starting-work"]).pipe(Effect.orDie))
 const historicProject = (fields: Record<string, unknown>, requestId = freshRequest()) => Effect.gen(function* () {
   const log = yield* EventLog
   const projectId = Schema.decodeUnknownSync(ProjectId)(`project-${requestId}`)

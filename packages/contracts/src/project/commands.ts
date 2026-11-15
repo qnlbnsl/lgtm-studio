@@ -4,7 +4,7 @@ import * as RpcGroup from "effect/rpc/RpcGroup"
 import { ClientRequest } from "../requests.ts"
 import type { CallerKind } from "../commands.ts"
 import { AgentId, EventSequence, RequestId } from "../ids.ts"
-import { Project, ProjectCreation, ProjectId, ProjectName, ProjectSettings, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskHistoryEntry, TaskId, Team, Workspace } from "./schema.ts"
+import { LeadPermission, LeadPermissionSetting, Project, ProjectCreation, ProjectId, ProjectName, ProjectSettings, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskHistoryEntry, TaskId, Team, Workspace } from "./schema.ts"
 
 import { ProjectMockRpcGroup, projectMockAccess, SetupState } from "./mocks.ts"
 import { ProjectDesignRpcGroup, projectDesignAccess } from "./design.ts"
@@ -55,6 +55,7 @@ export const ProjectRpcGroup = RpcGroup.make(
   Rpc.make("goal.set", { payload: { ...project, goal: ProjectText }, success: Ack, error: Refused }),
   Rpc.make("archive", { payload: project, success: Ack, error: Refused }),
   Rpc.make("restore", { payload: project, success: Ack, error: Refused }),
+  Rpc.make("permission.set", { payload: { ...project, permission: LeadPermission, setting: LeadPermissionSetting }, success: Ack, error: Refused }),
   Rpc.make("approval.grant", { payload: { ...project, approval: Schema.Literals(["end-result", "build"]) }, success: Ack, error: Refused }),
   Rpc.make("approval.withdraw", { payload: { ...project, approval: Schema.Literals(["end-result", "build"]) }, success: Ack, error: Refused }),
   Rpc.make("rename", { payload: { ...project, name: ProjectName }, success: Ack, error: Refused }),
@@ -85,7 +86,7 @@ export const projectAccess = {
   ...projectGitAccess, ...projectMockAccess, ...projectDesignAccess, "project.placement.preview": owner,
   "project.settings": owner, "project.settings.set": owner, "project.repository.add": owner, "project.repository.locate": owner,
   "project.repositories": owner, "project.workspace.register": owner, "project.workspaces": owner, "project.create": owner,
-  "project.approval.grant": owner, "project.approval.withdraw": owner,
+  "project.permission.set": owner, "project.approval.grant": owner, "project.approval.withdraw": owner,
   "project.rename": member, "project.place": owner, "project.preferences.set": owner,
   "project.creation.abandon": owner, "project.creations": owner, "project.goal.set": owner, "project.archive": owner, "project.restore": owner,
   "project.requests": member, "project.stage.set": member, "project.read": member, "project.team.create": member,

@@ -1,5 +1,5 @@
 import { completionOwed, boardView } from "../board/wake.ts"
-import { requireEndResult, requireBuilding, endResultReason, buildingReason } from "./approvals.ts"
+import { requireEndResult, requireBuilding, permissionSetting, permissionOffReason } from "./approvals.ts"
 import { validateWorkflowFolder, workflowFolderReason } from "../workflows/folder.ts"
 import { declineMainReview } from "./gitReview.ts"
 import { randomUUID } from "node:crypto"
@@ -143,9 +143,18 @@ const approvalChange = (approved: boolean): PiecePlanner => (input, raw) => Effe
   if (input.actor._tag !== "owner") return yield* refused("Only the owner can change project approvals.")
   const p = raw as Payload<"project.approval.grant">, project = yield* requireProject(input, p.projectId)
   if (project.archiving || project.archivedAt !== undefined) return yield* refused("The project is archived or archiving.")
-  if (approved && p.approval === "build" && project.endResultApproval === undefined && project.skipPlanningApproval === undefined) return yield* refused(endResultReason)
+  const permission = p.approval === "build" ? "starting-work" : "planning"
+  if (permissionSetting(project, permission) === "denied") return yield* refused(permissionOffReason(permission))
+  if (permissionSetting(project, permission) !== "ask") return yield* refused("This lead permission is already allowed and needs no grant.")
   return ack(p.requestId, [approved ? { _tag: "project.ApprovalGranted", projectId: p.projectId, approval: p.approval, requestId: p.requestId }
-    : { _tag: "project.ApprovalWithdrawn", projectId: p.projectId, approval: p.approval }])
+    : { _tag: "project.PermissionWithdrawn", projectId: p.projectId, permission }])
+})
+const permissionSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  if (input.actor._tag !== "owner") return yield* refused("Only the owner can change lead permissions.")
+  const p = raw as Payload<"project.permission.set">, project = yield* requireProject(input, p.projectId)
+  if (project.archiving || project.archivedAt !== undefined) return yield* refused("The project is archived or archiving.")
+  return ack(p.requestId, permissionSetting(project, p.permission) === p.setting ? []
+    : [{ _tag: "project.PermissionChanged", projectId: p.projectId, permission: p.permission, setting: p.setting }])
 })
 const rename: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.rename">; const project = yield* requireProject(input, p.projectId)
@@ -169,8 +178,8 @@ const preferencesSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
 const stageSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.stage.set">; const project = yield* requireProject(input, p.projectId)
   // Stages describe progress. Only an owner answer records consent.
-  if (input.actor._tag !== "owner" && p.stage !== "define" && project.endResultApproval === undefined && project.skipPlanningApproval === undefined) return yield* refused(endResultReason)
-  if (input.actor._tag !== "owner" && ["build", "review", "handover"].includes(p.stage) && project.buildApproval === undefined) return yield* refused(buildingReason)
+  if (p.stage !== "define") yield* requireEndResult(input, project)
+  if (["build", "review", "handover"].includes(p.stage)) yield* requireBuilding(input, project)
   const view = projectView(input.snapshot), head = own(view.mockHeads, p.projectId)
   const revision = head === undefined ? undefined : own(view.mockRevisions, projectKey(p.projectId, head))
   if (p.stage === "design" && (revision?.bundle.screens.length ?? 0) === 0) return yield* refused("projects without screens begin in Plan")
@@ -381,6 +390,7 @@ const taskHistory: ReadHandler = (input, raw) => Effect.gen(function* () {
   return yield* page(input, raw, decisionHistory(input.snapshot, task).map((row, index) => [String(index), row] as const), true)
 })
 export const projectPlanners = {
+  "project.permission.set": permissionSet,
   "project.approval.grant": approvalChange(true), "project.approval.withdraw": approvalChange(false),
   "project.settings.set": settingsSet, "project.repository.add": repositoryAdd(), "project.repository.locate": repositoryLocate(),
   "project.review.decline": declineMainReview,

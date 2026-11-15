@@ -1,7 +1,7 @@
 import { QuestionId, RequestId } from "../ids.ts"
 import * as Schema from "effect/Schema"
 import { GitAttempt, GitEvidence, GitMainReview } from "./git.ts"
-import { CreationFolderIdentity, FileSaveNotice, OwnerTaskNotification, Project, ProjectCreation, ProjectId, ProjectName, ProjectSettings, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskId, TaskState, Team, Workspace } from "./schema.ts"
+import { CreationFolderIdentity, FileSaveNotice, LeadPermission, LeadPermissionSetting, OwnerTaskNotification, Project, ProjectCreation, ProjectId, ProjectName, ProjectSettings, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskId, TaskState, Team, Workspace } from "./schema.ts"
 
 import { ProjectMockEvent } from "./mocks.ts"
 import { ProjectDesignEvent } from "./design.ts"
@@ -31,6 +31,9 @@ export const ProjectEvent = Schema.Union([
   Schema.TaggedStruct("project.Placed", { projectId: ProjectId, machineId: ProjectName, worktreeId: Workspace.fields.worktreeId }),
   Schema.TaggedStruct("project.PreferencesChanged", { projectId: ProjectId, shell: ProjectName }),
   Schema.TaggedStruct("project.Renamed", { projectId: ProjectId, name: ProjectName }),
+  Schema.TaggedStruct("project.PermissionChanged", { projectId: ProjectId, permission: LeadPermission, setting: LeadPermissionSetting }),
+  Schema.TaggedStruct("project.PermissionDecided", { projectId: ProjectId, questionId: QuestionId, granted: Schema.Array(LeadPermission).check(Schema.isMaxLength(2)) }),
+  Schema.TaggedStruct("project.PermissionWithdrawn", { projectId: ProjectId, permission: LeadPermission }),
   Schema.TaggedStruct("project.ApprovalGranted", { projectId: ProjectId, approval: Schema.Literals(["end-result", "build"]), requestId: RequestId }),
   Schema.TaggedStruct("project.ApprovalWithdrawn", { projectId: ProjectId, approval: Schema.Literals(["end-result", "build"]) }),
   Schema.TaggedStruct("project.ApprovalDecided", { projectId: ProjectId, questionId: QuestionId, approval: Schema.Literals(["end-result", "build", "skip-planning", "skip-planning-and-build"]), approved: Schema.Boolean }),

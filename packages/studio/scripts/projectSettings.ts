@@ -47,7 +47,7 @@ export function projectSettingsSource(path: string, source: string): string {
   replace("const configBusy = live.on && board.busy('configure:' + p.lead);", "const configBusy = live.on && (projectBusy || board.busy('configure:' + p.lead) || !choices || p.archiving);")
   replace('useEffect(() => setGoal(p.goal), [p.id]);', 'useEffect(() => setGoal(p.goal), [p.id, p.goal]);')
   replace("const projectBusy = live.on && board.busy('project:' + p.id);", "const projectBusy = live.on && board.busy('project:' + p.id);\n  const settingsLocked = projectBusy || (live.on && p.archiving);")
-  for (const action of ['renameProject', 'saveGoal', 'configureLead', 'deleteTeam', 'changeApproval']) replace('board.' + action, 'projectSettings.' + action, action === 'configureLead' ? 2 : 1)
+  for (const action of ['renameProject', 'saveGoal', 'configureLead', 'deleteTeam', 'changeApproval', 'changePermission']) replace('board.' + action, 'projectSettings.' + action, action === 'configureLead' ? 2 : 1)
   // Unsupported callbacks are unreachable behind native disabled controls.
   replace('if (live.on) { refuse(); return; }', 'if (live.on) return;', 7)
   replace('const asg = p.assignment ||', "const asg = live.on ? { state: 'unavailable', rows: {} } : p.assignment ||")
@@ -58,7 +58,7 @@ export function projectSettingsSource(path: string, source: string): string {
   replace('disabled=${projectBusy || !name.trim() || name.trim() === p.name}', 'disabled=${settingsLocked || !name.trim() || name.trim() === p.name}')
   replace('value=${name} disabled=${projectBusy}', 'value=${name} disabled=${settingsLocked}')
   replace('disabled=${projectBusy} onClick=${() => changeApproval', 'disabled=${settingsLocked} onClick=${() => changeApproval')
-  replace('disabled=${projectBusy || !p.approvals?.endResult}', 'disabled=${settingsLocked || !p.approvals?.endResult}')
+  replace('disabled=${projectBusy} onChange=${(e) => changePermission', 'disabled=${settingsLocked} onChange=${(e) => changePermission')
   replace('disabled=${projectBusy} onClick=${() => deleteTeam(t)}', 'disabled=${settingsLocked} onClick=${() => deleteTeam(t)}')
   replace('>Save goal</button>', ">${projectBusy ? 'Saving…' : 'Save goal'}</button>")
   replace('<select id="ps-base"', '<select disabled=${live.on} title=${live.on ? "Engine work needed" : null} id="ps-base"')

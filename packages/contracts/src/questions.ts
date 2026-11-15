@@ -10,15 +10,14 @@ export const ProjectRequestLinkFields = {
 }
 export type ProjectRequestLink = { readonly projectId?: typeof ProjectId.Type; readonly taskId?: typeof TaskId.Type; readonly sprintId?: typeof SprintId.Type }
 export const projectApprovalEffects = {
-  "end-result": "Accepting lets the lead create sprints, teams and tasks.",
-  "build": "Accepting lets building start.",
-  "skip-planning": "Accepting lets the lead skip planning and create sprints, teams and tasks.",
-  "skip-planning-and-build": "Accepting lets the lead skip planning, create sprints, teams and tasks, and start building."
+  "end-result": 'Accepting grants Project planning. The lead can create sprints, teams and tasks.',
+  "build": 'Accepting grants Starting work. The lead can start workers and move tasks out of the queue.',
+  "skip-planning": 'Accepting grants Project planning. The lead can create sprints, teams and tasks.',
+  "skip-planning-and-build": 'Accepting grants Project planning and Starting work. The lead can create sprints, teams and tasks. The lead can start workers and move tasks out of the queue.'
 } as const
 export const projectApprovalOutcomes = {
   recorded: "Approval recorded.",
-  notRecorded: "Approval not recorded. Ask again if you still need it.",
-  scopeWithdrawn: "Building approval was not recorded because the end result or skipping planning is no longer approved."
+  notRecorded: "Approval not recorded. Ask again if you still need it."
 } as const
 // Like the effect sentence, the engine-written outcome remains redactable text.
 export const ProjectApprovalOutcome = Schema.String
