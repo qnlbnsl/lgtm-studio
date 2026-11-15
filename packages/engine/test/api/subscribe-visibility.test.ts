@@ -16,6 +16,7 @@ import * as Redacted from "effect/Redacted";
 import * as Stream from "effect/Stream";
 
 import * as Server from "../../src/api/server.ts";
+import { projectView } from "../../src/project/view.ts";
 import { makeFakeRunner } from "../support/fakeRunner.ts";
 import { Views } from "../../src/views/Views.ts";
 import { currentVisibilityOracle } from "../support/currentVisibilityOracle.ts";
@@ -51,6 +52,11 @@ const parents: Record<string, string> = { "agent-child": "agent-self", "agent-gr
 // `n` makes its identifiers unique. Terminal events for the subscriber itself
 // are left out (`terminal`), because they would end its own access.
 const samples: Record<string, (a: string, n: string) => Record<string, unknown>> = {
+  // Project permission history is owner-only. Leads and workers learn the
+  // effective state through project reads, action refusals and card answers.
+  "project.PermissionChanged": () => ({ projectId: "project-one", permission: "planning", setting: "ask" }),
+  "project.PermissionDecided": () => ({ projectId: "project-one", questionId: "permission-one", granted: ["planning"] }),
+  "project.PermissionWithdrawn": () => ({ projectId: "project-one", permission: "planning" }),
   "project.ApprovalGranted": () => ({ projectId: "project-one", requestId: "grant-one", approval: "end-result" }),
   "project.ApprovalWithdrawn": () => ({ projectId: "project-one", approval: "build" }),
   "project.ApprovalDecided": () => ({ projectId: "project-one", questionId: "scope-one", approval: "end-result", approved: true }),
@@ -299,6 +305,40 @@ live("7.3 the owner's subscribe returns every event, agent-less ones included (b
     const all = (yield* readLog).map((row) => row.sequence);
     const seen = yield* collect(socket, ownerSecret, 0, isMarker("owner"));
     expect(seen.map((envelope) => envelope.sequence)).toEqual(all);
+  })), 120_000);
+
+live("project permission events reach only the owner in catch-up and live subscribe, including for the project's lead and workers", () =>
+  withServer((socket) => Effect.gen(function* () {
+    const { self: lead, child: worker, stranger } = yield* family;
+    yield* appendSetup([sample("project.Created", lead.agentId, "permission-project")]);
+    const project = projectView(yield* (yield* Views).snapshot);
+    expect(project.projects["project-one"]?.leadAgentId).toBe(lead.agentId);
+    expect(project.agentProjects[worker.agentId]).toBe("project-one");
+    const permissionTags = ["project.PermissionChanged", "project.PermissionDecided", "project.PermissionWithdrawn"];
+    for (const mode of ["catch-up", "live"]) {
+      const after = (yield* readLog).at(-1)!.sequence;
+      const batch = permissionTags.map((tag) => sample(tag, lead.agentId, mode));
+      const round = `permissions-${mode}`;
+      const plant = appendSetup([...batch, markerFor(lead.agentId, round), markerFor(worker.agentId, round), markerFor(stranger.agentId, round)]);
+      const readers = [
+        { name: "owner", bearer: ownerSecret, last: isMarker(round) },
+        { name: "project lead", bearer: lead.token, last: isMarker(round) },
+        { name: "project worker", bearer: worker.token, last: isMarker(round) },
+        { name: "unrelated agent", bearer: stranger.token, last: isMarker(round) },
+      ];
+      if (mode === "catch-up") yield* plant;
+      yield* Effect.scoped(Effect.gen(function* () {
+        const streams = [];
+        for (const reader of readers) streams.push(yield* collect(socket, reader.bearer, after, reader.last).pipe(Effect.forkScoped));
+        if (mode === "live") yield* plant;
+        for (const [index, reader] of readers.entries()) {
+          const seen = yield* Fiber.join(streams[index]!);
+          expect(seen.some(isMarker(round)), `${mode} ${reader.name} reaches the marker`).toBe(true);
+          const permissions = seen.filter((row) => permissionTags.includes(row.event._tag)).map((row) => row.event);
+          expect(permissions, `${mode} ${reader.name}`).toEqual(reader.name === "owner" ? batch : []);
+        }
+      }));
+    }
   })), 120_000);
 
 live("7.3 issue 41: a subscriber that stops acknowledging is disconnected while the writer runs on, and another subscriber still receives every event in order (breaks if a stalled subscription buffers without bound or stalls the others)", () =>

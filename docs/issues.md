@@ -15030,3 +15030,53 @@ It compares the complete incoming content with earlier complete contents or the 
 It never splits the payload into hunks to deduplicate it.
 Regression tests check that the engine stores two identical parts and that the row renders both.
 A later repeat of that whole two-part snapshot renders once.
+
+
+## s11-10. Three permission events were missing from independent test inventories.
+
+Found: 2026-11-15, in the orchestrator's full check after merging s11 and s12.
+Status: fixed in s11 fix round 2.
+
+The contracts' exact event inventory omitted PermissionChanged, PermissionDecided and PermissionWithdrawn.
+The project Git test's exact durable event inventory omitted the same three events.
+The subscribe visibility sample table also lacked their payloads.
+The full check failed one contracts test, one project inventory test and three subscribe tests.
+Each independent inventory now includes the three event names.
+The visibility samples now contain valid payloads for all three events.
+The events remain owner-only, like the other project history events.
+A separate real subscription test checks catch-up and live delivery to the owner, the project's lead, a project worker and an unrelated agent.
+Only the owner receives the raw permission events.
+Leads and workers obtain effective permission state through project reads, action refusals and card answers.
+No visibility rule changed.
+
+## s11-11. The real-child task delivery fixture requested unnecessary default permission cards.
+
+Found: 2026-11-15, in the orchestrator's full check after merging s11 and s12.
+Status: fixed in s11 fix round 2.
+
+Both task delivery cases failed before creating a task.
+Their setup asked for approval while both new project permissions were already Allowed.
+The engine correctly refused those unnecessary requests.
+The fixture now sets both permissions to Always ask before its existing request and acceptance flow.
+The automatic stage event was not the cause.
+No production behavior, expected event list or delivery assertion changed.
+Both cases still require exactly one task notification, one queued delivery and one sent prompt to the actual project lead.
+They still retry the same request and check that a lost committed reply creates no duplicate delivery.
+They still verify that the other project's child receives nothing.
+
+
+## s11-12. A project review startup check failed intermittently during the combined unit run.
+
+Found: 2026-11-15, in the 151-file s11 fix round 2 verification run.
+Status: open, with a passing unchanged file rerun.
+
+The issue 579/583 concurrency test did not observe its controlled Git subprocess's startup marker within its existing five-second bound.
+The assertion failed at main-review.test.ts line 508.
+The other 5,151 tests passed in that run.
+The complete unchanged main-review.test.ts file then passed all 45 tests in a separate run.
+This includes the same startup assertion and the independent writer checks that follow it.
+Neither the product code nor this test file was changed in fix round 2.
+The failure occurred while several test files were running.
+The cause of the missed startup bound has not been established.
+No wait or deadline was widened.
+The orchestrator should retain this observation when assessing the full check.
