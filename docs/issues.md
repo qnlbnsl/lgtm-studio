@@ -14642,3 +14642,13 @@ Status: fixed in the event fixture.
 The inventory named both direct approval events, but its roundtrip input omitted them.
 The focused run caught that mismatch before the full check.
 The fixture now covers their receipt identities and redaction alongside every other project event.
+
+## s10-lead-19. The idle-worker gate hid a context-access refusal.
+
+Found during the full local check in fix round 1 on 2026-11-14.
+Status: fixed in the prompt admission order.
+The new building gate ran before the existing context access check.
+A revoked source therefore returned the approval refusal instead of the established context refusal.
+Prompt admission now checks context access before checking approval to queue work.
+Both checks run before a delivery can be recorded.
+The existing observation safety assertion remains unchanged.

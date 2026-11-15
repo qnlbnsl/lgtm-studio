@@ -10,10 +10,11 @@ import type { Input, Payload } from "./internal.ts";
 
 export const prompt = (input: Input, payload: Payload<"prompt">, files?: ContextFiles) => Effect.gen(function* () {
   const { actor } = input;
+  // Preserve context-access refusals before checking permission to queue work.
+  const context = yield* resolveContext(input, payload.context, [{ _tag: "agent", agentId: payload.agentId }], files);
   const target = own(input.snapshot.agents, payload.agentId);
   const view = projectView(input.snapshot), projectId = own(view.agentProjects, payload.agentId);
   if (target?.state._tag === "idle" && projectId !== undefined && own(view.projects, projectId)?.leadAgentId !== payload.agentId) yield* requireAgentBuilding(input, payload.agentId);
-  const context = yield* resolveContext(input, payload.context, [{ _tag: "agent", agentId: payload.agentId }], files);
   const id = Schema.decodeUnknownSync(DeliveryId)(randomUUID());
   return { events: [{ _tag: "DeliveryQueued" as const, delivery: {
     id, target: payload.agentId, sender: senderOf(actor), content: { _tag: "prompt" as const,
