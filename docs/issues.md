@@ -14780,3 +14780,9 @@ The journey never answers the question, so its approval answer planner is not in
 The captured failure involves a successful refresh after an alert event, rather than a refused setup command, a failed collection read or a reconnect.
 No retired-page source, journey assertion or wait was changed for this investigation.
 Temporary traces contained request names, event tags, sequence numbers and lock flags, without request payloads or token values.
+
+The orchestrator then ran the same journey fifteen times in a row on `master` at `2518bfc`, with one worker.
+Four of the fifteen runs failed.
+Two failed at line 88, one at line 85 and one at line 96.
+So `master` shows the same failures on this computer, and the earlier nine clean runs were too small a sample.
+The lead definition unit did not introduce this race.
