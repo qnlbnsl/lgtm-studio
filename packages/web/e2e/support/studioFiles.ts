@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect as baseExpect, test, type Page } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import * as Effect from 'effect/Effect'
 import * as Layer from 'effect/Layer'
 import * as Redacted from 'effect/Redacted'
@@ -21,7 +21,6 @@ import { registerRebuildCheck } from '../../../engine/test/support/rebuildCheck.
 import { buildStudio } from '../../../studio/scripts/build.ts'
 import { completedSetup } from './completedSetup.ts'
 const git = (folder: string, ...args: string[]) => execFileSync('/usr/bin/git', ['-C', folder, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
-const expect = baseExpect.configure({ timeout: 30_000 })
 export async function exerciseStudioFiles(page: Page) {
   test.setTimeout(120_000)
   const rig = makeRig(), previous = process.env.LGTM_HOME

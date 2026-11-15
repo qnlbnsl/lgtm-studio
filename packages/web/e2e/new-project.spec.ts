@@ -168,7 +168,7 @@ test("Create persists the goal, real Git worktree and single lead at all eight F
         await expect(dialog.getByRole("button", { name: "Create project", exact: true })).toBeEnabled()
         await page.screenshot({ path: info.outputPath(`new-project-create-${width}-${scheme}.png`), fullPage: true })
         await dialog.getByRole("button", { name: "Create project", exact: true }).click()
-        await expect(dialog).not.toBeVisible({ timeout: 30_000 })
+        await expect(dialog).not.toBeVisible()
       })
       const view = projectView(yield* snapshot), project = Object.values(view.projects).find((row) => row.name === name)!
       expect(project.goal).toBe("Ship a real export")

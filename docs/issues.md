@@ -14507,10 +14507,12 @@ The project settings journey already used the new inline name field.
 The broader projects and board journey still looked for the old Rename button and dialog.
 It now saves the name through the same inline field.
 
-## s10-lead-9. Browser readiness assertions expired during real host file operations.
+## s10-lead-9. Slow workspace checks exposed issue 936 in the browser journeys.
 
 Found on 2026-11-14 after Addition 2 moved the tests to this computer.
-Status: corrected in the browser fixtures.
+Status: the broad wait changes were reverted in fix round 1.
+Issue 936 tracks the expensive repeated workspace checks behind the slow saves.
+The round now fixes those checks instead of widening every assertion.
 The failure artifacts showed pending Git destination reads, a pending file commit and a pending editor save.
 Several checks still had a five-second assertion limit.
 The older Git journey now uses the same thirty-second assertion limit as the website's Git journey.

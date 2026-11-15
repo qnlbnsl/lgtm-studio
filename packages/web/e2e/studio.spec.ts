@@ -7,7 +7,7 @@ import { exerciseStudioSettings } from './support/studioSettings.ts'
 import { exerciseStudioGit } from './support/studioGit.ts'
 import { exerciseStudioMocks } from './support/studioMocks.ts'
 import { exerciseStudioService } from './support/studioService.ts'
-test("studio mocks: owner feedback, approval, seen versions and editor saves", async ({ page }) => { test.setTimeout(90_000); await exerciseStudioMocks(page) })
+test("studio mocks: owner feedback, approval, seen versions and editor saves", async ({ page }) => exerciseStudioMocks(page))
 // The live website from packages/studio, served by the real engine at the root, on a real
 // project log. Only the harness runner is fake. The current page stays at /.
 import { completedSetup } from "./support/completedSetup.ts"
@@ -899,9 +899,7 @@ test("live website: subscriptions, notifications and service settings persist th
 })
 
 
-// On this host the complete real Git sequence reaches its final assertions after
-// more than seven minutes. Keep every operation's existing readiness deadline.
-test('live website: Git changes, history, remotes, integration and owner approval', async ({ page }) => { test.setTimeout(600_000); await exerciseStudioGit(page) })
+test('live website: Git changes, history, remotes, integration and owner approval', async ({ page }) => { test.setTimeout(360_000); await exerciseStudioGit(page) })
 
 test("live messages: a new project has General and Leads and accepts an owner post", async ({ page }) => {
   test.setTimeout(90_000)
