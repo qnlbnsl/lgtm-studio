@@ -1,6 +1,6 @@
 import { realpath, stat } from "node:fs/promises"
 import { dirname, extname, relative } from "node:path"
-import type { ProjectId, RepositoryId, RequestId } from "@lgtm/contracts"
+import type { ProjectId, RepositoryId, RequestId, Workspace } from "@lgtm/contracts"
 import * as Effect from "effect/Effect"
 import { refused, type Input } from "../commands/internal.ts"
 import { sourceArtifact, fingerprint, validScreenRoute, validArtifactPath } from "./artifacts.ts"
@@ -50,7 +50,7 @@ export const mockDisplay = (input: Input, selection: MockDisplaySelection) => Ef
     contentType: extname(source.path).toLowerCase() === ".svg" ? "image/svg+xml" : "text/html; charset=utf-8" }
 })
 
-export const designDisplay = (input: Input, selection: DesignDisplaySelection) => Effect.gen(function* () {
+export const designDisplay = (input: Input, selection: DesignDisplaySelection, checked?: Workspace) => Effect.gen(function* () {
   if (input.actor._tag !== "owner") return yield* refused("display requires the owner session")
   const view = projectView(input.snapshot)
   const revisionId = selection.revisionId ?? own(view.designHeads, selection.repoId)
@@ -63,8 +63,7 @@ export const designDisplay = (input: Input, selection: DesignDisplaySelection) =
   // A registered JSON design remains metadata; it is not relabelled as .fig.
   if (!validArtifactPath(design.file) || ![".fig", ".pen"].includes(extname(design.file).toLowerCase())) return yield* refused("registered design format cannot open in the editor")
   yield* safePath(input, design.file)
-  return yield* withGit(input, (git) => Effect.gen(function* () {
-    const workspace = yield* designWorkspacePath(input, { repoId: selection.repoId, worktreeId: design.worktreeId, projectId: project.projectId }, git)
+  const atWorkspace = (workspace: Workspace) => Effect.gen(function* () {
     const resolved = yield* Effect.tryPromise({ try: async () => {
       const workspaceRoot = await realpath(workspace.path)
       const file = await filePath(workspaceRoot, design.file)
@@ -78,7 +77,11 @@ export const designDisplay = (input: Input, selection: DesignDisplaySelection) =
     yield* safePath(input, resolved.folder)
     return { projectId: project.projectId, repoId: design.repoId, worktreeId: design.worktreeId,
       revisionId: record.revisionId, ...resolved }
-  }))
+  })
+  return yield* checked === undefined ? withGit(input, (git) => Effect.gen(function* () {
+    const workspace = yield* designWorkspacePath(input, { repoId: selection.repoId, worktreeId: design.worktreeId, projectId: project.projectId }, git)
+    return yield* atWorkspace(workspace)
+  })) : atWorkspace(checked)
 })
 
 

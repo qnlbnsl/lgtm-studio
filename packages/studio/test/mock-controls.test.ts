@@ -82,3 +82,9 @@ it("review item 2: labels earlier comments with their recorded revision in the c
   const wired = mockControlsSource("js/screens/mocks.js", source)
   expect(wired).toContain("c.revisionId")
 })
+
+ it("loads the recorded design with Mocks before enabling an editor save and guards that integration", () => {
+  const source = mockSource("js/screens/mocks.js")
+  expect(mockControlsSource("js/screens/mocks.js", source)).toContain("void mocks.loadDesign(p.repo)")
+  expect(() => mockControlsSource("js/screens/mocks.js", source.replace("void mocks.loadMocks(p.id)", "changed()"))).toThrow("no longer matches")
+})

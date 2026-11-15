@@ -14167,11 +14167,13 @@ A second fault was found by reading and is fixed too.
 The busy flags were cleared only while the page was signed in.
 A sign-out during a save could therefore leave the editor busy after the next sign-in.
 The flags are now always cleared.
-The engine still starts about eleven Git processes for each folder listing, which stays open as a cost.
+Fix round 1 of unit s10-lead reduces the workspace check from twelve Git processes to five when all registrations share one real path.
+A folder listing retains its tracked-file, status and path checks.
 The final full check of `area/terminal` then got past the save and failed later in the same journey.
 The conflict comparison did not appear within five seconds of a refused save.
 The journey passed three of three times when run alone.
-The repeated workspace check of issue 936 is the likely cause, and it stays open.
+The repeated workspace check of issue 936 was the likely cause.
+Fix round 1 removes that repetition within one uninterrupted gate.
 
 The separate full browser run during round 2 reproduced both failures.
 Its result was 60 passed and two failed in 10.0 minutes.
@@ -14267,7 +14269,7 @@ The original full check remains a failed run.
 ## 936. A mock editor save waited for about eighty Git processes before it said "saved".
 
 Found: 2026-11-14, by reading the code, after the Mocks journey missed "Editor changes saved" within five seconds in three full checks.
-Status: partly fixed.
+Status: fixed in the page and in fix round 1 of unit s10-lead.
 
 The page showed "Editor changes saved" only after four steps finished in order.
 The steps were a design read, the save, a mocks reload and a second design read.
@@ -14276,12 +14278,28 @@ Each time it checks the workspace again, and one workspace check starts about el
 The whole wait is about eighty Git processes in a row, by a count from the code.
 Under the load of a full check that takes four to five seconds.
 The page now shows the notice when the save replies, and the two reloads run in the background.
-Two parts stay open.
-The page still reads the design before the save, only to learn the worktree.
-The engine still checks the workspace five times inside one save.
+The page now takes the design worktree from its already loaded store.
+The engine reads the design, tokens, components and mock sources and stages the file inside one uninterrupted Git gate.
+The workspace is checked once in that operation.
+The earlier durable-attempt preflight retains its own check because its gate is released before staging.
+No check is reused across a gate release or between requests.
+A real counting wrapper measured twelve Git processes for one workspace check before the change and five afterwards.
+It measured sixty-six processes for one editor save before the change and fifteen afterwards, including the separate preflight.
 The same repeated workspace check is behind issue 928, and probably behind other save journeys that fail once in a full check.
-A workspace check that is done once for each request, or cached for a short time, would cut all of them.
+Each distinct real path is registered once per workspace check.
+Registration obtains both Git directories with one bounded process.
+The state read reuses that registration only within the same gate.
+All path, metadata, branch, byte and fingerprint checks remain in place.
+A swapped workspace is still refused on the next request.
 
+
+The Mocks screen now loads its recorded design when it opens.
+Its editor save uses that record and is disabled until the record is available.
+The first browser rerun exposed this missing preload after the save-time read was removed.
+With one browser worker, Mocks changed from 15.1 seconds to 10.5 seconds.
+Files changed from a failure at 25.6 seconds to a pass at 40.0 seconds.
+The website Git journey changed from a six-minute timeout to a pass in 4.5 minutes.
+These are host journey measurements, not an isolated benchmark.
 
 ## 937. The owner's feedback on the "Add account" dialog.
 
@@ -14513,6 +14531,7 @@ Found on 2026-11-14 after Addition 2 moved the tests to this computer.
 Status: the broad wait changes were reverted in fix round 1.
 Issue 936 tracks the expensive repeated workspace checks behind the slow saves.
 The round now fixes those checks instead of widening every assertion.
+The following wait changes describe the earlier implementation and have all been reverted unless stated above.
 The failure artifacts showed pending Git destination reads, a pending file commit and a pending editor save.
 Several checks still had a five-second assertion limit.
 The older Git journey now uses the same thirty-second assertion limit as the website's Git journey.

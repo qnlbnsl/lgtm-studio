@@ -1,3 +1,4 @@
+import type { GitService } from "./git/index.ts"
 import { extname } from "node:path"
 import { DesignRegistration, DesignTokens, type RepositoryDesign, type RepositoryDesignResult, type Workspace } from "@lgtm/contracts"
 import * as Effect from "effect/Effect"
@@ -49,20 +50,22 @@ const evidence = (input: Input, record: RepositoryDesign, projectId?: string,
     ? { _tag: "available" as const, fingerprint: file.success.fingerprint } : unavailable,
     tokens: tokenData._tag === "Success" && tokenData.success.fingerprint === record.tokensFingerprint ? tokenData.success : unavailable, components } satisfies typeof RepositoryDesignResult.Type
 })
-export const verifyDesignEvidence = (input: Input, record: RepositoryDesign, projectId: string) => Effect.gen(function* () {
-  const actual = yield* evidence(input, record, projectId)
+export const verifyDesignEvidence = (input: Input, record: RepositoryDesign, projectId: string, workspace?: Workspace) => Effect.gen(function* () {
+  const actual = yield* evidence(input, record, projectId, workspace === undefined ? undefined : (path, maximum) => checkedBytes(input, workspace, path, maximum))
   if (actual.file._tag !== "available" || record.design.tokensPath !== undefined && actual.tokens._tag !== "available"
     || actual.components.some((row) => row.availability._tag !== "available")) return yield* refused("registered design artifacts changed or are unavailable")
 })
 // A display request validates this exact workspace once while holding the Git
 // gate. Every artifact still receives its own bounded path, byte and fingerprint
 // checks. Nothing is retained for the next document or asset request.
-export const withVerifiedDesignEvidence = <A, E, R>(input: Input, record: RepositoryDesign, projectId: string,
-  use: (workspace: Workspace) => Effect.Effect<A, E, R>) => withGit(input, (git) => Effect.gen(function* () {
+export const withDesignWorkspace = <A, E, R>(input: Input, record: RepositoryDesign, projectId: string,
+  use: (workspace: Workspace, git: GitService) => Effect.Effect<A, E, R>) => withGit(input, (git) => Effect.gen(function* () {
   const workspace = yield* designWorkspacePath(input, { repoId: record.design.repoId, worktreeId: record.design.worktreeId, projectId }, git)
-  const actual = yield* evidence(input, record, projectId, (path, maximum) => checkedBytes(input, workspace, path, maximum))
-  if (actual.file._tag !== "available" || record.design.tokensPath !== undefined && actual.tokens._tag !== "available"
-    || actual.components.some((row) => row.availability._tag !== "available")) return yield* refused("registered design artifacts changed or are unavailable")
+  return yield* use(workspace, git)
+}))
+export const withVerifiedDesignEvidence = <A, E, R>(input: Input, record: RepositoryDesign, projectId: string,
+  use: (workspace: Workspace) => Effect.Effect<A, E, R>) => withDesignWorkspace(input, record, projectId, (workspace) => Effect.gen(function* () {
+  yield* verifyDesignEvidence(input, record, projectId, workspace)
   return yield* use(workspace)
 }))
 type RecordBytes = { readonly fileFingerprint: string; readonly tokensFingerprint?: string }

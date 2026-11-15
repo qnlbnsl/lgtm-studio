@@ -3,10 +3,10 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { CommandUncertain, refused, type Input, type Payload, type PiecePlan, type PiecePlanner } from "../commands/internal.ts"
 import { canReadProject } from "./access.ts"
-import { fingerprint, sourceArtifact } from "./artifacts.ts"
+import { fingerprint, sourceArtifactAtWorkspace } from "./artifacts.ts"
 import { designDisplay } from "./display.ts"
-import { verifyDesignEvidence } from "./design.ts"
-import { checkObservedWorkspace, withGit, workspacePath } from "./gitApi.ts"
+import { withDesignWorkspace, verifyDesignEvidence } from "./design.ts"
+import { checkObservedWorkspace, workspacePath, workspaceReference } from "./gitApi.ts"
 import { own, projectKey, projectView } from "./view.ts"
 import { stageMockEditorFile, mockEditorUncertainReason } from "./mockEditorRecovery.ts"
 import { readable, worklistFor } from "./mocks.ts"
@@ -40,25 +40,33 @@ export const saveMockEditor: PiecePlanner = (input, raw) => Effect.gen(function*
   const text = new TextDecoder().decode(bytes)
   if ((yield* input.runtime.log.redactText(text)) !== text) return yield* refused("mock editor export contains private data")
   if (!mockEditorFormatMatches(selected.design.design.file, bytes)) return yield* refused("mock editor export does not match the recorded design format")
-  const display = yield* designDisplay(input, { repoId: selected.project.repoId, projectId: p.projectId, revisionId: p.designRevision })
-  yield* verifyDesignEvidence(input, selected.design, p.projectId)
-  for (const source of selected.revision.bundle.sources) {
-    const actual = yield* sourceArtifact(input, p.projectId, source)
-    if (selected.revision.artifacts.find((a) => a.sourceId === source.sourceId)?.fingerprint !== actual.fingerprint) return yield* refused("mock artifact changed; record a new revision")
-  }
-  const fileFingerprint = fingerprint(bytes)
-  const candidate: MockRevision = { ...selected.revision, revisionId: p.requestId, author: { _tag: "owner" }, at: Number.MAX_SAFE_INTEGER,
-    bundle: { ...selected.revision.bundle, designRevision: p.requestId } }
-  if (!readable(candidate, { projectId: p.projectId, approvalId: p.requestId, revisionId: p.requestId, leadAgentId: selected.project.leadAgentId,
-    worklist: worklistFor(candidate), at: Number.MAX_SAFE_INTEGER })) return yield* refused("mock editor revision exceeds the data budget")
-  const events: Event[] = [{ _tag: "project.DesignRecorded", projectId: p.projectId, revisionId: p.requestId, design: selected.design.design,
-    author: { _tag: "owner" }, fileFingerprint, ...(selected.design.tokensFingerprint === undefined ? {} : { tokensFingerprint: selected.design.tokensFingerprint }) },
-  { _tag: "project.MockRecorded", projectId: p.projectId, revisionId: p.requestId, bundle: { ...selected.revision.bundle, designRevision: p.requestId },
-    author: { _tag: "owner" }, artifacts: selected.revision.artifacts, comparisons: selected.revision.comparisons }]
-  if (selected.project.stage !== "design") events.push({ _tag: "project.StageChanged", projectId: p.projectId, stage: "design" })
-  if (!events.every((event) => Schema.is(EventSchema)(event))) return yield* refused("mock editor revision exceeds the data budget")
-  return yield* withGit(input, (git) => Effect.gen(function* () {
-    const workspace = yield* workspacePath(input, p, git)
+  // Evidence, source reads and staging share one uninterrupted gate. The
+  // durable attempt preflight has its own earlier gate and must recheck there.
+  return yield* withDesignWorkspace(input, selected.design, p.projectId, (workspace, git) => Effect.gen(function* () {
+    yield* workspaceReference(input, p)
+    const display = yield* designDisplay(input, { repoId: selected.project.repoId, projectId: p.projectId, revisionId: p.designRevision }, workspace)
+    yield* verifyDesignEvidence(input, selected.design, p.projectId, workspace)
+    const workspaces = new Map([[workspace.worktreeId, workspace]])
+    for (const source of selected.revision.bundle.sources) {
+      let sourceWorkspace = workspaces.get(source.worktreeId)
+      if (sourceWorkspace === undefined) {
+        sourceWorkspace = yield* workspacePath(input, { projectId: p.projectId, worktreeId: source.worktreeId }, git)
+        workspaces.set(source.worktreeId, sourceWorkspace)
+      } else yield* workspaceReference(input, { projectId: p.projectId, worktreeId: source.worktreeId })
+      const actual = yield* sourceArtifactAtWorkspace(input, sourceWorkspace, source)
+      if (selected.revision.artifacts.find((a) => a.sourceId === source.sourceId)?.fingerprint !== actual.fingerprint) return yield* refused("mock artifact changed; record a new revision")
+    }
+    const fileFingerprint = fingerprint(bytes)
+    const candidate: MockRevision = { ...selected.revision, revisionId: p.requestId, author: { _tag: "owner" }, at: Number.MAX_SAFE_INTEGER,
+      bundle: { ...selected.revision.bundle, designRevision: p.requestId } }
+    if (!readable(candidate, { projectId: p.projectId, approvalId: p.requestId, revisionId: p.requestId, leadAgentId: selected.project.leadAgentId,
+      worklist: worklistFor(candidate), at: Number.MAX_SAFE_INTEGER })) return yield* refused("mock editor revision exceeds the data budget")
+    const events: Event[] = [{ _tag: "project.DesignRecorded", projectId: p.projectId, revisionId: p.requestId, design: selected.design.design,
+      author: { _tag: "owner" }, fileFingerprint, ...(selected.design.tokensFingerprint === undefined ? {} : { tokensFingerprint: selected.design.tokensFingerprint }) },
+    { _tag: "project.MockRecorded", projectId: p.projectId, revisionId: p.requestId, bundle: { ...selected.revision.bundle, designRevision: p.requestId },
+      author: { _tag: "owner" }, artifacts: selected.revision.artifacts, comparisons: selected.revision.comparisons }]
+    if (selected.project.stage !== "design") events.push({ _tag: "project.StageChanged", projectId: p.projectId, stage: "design" })
+    if (!events.every((event) => Schema.is(EventSchema)(event))) return yield* refused("mock editor revision exceeds the data budget")
     const current = { ...input, snapshot: yield* input.runtime.views.snapshot }
     yield* checkObservedWorkspace(input, current, workspace, p.projectId)
     yield* mockEditorSelection(current, p)

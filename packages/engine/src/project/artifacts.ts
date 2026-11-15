@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import { realpath } from "node:fs/promises"
 import { extname, join } from "node:path"
 import * as Effect from "effect/Effect"
-import { isRepositoryArtifactPath, type MockSource, type MockComponent } from "@lgtm/contracts"
+import { isRepositoryArtifactPath, type MockSource, type MockComponent, type Workspace } from "@lgtm/contracts"
 import { refused, type Input } from "../commands/internal.ts"
 import { withGit, workspacePath, safePath } from "./gitApi.ts"
 import { filePath, smallFile, inside } from "./git/paths.ts"
@@ -29,15 +29,18 @@ export const validateSource = (input: Input, source: typeof MockSource.Type) => 
 })
 // This reads bytes only. It never imports a component, starts a preview server,
 // fetches a URL or exposes the artifact through the application's static root.
-export const sourceArtifact = (input: Input, projectId: string, source: typeof MockSource.Type) => withGit(input, (git) => Effect.gen(function* () {
-  const workspace = yield* workspacePath(input, { projectId, worktreeId: source.worktreeId }, git)
-  return yield* Effect.tryPromise({ try: async () => {
+export const sourceArtifactAtWorkspace = (input: Input, workspace: Workspace, source: typeof MockSource.Type) => {
+  return Effect.tryPromise({ try: async () => {
     const path = await filePath(workspace.path, source.path)
     if (!inside(await realpath(workspace.path), await realpath(path))) throw new Error()
     const bytes = await smallFile(path, 8192)
     const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes)
     return { text, fingerprint: fingerprint(bytes) }
   }, catch: (error) => refused(error !== null && typeof error === "object" && "_tag" in error && error._tag === "GitFailure" && "reason" in error && error.reason === "invalid_path" ? "invalid mock artifact reference" : "artifact unavailable") })
+}
+export const sourceArtifact = (input: Input, projectId: string, source: typeof MockSource.Type) => withGit(input, (git) => Effect.gen(function* () {
+  const workspace = yield* workspacePath(input, { projectId, worktreeId: source.worktreeId }, git)
+  return yield* sourceArtifactAtWorkspace(input, workspace, source)
 }))
 export const componentArtifact = (input: Input, projectId: string, source: typeof MockSource.Type, component: typeof MockComponent.Type) => withGit(input, (git) => Effect.gen(function* () {
   const workspace = yield* workspacePath(input, { projectId, worktreeId: source.worktreeId }, git)
