@@ -14175,7 +14175,7 @@ The journey passed three of three times when run alone.
 The repeated workspace check of issue 936 was the likely cause.
 Fix round 1 removes that repetition within one uninterrupted gate.
 The later s10-lead full browser run still reproduced a busy Files save beyond five seconds.
-Issue s10-lead-20 records that remaining timing failure separately from the completed process reduction.
+Issue 966 records that remaining timing failure separately from the completed process reduction.
 
 The separate full browser run during round 2 reproduced both failures.
 Its result was 60 passed and two failed in 10.0 minutes.
@@ -14304,7 +14304,7 @@ The website Git journey changed from a six-minute timeout to a pass in 4.5 minut
 These are host journey measurements, not an isolated benchmark.
 The later full browser run passed Mocks in 17.8 seconds.
 Files and website Git still failed their restored limits in that run.
-Issue s10-lead-20 records these remaining timing failures.
+Issue 966 records these remaining timing failures.
 
 ## 937. The owner's feedback on the "Add account" dialog.
 
@@ -14453,7 +14453,7 @@ It also ran the owner's session-start hooks and reported their notices in the pr
 So an agent in a project and a terminal session can change each other's standing rules without either one being told.
 The design of the `~/.lgtm` folder should decide which settings, memory and hooks an agent in a project gets.
 
-## s10-lead-1. Project leads received worker advice and started planning before an owner decision.
+## 947. Project leads received worker advice and started planning before an owner decision.
 
 Found on 2026-11-14 while implementing unit s10-lead.
 Status: fixed in this unit.
@@ -14465,7 +14465,7 @@ Owner decisions now gate planning and building independently of the displayed st
 The gates also support an approved request to skip planning.
 An owner may approve skipping planning and building in one request.
 
-## s10-lead-2. A team could not be deleted, and its board had no archive event.
+## 948. A team could not be deleted, and its board had no archive event.
 
 Found on 2026-11-14 while implementing unit s10-lead.
 Status: fixed in this unit.
@@ -14477,7 +14477,7 @@ The archived composer is disabled and explains that the history is kept.
 The stored events keep the deleted task and team history.
 The team's branch and worktree folder remain in place.
 
-## s10-lead-3. Workflow phase times still come from sample calculations.
+## 949. Workflow phase times still come from sample calculations.
 
 Found again on 2026-11-14 while implementing unit s10-lead.
 Status: open under issues 846 and 941.
@@ -14485,7 +14485,7 @@ The new project's Define stage is now mapped to the website.
 The Workflow screen still calculates sample phase times from its created-at field.
 Unit s10-lead does not build phase timing records.
 
-## s10-lead-4. The editor control test assumed that its save waited for the reload.
+## 950. The editor control test assumed that its save waited for the reload.
 
 Found on 2026-11-14 during the remote regression run.
 Status: fixed in the test.
@@ -14494,7 +14494,7 @@ The control test checked the reloaded records immediately after the acknowledgem
 The test now waits for the authoritative read before checking those records.
 The editor's product behaviour is unchanged.
 
-## s10-lead-5. Adding the archive fixture shifted two board schema assertions.
+## 951. Adding the archive fixture shifted two board schema assertions.
 
 Found on 2026-11-14 during the final local check.
 Status: fixed in the fixture.
@@ -14503,7 +14503,7 @@ Inserting the archive fixture before it shifted that position.
 The new archive fixture now follows the existing fixtures.
 The wake assertions and the archive event both keep their coverage.
 
-## s10-lead-6. The shared test rig depended on the host's directory mask.
+## 952. The shared test rig depended on the host's directory mask.
 
 Found on 2026-11-14 after Addition 2 moved the tests to this computer.
 Status: fixed in the test rig.
@@ -14513,7 +14513,7 @@ The sign-in security checks correctly refused that home.
 The rig now creates its temporary directories with mode 0700.
 The production ownership and symbolic link checks are unchanged.
 
-## s10-lead-7. The channel mapping assertion omitted the new archive state.
+## 953. The channel mapping assertion omitted the new archive state.
 
 Found on 2026-11-14 during the final local check.
 Status: fixed in the test.
@@ -14522,7 +14522,7 @@ The existing complete-object assertion still expected the older shape.
 It now includes the false flag for active channels.
 The browser journey checks the disabled composer for an archived channel.
 
-## s10-lead-8. The broader website journey still used the old rename dialog.
+## 954. The broader website journey still used the old rename dialog.
 
 Found on 2026-11-14 during the full local browser run.
 Status: fixed in the test.
@@ -14530,7 +14530,7 @@ The project settings journey already used the new inline name field.
 The broader projects and board journey still looked for the old Rename button and dialog.
 It now saves the name through the same inline field.
 
-## s10-lead-9. Slow workspace checks exposed issue 936 in the browser journeys.
+## 955. Slow workspace checks exposed issue 936 in the browser journeys.
 
 Found on 2026-11-14 after Addition 2 moved the tests to this computer.
 Status: fixed in the workspace checks, with the broad waits reverted in fix round 1.
@@ -14544,7 +14544,7 @@ The two-minute budget for the eight-viewport design journey remains because no s
 The round fixes repeated workspace checks instead of widening operation assertions.
 Issue 936 records the measured process counts and browser times.
 
-## s10-lead-10. The new browser fixture needed an explicit sample owner name.
+## 956. The new browser fixture needed an explicit sample owner name.
 
 Found on 2026-11-14 while reviewing the browser failure artifacts.
 Status: fixed in the new fixture.
@@ -14552,7 +14552,7 @@ An engine without a saved display name can suggest the host's Git user name.
 The new lead journey now explicitly saves Maya Okafor in its temporary settings.
 The journey checks that sample name after signing in.
 
-## s10-lead-11. Existing projects needed owner controls for approvals and narrower gates.
+## 957. Existing projects needed owner controls for approvals and narrower gates.
 
 Found in review round 1 on 2026-11-14.
 This records review findings M1, m1, m2 and m4.
@@ -14572,7 +14572,7 @@ The owner’s own commands bypass these approval gates.
 Answering a queued task's linked question cannot bypass the building gate.
 The project settings row makes these controls available without requiring a lead to ask.
 
-## s10-lead-12. Approval cards hid their authority and did not tell the lead whether approval was recorded.
+## 958. Approval cards hid their authority and did not tell the lead whether approval was recorded.
 
 Found in review round 1 on 2026-11-14.
 This records review findings M2.
@@ -14585,7 +14585,7 @@ Typing another answer shows a warning before sending.
 The delivered answer and the answered card state whether approval was recorded.
 Only the exact Accepted answer grants approval.
 
-## s10-lead-13. Three approval gates and two compatibility paths lacked regression tests.
+## 959. Three approval gates and two compatibility paths lacked regression tests.
 
 Found in review round 1 on 2026-11-14.
 This records review findings m3.
@@ -14598,7 +14598,7 @@ The messages screen build fails when its archive replacement target is missing o
 Temporary removal of each check makes its corresponding new test fail.
 The checks are restored before the passing verification.
 
-## s10-lead-14. The opening instruction confused ordering, request fields and approval scope.
+## 960. The opening instruction confused ordering, request fields and approval scope.
 
 Found in review round 1 on 2026-11-14.
 This records review findings m5 and m7.
@@ -14611,7 +14611,7 @@ After a denial, the lead asks what to change and does not repeat the same reques
 The instruction and both refusal reasons name ask and the projectApproval field.
 The nitpick instruction explicitly names skip-planning-and-build.
 
-## s10-lead-15. Define had no current stage dot, and an archived team channel lost its readable name.
+## 961. Define had no current stage dot, and an archived team channel lost its readable name.
 
 Found in review round 1 on 2026-11-14.
 This records review findings m6.
@@ -14623,7 +14623,7 @@ The original channel identity and post history remain unchanged.
 Define is now the first current dot in the projects table.
 The result lists these changes and the earlier removed Rename dialog and added Actions column.
 
-## s10-lead-16. Deleted teams left group labels on stopped agents, and deleted tasks vanished from history reads.
+## 962. Deleted teams left group labels on stopped agents, and deleted tasks vanished from history reads.
 
 Found in review round 1 on 2026-11-14.
 This records review findings m8 and m11.
@@ -14636,17 +14636,17 @@ The task history request still enforces the project's read permissions.
 Its last entry says Task deleted and carries a deleted flag.
 Deleted tasks remain unavailable for edits, reassignment and linked work.
 
-## s10-lead-17. The feature quotation and the review issue records were incomplete.
+## 963. The feature quotation and the review issue records were incomplete.
 
 Found in review round 1 on 2026-11-14.
 This records review findings m9 and m10.
-Status: fixed in the feature entry and issues s10-lead-9 through s10-lead-16.
+Status: fixed in the feature entry and issues 955 through 962.
 The one-off repository agent entry now includes the owner's quoted words.
 It still states the undecided worktree, branch, merge and tree presentation.
 The existing-project lock, stage regression, withdrawal, approval wording, bypasses and stage dots now have issue records.
 The wait-regression entry explicitly names issue 936.
 
-## s10-lead-18. The project event roundtrip fixture omitted the direct approval events.
+## 964. The project event roundtrip fixture omitted the direct approval events.
 
 Found during fix round 1 on 2026-11-14.
 Status: fixed in the event fixture.
@@ -14654,7 +14654,7 @@ The inventory named both direct approval events, but its roundtrip input omitted
 The focused run caught that mismatch before the full check.
 The fixture now covers their receipt identities and redaction alongside every other project event.
 
-## s10-lead-19. The idle-worker gate hid a context-access refusal.
+## 965. The idle-worker gate hid a context-access refusal.
 
 Found during the full local check in fix round 1 on 2026-11-14.
 Status: fixed in the prompt admission order.
@@ -14664,7 +14664,7 @@ Prompt admission now checks context access before checking approval to queue wor
 Both checks run before a delivery can be recorded.
 The existing observation safety assertion remains unchanged.
 
-## s10-lead-20. Five browser journeys still failed with their restored limits.
+## 966. Five browser journeys still failed with their restored limits.
 
 Found during fix round 1 on 2026-11-14.
 Status: open for further timing investigation.
@@ -14690,7 +14690,7 @@ That run used 303 seconds of system time and 116 seconds of user time.
 The timeout therefore predates this unit.
 A few unit tests ran at the same time, so this is one loaded sample.
 
-## s10-lead-21. A withdrawn end result left an open building request unanswerable.
+## 967. A withdrawn end result left an open building request unanswerable.
 
 Found in review round 2 on 2026-11-14.
 This records review finding m1.
@@ -14699,7 +14699,7 @@ A denial closes the request even after the first approval is withdrawn.
 Accepting it then closes the request without recording an approval event.
 The card and the delivered answer both say that building approval was not recorded because the end result or skipping planning is no longer approved.
 
-## s10-lead-22. Approval outcomes described the answer text instead of the permissions that remained granted.
+## 968. Approval outcomes described the answer text instead of the permissions that remained granted.
 
 Found in review round 2 on 2026-11-14.
 This records review findings m4 and m5.
@@ -14710,9 +14710,9 @@ The client request read and both card layouts use that same outcome.
 The ask schema refuses the engine-owned projectApprovalEffect field instead of silently ignoring it.
 The schema keeps it only as an optional impossible value in that command.
 Stored question metadata still accepts the engine-written sentence.
-The gate list in s10-lead-11 now includes project.stage.set and project.sprint.complete.
+The gate list in 957 now includes project.stage.set and project.sprint.complete.
 
-## s10-lead-23. The editor save changed refusal order, and its shared-check helpers needed an explicit boundary.
+## 969. The editor save changed refusal order, and its shared-check helpers needed an explicit boundary.
 
 Found in review round 2 on 2026-11-14.
 This records review findings m2 and m3.
