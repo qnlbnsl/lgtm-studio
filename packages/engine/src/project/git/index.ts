@@ -592,12 +592,13 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     diff: (folder, options = {}) => withRepo(folder, (path, signal) => diff(path, options, signal)),
     history: (folder, limit) => withRepo(folder, async (path, signal) => await head(path, signal) === null ? list([]) : history(path, "HEAD", signal, bound(limit, entries, entries))),
     commitFiles: (folder, commit, agentRead = false) => withRepo(folder, async (path, signal) => filesBetween(path, ["diff-tree", "--root", "--no-commit-id", "-r", "-m", "--first-parent", await ref(path, commit, signal)], signal, agentRead)),
-    state: (folder, target, registration) => withRepo(folder, async (path, signal) => {
-      const currentHead = await head(path, signal), currentBranch = await branch(path, signal);
-      const upstreamReply = await run(path, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], signal);
-      const upstreamName = upstreamReply.code === 0 ? upstreamReply.stdout.trim() : null;
-      let ahead = 0, behind = 0, behindParent = 0, pending = 0, pendingSince: string | null = null;
-      if (currentHead !== null && upstreamName !== null) {
+    state: (folder, target, registration, checkedState) => withRepo(folder, async (path, signal) => {
+      const currentHead = checkedState ? checkedState.head : await head(path, signal);
+      const currentBranch = checkedState ? checkedState.branch : await branch(path, signal);
+      const upstreamReply = checkedState ? undefined : await run(path, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"], signal);
+      const upstreamName = checkedState ? checkedState.upstream : upstreamReply?.code === 0 ? upstreamReply.stdout.trim() : null;
+      let ahead = checkedState?.ahead ?? 0, behind = checkedState?.behind ?? 0, behindParent = 0, pending = 0, pendingSince: string | null = null;
+      if (!checkedState && currentHead !== null && upstreamName !== null) {
         const counts = (await git(path, ["rev-list", "--left-right", "--count", `${await ref(path, upstreamName, signal)}...${currentHead}`, "--"], signal)).trim().split(/\s+/);
         behind = Number(counts[0]); ahead = Number(counts[1]);
       }
@@ -611,7 +612,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
           pendingSince = dates.reduce((oldest, date) => Date.parse(date) < Date.parse(oldest) ? date : oldest);
         }
       }
-      return { head: currentHead, branch: currentBranch, upstream: upstreamName, mergeHead: await mergeHead(path, signal), ahead, behind, behindParent, pending, pendingSince };
+      return { head: currentHead, branch: currentBranch, upstream: upstreamName, mergeHead: checkedState ? checkedState.mergeHead : await mergeHead(path, signal), ahead, behind, behindParent, pending, pendingSince };
     }, false, registration),
     stage: (folder, requested) => withRepo(folder, async (path, signal) => {
       const change = (await completeChanges(path, signal)).find((change) => change.path === requested);

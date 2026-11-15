@@ -375,3 +375,36 @@ it("draws every control the engine cannot serve yet as disabled, and says so on 
     for (const control of stub.querySelectorAll<HTMLInputElement>("input, select, button")) expect(control.disabled).toBe(true)
   }
 })
+
+it("keeps independently loaded service controls usable during a background collection refresh", async () => {
+  const saveToken = vi.fn(ack), clearToken = vi.fn(ack), saveWeb = vi.fn(ack)
+  mock.data = { ...baseData(), complete: false }
+  mock.disabled = true
+  mock.client = { "client.alerts.settings": () => Effect.succeed(alertSettings), "client.web.settings": () => Effect.succeed(webSettings),
+    "client.alerts.carrier.set-token": saveToken, "client.alerts.carrier.clear-token": clearToken, "client.web.settings.set": saveWeb }
+  const { element } = await render(<Settings onSessionExpired={vi.fn()} />)
+  await settle(() => expect(element.querySelector('[name="token"]')).not.toBeNull())
+  const token = element.querySelector<HTMLInputElement>('[name="token"]')!
+  expect(token.matches(':disabled')).toBe(false)
+  token.value = "synthetic-refresh-token"
+  await act(async () => token.dispatchEvent(new FocusEvent("focusout", { bubbles: true })))
+  await settle(() => expect(saveToken).toHaveBeenCalledOnce())
+  expect(token.value).toBe("")
+  await click(element, "Clear token")
+  await settle(() => expect(clearToken).toHaveBeenCalledOnce())
+  const heartbeat = element.querySelector<HTMLInputElement>('[name="heartbeatSeconds"]')!
+  expect(heartbeat.matches(':disabled')).toBe(false)
+  heartbeat.value = "30"
+  await act(async () => heartbeat.dispatchEvent(new FocusEvent("focusout", { bubbles: true })))
+  await settle(() => expect(saveWeb).toHaveBeenCalledOnce())
+})
+
+it("keeps service controls locked on a real reconnect even after their settings loaded", async () => {
+  mock.data = { ...baseData(), connection: "Reconnecting", complete: false }
+  mock.disabled = true
+  mock.client = { "client.alerts.settings": () => Effect.succeed(alertSettings), "client.web.settings": () => Effect.succeed(webSettings) }
+  const { element } = await render(<Settings onSessionExpired={vi.fn()} />)
+  await settle(() => expect(element.querySelector('[name="token"]')).not.toBeNull())
+  expect(element.querySelector<HTMLInputElement>('[name="token"]')!.matches(':disabled')).toBe(true)
+  expect(element.textContent).toContain("Reconnect before changing service settings.")
+})
