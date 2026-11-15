@@ -251,3 +251,42 @@ it.live('r1 item 2: approval effects and answer outcomes are written by the engi
   const answer = (yield* readLog).map((row) => row.event).filter((event) => event._tag === 'DeliveryQueued' && event.delivery.target === f.project.leadAgentId).at(-1)!
   expect(JSON.stringify(answer)).toContain('Approval recorded.')
 })).pipe(Effect.orDie))
+
+it.live('r1 item 5: resume of an existing worker needs building approval after scope approval', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), projectId = f.project.projectId
+  yield* approve(f.lead, projectId, 'end-result')
+  success(yield* call(owner, 'project.approval.grant', { projectId, approval: 'build' }))
+  const folder = projectView(yield* snapshot).workspaces[f.project.worktreeId]!.path
+  const agentId = success(yield* call(f.lead, 'start', { name: 'Existing builder', role: 'worker:builder', harness: 'cursor', account: { _tag: 'any' }, permission: 'ask', folder })).agentId
+  success(yield* call(owner, 'stop', { agentId }))
+  success(yield* call(owner, 'project.approval.withdraw', { projectId, approval: 'build' }))
+  expect(failureOf(yield* call(f.lead, 'resume', { agentId }))?.reason).toBe('The owner must approve building before work starts.')
+  yield* approve(f.lead, projectId, 'build')
+  success(yield* call(f.lead, 'resume', { agentId }))
+})).pipe(Effect.orDie))
+
+it.live('r1 item 5: a nonqueue task needs building approval after scope approval', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), projectId = f.project.projectId
+  yield* approve(f.lead, projectId, 'end-result')
+  const sprintId = success(yield* call(f.lead, 'project.sprint.create', { projectId, label: 'SP-1', name: 'First', goal: 'Deliver', phase: 'Build', owner: f.project.leadAgentId, needs: [] })).sprintId
+  const teamId = success(yield* call(f.lead, 'project.team.create', { projectId, name: 'Builders', worktreeId: f.project.worktreeId })).teamId
+  const payload = { projectId, sprintId, teamId, worktreeId: f.project.worktreeId, title: 'Start immediately', owner: f.project.leadAgentId, state: 'active' }
+  expect(failureOf(yield* call(f.lead, 'project.task.create', payload))?.reason).toBe('The owner must approve building before work starts.')
+  yield* approve(f.lead, projectId, 'build')
+  success(yield* call(f.lead, 'project.task.create', payload))
+})).pipe(Effect.orDie))
+
+it.live('r1 item 5: setting Build needs building approval after scope approval', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), projectId = f.project.projectId
+  yield* approve(f.lead, projectId, 'end-result')
+  expect(failureOf(yield* call(f.lead, 'project.stage.set', { projectId, stage: 'build' }))?.reason).toBe('The owner must approve building before work starts.')
+  expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('plan')
+  yield* approve(f.lead, projectId, 'build')
+  success(yield* call(f.lead, 'project.stage.set', { projectId, stage: 'build' }))
+})).pipe(Effect.orDie))
+
+it.live('r1 item 5: historical project-lead spelling gets lead orientation', () => provideBoard(rig, () => Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  const legacy = yield* seedAgent({ id: 'historical-lead', name: 'Project lead', role: 'project-lead', state: 'idle' })
+  expect(unwrap(success(yield* call(agentCredential(legacy.token), 'roles.orient', {})))).toMatchObject({ kind: 'lead', roleName: 'project-lead', advice: expect.stringContaining('Start your own workers') })
+})).pipe(Effect.orDie))

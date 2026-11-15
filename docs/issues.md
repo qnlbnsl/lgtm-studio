@@ -14575,3 +14575,15 @@ The approval button reads Accept.
 Typing another answer shows a warning before sending.
 The delivered answer and the answered card state whether approval was recorded.
 Only the exact Accepted answer grants approval.
+
+## s10-lead-13. Three approval gates and two compatibility paths lacked regression tests.
+
+Found in review round 1 on 2026-11-14.
+Status: fixed in the regression coverage.
+Worker resume needs building approval after scope is approved.
+Creating an active task needs the same approval.
+Changing the stage to Build needs the same approval.
+The historical project-lead spelling receives lead orientation.
+The messages screen build fails when its archive replacement target is missing or duplicated.
+Temporary removal of each check makes its corresponding new test fail.
+The checks are restored before the passing verification.

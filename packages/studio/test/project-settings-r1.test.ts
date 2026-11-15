@@ -164,3 +164,10 @@ for (const [status, text] of [['applied', 'Applied'], ['pending', 'Waiting for t
     expect(f.root.textContent).not.toContain('not-acknowledged')
   })
 }
+
+it('r1 item 5: the messages archive replacement is unique and fails when its target moves', () => {
+  const original = readFileSync('design/mock/js/screens/messages.js', 'utf8')
+  expect(source.projectSettingsSource('js/screens/messages.js', original)).toContain('const archived = board.channelArchived(ch);')
+  expect(() => source.projectSettingsSource('js/screens/messages.js', original.replace('const archived = ch.archived === true;', 'const archived = false;'))).toThrow('composer moved')
+  expect(() => source.projectSettingsSource('js/screens/messages.js', original + original)).toThrow('composer moved')
+})
