@@ -198,7 +198,7 @@ it.live('r1 item 1: a project without approvals allows existing work to finish b
   success(yield* call(owner, 'group', { agentId: 'builder', add: [team.group], remove: [] }))
   const fields = { projectId, teamId: team.teamId, sprintId, worktreeId: p.worktreeId, owner: 'builder', title: 'Existing task' }
   const taskId = success(yield* call(owner, 'project.task.create', { ...fields, state: 'active' })).taskId
-  for (const state of ['review', 'done']) success(yield* call(f.worker, 'project.task.update', { projectId, taskId, state }))
+  for (const state of ['review', 'done']) success(yield* call(f.worker, 'project.task.update', { projectId, taskId, state, note: `Ready for ${state}; see the commit.` }))
   const edits = [
     ['project.task.update', { projectId, taskId, title: 'A title' }],
     ['project.task.note', { projectId, taskId, title: 'A note', detail: 'Some context' }],
@@ -218,6 +218,23 @@ it.live('r1 item 1: a project without approvals allows existing work to finish b
   success(yield* call(f.lead, 'prompt', { agentId: 'builder', text: 'Build now' }))
   success(yield* call(f.lead, 'answer', { kind: 'question', id: questionId, text: 'Yes' }))
   expect(projectView(yield* snapshot).tasks[projectKey(projectId, queued)]?.state).toBe('done')
+})).pipe(Effect.orDie))
+
+it.live('r2 item 1: a worker may note its own active task without approvals, while planning notes stay gated', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), p = f.project, projectId = p.projectId
+  const sprintId = success(yield* call(owner, 'project.sprint.create', { projectId, label: 'SP-1', name: 'Historical', goal: 'Deliver', phase: 'Build', owner: p.leadAgentId, needs: [] })).sprintId
+  const team = success(yield* call(owner, 'project.team.create', { projectId, name: 'Historical team', worktreeId: p.worktreeId }))
+  success(yield* call(owner, 'group', { agentId: 'builder', add: [team.group], remove: [] }))
+  const fields = { projectId, teamId: team.teamId, sprintId, worktreeId: p.worktreeId, owner: 'builder', title: 'Existing task' }
+  const taskId = success(yield* call(owner, 'project.task.create', { ...fields, state: 'active' })).taskId
+  const note = { projectId, taskId, title: 'Ready', detail: 'See the commit.' }
+  success(yield* call(f.worker, 'project.task.note', note))
+  expect(projectView(yield* snapshot).tasks[projectKey(projectId, taskId)]?.history.at(-1)).toMatchObject({ title: note.title, detail: note.detail })
+  expect(failureOf(yield* call(f.lead, 'project.task.note', note))).toBeDefined()
+  expect(failureOf(yield* call(f.other, 'project.task.note', note))).toBeDefined()
+  const queued = success(yield* call(owner, 'project.task.create', { ...fields, state: 'queue' })).taskId
+  expect(failureOf(yield* call(f.worker, 'project.task.note', { ...note, taskId: queued }))).toBeDefined()
+  expect(failureOf(yield* call(f.worker, 'project.task.update', { projectId, taskId: queued, state: 'active', note: 'Starting' }))?.reason).toBe('The owner must approve building before work starts; use ask with projectApproval set to "build".')
 })).pipe(Effect.orDie))
 
 it.live('r1 item 1: answering a historical approval never moves Review backwards', () => provideBoard(rig, (runner) => Effect.gen(function* () {

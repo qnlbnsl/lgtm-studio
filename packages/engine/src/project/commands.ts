@@ -282,7 +282,8 @@ const requireTask = (input: Input, projectId: string, taskId: string, write: boo
 const taskUpdate: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.task.update">; const { project, task } = yield* requireTask(input, p.projectId, p.taskId, true)
   if (p.state !== undefined && p.state !== "queue" && task.state === "queue") yield* requireBuilding(input, project)
-  if ([p.title, p.owner, p.teamId, p.sprintId, p.worktreeId, p.note].some((value) => value !== undefined)) yield* requireEndResult(input, project)
+  const ownsStartedTask = input.actor._tag === "agent" && input.actor.agentId === task.owner && task.state !== "queue"
+  if ([p.title, p.owner, p.teamId, p.sprintId, p.worktreeId].some((value) => value !== undefined) || p.note !== undefined && !ownsStartedTask) yield* requireEndResult(input, project)
   const leads = canLeadProject(input.snapshot, input.actor, project)
   if (!leads && (p.owner !== undefined || p.teamId !== undefined || p.sprintId !== undefined || p.worktreeId !== undefined || p.title !== undefined)) return yield* refused("only a lead can change task assignments and titles")
   const changed = { ...task, ...p }
@@ -315,8 +316,8 @@ const teamDelete: PiecePlanner = (input, raw) => Effect.gen(function* () {
     ...(team.channelId === undefined ? [] : [{ _tag: "board.ChannelArchived" as const, channelId: team.channelId, displayName: team.name }])])
 })
 const taskNote: PiecePlanner = (input, raw) => Effect.gen(function* () {
-  const p = raw as Payload<"project.task.note">; const { project } = yield* requireTask(input, p.projectId, p.taskId, true)
-  yield* requireEndResult(input, project)
+  const p = raw as Payload<"project.task.note">; const { project, task } = yield* requireTask(input, p.projectId, p.taskId, true)
+  if (!(input.actor._tag === "agent" && input.actor.agentId === task.owner && task.state !== "queue")) yield* requireEndResult(input, project)
   return ack(p.requestId, [{ _tag: "project.TaskNoted", projectId: p.projectId, taskId: p.taskId, title: yield* cleanName(input, p.title), detail: p.detail }])
 })
 

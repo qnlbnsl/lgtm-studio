@@ -14561,8 +14561,14 @@ The owner can grant or withdraw end result and building approvals directly.
 Withdrawing the end result also withdraws building.
 Approval lasts until it is withdrawn.
 Approval never moves an existing Review or Handover project backwards.
-Existing active tasks can still reach review or completion without a new approval.
-Planning edits require scope approval, and idle worker prompts require building approval.
+Round 2 found that the earlier exception still refused a worker’s finish note.
+The owner of an existing task outside the queue may now add notes and move it to review or completion with a note without a new approval.
+Changing a task title or assignment still requires end result or skip-planning approval.
+A lead’s planning notes and sprint edits, including project.sprint.complete, require that first approval too.
+An agent’s project.stage.set requires it for every stage except Define.
+Setting Build also requires building approval.
+Moving a task out of the queue, starting or resuming workers and prompting idle workers require building approval.
+The owner’s own commands bypass these approval gates.
 Answering a queued task's linked question cannot bypass the building gate.
 The project settings row makes these controls available without requiring a lead to ask.
 
