@@ -3,7 +3,6 @@ import { afterEach, beforeAll, expect, it } from 'vitest'
 import type { EventEnvelope } from '@lgtm/contracts'
 import { mapThread } from '../src/chat.ts'
 import { toolRow } from '../src/chatTools.ts'
-import { chatSource } from '../scripts/chatSource.ts'
 import { translate } from '../../engine/src/runner/translate.ts'
 import { mapSnapshot } from '../src/mapping.ts'
 import { engineSnapshot } from './fixtures.ts'
@@ -54,9 +53,10 @@ it('orders by engine sequence, splits a reused text id at actions, and shows que
   expect(mapThread([first, tool(2, { title: 'Read', input: '{"file_path":"src/gitApi.ts"}' }), last], 'ag-worker').items.map((item) => item.id)).toEqual(['1', '2', '4'])
 })
 
-it('does not combine calls whose ids are reused in another delivery', () => {
+it('does not combine calls whose ids are reused after a turn ends', () => {
   const boundary = { sequence: 2, occurredAt: 2000, event: { _tag: 'DeliverySent', agentId: 'ag-worker', deliveryId: 'new' } } as EventEnvelope
-  expect(mapThread([change(1, diff), boundary, change(3, 'next turn')], 'ag-worker').items).toHaveLength(2)
+  const end = { sequence: 1.5, occurredAt: 1500, event: { _tag: 'TurnEnded', agentId: 'ag-worker', compact: false } } as EventEnvelope
+  expect(mapThread([change(1, diff), end, boundary, change(3, 'next turn')], 'ag-worker').items).toHaveLength(2)
 })
 
 it('names reads, writes, commands, searches and engine tools while retaining the raw tool', () => {
@@ -123,10 +123,10 @@ it('shows a formatted question once before and after Details opens', async () =>
   expect(element.textContent).not.toContain('The question')
 })
 
-it('guards the live chat binding and keeps all sample calls as individual tool rows without an engine', async () => {
+it('keeps the direct live binding and all sample calls as individual rows without an engine', async () => {
   const source = readFileSync('design/mock/js/ui.js', 'utf8')
-  expect(chatSource('js/ui.js', source)).toContain('liveMode.on ? chatLive.watchThread(agentId) : undefined')
-  expect(() => chatSource('js/ui.js', source.replace('useEffect(() => chatLive.watchThread(agentId), [agentId]);', 'moved'))).toThrow('binding moved')
+  expect(source).toContain('useEffect(() => chatLive.watchThread(agentId), [agentId]);')
+  expect(readFileSync('packages/studio/scripts/build.ts', 'utf8')).not.toContain('chatSource(')
   const { seed } = await import('../../../design/mock/js/data.js' as string)
   const sample = seed()
   const rows = sample.threads['console-lead'].filter((item: any) => item.type === 'tools')
@@ -145,4 +145,84 @@ it('keeps the full question once when an older event used its body as its title'
   const element = render(ui.RequestBlock, { s: state, request: { id: 'q-legacy', agent: 'ag-worker', kind: 'question', title: 'Which rule?', body, status: 'open', options: [], createdAt: 1 } })
   expect(element.querySelector('.qc-q')?.textContent).toBe('Question')
   expect(element.textContent!.split('Which rule?')).toHaveLength(2)
+})
+
+it('retains distinct successive hunks and folds both individual and cumulative repeats once', () => {
+  const next = '@@ -8 +8 @@\n-second old\n+second new'
+  const result = mapThread([tool(1, { title: 'Edit', status: 'pending' }), change(2, diff), change(3, next), change(4, diff + '\n' + next), change(5, next), tool(6, { title: '', status: 'completed' })], 'ag-worker').items
+  expect(result).toHaveLength(1)
+  expect(result[0]).toMatchObject({ summary: 'Edited MEMORY.md', raw: 'Edit', status: 'completed', details: [{ text: diff + '\n' + next }] })
+})
+
+it('keeps an unfinished call across a mid-turn delivery and preserves its raw name', () => {
+  const boundary = { sequence: 2, occurredAt: 2000, event: { _tag: 'DeliverySent', agentId: 'ag-worker', deliveryId: 'steer' } } as EventEnvelope
+  const result = mapThread([tool(1, { title: 'Edit', status: 'pending' }), boundary, change(3, diff), tool(4, { title: '', status: 'completed' })], 'ag-worker').items
+  expect(result).toHaveLength(1)
+  expect(result[0]).toMatchObject({ id: '1', raw: 'Edit', status: 'completed', details: [{ text: diff }] })
+})
+
+it('titles a diff-first creation as a write even when its completing title is empty', () => {
+  const creation = translate({ sessionUpdate: 'tool_call_update', toolCallId: 'edit', content: [{ type: 'diff', path: 'notes/MEMORY.md', oldText: null, newText: 'created' }] }, false)[0]!.content
+  for (const first of [change(1, '@@ -0,0 +1 @@\n+created'), envelope(1, creation)]) {
+    const result = mapThread([first, tool(2, { title: '', status: 'completed' })], 'ag-worker').items
+    expect(result).toHaveLength(1)
+    expect(result[0]).toMatchObject({ summary: 'Wrote MEMORY.md', raw: 'Write', status: 'completed' })
+  }
+})
+
+it('cleans quoted paths, ranges, engine tool names, array commands, and quoted commands', () => {
+  const row = (title: string, input?: object) => toolRow({ id: '1', ts: 1 }, { _tag: 'tool-call', callId: 'c', title, ...(input ? { input: JSON.stringify(input) } : {}) })
+  expect(row('Read `/w/src/gitApi.ts`')).toMatchObject({ summary: 'Read gitApi.ts', details: [{ label: 'Path', text: '/w/src/gitApi.ts' }] })
+  expect(row('Read /w/a.ts (1 - 40)')).toMatchObject({ summary: 'Read a.ts', details: [{ label: 'Path', text: '/w/a.ts' }] })
+  expect(row('mcp__lgtm__ask').summary).toBe('Asked the owner')
+  expect(row('mcp__lgtm__project_task_list').summary).toBe('Listed tasks')
+  expect(row('Shell', { command: ['bash', '-lc', 'pnpm test'] })).toMatchObject({ summary: 'Ran bash -lc pnpm test', details: [{ label: 'Command', text: 'bash -lc pnpm test' }] })
+  expect(row('`pnpm typecheck`')).toMatchObject({ summary: 'Ran pnpm typecheck', details: [{ label: 'Command', text: 'pnpm typecheck' }] })
+})
+
+it('cleans titles and labels, caps summaries, and retains the full title inside', () => {
+  const title = 'Read /w/\u202egnp.exe\nAsked the owner' + 'x'.repeat(160)
+  const result = toolRow({ id: '1', ts: 1 }, { _tag: 'tool-call', callId: 'c', title })
+  expect(result.summary.length).toBeLessThanOrEqual(120)
+  expect(result.summary).not.toMatch(/[\n\r\u202a-\u202e\u2066-\u2069]/)
+  expect(result.details.some((detail) => detail.text.includes('Asked the owner' + 'x'.repeat(160)))).toBe(true)
+  expect(result.details.every((detail) => !/[\n\r\u202a-\u202e\u2066-\u2069]/.test(detail.label))).toBe(true)
+})
+
+it('keeps the full path label even if a hunk mentions its own path', () => {
+  const result = mapThread([change(1, '@@ -1 +1 @@\n-old\n+notes/MEMORY.md')], 'ag-worker').items[0]!
+  expect(result.details).toMatchObject([{ label: 'notes/MEMORY.md' }])
+})
+
+it('keeps a sample question brief closed and its full body once inside Details', async () => {
+  const { seed } = await import('../../../design/mock/js/data.js' as string)
+  const state = seed(); state.ui = {}; const request = state.requests.find((row: any) => row.id === 'q-stuck')
+  const element = render(ui.RequestBlock, { s: state, request })
+  const bodyText = request.body.replace(/`/g, '')
+  expect(element.textContent).toContain(request.summary)
+  expect(element.textContent).not.toContain(bodyText)
+  ;[...element.querySelectorAll('button')].find((button) => button.textContent?.trim() === 'Details')!.click(); await tick()
+  expect(element.textContent!.split(bodyText)).toHaveLength(2)
+  expect(element.querySelectorAll('.qc-part.q')).toHaveLength(1)
+})
+
+it('marks hunk lines only, leaves old content plain, and gives Copy a readable name', () => {
+  const patch = '--- notes/MEMORY.md\n+++ notes/MEMORY.md\n@@ -1 +1 @@\n-old\n+new'
+  const result = mapThread([change(1, patch), change(2, '- a Markdown list\n+ plain text', 'legacy')], 'ag-worker').items
+  const element = render(ui.ToolGroup, { item: result[0] })
+  expect([...element.querySelectorAll('.add,.del')].map((line) => line.textContent)).toEqual(['-old\n', '+new'])
+  expect(element.querySelector('[aria-label="Copy diff"]')).not.toBeNull()
+  expect(element.querySelector('h5')?.textContent).toBe('notes/MEMORY.md')
+  const legacy = render(ui.ToolGroup, { item: result[1] })
+  expect(legacy.querySelectorAll('.add,.del')).toHaveLength(0)
+  expect(legacy.textContent).toContain('The earlier text was not recorded.')
+  expect(legacy.querySelector('pre')?.textContent).toBe('- a Markdown list\n+ plain text')
+  const path = render(ui.ToolGroup, { item: toolRow({ id: 'path', ts: 1 }, { _tag: 'tool-call', callId: 'path', title: 'Read `/w/a.ts`' }) })
+  expect(path.querySelector('[aria-label="Copy path"]')).not.toBeNull()
+})
+
+it('marks literal triple-sign lines inside a hunk while leaving file headers unmarked', () => {
+  const patch = '--- a/file\n+++ b/file\n@@ -1 +1 @@\n--- old heading\n+++ new heading'
+  const element = render(ui.ToolGroup, { item: toolRow({ id: '1', ts: 1 }, { _tag: 'tool-call', callId: 'c', title: 'Edit' }, new Map([['file', patch]])) })
+  expect([...element.querySelectorAll('.add,.del')].map((line) => line.textContent)).toEqual(['--- old heading\n', '+++ new heading'])
 })

@@ -91,7 +91,7 @@ export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, 
       for (const key of calls.keys()) if (key.startsWith('legacy:')) calls.delete(key)
     }
     if (e._tag === "DeliverySent") { pending = true; delivery = e.deliveryId }
-    if (e._tag === 'DeliverySent' || e._tag === 'SessionOpened') calls.clear()
+    if (e._tag === 'TurnEnded' || e._tag === 'SessionOpened') calls.clear()
     if (e._tag === "StateChanged" && e.state._tag !== "working"
       || ["TurnEnded", "AgentStopped", "AgentInterrupted", "AgentCrashed", "AgentReloadFailed"].includes(e._tag)
       || (e._tag === "DeliveryReturned" || e._tag === "DeliveryRequeued" || e._tag === "DeliveryHeld") && e.deliveryId === delivery) pending = false
@@ -114,17 +114,20 @@ export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, 
       } else if (c._tag === "tool-call") {
         const previous = calls.get(c.callId)
         const files = previous?.files ?? new Map<string, string>()
-        const row = toolRow(previous?.row ?? base, c, files)
+        const content = previous ? { ...previous.content, ...c, title: c.title || previous.content.title } : c
+        const row = toolRow(previous?.row ?? base, content, files)
         if (previous) Object.assign(previous.row, row)
         else rows.push(row)
-        calls.set(c.callId, { row: previous?.row ?? row, content: c, files })
+        calls.set(c.callId, { row: previous?.row ?? row, content, files })
       } else if (c._tag === "plan") rows.push({ ...base, type: "agent", text: c.entries.map((p) => `- ${p.status}: ${p.content}`).join("\n") })
       else {
         const key = c.callId ?? `legacy:${c.path}:${c.diff}`
         const previous = calls.get(key)
         const files = previous?.files ?? new Map<string, string>()
-        files.set(c.path, c.diff)
-        const content = previous?.content ?? { _tag: 'tool-call' as const, callId: key, title: 'Edit' }
+        const parts = files.has(c.path) ? files.get(c.path)!.split(/\n(?=@@)/) : []
+        for (const part of c.diff.split(/\n(?=@@)/)) if (!parts.includes(part)) parts.push(part)
+        files.set(c.path, parts.join('\n'))
+        const content = previous?.content ?? { _tag: 'tool-call' as const, callId: key, title: /^@@ (?:-0,0 |New file )/m.test(c.diff) ? 'Write' : 'Edit' }
         const row = toolRow(previous?.row ?? base, content, files)
         if (previous) Object.assign(previous.row, row)
         else rows.push(row)

@@ -11,18 +11,13 @@ export interface Translated {
 }
 const record = (value: unknown): Record<string, any> | undefined => typeof value === "object" && value !== null ? value as Record<string, any> : undefined;
 
-// Legacy ACP diffs carry complete before/after text. Keep both sides as a
-// unified replacement hunk instead of silently recording only the new file.
+// Legacy ACP before/after values may be snippets, not complete files.
+// Keep their changes without inventing file positions or end-of-file metadata.
 export function replacementDiff(before: string, after: string): string {
   if (before === after) return '';
-  const lines = (text: string) => text === '' ? [] : text.replace(/\n$/, '').split('\n');
-  const removed = lines(before), added = lines(after);
-  const side = (text: string, rows: string[], marker: string) => [
-    ...rows.map((line) => marker + line),
-    ...(rows.length && !text.endsWith('\n') ? ['\\ No newline at end of file'] : []),
-  ];
-  return [`@@ -${removed.length ? 1 : 0},${removed.length} +${added.length ? 1 : 0},${added.length} @@`,
-    ...side(before, removed, '-'), ...side(after, added, '+')].join('\n');
+  const lines = (text: string, marker: string) => text === '' ? [] : text.replace(/\n$/, '').split('\n').map((line) => marker + line);
+  return [`@@ ${before === '' ? 'New file' : 'Change'} (line numbers unavailable) @@`,
+    ...lines(before, '-'), ...lines(after, '+')].join('\n');
 }
 
 // Terminal output and exits are correlated and streamed through the redactor
@@ -54,11 +49,24 @@ export const translate = (value: unknown, replay: boolean): ReadonlyArray<Transl
       kind: "file-change" as const, text: part.patch?.text ?? "", content: { _tag: "file-change" as const, ...correlation, path: change.path, diff: part.patch?.text ?? "" },
     }));
   });
-  if (diffs.length > 0) return diffs;
-  if (typeof update.toolCallId !== "string" || update.toolCallId === "") return [];
-  const toolContent = content.filter((part: any) => part?.type !== "terminal");
+  // A structured edit can contain several fragments for the same path.
+  const files = new Map<string, Translated>();
+  for (const item of diffs) {
+    if (item.content._tag !== 'file-change') continue;
+    const previous = files.get(item.content.path);
+    if (previous?.content._tag === 'file-change') {
+      const parts = previous.content.diff.split(/\n(?=@@)/);
+      for (const part of item.content.diff.split(/\n(?=@@)/)) if (!parts.includes(part)) parts.push(part);
+      const diff = parts.join('\n');
+      files.set(item.content.path, { ...item, text: diff, content: { ...item.content, diff } });
+    } else files.set(item.content.path, item);
+  }
+  const changes = [...files.values()];
+  if (typeof update.toolCallId !== "string" || update.toolCallId === "") return changes;
+  const toolContent = content.filter((part: any) => part?.type !== "terminal" && part?.type !== "diff");
   const hasToolContent = Array.isArray(update.content) && (content.length === 0 || toolContent.length > 0);
-  return [{ kind: "tool-call", text: JSON.stringify(update), content: {
+  if (changes.length && update.title === undefined && update.status === undefined && update.rawInput === undefined && update.rawOutput === undefined && !hasToolContent) return changes;
+  return [...changes, { kind: "tool-call", text: JSON.stringify(update), content: {
     _tag: "tool-call", callId: update.toolCallId, title: typeof update.title === "string" ? update.title : "",
     ...(["pending", "in_progress", "completed", "failed"].includes(update.status) ? { status: update.status } : {}),
     // Preserve tool data in the durable event. Viewers derive readable text

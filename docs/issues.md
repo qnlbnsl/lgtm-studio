@@ -14830,6 +14830,11 @@ Their prompts explicitly prohibit tools and file changes.
 They cannot verify the titles or payloads that current real harnesses send for edits, reads, commands, searches, or questions.
 The chat regression tests use the engine contracts and the tool shapes already exercised by the runner tests.
 A recorded tool session from each harness remains needed.
+For Claude Code in Agent Client Protocol mode, the recording must include an edit with several fragments for one path and its completing update.
+It must show whether later updates repeat snapshots or append fragments.
+It must also cover a diff-first file write and the raw tool titles and command arguments.
+The repository still has no real recording of that multi-hunk shape.
+The round 1 tests use explicitly constructed protocol inputs, rather than invented recordings.
 
 ## s12-2. Legacy Agent Client Protocol edits lost the original file text.
 
@@ -14838,5 +14843,45 @@ Status: fixed in the s12 chat change.
 
 The runner translated a legacy Agent Client Protocol (ACP) diff by storing only `newText`.
 It discarded `oldText`, so a viewer could not mark removed lines.
-The translator now stores both sides as a unified replacement hunk.
+The translator now stores both sides as a change fragment.
+Fix round 1 makes missing line positions explicit.
 Existing durable events cannot recover original text that was already discarded.
+
+
+## s12-3. Chat dropped earlier edit fragments and the completing status.
+
+Found: 2026-11-15, in review round 1 of the s12 chat change.
+Status: fixed in s12 fix round 1.
+
+The translator returned only file changes when an update also carried a tool status.
+The viewer overwrote each path with its latest fragment.
+An edit could therefore lose earlier hunks and continue to show a pending status.
+The translator now joins the fragments of one update by path and emits the tool patch alongside them.
+The viewer retains distinct hunks in recorded order and folds repeated hunks once.
+An unfinished call stays one row across a delivery made during the turn.
+
+## s12-4. Sample questions lost their short closed view.
+
+Found: 2026-11-15, in review round 1 of the s12 chat change.
+Status: fixed in s12 fix round 1.
+
+The closed sample card displayed the long body after its short summary.
+The body now appears once inside Details when the question has a separate summary.
+A question without a summary continues to show its body once on the closed card.
+
+## s12-5. Chat titles and file details could mislabel an action.
+
+Found: 2026-11-15, in review round 1 of the s12 chat change.
+Status: fixed in s12 fix round 1.
+
+Quoted paths and line ranges could leak into filenames.
+Array commands and some engine tool names lacked readable titles.
+Control characters could change the apparent text of titles and labels.
+The viewer now cleans those labels and caps titles while keeping the full title inside the row.
+Every file detail retains its full path label.
+A diff-first creation retains its write title when a later update has an empty title.
+Patch headers and old plain file content no longer receive added or removed line marks.
+Old content states that the earlier text was not recorded.
+New legacy change fragments no longer claim file positions or end-of-file metadata that the adapter did not supply.
+Copy buttons use action labels such as "Copy diff" and "Copy path".
+The redundant live build guard was removed.

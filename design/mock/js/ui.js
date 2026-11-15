@@ -254,11 +254,11 @@ function Cited({ text }) {
 function Paras({ list }) { return (Array.isArray(list) ? list : [list]).filter(Boolean).map((t, i) => html`<p key=${i}><${Cited} text=${t} /></p>`); }
 // A command or a folder in a code box. A long one scrolls inside the box, and the button in
 // its corner copies the whole text.
-export function CodeBox({ text, label, copyText = text, children }) {
+export function CodeBox({ text, label, copyText = text, children, copyLabel }) {
   const [copied, setCopied] = useState(false);
   const copy = () => { navigator.clipboard?.writeText(copyText || ''); setCopied(true); setTimeout(() => setCopied(false), 1500); };
   return html`<div class="qc-code"><pre class="code" tabindex="0">${children ?? text}</pre>
-    <button type="button" class="qc-copy" aria-label=${(copied ? 'Copied the ' : 'Copy the ') + label} title=${copied ? 'Copied' : 'Copy'} onClick=${copy}><${Icon} name=${copied ? 'check' : 'copy'} size=${14} /></button></div>`;
+    <button type="button" class="qc-copy" aria-label=${copyLabel ? (copied ? 'Copied ' : 'Copy ') + copyLabel : (copied ? 'Copied the ' : 'Copy the ') + label} title=${copied ? 'Copied' : 'Copy'} onClick=${copy}><${Icon} name=${copied ? 'check' : 'copy'} size=${14} /></button></div>`;
 }
 // What an answered card says about its answer: a short label, and the owner's words when the
 // answer was typed.
@@ -323,10 +323,11 @@ function BriefCard({ s, r, openThread, who }) {
     ${approvalEffect && html`<p class="qc-sum">${approvalEffect}</p>`}
     <div class="qc-top"><b class="qc-q">${brief}</b>${done ? html`<span class="qc-age">${clock(r.answeredAt)}</span>` : html`<span class=${cx('qc-age', waited >= HOUR && 'long')}>${ago(r.createdAt, now)}</span>`}</div>
     ${summary && html`<div class="qc-sum"><${Rich} text=${summary} pid=${r.project} /></div>`}
-    ${isQ && r.body && r.body !== brief && html`<div class="qc-sum"><${Rich} text=${r.body} pid=${r.project} /></div>`}
+    ${isQ && r.body && !summary && r.body !== brief && html`<div class="qc-sum"><${Rich} text=${r.body} pid=${r.project} /></div>`}
     ${recShort && !done && html`<p class=${cx('qc-rec', declined && 'declined')}><${Icon} name="sparkles" size=${14} class="qc-star" /><span>${recShort}</span>${declined && html`<span class="qc-tag">Declined</span>`}</p>`}
     ${open && html`<div class="qc-report" id=${id}>
       <p class="qc-meta">${who && html`<${Avatar} agent=${a} s=${s} size="sm" status=${false} /><span>Asked by ${agentLabel(s, a, { withTeam: true })}</span>`}${r.blocks && html`<span>Blocks ${r.blocks}</span>`}${!isQ && r.tool && html`<span>Tool ${r.tool}</span>`}</p>
+      ${isQ && summary && r.body && html`<section class="qc-part q"><h5>The question</h5><${Rich} text=${r.body} pid=${r.project} /></section>`}
       ${!isQ && html`<section class="qc-part"><h5>Command</h5>${r.command ? html`<${CodeBox} text=${r.command} label="command" />` : html`<p class="flat">Hidden by the harness. You cannot see this tool's input.</p>`}
         <h5 class="qc-sub">Folder</h5><${CodeBox} text=${r.folder} label="folder" /></section>`}
       ${r.what && html`<section class="qc-part"><h5>What it is about</h5><${Paras} list=${r.what} /></section>`}
@@ -471,12 +472,27 @@ export function RequestBlock({ s, request: r, variant = 'card', openThread = nul
 // ---- threads ------------------------------------------------------------------
 function ToolDetail({ detail }) {
   const [expanded, setExpanded] = useState(false);
-  const text = detail.text || ''; const lines = text.split('\n');
+  const text = detail.text || '';
+  const lines = text.split('\n').filter((line) => detail.kind !== 'diff' || line !== '\\ No newline at end of file');
   const cut = lines.length > 24 || text.length > 2400;
-  const shown = expanded ? text : lines.slice(0, 24).join('\n').slice(0, 2400);
-  const shownLines = shown.split('\n');
+  const shown = expanded ? lines.join('\n') : lines.slice(0, 24).join('\n').slice(0, 2400);
+  let inHunk = false, before = null, after = null;
+  const shownLines = shown.split('\n').map((line) => {
+    const header = /^@@ -\d+(?:,(\d+))? \+\d+(?:,(\d+))? @@/.exec(line);
+    if (header) { before = Number(header[1] ?? 1); after = Number(header[2] ?? 1); inHunk = true; }
+    else if (/^@@(?:\s|$)/.test(line)) { before = after = null; inHunk = true; }
+    else if (line.startsWith('diff --git ')) inHunk = false;
+    const mark = inHunk && !line.startsWith('@@') ? line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : '' : '';
+    if (inHunk && before !== null && after !== null && !line.startsWith('@@')) {
+      if (line.startsWith('-') || line.startsWith(' ')) before--;
+      if (line.startsWith('+') || line.startsWith(' ')) after--;
+      if (before <= 0 && after <= 0) inHunk = false;
+    }
+    return { text: line, mark };
+  });
   return html`<section class="tool-box"><h5>${detail.label}</h5>
-    <div class=${detail.kind === 'diff' ? 'tool-diff' : ''}><${CodeBox} text=${shown} copyText=${text} label=${detail.label.toLowerCase()}>${detail.kind === 'diff' ? shownLines.map((line, i) => html`<span class=${cx('diff-line', line.startsWith('+') && 'add', line.startsWith('-') && 'del')}>${line}${i < shownLines.length - 1 ? '\n' : ''}</span>`) : shown}<//></div>
+    ${detail.note && html`<p class="muted">${detail.note}</p>`}
+    <div class=${detail.kind === 'diff' ? 'tool-diff' : ''}><${CodeBox} text=${shown} copyText=${text} label=${detail.label.toLowerCase()} copyLabel=${detail.copyLabel || (detail.kind === 'diff' ? 'diff' : detail.label.toLowerCase())}>${detail.kind === 'diff' ? shownLines.map((line, i) => html`<span class=${cx('diff-line', line.mark)}>${line.text}${i < shownLines.length - 1 ? '\n' : ''}</span>`) : shown}<//></div>
     ${cut && html`<button type="button" class="btn sm ghost" aria-expanded=${expanded} onClick=${() => setExpanded(!expanded)}>${expanded ? 'Show less' : 'Show more'}</button>`}
   </section>`;
 }

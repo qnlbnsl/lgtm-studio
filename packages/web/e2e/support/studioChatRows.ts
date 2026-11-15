@@ -14,6 +14,7 @@ import { makeFakeRunner } from '../../../engine/test/support/fakeRunner.ts'
 import { appendSetup, eventOf, makeFakeSecrets, makeRig, removeRig } from '../../../engine/test/support/handlerRig.ts'
 import { registerRebuildCheck } from '../../../engine/test/support/rebuildCheck.ts'
 import { decisionSetup } from '../../../engine/test/support/projectDecisionFixtures.ts'
+import { translate } from '../../../engine/src/runner/translate.ts'
 import { buildStudio } from '../../../studio/scripts/build.ts'
 import { completedSetup } from './completedSetup.ts'
 
@@ -32,6 +33,8 @@ export async function exerciseStudioChatRows(page: Page) {
         yield* registerRebuildCheck()
         const project = yield* decisionSetup(); yield* completedSetup(project.projectId)
         const diff = '@@ -1 +1 @@\n-old rule\n+new rule'
+        const secondHunk = '@@ -8 +8 @@\n-second old rule\n+second new rule'
+        const complete = translate({ sessionUpdate: 'tool_call_update', toolCallId: 'edit', status: 'completed', content: [diff, secondHunk].map((text) => ({ type: 'diff', changes: [{ path: 'notes/MEMORY.md' }], patch: { text, format: 'git_patch' } })) }, false)
         const output = Array.from({ length: 40 }, (_, n) => `check ${n}: passed`).join('\n')
         const question = 'Which rule should we keep?\n- The new rule\n- The old rule'
         const item = (content: any, itemId = 'message') => eventOf({ _tag: 'ThreadItem', agentId: project.leadId, itemId, replay: false, content })
@@ -40,7 +43,7 @@ export async function exerciseStudioChatRows(page: Page) {
           item({ _tag: 'tool-call', callId: 'edit', title: 'Edit', status: 'in_progress', input: '{"file_path":"notes/MEMORY.md","old_string":"old rule","new_string":"new rule"}' }),
           item({ _tag: 'file-change', callId: 'edit', path: 'notes/MEMORY.md', diff }),
           item({ _tag: 'file-change', callId: 'edit', path: 'notes/MEMORY.md', diff }),
-          item({ _tag: 'tool-call', callId: 'edit', title: '', status: 'completed' }),
+          ...complete.map((event) => item(event.content)),
           item({ _tag: 'tool-call', callId: 'command', title: 'Bash', input: '{"command":"pnpm typecheck"}', output: JSON.stringify([{ type: 'content', content: { type: 'text', text: output } }]), status: 'completed' }),
           item({ _tag: 'text', text: question }, 'question-echo'),
           eventOf({ _tag: 'QuestionAsked', agentId: project.leadId, questionId: 'chat-row-question', holder: { _tag: 'owner' }, deliveryId: 'chat-question', title: 'Choose a rule', text: question }),
@@ -65,9 +68,11 @@ export async function exerciseStudioChatRows(page: Page) {
           await expect(thread.locator('.body b')).toHaveCount(0)
           await edit.locator('summary').click()
           await expect(edit.locator('pre')).toHaveCount(1)
-          expect(await edit.locator('pre').textContent()).toBe(diff)
-          await expect(edit.locator('.del')).toHaveText('-old rule')
-          await expect(edit.locator('.add')).toHaveText('+new rule')
+          expect(await edit.locator('pre').textContent()).toBe(diff + '\n' + secondHunk)
+          await expect(edit.locator('.del')).toHaveText(['-old rule', '-second old rule'])
+          await expect(edit.locator('.add')).toHaveText(['+new rule', '+second new rule'])
+          await expect(edit.locator('.tool-line')).toContainText('completed')
+          await expect(edit.getByRole('button', { name: 'Copy diff', exact: true })).toBeVisible()
           expect((await edit.textContent())!.split('notes/MEMORY.md')).toHaveLength(2)
           await command.locator('summary').click()
           await expect(command.getByRole('button', { name: 'Show more', exact: true })).toBeVisible()

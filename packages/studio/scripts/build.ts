@@ -1,4 +1,3 @@
-import { chatSource } from './chatSource.ts'
 import { terminalSource, xtermSource } from './terminalSource.ts'
 import { signInSource } from "./signInSource.ts"
 import { projectSettingsSource, assertProjectSettingsSource } from "./projectSettings.ts"
@@ -88,7 +87,7 @@ export async function buildStudio(dist = defaultDist): Promise<string> {
   for (const path of ["js/screens/git.js", "js/actions.js", "js/live/git.js", "js/live/board.js", "js/screens/service.js", "js/screens/auth.js", "js/dialogs.js", "js/ui.js", "js/screens/messages.js"]) {
     const target = join(dist, path)
     const source = projectSettingsSource(path, serviceSettingsSource(path, gitActionsSource(path, harnessIntegrationSource(path, signInSource(path, harnessChoicesSource(path, readFileSync(target, "utf8")))))))
-    writeFileSync(target, chatSource(path, assertProjectSettingsSource(path, source)))
+    writeFileSync(target, assertProjectSettingsSource(path, source))
   }
 
   for (const path of ["js/app.js", "js/screens/files.js", "js/editor.js", "js/ui.js"]) {

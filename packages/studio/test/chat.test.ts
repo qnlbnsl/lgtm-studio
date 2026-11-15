@@ -75,7 +75,7 @@ describe("thread mapping", () => {
       envelope(4, { _tag: "ThreadItem", agentId: "ag-worker", content: { _tag: "plan", entries: [{ content: "Build", status: "pending" }] } }),
       envelope(5, { _tag: "ThreadItem", agentId: "ag-worker", content: { _tag: "file-change", path: "src/a.ts", diff: "<script>data</script>" } })]
     const result = mapThread(items, "ag-worker")
-    expect(result.items).toMatchObject([{ type: "user", text: "hi" }, { type: "user", from: "ag-lead" }, { type: "request", requestId: "q1" }, { type: "agent", text: "- pending: Build" }, { type: "tools", summary: "Edited a.ts", details: [{ label: "src/a.ts", kind: "diff", text: "<script>data</script>" }] }])
+    expect(result.items).toMatchObject([{ type: "user", text: "hi" }, { type: "user", from: "ag-lead" }, { type: "request", requestId: "q1" }, { type: "agent", text: "- pending: Build" }, { type: "tools", summary: "Edited a.ts", details: [{ label: "src/a.ts", text: "<script>data</script>", note: "The earlier text was not recorded.", copyLabel: "content" }] }])
     expect(mapThread(items, "other").items).toEqual([])
     expect(mapThread([envelope(1, { _tag: "AgentStarted", agentId: "ag-worker", runMode: "interactive" })], "ag-worker").runMode).toBe("interactive")
     expect(contextLabel({ _tag: "task", projectId: "p" as never, taskId: "t" as never })).toBe("t")

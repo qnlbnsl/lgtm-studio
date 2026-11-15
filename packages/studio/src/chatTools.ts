@@ -2,10 +2,14 @@ import type { EventEnvelope } from '@lgtm/contracts'
 import { toolText } from '@lgtm/contracts/thread'
 
 type Content = Extract<EventEnvelope['event'], { _tag: 'ThreadItem' }>['content']
-export type ToolDetail = { label: string; text: string; kind?: 'diff' }
+export type ToolDetail = { label: string; text: string; kind?: 'diff'; note?: string; copyLabel?: string }
 export type ToolRow = { id: string; ts: number; type: 'tools'; summary: string; raw: string; status: string; details: ToolDetail[] }
-const fileName = (path: string) => path.split(/[\\/]/).at(-1) || path
+const bidi = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g
+const label = (text: string) => text.replace(bidi, '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim()
+const fileName = (path: string) => label(path.split(/[\\/]/).at(-1) || path)
 const firstLine = (text: string) => text.split('\n').find((line) => line.trim())?.trim() ?? ''
+const unquote = (text: string) => text.trim().replace(/^`+|`+$/g, '')
+const pathText = (text: string) => unquote(text.replace(/\s*\(\d+\s*-\s*\d+\)\s*$/, ''))
 const object = (text?: string): Record<string, unknown> => {
   try { const value = JSON.parse(text ?? 'null'); return value && typeof value === 'object' && !Array.isArray(value) ? value : {} } catch { return {} }
 }
@@ -14,22 +18,25 @@ const verbs: Record<string, string> = { read: 'Read', edit: 'Edited', write: 'Wr
 
 export function toolRow(base: { id: string; ts: number }, content: Extract<Content, { _tag: 'tool-call' }>, files: ReadonlyMap<string, string> = new Map()): ToolRow {
   const input = object(content.input)
-  const title = firstLine(content.title)
-  const command = field(input, 'command', 'cmd')
+  const title = label(unquote(firstLine(content.title)))
+  const commandValue = input.command ?? input.cmd
+  const command = typeof commandValue === 'string' ? commandValue : Array.isArray(commandValue) && commandValue.every((part) => typeof part === 'string') ? commandValue.join(' ') : undefined
   const path = files.keys().next().value ?? field(input, 'file_path', 'path', 'filePath')
   const token = title.toLowerCase().replace(/\(.*$/, '').trim()
   const named = /^(read|edit|write|search|grep|glob|bash|shell|run|execute)\b[: ]*([\s\S]*)/i.exec(title)
+  const namedPath = named?.[2] ? pathText(named[2]) : ''
   let summary: string
   if (command) summary = `Ran ${firstLine(command)}`
   else if (files.size) summary = `${/write|create/i.test(title) ? 'Wrote' : 'Edited'} ${fileName(path ?? '')}${files.size > 1 ? ` and ${files.size - 1} more ${files.size === 2 ? 'file' : 'files'}` : ''}`
   else if (/^mcp__/.test(title)) {
     const words = title.split('__').at(-1)!.split('_')
     const action = words.pop()!
-    const target = words.filter((word) => !['project', 'roles'].includes(word)).join(' ')
-    summary = verbs[action] ? `${verbs[action]} ${target || (action === 'orient' ? 'role guidance' : action)}` : `Used ${[...words, action].join(' ')}`
+    let target = words.filter((word) => !['project', 'roles'].includes(word)).join(' ')
+    if (action === 'list' && target && !target.endsWith('s')) target += 's'
+    summary = action === 'ask' && !target ? 'Asked the owner' : verbs[action] ? `${verbs[action]} ${target || (action === 'orient' ? 'role guidance' : action)}` : `Used ${[...words, action].join(' ')}`
   } else if (named || verbs[token]) {
     const verb = verbs[named?.[1]?.toLowerCase() ?? token] ?? 'Used'
-    const target = path ? fileName(path) : field(input, 'pattern', 'query') ?? (['Read', 'Edited', 'Wrote'].includes(verb) ? fileName(named?.[2] ?? '') : named?.[2]) ?? ''
+    const target = path ? fileName(path) : field(input, 'pattern', 'query') ?? (['Read', 'Edited', 'Wrote'].includes(verb) ? fileName(namedPath) : named?.[2]) ?? ''
     summary = `${verb} ${target || (verb === 'Ran' ? 'command' : verb === 'Searched' ? 'files' : 'file')}`
   } else if (/^(?:pnpm|npm|git|node|python3?|rg|ls|cat|cd)\s/.test(title)) summary = `Ran ${title}`
   else if (path) summary = `Used ${fileName(path)}`
@@ -37,23 +44,25 @@ export function toolRow(base: { id: string; ts: number }, content: Extract<Conte
 
   const details: ToolDetail[] = []
   if (files.size) {
-    // Diff snapshots replace input old/new strings and repeated output snapshots.
-    // The path is a single label; patch headers already identify files themselves.
     const patches = new Map<string, string[]>()
     for (const [file, diff] of files) patches.set(diff, [...(patches.get(diff) ?? []), file])
     for (const [diff, paths] of patches) {
-      const missing = paths.filter((file) => !diff.includes(file))
-      details.push({ label: missing.join(', ') || 'Diff', text: diff, kind: 'diff' })
+      const isDiff = /^@@(?:\s|$)/m.test(diff)
+      details.push({ label: paths.map(label).join(', '), text: diff,
+        ...(isDiff ? { kind: 'diff' as const, copyLabel: 'diff' } : { note: 'The earlier text was not recorded.', copyLabel: 'content' }) })
     }
-  } else if (content.input) details.push({ label: command ? 'Command' : 'Input', text: toolText(content.input) })
+  } else if (content.input) details.push({ label: command ? 'Command' : 'Input', text: command ?? toolText(content.input) })
   if (content.output && !files.size) {
     const output = toolText(content.output)
     if (output && !details.some((detail) => detail.text === output)) details.push({ label: 'Output', text: output })
   }
-  if (!content.input && !files.size && named?.[2] && ['read', 'edit', 'write'].includes(named[1]!.toLowerCase())) details.unshift({ label: 'Path', text: named[2] })
-  // Titles can contain a multiline command when the harness omitted rawInput.
-  if (!content.input && !files.size && content.title !== summary && (content.title !== title || /^Ran (?!command$)/.test(summary))) details.unshift({ label: 'Command', text: content.title })
-  return { ...base, type: 'tools', summary, raw: /^mcp__/.test(title) || verbs[token] ? title : named?.[1] ?? (command || summary.startsWith('Ran ') ? 'Command' : ''), status: content.status ?? '', details }
+  if (!content.input && !files.size && namedPath && ['read', 'edit', 'write'].includes(named![1]!.toLowerCase())) details.unshift({ label: 'Path', text: namedPath, copyLabel: 'path' })
+  // Keep the complete command, or the uncapped title, in the opened detail.
+  if (!content.input && !files.size && summary.startsWith('Ran ') && summary !== 'Ran command') details.unshift({ label: 'Command', text: unquote(content.title) })
+  const cleanSummary = label(summary)
+  if ((cleanSummary.length > 120 || content.title.includes('\n') && !summary.startsWith('Ran ')) && !details.some((detail) => detail.text === content.title)) details.push({ label: 'Full title', text: content.title.replace(bidi, '') })
+  return { ...base, type: 'tools', summary: cleanSummary.length > 120 ? cleanSummary.slice(0, 119) + '…' : cleanSummary,
+    raw: /^mcp__/.test(title) || verbs[token] ? title : named?.[1] ?? (command || summary.startsWith('Ran ') ? 'Command' : ''), status: content.status ?? '', details }
 }
 
 // Text chunks belong to a contiguous message. Reusing a harness message id across
