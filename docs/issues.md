@@ -14432,7 +14432,8 @@ Problems this shows:
 ## 945. The lead's chat showed noise and lost formatting.
 
 Found: 2026-11-14, by reading the same chat.
-Status: open.
+Status: the rendering defects are fixed in the s12 chat change.
+The session-start notices remain open with issue 946.
 
 1. The question card showed the same long text twice, once as the summary and once under "THE QUESTION". The short version was not short.
 2. The lead wrote lists, and the card showed them as one paragraph with dashes in it.
@@ -14827,3 +14828,255 @@ The engine has an archive command for a project and no delete command.
 A test project therefore stays in the archive for good.
 A delete must say what happens to the project's worktree, its branch, its agents and its stored history.
 This is open.
+
+## 975. The project lead was locked by default behind approval cards.
+
+Found while implementing the owner's permission change on 2026-11-15.
+Status: fixed in unit s11-permissions.
+New projects and historical projects without approval events could not plan or start workers.
+The owner wants both lead permissions allowed by default.
+Project settings now offers three settings for each permission.
+Only the owner can change a setting.
+A denied permission refuses its actions and approval requests with the same explanation.
+The lead still confirms the end result through an ordinary owner question before planning.
+Regression tests cover the defaults, denied actions, exact card acceptance and four refused caller kinds.
+
+## 976. Building consent depended on planning consent and shared its withdrawal.
+
+Found while implementing the owner's permission change on 2026-11-15.
+Status: fixed in unit s11-permissions.
+The owner could not grant building first.
+Withdrawing the end result also withdrew building.
+An open building card could close with the scope-withdrawn outcome described in issue 968.
+The two permissions now operate independently.
+New withdrawals use `project.PermissionWithdrawn`.
+The old withdrawal event retains its historical replay meaning.
+The three old approval event types remain readable.
+An open Starting work request can now grant that permission after Project planning is withdrawn.
+Tests cover both answer outcomes and grants in reverse order.
+
+## 977. A pending permission card must not restore a grant after its setting changes.
+
+Found while implementing permission settings on 2026-11-15.
+Status: fixed in unit s11-permissions.
+An owner can change a setting while an earlier card remains open.
+Accepting that card must not undo the later setting or withdrawal.
+The projection records each permission's latest change sequence.
+The answer planner compares the card's opening sequence with that change.
+An older card closes without granting the permission.
+A newer request remains available when the permission requires a request.
+Tests cover changing each permission off and back to ask before accepting an older card.
+Tests also cover withdrawal while another request is open.
+Fix round 1 closes affected cards when a setting changes.
+Historical cards that predate these closures still decide each permission separately.
+
+## 978. New permission events needed explicit redaction positions.
+
+Found during unit s11-permissions regression checks on 2026-11-15.
+Status: fixed in the same unit.
+The initial permission events lacked the redaction structure for their project identifiers and fixed enum values.
+A registered secret colliding with a permission value made the stored event fail schema validation.
+A failing roundtrip test reproduced the missing permission position.
+The new events now preserve only their schema identities and fixed enum values.
+Project records preserve the two fixed permission settings too.
+Ordinary prose continues to pass through secret redaction.
+The project event test covers every event type and collisions with the new enum values.
+
+## 979. Projects with Allowed permissions stayed in Define after planning and starting work.
+
+Found in review round 1 on 2026-11-15, as finding M1.
+Status: fixed in the same unit.
+Only card acceptance advanced the stage automatically.
+The normal Allowed path had no card to accept.
+New command batches now record Plan when a sprint, team or queued task is created from Define.
+They record Build when a worker starts or resumes from Define or Plan.
+A new nonqueue task or a task leaving the queue makes the same move to Build.
+The stage move is in the same durable batch as the action.
+Automatic moves do not change Design or stages from Build onward.
+Explicit owner stage commands remain unchanged.
+Old stored events retain their previous stage views during replay.
+Tests register the rebuild check and assert the command batch identities.
+The opening instruction names `project.stage.set` for cases where an automatic move does not fit.
+
+## 980. A declined permission card could report a grant made elsewhere.
+
+Found in review round 1 on 2026-11-15, as finding m2.
+Status: fixed in the same unit.
+An owner could choose Allowed and then decline an older open card.
+The outcome incorrectly said "Approval recorded."
+New setting changes close the card with a fixed note before another answer is possible.
+Historical open cards remain readable.
+Their answer outcome now describes only grants made by that card.
+A decline reports "Approval not recorded. Ask again if you still need it."
+A direct owner grant remains intact after a card is declined.
+Tests cover both cases.
+
+## 981. A combined card could describe permissions it would not grant.
+
+Found in review round 1 on 2026-11-15, as findings m3 and m7.
+Status: fixed in the same unit.
+A combined request named both permissions even when one was already Allowed.
+The engine now records a card only for the permissions that still need a grant.
+Its fixed sentence names only those permissions.
+Accepting that card reports "Approval recorded." when it grants a permission.
+The older outcome could also hide a partial grant on a historical combined card.
+That outcome now reports the grant made by the card.
+Tests cover either permission already being Allowed and a historical partial grant.
+The legacy end-result withdrawal cascade also has an explicit replay regression.
+
+## 982. Changing a permission left obsolete cards open beside newer requests.
+
+Found in review round 1 on 2026-11-15, as finding m5.
+Status: fixed in the same unit.
+Setting changes and withdrawals now close affected cards in the same batch.
+The fixed note explains whether the owner changed the setting or withdrew the grant.
+The lead receives the note through the ordinary answer delivery.
+A later answer to that card is refused.
+Unrelated permission cards and ordinary questions remain open.
+A new card can be requested when the setting requires a request.
+A combined card closes when either requested permission changes.
+
+## 983. The opening instruction and permission help left several details unclear.
+
+Found in review round 1 on 2026-11-15, as findings m4, m6 and m8.
+Status: fixed in the same unit.
+The opening no longer describes a project's current permissions as always allowed by default.
+It says that permissions do not replace confirmation of the end result.
+An off permission stops only the refused action.
+The small-work path now says to go straight to one build team without sprints.
+That wording avoids confusing a workflow choice with the Project planning permission.
+The feature list explicitly says that choosing Always ask begins Not granted on legacy approved projects too.
+The live and standalone withdrawal toasts both say "Permission withdrawn".
+The command-line summary uses the visible permission and setting names.
+The browser journey asserts the exact denied-request sentence.
+
+## 984. The committed harness recordings do not cover tool calls.
+
+Found: 2026-11-15, while fixing issue 945.
+Status: open.
+
+The Claude Code and Codex recordings in `packages/testing/fixtures/` contain read-only greeting exchanges.
+Their prompts explicitly prohibit tools and file changes.
+They cannot verify the titles or payloads that current real harnesses send for edits, reads, commands, searches, or questions.
+The chat regression tests use the engine contracts and the tool shapes already exercised by the runner tests.
+A recorded tool session from each harness remains needed.
+For Claude Code in Agent Client Protocol mode, the recording must include an edit with several fragments for one path and its completing update.
+It must show whether later updates repeat snapshots or append fragments.
+It must also cover a diff-first file write and the raw tool titles and command arguments.
+The repository still has no real recording of that multi-hunk shape.
+The round 1 tests use explicitly constructed protocol inputs, rather than invented recordings.
+
+## 985. Legacy Agent Client Protocol edits lost the original file text.
+
+Found: 2026-11-15, while fixing issue 945.
+Status: fixed in the s12 chat change.
+
+The runner translated a legacy Agent Client Protocol (ACP) diff by storing only `newText`.
+It discarded `oldText`, so a viewer could not mark removed lines.
+The translator now stores both sides as a change fragment.
+Fix round 1 makes missing line positions explicit.
+Existing durable events cannot recover original text that was already discarded.
+
+## 986. Chat dropped earlier edit fragments and the completing status.
+
+Found: 2026-11-15, in review round 1 of the s12 chat change.
+Status: fixed in s12 fix round 1.
+
+The translator returned only file changes when an update also carried a tool status.
+The viewer overwrote each path with its latest fragment.
+An edit could therefore lose earlier hunks and continue to show a pending status.
+The translator now joins the fragments of one update by path and emits the tool patch alongside them.
+The viewer retains distinct hunks in recorded order and folds repeated hunks once.
+An unfinished call stays one row across a delivery made during the turn.
+
+## 987. Sample questions lost their short closed view.
+
+Found: 2026-11-15, in review round 1 of the s12 chat change.
+Status: fixed in s12 fix round 1.
+
+The closed sample card displayed the long body after its short summary.
+The body now appears once inside Details when the question has a separate summary.
+A question without a summary continues to show its body once on the closed card.
+
+## 988. Chat titles and file details could mislabel an action.
+
+Found: 2026-11-15, in review round 1 of the s12 chat change.
+Status: fixed in s12 fix round 1.
+
+Quoted paths and line ranges could leak into filenames.
+Array commands and some engine tool names lacked readable titles.
+Control characters could change the apparent text of titles and labels.
+The viewer now cleans those labels and caps titles while keeping the full title inside the row.
+Every file detail retains its full path label.
+A diff-first creation retains its write title when a later update has an empty title.
+Patch headers and old plain file content no longer receive added or removed line marks.
+Old content states that the earlier text was not recorded.
+New legacy change fragments no longer claim file positions or end-of-file metadata that the adapter did not supply.
+Copy buttons use action labels such as "Copy diff" and "Copy path".
+The redundant live build guard was removed.
+
+## 989. Identical replace-all parts were lost while folding diffs.
+
+Found: 2026-11-15, in the orchestrator's read of commit `5c25eb6`.
+Status: fixed in s12 fix round 2.
+
+A replace-all edit can report identical change fragments for several positions in one file.
+The translator discarded a fragment whose text matched an earlier fragment in that update.
+The viewer also folded individual hunks by their text.
+Both operations could hide a deliberate repeated edit.
+The translator now joins every part for a path in recorded order, including identical parts.
+Only the viewer folds later snapshots for the same call and path.
+It compares the complete incoming content with earlier complete contents or the complete accumulated detail.
+It never splits the payload into hunks to deduplicate it.
+Regression tests check that the engine stores two identical parts and that the row renders both.
+A later repeat of that whole two-part snapshot renders once.
+
+
+## 990. Three permission events were missing from independent test inventories.
+
+Found: 2026-11-15, in the orchestrator's full check after merging s11 and s12.
+Status: fixed in s11 fix round 2.
+
+The contracts' exact event inventory omitted PermissionChanged, PermissionDecided and PermissionWithdrawn.
+The project Git test's exact durable event inventory omitted the same three events.
+The subscribe visibility sample table also lacked their payloads.
+The full check failed one contracts test, one project inventory test and three subscribe tests.
+Each independent inventory now includes the three event names.
+The visibility samples now contain valid payloads for all three events.
+The events remain owner-only, like the other project history events.
+A separate real subscription test checks catch-up and live delivery to the owner, the project's lead, a project worker and an unrelated agent.
+Only the owner receives the raw permission events.
+Leads and workers obtain effective permission state through project reads, action refusals and card answers.
+No visibility rule changed.
+
+## 991. The real-child task delivery fixture requested unnecessary default permission cards.
+
+Found: 2026-11-15, in the orchestrator's full check after merging s11 and s12.
+Status: fixed in s11 fix round 2.
+
+Both task delivery cases failed before creating a task.
+Their setup asked for approval while both new project permissions were already Allowed.
+The engine correctly refused those unnecessary requests.
+The fixture now sets both permissions to Always ask before its existing request and acceptance flow.
+The automatic stage event was not the cause.
+No production behavior, expected event list or delivery assertion changed.
+Both cases still require exactly one task notification, one queued delivery and one sent prompt to the actual project lead.
+They still retry the same request and check that a lost committed reply creates no duplicate delivery.
+They still verify that the other project's child receives nothing.
+
+
+## s11-12. A project review startup check failed intermittently during the combined unit run.
+
+Found: 2026-11-15, in the 151-file s11 fix round 2 verification run.
+Status: open, with a passing unchanged file rerun.
+
+The issue 579/583 concurrency test did not observe its controlled Git subprocess's startup marker within its existing five-second bound.
+The assertion failed at main-review.test.ts line 508.
+The other 5,151 tests passed in that run.
+The complete unchanged main-review.test.ts file then passed all 45 tests in a separate run.
+This includes the same startup assertion and the independent writer checks that follow it.
+Neither the product code nor this test file was changed in fix round 2.
+The failure occurred while several test files were running.
+The cause of the missed startup bound has not been established.
+No wait or deadline was widened.
+The orchestrator should retain this observation when assessing the full check.

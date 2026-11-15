@@ -45,9 +45,15 @@ export const Workspace = Schema.Struct({
   owner: Schema.optionalKey(ProjectName), activity: Schema.optionalKey(ProjectText)
 })
 export type Workspace = typeof Workspace.Type
+export const LeadPermission = Schema.Literals(["planning", "starting-work"])
+export type LeadPermission = typeof LeadPermission.Type
+export const LeadPermissionSetting = Schema.Literals(["allowed", "denied", "ask"])
+export type LeadPermissionSetting = typeof LeadPermissionSetting.Type
 export const Project = Schema.Struct({
   projectId: ProjectId, repoId: RepositoryId, name: ProjectName, goal: ProjectText,
   leadAgentId: AgentId, worktreeId: WorkspaceId, machineId: ProjectName,
+  planningPermission: Schema.optionalKey(LeadPermissionSetting), workPermission: Schema.optionalKey(LeadPermissionSetting),
+  planningPermissionChangedAt: Schema.optionalKey(EventSequence), workPermissionChangedAt: Schema.optionalKey(EventSequence),
   endResultApproval: Schema.optionalKey(Schema.NonEmptyString), skipPlanningApproval: Schema.optionalKey(Schema.NonEmptyString), buildApproval: Schema.optionalKey(Schema.NonEmptyString),
   stage: Schema.optionalKey(ProjectStage), shell: Schema.optionalKey(ProjectName), archivedAt: Schema.optionalKey(EpochMilliseconds), archiving: Schema.optionalKey(Schema.Boolean)
 })

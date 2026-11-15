@@ -604,3 +604,10 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--color-
 .att-pic .att-x { position: absolute; top: 3px; right: 3px; background: var(--color-surface); box-shadow: var(--shadow-1); }
 .composer.drop { border-color: var(--color-focus); border-style: dashed; }
 .drop-note { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; gap: 8px; border-radius: inherit; background: color-mix(in srgb, var(--color-surface) 88%, transparent); color: var(--color-text); font-weight: var(--weight-medium); pointer-events: none; }
+
+/* Tool details preserve source lines and the diff's visible + and - markers. */
+.tool-box .code { margin: 0; white-space: pre; overflow: auto; max-height: 480px; }
+.tool-diff .diff-line { display: inline; }
+.tool-diff .add { color: var(--color-success); }
+.tool-diff .del { color: var(--color-error); }
+.tools > .tool-line { overflow-wrap: anywhere; }

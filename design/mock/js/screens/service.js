@@ -791,10 +791,16 @@ export function ProjectSettings({ s, project: p }) {
   const subs = s.subscriptions.filter((x) => x.machine === p.machine || x.id === lead.subscription);
   const running_ = ags.filter(running).length;
   const rename = () => { const value = name.trim(); if (live.on) return board.renameProject(p.id, value); if (!value || s.projects.some((x) => x.id !== p.id && x.repo === p.repo && x.name.toLowerCase() === value.toLowerCase())) return act.toast('Choose a unique project name.', 'error'); update(() => { p.name = value; }); act.toast('Project renamed'); };
+  const changePermission = (permission, setting) => {
+    if (live.on) return board.changePermission(p.id, permission, setting);
+    update(() => { p.permissions = { ...p.permissions, [permission]: { setting, granted: false } }; });
+    act.toast('Lead permission saved');
+  };
   const changeApproval = (approval, approved) => {
     if (live.on) return board.changeApproval(p.id, approval, approved);
-    update(() => { p.approvals = { endResult: false, build: false, ...p.approvals, [approval === 'build' ? 'build' : 'endResult']: approved }; if (!approved && approval === 'end-result') p.approvals.build = false; if (approved && ['Define', 'Plan'].includes(p.stage)) p.stage = approval === 'build' ? 'Build' : 'Plan'; });
-    act.toast(approved ? 'Approval granted' : 'Approval withdrawn');
+    const permission = approval === 'build' ? 'starting-work' : 'planning';
+    update(() => { p.permissions = { ...p.permissions, [permission]: { ...p.permissions?.[permission], granted: approved } }; });
+    act.toast(approved ? 'Permission granted' : 'Permission withdrawn');
   };
   const deleteTeam = (team) => act.confirm({ title: `Delete ${teamName(team)}?`, waitForReply: live.on, action: 'Delete team', danger: true,
     body: 'Stop its agents and delete or move its tasks first. Its board channel becomes read-only history. Its branch and worktree folder are kept.',
@@ -829,9 +835,16 @@ export function ProjectSettings({ s, project: p }) {
     <${Section} title="Project">
       <div class="svc-rows">
         <${Row} label="Name" id="ps-name" hint="The branch and the worktree folder keep their names."><span class="row"><input id="ps-name" class="input" maxlength="128" value=${name} disabled=${projectBusy} onInput=${(e) => setName(e.target.value)} /><span class="tag" data-tip="Task labels start with this">${p.prefix}</span><button type="button" class="btn sm" disabled=${projectBusy || !name.trim() || name.trim() === p.name} onClick=${rename}>Save name</button></span><//>
-        <${Row} label="Approvals" hint="Withdrawing the end result also withdraws building." top>
-          <div class="row"><span>End result: ${p.approvals?.endResult ? 'Approved' : 'Not approved'}</span><button type="button" class="btn sm" disabled=${projectBusy} onClick=${() => changeApproval('end-result', !p.approvals?.endResult)}>${p.approvals?.endResult ? 'Withdraw end result approval' : 'Grant end result approval'}</button></div>
-          <div class="row"><span>Building: ${p.approvals?.build ? 'Approved' : 'Not approved'}</span><button type="button" class="btn sm" disabled=${projectBusy || !p.approvals?.endResult} onClick=${() => changeApproval('build', !p.approvals?.build)}>${p.approvals?.build ? 'Withdraw building approval' : 'Grant building approval'}</button></div><//>
+        <${Row} label="Lead permissions" top>
+          ${[
+            ['planning', 'Project planning', 'The lead can create sprints, teams and tasks.'],
+            ['starting-work', 'Starting work', 'The lead can start workers and move tasks out of the queue.']
+          ].map(([permission, label, help]) => {
+            const value = p.permissions?.[permission] || { setting: 'allowed', granted: false };
+            return html`<div><div class="row"><label for=${'ps-permission-' + permission}>${label}</label><select id=${'ps-permission-' + permission} class="select" aria-label=${label + ' permission'} value=${value.setting} disabled=${projectBusy} onChange=${(e) => changePermission(permission, e.target.value)}>
+              <option value="allowed">Allowed</option><option value="denied">Not allowed</option><option value="ask">Always ask for permission</option>
+            </select>${value.setting === 'ask' && html`<span role="status" aria-label=${label + ' grant'}>${value.granted ? 'Granted' : 'Not granted'}</span>${value.granted && html`<button type="button" class="btn sm" aria-label=${'Withdraw ' + label} disabled=${projectBusy} onClick=${() => changeApproval(permission === 'planning' ? 'end-result' : 'build', false)}>Withdraw</button>`}`}</div><div class="muted">${help}</div></div>`;
+          })}<//>
         <${Row} label="Goal" id="ps-goal" hint="The project lead reads this at the start of every turn." top>
           <textarea id="ps-goal" class="textarea" rows="3" value=${goal} onInput=${(e) => setGoal(e.target.value)}></textarea>
           ${goal.trim() !== p.goal && html`<span class="row" style="margin-top:6px"><button type="button" class="btn sm primary" disabled=${!goal.trim() || projectBusy} aria-busy=${projectBusy} onClick=${() => { if (live.on) return board.saveGoal(p.id, goal.trim()); set({ goal: goal.trim() }); act.toast('Goal saved. The project lead was told.'); }}>Save goal</button><button type="button" class="btn sm ghost" onClick=${() => setGoal(p.goal)}>Discard</button></span>`}<//>

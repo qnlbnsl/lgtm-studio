@@ -393,30 +393,90 @@ Creation checks this before effects, including saved intent retries, and never r
 Only a current-admitted initial branch refusal with no creation intent receives a terminal refusal receipt; unavailable accounts and unfinished intents retain their existing retry behavior.
 The later New project consumer joins this fixed reason directly; unknown creation errors retain their frozen request handling.
 
-## The lead's first decisions.
+## The lead's first decisions and permissions.
 
 A newly created project starts in Define.
 The lifecycle uses `projectLeadInstruction` for the opening message on every creation path.
 The lead is named "Project lead" and receives the role `lead:project-lead`.
 Historical agents with the role `project-lead` also receive lead advice.
+The lead first understands the goal and confirms the end result through an ordinary owner question.
+It waits for that confirmation before creating sprints, teams or tasks.
+The lead proposes a path based on the size of the work.
+Small work may use one build team whose lead works without sub-workers.
+The project lead may propose doing a nitpick itself.
+Larger work uses sprints and teams with builders.
+New command batches append explicit `project.StageChanged` events as planning and work begin.
+Creating a sprint, team or queued task moves Define to Plan.
+Starting or resuming a project worker moves Define or Plan to Build.
+Creating a nonqueue task or moving a task out of the queue makes the same move to Build.
+Automatic moves leave Design and stages from Build onward untouched.
+The owner's explicit stage changes are unchanged.
+The lead can use `project.stage.set` when an automatic move does not fit.
+The project reducers do not derive these moves from old stored creation or task events.
+Existing stored events keep their previous stage views during replay.
 
-The lead uses `ask` with `projectApproval` to request an owner's decision.
-The supported values are `end-result`, `skip-planning`, `build`, and `skip-planning-and-build`.
+"Project planning" allows the lead to create sprints, teams and tasks.
+"Starting work" allows the lead to start workers and move tasks out of the queue.
+The planning permission also covers existing planning edits, task annotations by other agents, sprint completion and advancement beyond Define.
+The starting permission also covers worker resume, prompts that restart idle workers, queued-task completion through answers and advancement to Build, Review or Handover.
+A worker may still finish or annotate its own started task.
+The owner's commands remain ungated.
+The two permissions are independent.
+Each setting is `allowed`, `denied` or `ask`.
+Both settings default to `allowed`, including on historical projects with no recorded setting.
+Allowed actions need no approval card.
+A denied action explains that the owner turned the permission off and that it cannot be requested.
+An approval request for a denied permission returns the same refusal.
+
+Only the owner can use `project.permission.set`.
+Its payload contains `projectId`, `permission` and `setting`.
+The permission is `planning` or `starting-work`.
+The website and command-line interface use the same client application programming interface (API) command.
+Changing a setting appends `project.PermissionChanged` and clears only that permission's grant.
+Saving the same effective setting preserves its grant.
+Choosing "Always ask for permission" starts from "Not granted", including for a project approved under pull request 58.
+The owner must grant that permission again through a new card or the existing owner command.
+The existing owner commands `project.approval.grant` and `project.approval.withdraw` remain available for ask permissions.
+Withdrawing a grant appends `project.PermissionWithdrawn` and leaves the other grant intact.
+Setting changes and withdrawals never move the stage backwards.
+The three legacy events `project.ApprovalGranted`, `project.ApprovalWithdrawn` and `project.ApprovalDecided` still replay.
+Legacy withdrawal events retain their historical cascade during replay.
+New withdrawals use the independent event.
+Old grants retain their recorded identifiers.
+An absent setting remains allowed even when old grant events exist.
+
+Under "Always ask for permission", the lead uses `ask` with `projectApproval`.
+The supported values remain `end-result`, `skip-planning`, `build`, and `skip-planning-and-build`.
+The first two request Project planning.
+The third requests Starting work.
+The last requests both permissions together.
+If only one still needs a grant, the engine records a card for that permission alone.
+Its fixed effect sentence names only the permission the card can newly grant.
+A combined request refuses if either permission is denied.
 The title and recommendation are the short request.
 The question text holds the full proposal.
-The engine supplies the acceptance choice "Accepted".
-Only the owner's answer with that exact text grants approval.
-Every other answer records a denial.
-An ordinary question never grants a project approval.
-Each decision appends `project.ApprovalDecided` beside the question answer.
-
-An approved end result or an approved request to skip planning allows the lead to create sprints, teams and tasks.
-A separate building approval allows agents to start or resume workers and move tasks out of the queue.
-The combined request grants both permissions in one recorded decision.
-Building approval does not require a sprint.
+The engine supplies the effect sentence and the acceptance choice "Accepted".
+Only the owner's answer with that exact text grants the requested permission through a card.
+An ordinary question never grants a lead permission.
+Each decision appends `project.PermissionDecided` beside the question answer.
+Its `granted` array records each permission independently.
+New setting changes close affected cards before they can be answered.
+Historical cards stored before this closure behavior can still grant their unchanged permission.
+A grant lasts until its setting changes or the owner withdraws it.
+A setting change or withdrawal closes its affected open cards in the same command batch.
+The closure uses ordinary `QuestionAnswered` events and the ordinary answer delivery.
+The fixed setting note is "Permission request closed because the owner changed its setting."
+The fixed withdrawal note is "Permission request closed because the owner withdrew its grant."
+An affected combined card is closed as a whole.
+An unrelated permission card and ordinary questions remain open.
+A closed card refuses later answers.
+Saving the same effective setting does not close a card.
+The engine composes these closures only after validating the owner-only project batch.
+Other piece commands do not gain permission to emit question events.
+The outcome is "Approval recorded." when this card grants at least one permission.
+Otherwise it is "Approval not recorded. Ask again if you still need it."
+A decline never reports a grant made by another action.
 Changing the displayed stage cannot grant either permission.
-The owner's own actions remain available through the client application programming interface and command line.
-Historical projects without these decisions need the same approvals before agents can plan or start work.
 
 ## Project names and team deletion.
 

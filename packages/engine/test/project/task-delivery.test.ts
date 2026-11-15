@@ -52,6 +52,11 @@ for (const lostReply of [false, true]) it.live(`owner task reaches the actual pr
     const idle = yield* eventually(snapshot, (state) => state.agents[row.leadAgentId]?.state._tag === "idle" && state.agents[otherRow.leadAgentId]?.state._tag === "idle")
     expect(idle.agents[row.leadAgentId]?.state._tag).toBe("idle")
     const leadApi = yield* connect(rig.socket, peer.env.LGTM_TOKEN!)
+    // This fixture exercises the card flow before delivery. New projects allow
+    // both permissions by default, so opt into that flow explicitly.
+    for (const permission of ["planning", "starting-work"] as const) {
+      yield* api["project.permission.set"]({ requestId: freshRequest(), projectId: project.projectId, permission, setting: "ask" })
+    }
     for (const projectApproval of ["end-result", "build"] as const) {
       const { questionId } = yield* leadApi.ask({ requestId: freshRequest(), projectId: project.projectId, projectApproval, title: "Approve the next step?", text: "The agreed work." })
       yield* api.answer({ requestId: freshRequest(), kind: "question", id: questionId, text: "Accepted" })
