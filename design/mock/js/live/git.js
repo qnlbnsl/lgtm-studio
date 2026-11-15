@@ -17,7 +17,16 @@ export async function run(key, work) {
   catch (e) { if (current() && S().session.status === 'in') act.toast(e.message || 'The service did not complete the request.', 'error'); return false; }
   finally { if (current()) pending(key, false); }
 }
-const request = (tag, payload = {}) => engine.request(tag, payload);
+const gitMutations = new Set(['project.stage', 'project.unstage', 'project.stage.all', 'project.unstage.all', 'project.discard', 'project.commit', 'project.fetch', 'project.pull', 'project.push', 'project.update', 'project.integrate', 'project.review.prepare', 'project.review.approve', 'project.review.decline', 'project.merge.abort', 'project.conflict.reopen', 'project.conflict.resolve']);
+const request = async (tag, payload = {}) => {
+  const reply = await engine.request(tag, payload);
+  if (gitMutations.has(tag) && typeof reply?.requestId === 'string') {
+    gitReadbacks.set(reply.requestId, { worktreeId: payload.worktreeId, covered: false });
+    // Eviction can only cause an extra read when an old event arrives late.
+    if (gitReadbacks.size > 256) gitReadbacks.delete(gitReadbacks.keys().next().value);
+  }
+  return reply;
+};
 const draftValues = () => Object.fromEntries([...settingsDrafts].map(([key, draft]) => [key, draft.value]));
 const settingsPatch = (patch) => engineWrite({ settings: { ...S().settings, ...patch, ...draftValues() } });
 let sessionGeneration = 0;
@@ -32,11 +41,31 @@ let revision = 0;
 let serviceRead = 0;
 let refreshTimer;
 let retryPending;
-let gitObserved = 0, gitLoaded = 0;
+let gitObserved = 0, gitLoaded = 0, gitEventVersion = 0;
+let gitFullReadAt;
+const gitInvalidations = new Map(), gitReadbacks = new Map();
+const gitVisible = () => document.visibilityState !== 'hidden';
+const gitNeedsRead = () => gitLoaded < gitObserved || gitInvalidations.size > 0;
 const gitRoster = (rows) => JSON.stringify((rows || []).map(({ id, project, repo, branch, parentId, machine, folder, kind }) => ({ id, project, repo, branch, parentId, machine, folder, kind })).sort((a, b) => a.id.localeCompare(b.id)));
+const gitWorktrees = (project) => S().worktrees.filter((w) => w.project === project || w.kind === 'base' && w.repo === S().projects.find((p) => p.id === project)?.repo);
 function scheduleGitRefresh() {
   clearTimeout(refreshTimer);
-  refreshTimer = setTimeout(() => { if (screen?.name === 'git' && gitLoaded < gitObserved) void refreshScreen(); }, 100);
+  if (!gitVisible()) return;
+  refreshTimer = setTimeout(() => { if (screen?.name === 'git' && gitVisible() && gitNeedsRead()) void refreshScreen(); }, 100);
+}
+function invalidateGit(change) {
+  if (change?.requestId) {
+    if (gitReadbacks.get(change.requestId)?.covered) return;
+    gitInvalidations.set(change.requestId, ++gitEventVersion);
+    if (gitInvalidations.size > 256) { gitInvalidations.clear(); gitObserved++; }
+  } else gitObserved++;
+  scheduleGitRefresh();
+}
+function coverGitRequests(ids) {
+  for (const id of ids) {
+    const own = gitReadbacks.get(id);
+    if (own) { own.covered = true; gitInvalidations.delete(id); }
+  }
 }
 // A connection snapshot can replace the skeletons. Keep already-read detail while refreshing.
 export function observe(patch) {
@@ -46,7 +75,9 @@ export function observe(patch) {
     settingsQueue = { items: [], running: false }; settingsDrafts.clear();
     S().ui.gitPending = {};
     service = accounts = statuses = retryPending = undefined; subscriptionsLoaded = false; S().ui.serviceReady = false; revision++; clearTimeout(refreshTimer);
+    gitInvalidations.clear(); gitReadbacks.clear(); gitObserved = gitLoaded = 0; gitFullReadAt = undefined;
     Object.assign(patch, { notifications: [], settings: { ntfyServer: '', ntfyTopic: '', ntfyToken: '', tokenSet: false, ntfyEnabled: false, email: {}, notifyOn: {}, quiet: {} } });
+    return;
   }
   if (patch.settings && S().session.status === 'in') patch.settings = { ...patch.settings, ...draftValues() };
   if (patch.worktrees) patch.worktrees = patch.worktrees.map((w) => ({ ...w, ...(S().worktrees?.find((x) => x.id === w.id && x.folder === w.folder && x.branch === w.branch) || {}), ...Object.fromEntries(Object.entries(w).filter(([k]) => !['files', 'commits', 'ahead', 'behind', 'merge'].includes(k))) }));
@@ -55,7 +86,14 @@ export function observe(patch) {
     const reconnected = patch.conn?.status === 'live' && S().conn?.status !== 'live';
     const changed = patch.gitRevision !== undefined && patch.gitRevision !== S().gitRevision;
     const rosterChanged = patch.worktrees && gitRoster(patch.worktrees) !== gitRoster(S().worktrees);
-    if (reconnected || changed || rosterChanged) { gitObserved++; scheduleGitRefresh(); }
+    if (reconnected || rosterChanged) invalidateGit();
+    if (changed) {
+      const agent = patch.gitChange?.agentId;
+      const folder = agent && (patch.agents || S().agents || []).find((a) => a.id === agent)?.folder;
+      if (!agent || folder && gitWorktrees(screen.project).some((w) => w.folder === folder)) invalidateGit(patch.gitChange);
+    }
+    if (patch.gitHeartbeat !== undefined && gitVisible() && !busy('git') && !busy('git-read') && !gitNeedsRead()
+      && (gitFullReadAt === undefined || Date.now() - gitFullReadAt >= 60_000)) invalidateGit();
     return;
   }
   if (screen && (patch.conn?.status === 'live' || patch.projects)) {
@@ -68,12 +106,18 @@ export function openScreen(name, project) {
   if (name === 'git') gitObserved++;
   void refreshScreen();
   const refresh = () => { if (screen) void refreshScreen(); };
+  const visible = () => {
+    if (screen?.name !== 'git') return;
+    if (gitVisible()) invalidateGit();
+    else { revision++; gitObserved++; clearTimeout(refreshTimer); }
+  };
   addEventListener('focus', refresh);
-  return () => { screen = undefined; revision++; clearTimeout(refreshTimer); removeEventListener('focus', refresh); };
+  document.addEventListener('visibilitychange', visible);
+  return () => { screen = undefined; revision++; clearTimeout(refreshTimer); removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', visible); };
 }
 async function refreshScreen() {
   if (!mapping || !screen || S().session.status !== 'in') return;
-  if (screen.name === 'git') return refreshGit(screen.project);
+  if (screen.name === 'git') { if (gitVisible()) return refreshGit(screen.project); return; }
   if (busy('settings') || busy('read-service')) { clearTimeout(refreshTimer); refreshTimer = setTimeout(refreshScreen, 200); return; }
   return run('read-service', () => loadService(screen?.name));
 }
@@ -286,36 +330,49 @@ const read = (reply) => { if (!('result' in reply)) throw new Error('The service
 const writeWt = (id, patch) => engineWrite({ worktrees: S().worktrees.map((w) => w.id === id ? { ...w, ...patch } : w) });
 function local(w) { if (!w || w.machine !== 'local') throw new Error('Git is available only for a workspace on local.'); }
 function destination(w) { return S().worktrees.find((x) => x.repo === w.repo && x.id === w.parentId); }
-async function loadGit(project) {
+async function loadGit(project, ids) {
   if (!mapping) return;
-  const version = revision, observed = gitObserved;
-  const list = S().worktrees.filter((w) => w.project === project || w.kind === 'base' && w.repo === S().projects.find((p) => p.id === project)?.repo);
-  for (const w of list) {
-    local(w);
-    const state = read(await request('project.git.state', { ...scope(w), ...(w.parent ? { target: w.parent } : {}) }));
-    if (version !== revision || S().session.status !== 'in') return;
-    const changes = read(await request('project.changes', scope(w)));
-    if (version !== revision || S().session.status !== 'in') return;
-    const files = mapping.mapGitChanges(changes.items);
-    const merge = state.mergeHead || changes.items.some((x) => x.conflict) ? { from: state.mergeHead || '', by: null, startedAt: null, files: changes.items.filter((x) => x.conflict).map((x) => ({ ...(w.merge?.files.find((f) => f.path === x.path) || {}), id: x.path, path: x.path, parts: w.merge?.files.find((f) => f.path === x.path)?.parts || [], resolved: false, loaded: false })) } : null;
-    writeWt(w.id, { ...mapping.mapGitState(state, w.parent), files, merge, ready: !changes.truncated, truncated: changes.truncated });
-    if (w.kind === 'project') {
-      const status = read(await request('project.review.status', { ...scope(w), projectId: project }));
-      if (version !== revision) return;
-      if (status.review) {
-        const fresh = mapping.mapMainReview(status.review, undefined, S().projects.find((p) => p.id === project)?.lead || '');
-        const old = wt(w.id).review;
-        const review = old?.id === fresh.id && old.head === fresh.head && old.baseHead === fresh.baseHead ? { ...old, ...fresh, files: old.files, evidence: { ...old.evidence, tests: fresh.evidence.tests, review: fresh.evidence.review } } : fresh;
-        writeWt(w.id, { review, merged: status.review.outcome === 'merged' && status.review.head === state.head ? status.review.decidedAt : null });
+  const version = revision, observed = gitObserved, events = gitEventVersion;
+  const list = gitWorktrees(project), loaded = list.filter((w) => !ids || ids.includes(w.id));
+  // Only replies received before this read began can be covered by it.
+  const own = [...gitReadbacks].filter(([, r]) => !r.covered && loaded.some((w) => w.id === r.worktreeId)).map(([id]) => id);
+  try {
+    if (!gitVisible()) return;
+    for (const w of loaded) {
+      local(w);
+      const state = read(await request('project.git.state', { ...scope(w), ...(w.parent ? { target: w.parent } : {}) }));
+      if (version !== revision || S().session.status !== 'in') return;
+      const changes = read(await request('project.changes', scope(w)));
+      if (version !== revision || S().session.status !== 'in') return;
+      const files = mapping.mapGitChanges(changes.items);
+      const merge = state.mergeHead || changes.items.some((x) => x.conflict) ? { from: state.mergeHead || '', by: null, startedAt: null, files: changes.items.filter((x) => x.conflict).map((x) => ({ ...(w.merge?.files.find((f) => f.path === x.path) || {}), id: x.path, path: x.path, parts: w.merge?.files.find((f) => f.path === x.path)?.parts || [], resolved: false, loaded: false })) } : null;
+      writeWt(w.id, { ...mapping.mapGitState(state, w.parent), files, merge, ready: !changes.truncated, truncated: changes.truncated });
+      if (w.kind === 'project') {
+        const status = read(await request('project.review.status', { ...scope(w), projectId: project }));
+        if (version !== revision) return;
+        if (status.review) {
+          const fresh = mapping.mapMainReview(status.review, undefined, S().projects.find((p) => p.id === project)?.lead || '');
+          const old = wt(w.id).review;
+          const review = old?.id === fresh.id && old.head === fresh.head && old.baseHead === fresh.baseHead ? { ...old, ...fresh, files: old.files, evidence: { ...old.evidence, tests: fresh.evidence.tests, review: fresh.evidence.review } } : fresh;
+          writeWt(w.id, { review, merged: status.review.outcome === 'merged' && status.review.head === state.head ? status.review.decidedAt : null });
+        }
       }
     }
-  }
-  const selected = list.find((w) => w.branch === S().inspecting[project]) || list.find((w) => w.kind === 'project') || list[0];
-  if (selected) await loadGitDetail(selected.id);
-  if (version === revision && S().session.status === 'in') gitLoaded = Math.max(gitLoaded, observed);
-  if (gitLoaded < gitObserved) scheduleGitRefresh();
+    const selected = list.find((w) => w.branch === S().inspecting[project]) || list.find((w) => w.kind === 'project') || list[0];
+    if (selected && loaded.some((w) => w.id === selected.id)) await loadGitDetail(selected.id);
+    if (version === revision && S().session.status === 'in') {
+      if (!ids) {
+        gitLoaded = Math.max(gitLoaded, observed); gitFullReadAt = Date.now();
+        for (const [id, at] of gitInvalidations) if (at <= events) gitInvalidations.delete(id);
+      }
+      // Own completion events can arrive after the reply and after this read
+      // began. Other callers' later events remain pending for another read.
+      coverGitRequests(own);
+    }
+  } finally { if (gitNeedsRead()) scheduleGitRefresh(); }
 }
 async function loadGitDetail(id, selectedCommit) {
+  if (!gitVisible()) return;
   const w = wt(id); local(w); const version = revision;
   const ui = S().gitUi[id] || {}, tab = ui.tab || (w.merge ? 'conflicts' : 'changes');
   if (tab === 'history') {
@@ -391,8 +448,10 @@ export function integrate(id) { return run('git', async () => {
 }); }
 export function openReview(w, project) { return run('git', async () => {
   local(w); const target = destination(w); local(target); revision++;
-  const prepared = read(await request('project.review.prepare', { ...scope(w), projectId: project.id, destinationId: target.id }));
+  const reply = await request('project.review.prepare', { ...scope(w), projectId: project.id, destinationId: target.id });
+  const prepared = read(reply);
   writeWt(w.id, { review: mapping.mapMainReview(prepared.review, prepared.comparison, project.lead) });
+  coverGitRequests([reply.requestId]);
   act.openDialog({ type: 'merge-review', worktreeId: w.id, requestId: prepared.review.reviewId });
 }); }
 export function answerReview(id, option) {

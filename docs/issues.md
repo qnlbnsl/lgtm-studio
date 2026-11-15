@@ -14667,7 +14667,7 @@ The existing observation safety assertion remains unchanged.
 ## 966. Five browser journeys still failed with their restored limits.
 
 Found during fix round 1 on 2026-11-14.
-Status: the website Git journey is fixed by S13.
+Status: Git request work is reduced, and the original single journey now passes the fix-round measurements.
 The four other timing failures remain open.
 The restored five-second assertion expired while two legacy Git merge dialogs still showed a pending submission.
 The cases were an owner approval into main and an approval with stale reported evidence into master.
@@ -14692,21 +14692,40 @@ The timeout therefore predates this unit.
 A few unit tests ran at the same time, so this is one loaded sample.
 S13 measured the complete unchanged journey at 307.266 seconds and 4,406 engine Git processes.
 Issues s13-1 and s13-2 record the redundant refreshes and repeated state observation that were removed.
-The optimized unsplit journey still reached its 360-second budget under higher host load.
-The original actions and assertions are now covered by three independent root-address journeys.
-The parts cover changes and remotes, integration and approval without evidence, and conflicts and approval with evidence.
+The first optimized unsplit journey still reached its 360-second budget under higher host load.
+S13 initially split its actions and assertions across three independent root-address journeys.
 Each part passed five consecutive one-worker repetitions with its original 360-second budget.
-The exact assertion mapping, process counts and every final duration are in the unit's foundry result.
+Fix round 1 correlates each successful action readback with its own completion event.
+It also restores recovery after superseded reads and a slow visible heartbeat fallback.
+The original single journey is restored exactly from 93568e1.
+Its continuous engine history retains the earlier decided reviews before the final approval with evidence.
+The new process counts and every duration are in the unit's foundry result.
 No assertion or wait was weakened.
 No measurement here establishes the cause of the other four timing failures.
 
-The final one-worker Git repetition times were as follows.
+Before fix round 1, the split Git journeys had the following one-worker repetition times.
 
 | Journey | Run 1, seconds | Run 2, seconds | Run 3, seconds | Run 4, seconds | Run 5, seconds |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Changes, history and remotes | 121.913 | 115.920 | 108.856 | 105.264 | 112.945 |
 | Integration and owner approval | 78.728 | 74.320 | 74.143 | 85.780 | 99.122 |
 | Conflicts and approval with evidence | 116.386 | 114.792 | 103.574 | 96.587 | 90.749 |
+
+Fix round 1 measured the original unsplit journey with the real Git process wrapper.
+All runs used one browser worker and no retries.
+The last three runs used the final hidden-reply guard.
+
+| Run | Duration, seconds | Git processes |
+| --- | ---: | ---: |
+| 1 | 252.664 | 3,985 |
+| 2 | 251.420 | 3,987 |
+| 3 | 263.457 | 4,006 |
+| 4 | 255.489 | 4,012 |
+| 5 | 240.599 | 4,012 |
+
+The state and changes request counts remain above the completed baseline.
+The reduction is in total Git processes and measured duration.
+The original 360-second limit and every assertion remain unchanged.
 
 ## 967. A withdrawn end result left an open building request unanswerable.
 
@@ -14847,7 +14866,7 @@ This is open.
 ## s13-1. Heartbeats and unrelated snapshots repeatedly refreshed the Git screen.
 
 Found on 2026-11-15 while measuring issue 966.
-Status: fixed in the live screen and its connection mapping.
+Status: unnecessary refresh work is reduced in the live screen and its connection mapping.
 Every live connection patch scheduled an automatic Git read.
 Every pushed stream item, including a heartbeat, produced that patch.
 Unrelated project snapshots scheduled the same read too.
@@ -14859,13 +14878,16 @@ The counts cover engine calls, including fixture setup through the engine.
 These measurements use one browser worker.
 The connection now maps a separate Git revision for completed Git operations, evidence and owner reviews.
 The screen refreshes after that revision changes, after its workspace roster changes, or after a reconnect.
-An ordinary heartbeat or unrelated snapshot does not request Git data.
+An unrelated snapshot does not request Git data.
+Fix round 1 restores a visible heartbeat fallback after sixty seconds without a completed full read.
 An all-workspace readback covers the invalidations observed before it started.
 A scoped readback cannot consume an invalidation for another worktree.
 A later invalidation schedules one further read after the current read finishes.
 Superseded reads stop before starting their next request.
 Explicit refreshes and head-changing action readbacks still read every worktree.
-The successful measured split parts used 4,260 engine Git processes in total, including three independent fixture setups.
+The initial measured split parts used 4,260 engine Git processes in total, including three independent fixture setups.
+Fix round 1 restores the original single journey after three consecutive runs below 300 seconds.
+Issue 966 records every new duration and process count.
 
 ## s13-2. A state request repeated the state read performed by its workspace check.
 
@@ -14876,6 +14898,9 @@ It measured fourteen for a linked-checkout state request with a target at the sa
 The request checked its workspace and then registered and read the same state again.
 The state request now consumes its own workspace observation after all existing refusals.
 A target comparison extends that observation inside the same gate.
+It reuses the request's own registration and head instead of registering and reading the head again.
+This lengthens the observation window by the count reads inside that same gate.
+No result is retained after the gate is released.
 The corresponding counts are now five and nine.
 No check result survives the request or the gate.
 The existing swapped-workspace tests remain unchanged.
@@ -14924,3 +14949,45 @@ The integration control stayed disabled because the checkout was still behind it
 Selecting a worktree now reads both that checkout and its parent before enabling foreground actions.
 A held-parent regression checks the fresh head and the visible pending state.
 The journey's actions, assertions and deadlines remain unchanged.
+
+## s13-5. A view selection could strand the first Git refresh.
+
+Found in review round 1 on 2026-11-15.
+Status: fixed with a finally block and failing-first regressions.
+Selecting History, Conflicts, Changes or a commit superseded the initial full read.
+Its early return bypassed the refresh scheduler.
+The remaining worktrees could stay unread indefinitely.
+Every early return now reaches the scheduler when an invalidation is still pending.
+Tests hold the first state reply across each view selection and require the remaining worktree to load.
+
+## s13-6. Git refresh filtering stopped noticing plain agent Git commands.
+
+Found in review round 1 on 2026-11-15.
+Status: automatic refresh coverage is restored with a bounded fallback.
+Plain Git commands from an agent do not emit the engine's Git completion event.
+The visible Git screen now refreshes when an agent in a shown worktree ends a turn or changes state.
+It also refreshes on opening, returning to visibility, window focus, reconnection, roster changes and relevant Git or review events.
+Explicit refreshes and action readbacks remain.
+A heartbeat invalidates the screen only when no full read completed in the last sixty seconds.
+The heartbeat fallback only runs while the tab is visible and no read or action is active.
+Hidden tabs queue invalidations and start no Git refresh reads.
+A mutation reply arriving while hidden also defers its readback until visibility returns.
+An in-flight read stops before its next request when the tab becomes hidden.
+Returning to visibility reads the queued state.
+A raw edit or commit with no agent turn or state event can remain stale until the next eligible heartbeat.
+That delay is sixty seconds plus up to one heartbeat interval and the time needed for the read.
+An active action or read can defer that fallback further.
+Stale action heads still receive the engine's existing refusal and fresh readback.
+
+## s13-7. An action's own completion event repeated its readback.
+
+Found in review round 1 on 2026-11-15.
+Status: own completion invalidations are covered by the successful action readback.
+The stream can deliver a completion after its action's readback has started or finished.
+The screen now matches the exact request identity from the reply and completion.
+Only a successful read that begins after that reply covers its completion.
+A scoped read covers only its own workspace requests.
+Another caller's event arriving during the read stays pending for a further read.
+Unidentified or oversized events remain conservative invalidations.
+A failed or superseded action readback does not consume its completion.
+The bounded identity maps belong to the browser and retain no engine workspace-check result.

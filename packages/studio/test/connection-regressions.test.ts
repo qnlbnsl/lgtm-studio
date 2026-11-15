@@ -128,3 +128,35 @@ for (const tag of ["project.GitFinished", "project.GitEvidenceReported", "projec
     expect(h.state.gitRevision).toBe(tag === "client.AlertRaised" ? 0 : 1)
   })
 }
+
+
+for (const tag of ["TurnEnded", "StateChanged"]) for (const oversized of [false, true]) {
+  it(`maps Git activity for ${tag}${oversized ? " oversized" : ""}`, async () => {
+    const next = { ...engineSnapshot, sequence: 43 } as ClientSnapshot;
+    const event = tag === "StateChanged" ? { _tag: tag, agentId: "ag-lead", state: { _tag: "idle" } } : { _tag: tag, agentId: "ag-lead", compact: false };
+    const item = oversized ? { _tag: "client.Oversized", sequence: 43, tag, agentId: "ag-lead" } : { sequence: 43, occurredAt: 1, event };
+    const h = harness({ next, items: [item] });
+    await vi.waitFor(() => expect(h.state.gitRevision).toBe(1));
+    expect((h.state as any).gitChange).toEqual({ agentId: "ag-lead" });
+  });
+}
+
+it("retains the mutation identity of a completion instead of its cleanup envelope's identity", async () => {
+  const next = { ...engineSnapshot, sequence: 43 } as ClientSnapshot;
+  const h = harness({ next, items: [{ sequence: 43, occurredAt: 1, requestId: "cleanup", event: { _tag: "project.GitFinished", operationRequestId: "original" } }] });
+  await vi.waitFor(() => expect(h.state.gitRevision).toBe(1));
+  expect((h.state as any).gitChange).toEqual({ requestId: "original" });
+});
+
+it("retains another review caller's request identity", async () => {
+  const next = { ...engineSnapshot, sequence: 43 } as ClientSnapshot;
+  const h = harness({ next, items: [{ sequence: 43, occurredAt: 1, requestId: "review-decision", event: { _tag: "project.MainReviewDecided" } }] });
+  await vi.waitFor(() => expect(h.state.gitRevision).toBe(1));
+  expect((h.state as any).gitChange).toEqual({ requestId: "review-decision" });
+});
+
+it("publishes an unchanged-sequence heartbeat for the Git fallback", async () => {
+  const h = harness({ items: [{ _tag: "client.Checkpoint", sequence: 42 }] });
+  await vi.waitFor(() => expect((h.state as any).gitHeartbeat).toBeTypeOf("number"));
+  expect(h.state.gitRevision).toBe(0);
+});

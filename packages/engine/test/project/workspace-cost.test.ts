@@ -55,10 +55,19 @@ it.live('a workspace swapped between two requests is checked again and refused',
 
 
 it.live('one state request reuses its own workspace observation and uses five Git processes', () => provideBoard(rig, Effect.gen(function* () {
-  yield* registerRebuildCheck(); yield* seedScreens(rig)
+  yield* registerRebuildCheck(); const f = yield* seedScreens(rig)
   const processes = vi.spyOn(GitProcess, 'gitProcess')
   success(yield* call(ownerCredential, 'project.git.state', { projectId: 'project', worktreeId: 'workspace' }))
   expect(processes.mock.calls.length).toBe(5)
+  // Keep the repository in place and swap only its registered linked checkout.
+  git(rig.work, '-c', 'user.name=Maya Okafor', '-c', 'user.email=maya@example.test', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'Initial')
+  const folder = join(rig.root, 'no-target-state'); git(rig.work, 'worktree', 'add', '-b', 'no-target-state', folder)
+  const worktreeId = success(yield* call(ownerCredential, 'project.workspace.register', { repoId: f.repoId, path: folder, branch: 'no-target-state', machineId: 'local', checkout: 'worktree' })).worktreeId
+  processes.mockClear()
+  success(yield* call(ownerCredential, 'project.git.state', { worktreeId }))
+  expect(processes.mock.calls.length).toBe(6)
+  renameSync(folder, join(rig.root, 'before-no-target-swap')); mkdirSync(folder); git(folder, 'init', '-b', 'no-target-state')
+  expect(failureOf(yield* call(ownerCredential, 'project.git.state', { worktreeId }))?.reason).toBe('checkout belongs to a different repository')
 })))
 
 it.live('one linked state request adds target counts to its own check in nine Git processes', () => provideBoard(rig, Effect.gen(function* () {

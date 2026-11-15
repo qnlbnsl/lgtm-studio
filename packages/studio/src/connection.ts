@@ -24,6 +24,8 @@ import { mapConnection, mapOwner, mapSnapshot, type ConnectionStatus, type Engin
 export type SessionStatus = "checking" | "in" | "out" | "rejected" | "expired" | "unavailable" | "logout-unconfirmed"
 export interface StorePatch extends Partial<EngineRecords> {
   readonly gitRevision?: number
+  readonly gitChange?: { readonly requestId?: string; readonly agentId?: string }
+  readonly gitHeartbeat?: number
   readonly chatEvent?: unknown
   readonly session?: { readonly status: SessionStatus; readonly firstRun: boolean }
   readonly conn?: StoreConn
@@ -81,7 +83,7 @@ const requestId = () => crypto.randomUUID() as RequestId
 // These events change more than one agent's lifecycle label, so a fresh snapshot is read.
 // The list is the one packages/web/src/watchSituation.ts uses.
 const refreshTags = new Set([
-  "AgentStarted", "AgentStartFailed", "SessionOpened", "AgentGrouped", "ModeChanged",
+  "AgentStarted", "AgentStartFailed", "SessionOpened", "AgentGrouped", "ModeChanged", "StateChanged",
   "TurnStarted", "TurnEnded", "AgentCrashed", "AgentInterrupted", "AgentStopped", "AgentReloadFailed",
   "DeliverySent", "DeliveryHeld", "DeliveryReleased", "PermissionRequested", "PermissionAnswered",
   "AgentConfigurationChosen", "AgentConfigurationApplied", "AgentConfigurationRefused", "PermissionCancelled", "PermissionMoved", "QuestionAsked", "QuestionAnswered", "QuestionMoved", "board.PostWritten",
@@ -91,6 +93,7 @@ const accountTags = ["AccountChanged", "AccountAvailable", "AccountNeedsSignIn",
 const needsRefresh = (tag: string) => accountTags.includes(tag) || refreshTags.has(tag) || tag.startsWith("board.") || tag.startsWith("project.") || tag.startsWith("roles.") || tag.startsWith("client.Alert")
 
 const gitRefreshTags = new Set(["project.GitFinished", "project.GitEvidenceReported", "project.MainReviewOpened", "project.MainReviewDecided"])
+const gitActivityTags = new Set(["TurnEnded", "StateChanged"])
 const emptyRecords: EngineRecords = { machines: [], subscriptions: [], repos: [], projects: [], teams: [], agents: [], requests: [], worktrees: [], sprints: [], tasks: [] }
 
 export interface ConnectionOptions {
@@ -141,7 +144,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
   }
   const setSession = (status: SessionStatus) => write({ session: { status, firstRun: false } })
   // Records leave the browser when the session ends, so no signed-out page keeps them.
-  const forget = () => { gitRevision = 0; retryIds.clear(); accountLimits = {}; write({ ...emptyRecords, gitRevision, notifications: [], accountLimits, owner: mapOwner(undefined), channels: [], posts: [], taskDetails: {}, boardAgents: {}, projectLeadSettings: {}, setupData: null, mocks: {}, design: {}, machineDetails: null, boardUnread: {}, boardRevision: 0, boardDetails: {} }) }
+  const forget = () => { gitRevision = 0; retryIds.clear(); accountLimits = {}; write({ ...emptyRecords, gitRevision, gitChange: {}, gitHeartbeat: 0, notifications: [], accountLimits, owner: mapOwner(undefined), channels: [], posts: [], taskDetails: {}, boardAgents: {}, projectLeadSettings: {}, setupData: null, mocks: {}, design: {}, machineDetails: null, boardUnread: {}, boardRevision: 0, boardDetails: {} }) }
 
   const post = async (path: string, body?: unknown): Promise<number | undefined> => {
     try {
@@ -239,13 +242,18 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
             }
             if (signal.aborted) return
             setConn("live")
+            if (!("event" in item) && item._tag === "client.Checkpoint") write({ gitHeartbeat: now() })
             if (item.sequence <= after) return
             if (!signal.aborted) write({ chatEvent: item })
             if ("event" in item) {
               if (item.event._tag === "project.SettingsChanged") yield* refreshOwner()
               yield* apply(item, refresh)
             }
-            else if (item._tag === "client.Oversized" && needsRefresh(item.tag)) { if (gitRefreshTags.has(item.tag)) gitRevision++; yield* refresh(item.sequence) }
+            else if (item._tag === "client.Oversized" && needsRefresh(item.tag)) {
+              yield* refresh(item.sequence)
+              if (gitRefreshTags.has(item.tag) || gitActivityTags.has(item.tag)) write({ gitRevision: ++gitRevision,
+                gitChange: gitActivityTags.has(item.tag) && item.agentId !== undefined ? { agentId: item.agentId } : {} })
+            }
             after = Math.max(after, item.sequence) as EventSequence
             failures = 0
           })))
@@ -266,7 +274,6 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
     // A pushed event either changes one agent's state in place or asks for a fresh snapshot.
     const apply = (item: ClientEnvelope, refresh: (minimum?: number) => Effect.Effect<void, unknown>) => Effect.gen(function* () {
       const event = item.event
-      if (gitRefreshTags.has(event._tag)) gitRevision++
       if (event._tag.startsWith("project.") || event._tag.startsWith("board.") && event._tag !== "board.Read") boardRevision++
       if (event._tag === "AccountOutOfUsage" || event._tag === "AccountAvailable") {
         accountLimits = { ...accountLimits, [event.accountId]: event._tag === "AccountOutOfUsage" ? event.resetAt ?? null : null }
@@ -279,6 +286,12 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
           return { ...updated, displayedState: displayedState(updated) }
         }) })
       } else if (needsRefresh(event._tag)) yield* refresh(item.sequence)
+      if (gitRefreshTags.has(event._tag) || gitActivityTags.has(event._tag)) {
+        const change = (event._tag === "TurnEnded" || event._tag === "StateChanged") ? { agentId: event.agentId }
+          : { ...(event._tag === "project.GitFinished" ? event.operationRequestId !== undefined ? { requestId: event.operationRequestId } : {}
+            : item.requestId !== undefined ? { requestId: item.requestId } : {}) }
+        if (!signal.aborted) write({ gitRevision: ++gitRevision, gitChange: change })
+      }
     })
     void Effect.runPromise(program, { signal }).catch(() => { if (!signal.aborted) setConn("reconnecting") })
   }

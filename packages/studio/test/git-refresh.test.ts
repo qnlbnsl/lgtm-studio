@@ -13,9 +13,10 @@ function fixture(request: (tag: string, payload: any) => Promise<unknown>) {
   const act: any = { confirm: (d: any) => dialogs.push(d), closeDialog: vi.fn(), toast: (s: string) => toasts.push(s) };
   const source = copied("js/live/git.js").replace(/^import .*;$/gm, "").replace(/export /g, "");
   const actions = new Function("store", "live", "engineWrite", "notify", "engine", "act", "update", "addEventListener", "removeEventListener",
-    `${source}\nreturn { installMappings, openScreen, refreshGit, observe, busy, declineReview, discard, stage, integrate, selectGit };`)(
+    `${source}\nreturn { installMappings, openScreen, refreshGit, observe, busy, declineReview, discard, stage, integrate, selectGit, commit };`)(
     { state }, { on: true }, (p: object) => Object.assign(state, p), () => {}, { request }, act, (f: (s: any) => void) => f(state), () => {}, () => {});
   actions.installMappings({ mapGitState: (s: any) => s, mapGitChanges: (items: any[]) => items,
+    mapGitCommit: (c: any) => c, mapCommitFiles: (items: any[]) => items, mapGitDiff: (r: any) => r,
     mapMainReview: (r: any) => r, mapConflict: (c: any) => ({ ...c, id: c.path, selection: c }) });
   return { state, actions, act, dialogs, toasts };
 }
@@ -285,4 +286,224 @@ it("picking a worktree also reads its parent's head before enabling an update", 
     expect(reads).toEqual(["workspace", "parent"]);
     expect(f.toasts).toEqual([]);
   } finally { parent.release(); await selection; }
+});
+
+
+it("retries the initial full read after a view selection supersedes it", async () => {
+  vi.useFakeTimers();
+  const first = gate(), reads: string[] = [];
+  const f = fixture(async (tag, payload) => {
+    if (tag === "project.git.state") { reads.push(payload.worktreeId); if (reads.length === 1) await first.held; return { result: { mergeHead: null } }; }
+    if (tag === "project.changes") return { result: { items: [], truncated: false } };
+    if (tag === "project.review.status") return { result: { review: null } };
+    throw new Error(tag);
+  });
+  f.state.worktrees.push({ ...f.state.worktrees[0], id: "other", branch: "other", kind: "team" });
+  const close = f.actions.openScreen("git", "project");
+  try {
+    expect(reads).toEqual(["workspace"]);
+    await f.actions.selectGit("workspace", "changes");
+    first.release();
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(reads).toContain("other");
+    expect(f.actions.busy("git-read")).toBe(false);
+    expect(f.toasts).toEqual([]);
+  } finally { first.release(); close(); vi.useRealTimers(); }
+});
+
+
+const emptyGitReply = (tag: string) => {
+  if (tag === "project.git.state") return { result: { mergeHead: null } };
+  if (["project.changes", "project.history", "project.branches", "project.commit.files"].includes(tag)) return { result: { items: [], truncated: false } };
+  if (tag === "project.review.status") return { result: { review: null } };
+  throw new Error(tag);
+};
+
+for (const tab of ["history", "conflicts", "changes"]) it(`recovers an initial read superseded by ${tab}`, async () => {
+  vi.useFakeTimers();
+  const held = gate(), reads: string[] = [];
+  const f = fixture(async (tag, payload) => {
+    if (tag === "project.git.state") { reads.push(payload.worktreeId); if (reads.length === 1) await held.held; }
+    return emptyGitReply(tag);
+  });
+  f.state.worktrees.push({ ...f.state.worktrees[0], id: "other", branch: "other", kind: "team" });
+  const close = f.actions.openScreen("git", "project");
+  try {
+    await f.actions.selectGit("workspace", tab, tab === "history" ? "selected-commit" : undefined);
+    held.release(); await vi.advanceTimersByTimeAsync(1000);
+    expect(reads).toContain("other");
+    expect(f.toasts).toEqual([]);
+  } finally { held.release(); close(); vi.useRealTimers(); }
+});
+
+it("uses a visible heartbeat only after sixty seconds without a full read", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(100_000);
+  let reads = 0;
+  const f = fixture(async (tag) => { if (tag === "project.git.state") reads++; return emptyGitReply(tag); });
+  const close = f.actions.openScreen("git", "project");
+  try {
+    await vi.advanceTimersByTimeAsync(0); expect(reads).toBe(1);
+    vi.setSystemTime(159_999); f.actions.observe({ gitHeartbeat: 159_999 });
+    await vi.advanceTimersByTimeAsync(0); expect(reads).toBe(1);
+    vi.setSystemTime(160_000); f.actions.observe({ gitHeartbeat: 160_000 });
+    await vi.advanceTimersByTimeAsync(100); expect(reads).toBe(2);
+    f.actions.observe({ gitHeartbeat: 160_100 });
+    await vi.advanceTimersByTimeAsync(1000); expect(reads).toBe(2);
+  } finally { close(); vi.useRealTimers(); }
+});
+
+it("refreshes for an agent in a shown worktree and ignores agents elsewhere", async () => {
+  vi.useFakeTimers();
+  let reads = 0;
+  const f = fixture(async (tag) => { if (tag === "project.git.state") reads++; return emptyGitReply(tag); });
+  f.state.worktrees[0].folder = "/shown";
+  f.state.agents = [{ id: "worker", folder: "/shown" }, { id: "elsewhere", folder: "/elsewhere" }];
+  const close = f.actions.openScreen("git", "project");
+  const activity = async (revision: number, agentId: string) => {
+    f.actions.observe({ gitRevision: revision, gitChange: { agentId } }); f.state.gitRevision = revision;
+    await vi.advanceTimersByTimeAsync(100);
+  };
+  try {
+    await vi.advanceTimersByTimeAsync(0); expect(reads).toBe(1);
+    await activity(1, "elsewhere"); expect(reads).toBe(1);
+    await activity(2, "worker"); expect(reads).toBe(2);
+  } finally { close(); vi.useRealTimers(); }
+});
+
+it("defers all automatic Git refreshes while hidden and catches up when visible", async () => {
+  vi.useFakeTimers(); vi.setSystemTime(100_000);
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  let reads = 0;
+  const f = fixture(async (tag) => { if (tag === "project.git.state") reads++; return emptyGitReply(tag); });
+  f.state.worktrees[0].folder = "/shown"; f.state.agents = [{ id: "worker", folder: "/shown" }];
+  const close = f.actions.openScreen("git", "project");
+  try {
+    await vi.advanceTimersByTimeAsync(0); expect(reads).toBe(1);
+    visibility.mockReturnValue("hidden"); vi.setSystemTime(170_000);
+    f.actions.observe({ gitHeartbeat: 170_000 });
+    f.actions.observe({ gitRevision: 1, gitChange: { agentId: "worker" } }); f.state.gitRevision = 1;
+    f.actions.observe({ gitRevision: 2, gitChange: { requestId: "another-browser" } }); f.state.gitRevision = 2;
+    await vi.advanceTimersByTimeAsync(5000); expect(reads).toBe(1);
+    visibility.mockReturnValue("visible"); document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(100); expect(reads).toBe(2);
+  } finally { close(); visibility.mockRestore(); vi.useRealTimers(); }
+});
+
+for (const action of ["stage", "commit"]) for (const delivery of ["before-reply", "during-readback", "after-readback"]) {
+  it(`${action} covers its own completion ${delivery} without a second read`, async () => {
+    vi.useFakeTimers();
+    const reads: string[] = []; let mutation = false, notified = false;
+    const changed = () => { notified = true; f.actions.observe({ gitRevision: 1, gitChange: { requestId: "mine" } }); f.state.gitRevision = 1; };
+    const f = fixture(async (tag, payload) => {
+      if (["project.stage.all", "project.commit"].includes(tag)) { mutation = true; if (delivery === "before-reply") changed(); return { requestId: "mine" }; }
+      if (tag === "project.git.state") { reads.push(payload.worktreeId); if (mutation && !notified && delivery === "during-readback") changed(); }
+      return emptyGitReply(tag);
+    });
+    f.state.worktrees.push({ ...f.state.worktrees[0], id: "other", branch: "other", kind: "team" });
+    const close = f.actions.openScreen("git", "project");
+    try {
+      await vi.advanceTimersByTimeAsync(0); reads.length = 0;
+      if (action === "stage") await f.actions.stage("workspace", [], true, true); else await f.actions.commit("workspace", "A commit");
+      if (delivery === "after-readback") changed();
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(reads).toEqual(action === "stage" ? ["workspace"] : ["workspace", "other"]);
+      expect(f.toasts).toEqual([]);
+    } finally { close(); vi.useRealTimers(); }
+  });
+}
+
+for (const action of ["stage", "commit"]) it(`${action} preserves another caller's completion during its readback`, async () => {
+  vi.useFakeTimers();
+  const reads: string[] = []; let mutation = false, notified = false;
+  const f = fixture(async (tag, payload) => {
+    if (["project.stage.all", "project.commit"].includes(tag)) { mutation = true; return { requestId: "mine" }; }
+    if (tag === "project.git.state") {
+      reads.push(payload.worktreeId);
+      if (mutation && !notified) {
+        notified = true;
+        f.actions.observe({ gitRevision: 1, gitChange: { requestId: "mine" } }); f.state.gitRevision = 1;
+        f.actions.observe({ gitRevision: 2, gitChange: { requestId: "another-browser" } }); f.state.gitRevision = 2;
+      }
+    }
+    return emptyGitReply(tag);
+  });
+  f.state.worktrees.push({ ...f.state.worktrees[0], id: "other", branch: "other", kind: "team" });
+  const close = f.actions.openScreen("git", "project");
+  try {
+    await vi.advanceTimersByTimeAsync(0); reads.length = 0;
+    if (action === "stage") await f.actions.stage("workspace", [], true, true); else await f.actions.commit("workspace", "A commit");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(reads).toEqual([...(action === "stage" ? ["workspace"] : ["workspace", "other"]), "workspace", "other"]);
+    expect(f.toasts).toEqual([]);
+  } finally { close(); vi.useRealTimers(); }
+});
+
+
+it("stops a pending read before its next request when the tab is hidden", async () => {
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible"), held = gate();
+  let states = 0, changes = 0;
+  const f = fixture(async (tag) => {
+    if (tag === "project.git.state" && ++states === 1) await held.held;
+    if (tag === "project.changes") changes++;
+    return emptyGitReply(tag);
+  });
+  const close = f.actions.openScreen("git", "project");
+  try {
+    visibility.mockReturnValue("hidden"); document.dispatchEvent(new Event("visibilitychange"));
+    held.release(); await vi.advanceTimersByTimeAsync(1000);
+    expect(states).toBe(1); expect(changes).toBe(0);
+    visibility.mockReturnValue("visible"); document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(100);
+    expect(states).toBe(2); expect(changes).toBe(1);
+  } finally { held.release(); close(); visibility.mockRestore(); vi.useRealTimers(); }
+});
+
+it("retries an own completion whose action readback failed", async () => {
+  vi.useFakeTimers();
+  let fail = false, reads = 0;
+  const f = fixture(async (tag) => {
+    if (tag === "project.stage.all") return { requestId: "mine" };
+    if (tag === "project.git.state") {
+      reads++;
+      if (fail) {
+        fail = false;
+        f.actions.observe({ gitRevision: 1, gitChange: { requestId: "mine" } }); f.state.gitRevision = 1;
+        throw new Error("Readback failed");
+      }
+    }
+    return emptyGitReply(tag);
+  });
+  const close = f.actions.openScreen("git", "project");
+  try {
+    await vi.advanceTimersByTimeAsync(0); reads = 0; fail = true;
+    expect(await f.actions.stage("workspace", [], true, true)).toBe(false);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(reads).toBe(2);
+    expect(f.toasts).toEqual(["Readback failed"]);
+    f.actions.observe({ gitRevision: 2, gitChange: { requestId: "mine" } }); f.state.gitRevision = 2;
+    await vi.advanceTimersByTimeAsync(1000); expect(reads).toBe(2);
+  } finally { close(); vi.useRealTimers(); }
+});
+
+it("defers an action readback whose mutation reply arrives while hidden", async () => {
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible"), mutation = gate();
+  let reads = 0;
+  const f = fixture(async (tag) => {
+    if (tag === "project.stage.all") { await mutation.held; return { requestId: "mine" }; }
+    if (tag === "project.git.state") reads++;
+    return emptyGitReply(tag);
+  });
+  const close = f.actions.openScreen("git", "project");
+  let action: Promise<unknown> | undefined;
+  try {
+    await vi.advanceTimersByTimeAsync(0); reads = 0;
+    action = f.actions.stage("workspace", [], true, true);
+    visibility.mockReturnValue("hidden"); document.dispatchEvent(new Event("visibilitychange"));
+    mutation.release(); await action;
+    expect(reads).toBe(0);
+    visibility.mockReturnValue("visible"); document.dispatchEvent(new Event("visibilitychange"));
+    await vi.advanceTimersByTimeAsync(100); expect(reads).toBe(1);
+  } finally { mutation.release(); await action; close(); visibility.mockRestore(); vi.useRealTimers(); }
 });
