@@ -791,6 +791,11 @@ export function ProjectSettings({ s, project: p }) {
   const subs = s.subscriptions.filter((x) => x.machine === p.machine || x.id === lead.subscription);
   const running_ = ags.filter(running).length;
   const rename = () => { const value = name.trim(); if (live.on) return board.renameProject(p.id, value); if (!value || s.projects.some((x) => x.id !== p.id && x.repo === p.repo && x.name.toLowerCase() === value.toLowerCase())) return act.toast('Choose a unique project name.', 'error'); update(() => { p.name = value; }); act.toast('Project renamed'); };
+  const changeApproval = (approval, approved) => {
+    if (live.on) return board.changeApproval(p.id, approval, approved);
+    update(() => { p.approvals = { endResult: false, build: false, ...p.approvals, [approval === 'build' ? 'build' : 'endResult']: approved }; if (!approved && approval === 'end-result') p.approvals.build = false; if (approved && ['Define', 'Plan'].includes(p.stage)) p.stage = approval === 'build' ? 'Build' : 'Plan'; });
+    act.toast(approved ? 'Approval granted' : 'Approval withdrawn');
+  };
   const deleteTeam = (team) => act.confirm({ title: `Delete ${teamName(team)}?`, waitForReply: live.on, action: 'Delete team', danger: true,
     body: 'Stop its agents and delete or move its tasks first. Its board channel becomes read-only history. Its branch and worktree folder are kept.',
     onConfirm: () => { if (live.on) return board.deleteTeam(p.id, team.id); if (agentsOfTeam(s, team.id).some(running)) return act.toast('Stop the team’s agents before deleting the team.', 'error'); if (s.tasks.some((x) => x.team === team.id)) return act.toast('Delete or move the team’s tasks before deleting the team.', 'error'); update((st) => { st.teams = st.teams.filter((x) => x.id !== team.id); for (const c of st.channels.filter((x) => x.team === team.id)) c.archived = true; }); act.toast('Team deleted'); return true; } });
@@ -824,6 +829,9 @@ export function ProjectSettings({ s, project: p }) {
     <${Section} title="Project">
       <div class="svc-rows">
         <${Row} label="Name" id="ps-name" hint="The branch and the worktree folder keep their names."><span class="row"><input id="ps-name" class="input" maxlength="128" value=${name} disabled=${projectBusy} onInput=${(e) => setName(e.target.value)} /><span class="tag" data-tip="Task labels start with this">${p.prefix}</span><button type="button" class="btn sm" disabled=${projectBusy || !name.trim() || name.trim() === p.name} onClick=${rename}>Save name</button></span><//>
+        <${Row} label="Approvals" hint="Withdrawing the end result also withdraws building." top>
+          <div class="row"><span>End result: ${p.approvals?.endResult ? 'Approved' : 'Not approved'}</span><button type="button" class="btn sm" disabled=${projectBusy} onClick=${() => changeApproval('end-result', !p.approvals?.endResult)}>${p.approvals?.endResult ? 'Withdraw end result approval' : 'Grant end result approval'}</button></div>
+          <div class="row"><span>Building: ${p.approvals?.build ? 'Approved' : 'Not approved'}</span><button type="button" class="btn sm" disabled=${projectBusy || !p.approvals?.endResult} onClick=${() => changeApproval('build', !p.approvals?.build)}>${p.approvals?.build ? 'Withdraw building approval' : 'Grant building approval'}</button></div><//>
         <${Row} label="Goal" id="ps-goal" hint="The project lead reads this at the start of every turn." top>
           <textarea id="ps-goal" class="textarea" rows="3" value=${goal} onInput=${(e) => setGoal(e.target.value)}></textarea>
           ${goal.trim() !== p.goal && html`<span class="row" style="margin-top:6px"><button type="button" class="btn sm primary" disabled=${!goal.trim() || projectBusy} aria-busy=${projectBusy} onClick=${() => { if (live.on) return board.saveGoal(p.id, goal.trim()); set({ goal: goal.trim() }); act.toast('Goal saved. The project lead was told.'); }}>Save goal</button><button type="button" class="btn sm ghost" onClick=${() => setGoal(p.goal)}>Discard</button></span>`}<//>

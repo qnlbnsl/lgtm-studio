@@ -27,6 +27,8 @@ it('patches only the live output and fails closed if the target screen moves', (
   expect(result).toContain('id="ps-name"')
   expect(result).toContain('Save name')
   expect(result).toContain('projectSettings.deleteTeam')
+  expect(result).toContain('projectSettings.changeApproval')
+  expect(() => projectSettingsSource('js/screens/service.js', source.replace('board.changeApproval', 'board.movedApproval'))).toThrow('Project settings integration')
   expect(result).toContain('Engine work needed')
   expect(result.slice(result.indexOf('export function ProjectSettings'))).not.toContain('refuse()')
   expect(() => projectSettingsSource('js/screens/service.js', source.replace('export function ProjectSettings', 'function MovedSettings'))).toThrow('Project settings integration')
@@ -48,6 +50,8 @@ function setup(request: (tag: string, payload: any) => Promise<unknown>) {
   engine.setConnection({ request })
 }
 for (const [label, tag, key, action] of [
+  ['grant approval', 'project.approval.grant', 'project:project', () => actions.changeApproval('project', 'end-result', true)],
+  ['withdraw approval', 'project.approval.withdraw', 'project:project', () => actions.changeApproval('project', 'build', false)],
   ['rename', 'project.rename', 'project:project', () => actions.renameProject('project', 'New name')],
   ['goal', 'project.goal.set', 'project:project', () => actions.saveGoal('project', 'New goal')],
   ['lead model', 'configure', 'configure:lead', () => actions.configureLead('lead', { model: 'next' })],

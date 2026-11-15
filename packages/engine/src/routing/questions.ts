@@ -1,3 +1,5 @@
+import { requireBuilding } from "../project/approvals.ts";
+import { projectView } from "../project/view.ts";
 import { approvalQuestion, approvalAnswer } from "../project/approvals.ts";
 import { questionLinks, linkedTask, canChangeLinkedTask } from "../project/decisions.ts";
 import { senderOf } from "../routing/envelope.ts";
@@ -35,6 +37,7 @@ export const answerQuestion = (
   const approvalEvents = yield* approvalAnswer(input, payload.id, payload.text);
   const task = linkedTask(snapshot, row);
   const mayFinishTask = task !== undefined && canChangeLinkedTask(snapshot, row.agentId, task);
+  if (mayFinishTask && task.state === "queue") yield* requireBuilding(input, projectView(snapshot).projects[task.projectId]!);
   const deliveryId = freshDelivery();
   return { events: [{
     _tag: "QuestionAnswered", agentId: row.agentId, questionId: payload.id, answeredBy: actor, text: payload.text, deliveryId,

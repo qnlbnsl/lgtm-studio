@@ -157,6 +157,8 @@ const summaries: Record<CommandName, string> = {
   "project.goal.set": "Change a project's goal.",
   "project.archive": "Stop every project agent and archive the project after confirmed stops.",
   "project.restore": "Restore an archived project without launching another lead.",
+  "project.approval.grant": "Grant end result or building approval as the owner.",
+  "project.approval.withdraw": "Withdraw approval as the owner. Withdrawing the end result also withdraws building.",
   "project.rename": "Rename a project within its repository.",
   "project.place": "Confirm the current project workspace; changes require machine pairing.",
   "project.preferences.set": "Set a project's preferred shell.",

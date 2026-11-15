@@ -14,3 +14,5 @@ export function mapLeadSettings(report: AgentChoices & { readonly configuration:
 
 export const projectRenamePayload = (projectId: string, name: string) => ({ projectId: projectId as ProjectId, name: name.trim() })
 export const teamDeletePayload = (projectId: string, teamId: string) => ({ projectId: projectId as ProjectId, teamId: teamId as TeamId })
+
+export const projectApprovalPayload = (projectId: string, approval: 'end-result' | 'build') => ({ projectId: projectId as ProjectId, approval })

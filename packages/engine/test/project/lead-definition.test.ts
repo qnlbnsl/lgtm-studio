@@ -164,3 +164,66 @@ it.live('s10 item 3: CLI project creation reaches the same lifecycle and its rea
   const orientation = unwrap({ data: response.result.content.map((part: any) => part.text ?? '').join('') })
   expect(orientation).toMatchObject({ name: 'Project lead', kind: 'lead', advice: expect.stringContaining('Start your own workers') })
 })).pipe(Effect.orDie))
+
+it.live('r1 item 1: the owner grants and withdraws project approvals directly, including historical projects', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), projectId = f.project.projectId
+  success(yield* call(owner, 'project.stage.set', { projectId, stage: 'review' }))
+  for (const command of ['project.approval.grant', 'project.approval.withdraw']) {
+    for (const actor of [f.lead, f.other, f.worker, { _tag: 'service', service: 'test.board' } as never]) {
+      expect(failureOf(yield* call(actor, command, { projectId, approval: 'end-result' }))).toBeDefined()
+    }
+  }
+  expect(failureOf(yield* call(owner, 'project.approval.grant', { projectId, approval: 'build' }))).toBeDefined()
+  for (const approval of ['end-result', 'build']) {
+    success(yield* call(owner, 'project.approval.grant', { projectId, approval }))
+    expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('review')
+  }
+  expect(projectView(yield* snapshot).projects[projectId]?.buildApproval).toBeDefined()
+  success(yield* call(owner, 'project.approval.withdraw', { projectId, approval: 'build' }))
+  expect(projectView(yield* snapshot).projects[projectId]?.buildApproval).toBeUndefined()
+  expect(projectView(yield* snapshot).projects[projectId]?.endResultApproval).toBeDefined()
+  success(yield* call(owner, 'project.approval.grant', { projectId, approval: 'build' }))
+  success(yield* call(owner, 'project.approval.withdraw', { projectId, approval: 'end-result' }))
+  const project = projectView(yield* snapshot).projects[projectId]!
+  expect(project.endResultApproval).toBeUndefined(); expect(project.skipPlanningApproval).toBeUndefined(); expect(project.buildApproval).toBeUndefined()
+  expect(project.stage).toBe('review')
+  expect((yield* readLog).filter(({ event }) => event._tag === 'project.ApprovalGranted')).toHaveLength(3)
+  expect((yield* readLog).filter(({ event }) => event._tag === 'project.ApprovalWithdrawn')).toHaveLength(2)
+})).pipe(Effect.orDie))
+
+it.live('r1 item 1: a project without approvals allows existing work to finish but refuses planning edits and new work', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), p = f.project, projectId = p.projectId
+  const sprintId = success(yield* call(owner, 'project.sprint.create', { projectId, label: 'SP-1', name: 'Historical', goal: 'Deliver', phase: 'Build', owner: p.leadAgentId, needs: [] })).sprintId
+  const team = success(yield* call(owner, 'project.team.create', { projectId, name: 'Historical team', worktreeId: p.worktreeId }))
+  success(yield* call(owner, 'group', { agentId: 'builder', add: [team.group], remove: [] }))
+  const fields = { projectId, teamId: team.teamId, sprintId, worktreeId: p.worktreeId, owner: 'builder', title: 'Existing task' }
+  const taskId = success(yield* call(owner, 'project.task.create', { ...fields, state: 'active' })).taskId
+  for (const state of ['review', 'done']) success(yield* call(f.worker, 'project.task.update', { projectId, taskId, state }))
+  const edits = [
+    ['project.task.update', { projectId, taskId, title: 'A title' }],
+    ['project.task.note', { projectId, taskId, title: 'A note', detail: 'Some context' }],
+    ['project.sprint.update', { projectId, sprintId, phase: 'Review' }]
+  ] as const
+  for (const [command, payload] of edits) expect(failureOf(yield* call(f.lead, command, payload))).toBeDefined()
+  expect(failureOf(yield* call(f.lead, 'prompt', { agentId: 'builder', text: 'Build now' }))).toBeDefined()
+  const queued = success(yield* call(owner, 'project.task.create', { ...fields, title: 'Queued task', state: 'queue' })).taskId
+  const questionId = success(yield* call(f.worker, 'ask', { taskId: queued, text: 'Can I finish?' })).questionId
+  expect(failureOf(yield* call(f.lead, 'answer', { kind: 'question', id: questionId, text: 'Yes' }))).toBeDefined()
+  expect(projectView(yield* snapshot).tasks[projectKey(projectId, queued)]?.state).toBe('queue')
+  yield* approve(f.lead, projectId, 'end-result')
+  for (const [command, payload] of edits) success(yield* call(f.lead, command, payload))
+  expect(failureOf(yield* call(f.lead, 'prompt', { agentId: 'builder', text: 'Build now' }))).toBeDefined()
+  yield* approve(f.lead, projectId, 'build')
+  success(yield* call(f.lead, 'prompt', { agentId: 'builder', text: 'Build now' }))
+  success(yield* call(f.lead, 'answer', { kind: 'question', id: questionId, text: 'Yes' }))
+  expect(projectView(yield* snapshot).tasks[projectKey(projectId, queued)]?.state).toBe('done')
+})).pipe(Effect.orDie))
+
+it.live('r1 item 1: answering a historical approval never moves Review backwards', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), projectId = f.project.projectId
+  success(yield* call(owner, 'project.stage.set', { projectId, stage: 'review' }))
+  yield* approve(f.lead, projectId, 'end-result')
+  expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('review')
+  yield* approve(f.lead, projectId, 'build')
+  expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('review')
+})).pipe(Effect.orDie))

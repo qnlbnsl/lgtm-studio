@@ -75,6 +75,8 @@ export const eventStructure: RedactionStructure = { taggedFields: {
     repositoryIdentity: { fields: { device: identity, inode: identity } }, folderIdentity: { fields: { device: identity, inode: identity } } } } },
   "project.CreationClaimed": { creationRequestId: identity, identity: { fields: { device: identity, inode: identity } } },
   "project.CreationFinished": { creationRequestId: identity },
+  "project.ApprovalGranted": { projectId: identity, approval: identity, requestId: identity },
+  "project.ApprovalWithdrawn": { projectId: identity, approval: identity },
   "project.ApprovalDecided": { projectId: identity, questionId: identity, approval: identity },
   "project.TeamDeleted": { projectId: identity, teamId: identity },
   "project.TaskDeleted": { projectId: identity, taskId: identity },

@@ -51,6 +51,8 @@ const parents: Record<string, string> = { "agent-child": "agent-self", "agent-gr
 // `n` makes its identifiers unique. Terminal events for the subscriber itself
 // are left out (`terminal`), because they would end its own access.
 const samples: Record<string, (a: string, n: string) => Record<string, unknown>> = {
+  "project.ApprovalGranted": () => ({ projectId: "project-one", requestId: "grant-one", approval: "end-result" }),
+  "project.ApprovalWithdrawn": () => ({ projectId: "project-one", approval: "build" }),
   "project.ApprovalDecided": () => ({ projectId: "project-one", questionId: "scope-one", approval: "end-result", approved: true }),
   "project.TeamDeleted": () => ({ projectId: "project-one", teamId: "team-one" }),
   "project.TaskDeleted": () => ({ projectId: "project-one", taskId: "task-one" }),

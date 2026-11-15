@@ -48,7 +48,7 @@ export type Workspace = typeof Workspace.Type
 export const Project = Schema.Struct({
   projectId: ProjectId, repoId: RepositoryId, name: ProjectName, goal: ProjectText,
   leadAgentId: AgentId, worktreeId: WorkspaceId, machineId: ProjectName,
-  endResultApproval: Schema.optionalKey(QuestionId), skipPlanningApproval: Schema.optionalKey(QuestionId), buildApproval: Schema.optionalKey(QuestionId),
+  endResultApproval: Schema.optionalKey(Schema.NonEmptyString), skipPlanningApproval: Schema.optionalKey(Schema.NonEmptyString), buildApproval: Schema.optionalKey(Schema.NonEmptyString),
   stage: Schema.optionalKey(ProjectStage), shell: Schema.optionalKey(ProjectName), archivedAt: Schema.optionalKey(EpochMilliseconds), archiving: Schema.optionalKey(Schema.Boolean)
 })
 export type Project = typeof Project.Type

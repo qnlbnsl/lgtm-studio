@@ -108,11 +108,23 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
     case "project.ArchiveStarted": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, archiving: true })) }
     case "project.Archived": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, archiving: false, archivedAt: at })) }
     case "project.Restored": return { ...view, projects: change(view.projects, event.projectId, (row) => { const { archivedAt: _a, ...rest } = row; return { ...rest, archiving: false } }) }
-    case "project.ApprovalDecided": return !event.approved ? view : { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row,
-      ...(event.approval === "end-result" ? { endResultApproval: event.questionId, stage: "plan" as const }
-        : event.approval === "skip-planning" ? { skipPlanningApproval: event.questionId, stage: "plan" as const }
-        : event.approval === "skip-planning-and-build" ? { skipPlanningApproval: event.questionId, buildApproval: event.questionId, stage: "build" as const }
-        : { buildApproval: event.questionId, stage: "build" as const }) })) }
+    case "project.ApprovalGranted":
+    case "project.ApprovalDecided": return event._tag === "project.ApprovalDecided" && !event.approved ? view : { ...view, projects: change(view.projects, event.projectId, (row) => {
+      const approvalId = event._tag === "project.ApprovalGranted" ? event.requestId : event.questionId
+      const building = event.approval === "build" || event.approval === "skip-planning-and-build"
+      const stage = row.stage === "define" || row.stage === "plan" ? building ? "build" as const : "plan" as const : row.stage
+      return { ...row, ...(stage === undefined ? {} : { stage }),
+        ...(event.approval === "end-result" ? { endResultApproval: approvalId }
+          : event.approval === "skip-planning" ? { skipPlanningApproval: approvalId }
+          : event.approval === "skip-planning-and-build" ? { skipPlanningApproval: approvalId, buildApproval: approvalId }
+          : { buildApproval: approvalId }) }
+    }) }
+    case "project.ApprovalWithdrawn": return { ...view, projects: change(view.projects, event.projectId, (row) => {
+      const { buildApproval: _building, ...withoutBuilding } = row
+      if (event.approval === "build") return withoutBuilding
+      const { endResultApproval: _scope, skipPlanningApproval: _skip, ...withoutScope } = withoutBuilding
+      return withoutScope
+    }) }
     case "project.TeamDeleted": { const teams = { ...view.teams }; delete teams[projectKey(event.projectId, event.teamId)]; return { ...view, teams } }
     case "project.TaskDeleted": { const tasks = { ...view.tasks }; delete tasks[projectKey(event.projectId, event.taskId)]; return { ...view, tasks } }
     case "project.StageChanged": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, stage: event.stage })) }

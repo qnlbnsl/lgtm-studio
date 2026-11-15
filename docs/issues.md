@@ -14531,3 +14531,16 @@ Status: fixed in the new fixture.
 An engine without a saved display name can suggest the host's Git user name.
 The new lead journey now explicitly saves Maya Okafor in its temporary settings.
 The journey checks that sample name after signing in.
+
+## s10-lead-11. Existing projects needed owner controls for approvals and narrower gates.
+
+Found in review round 1 on 2026-11-14.
+Status: fixed in the owner requests and project settings.
+The owner can grant or withdraw end result and building approvals directly.
+Withdrawing the end result also withdraws building.
+Approval lasts until it is withdrawn.
+Approval never moves an existing Review or Handover project backwards.
+Existing active tasks can still reach review or completion without a new approval.
+Planning edits require scope approval, and idle worker prompts require building approval.
+Answering a queued task's linked question cannot bypass the building gate.
+The project settings row makes these controls available without requiring a lead to ask.

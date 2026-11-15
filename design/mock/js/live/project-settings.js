@@ -9,6 +9,9 @@ export function renameProject(projectId, name) {
 export function deleteTeam(projectId, teamId) {
   return run('project:' + projectId, () => engine.request('project.team.delete', mapping.teamDeletePayload(projectId, teamId)), 'Team deleted');
 }
+export function changeApproval(projectId, approval, approved) {
+  return run('project:' + projectId, () => engine.request('project.approval.' + (approved ? 'grant' : 'withdraw'), mapping.projectApprovalPayload(projectId, approval)), approved ? 'Approval granted' : 'Approval withdrawn');
+}
 let mapping;
 const latestReads = new WeakMap();
 export function installMappings(value) { mapping = value; }

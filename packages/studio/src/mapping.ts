@@ -39,6 +39,7 @@ export interface StoreSubscription {
 }
 export type StoreStage = "Define" | "Design" | "Plan" | "Build" | "Review" | "Hand over"
 export interface StoreProject {
+  readonly approvals: { readonly endResult: boolean; readonly build: boolean }
   readonly worktree?: string
   readonly id: string; readonly repo: string; readonly name: string; readonly prefix: string; readonly goal: string
   readonly stage: StoreStage | ""; readonly phase: string; readonly branch: string; readonly folder: string
@@ -168,6 +169,7 @@ export function mapWorktree(row: EngineWorkspace, workspaces: ReadonlyArray<Engi
 export function mapProject(project: EngineProject, workspaces: ReadonlyArray<EngineWorkspace>): StoreProject {
   const workspace = workspaces.find((row) => row.worktreeId === project.worktreeId)
   return {
+    approvals: { endResult: project.endResultApproval !== undefined || project.skipPlanningApproval !== undefined, build: project.buildApproval !== undefined },
     worktree: project.worktreeId, id: project.projectId, repo: project.repoId, name: project.name, prefix: prefixOf(project.name), goal: project.goal,
     stage: mapStage(project.stage), phase: project.stage ?? "", branch: workspace?.branch ?? "", folder: workspace?.path ?? "",
     machine: project.machineId, lead: project.leadAgentId, shell: project.shell ?? "", createdAt: null,
