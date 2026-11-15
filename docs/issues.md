@@ -15032,7 +15032,7 @@ Regression tests check that the engine stores two identical parts and that the r
 A later repeat of that whole two-part snapshot renders once.
 
 
-## s11-10. Three permission events were missing from independent test inventories.
+## 990. Three permission events were missing from independent test inventories.
 
 Found: 2026-11-15, in the orchestrator's full check after merging s11 and s12.
 Status: fixed in s11 fix round 2.
@@ -15049,7 +15049,7 @@ Only the owner receives the raw permission events.
 Leads and workers obtain effective permission state through project reads, action refusals and card answers.
 No visibility rule changed.
 
-## s11-11. The real-child task delivery fixture requested unnecessary default permission cards.
+## 991. The real-child task delivery fixture requested unnecessary default permission cards.
 
 Found: 2026-11-15, in the orchestrator's full check after merging s11 and s12.
 Status: fixed in s11 fix round 2.
