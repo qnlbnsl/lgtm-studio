@@ -174,3 +174,13 @@ for (const oversized of [false, true]) for (const [before, after, refresh] of [
   expect(h.state.gitRevision).toBe(refresh ? 1 : 0);
   if (refresh) expect(h.state.gitChange).toEqual({ agentId: "ag-lead", scoped: true });
 });
+
+for (const [reason, code, retryable] of [["Git: unsupported_conflict", "unsupported_conflict", false], ["Git: invalid_path", "invalid_path", false], ["Git: busy", "busy", true], ["Git operation queue is full; retry shortly", undefined, true], ["registered workspace not found", undefined, false]] as const) {
+  it(`preserves the typed command refusal and retry classification for ${reason}`, async () => {
+    const client = { "client.snapshot": () => Effect.succeed(engineSnapshot), "project.settings": () => Effect.succeed({}), "client.subscribe": () => Stream.never,
+      "project.conflict": () => Effect.fail({ _tag: "CommandError", reason }) };
+    const h = harness({ open: (() => Effect.succeed(client)) as any });
+    await vi.waitFor(() => expect(h.state.conn?.status).toBe("live"));
+    await expect(h.connection.request("project.conflict", { worktreeId: "workspace", path: "binary.bin" })).rejects.toMatchObject({ refused: true, reason, gitCode: code, retryable });
+  });
+}

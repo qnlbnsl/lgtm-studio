@@ -15351,3 +15351,113 @@ Screen listeners are attached only when a document exists.
 Cleanup uses the document captured when the screen opened.
 The existing harness integration test remains unchanged.
 A new regression also opens and reads Git without a document, then closes the screen without attaching listeners.
+
+## 1005. Focusing the window disabled Git controls and could drop an owner action.
+
+Found in review round 3 on 2026-11-15.
+Status: fixed by putting focus reads on the automatic queue.
+Focus resets retry delay and invalidates Git without setting the owner busy flag.
+The built screen stays enabled while the read waits.
+A regression renders that screen and sends an owner action immediately after focus.
+A second regression keeps Mark resolved enabled while refreshing the same merge.
+An automatic read retains loaded conflict data when both merge heads are unchanged.
+The owner click supersedes that read and still reaches the engine.
+
+## 1006. A failed Git detail hid the worktree and its merge actions.
+
+Found in review round 3 on 2026-11-15.
+Status: fixed by separating detail errors from state and change-list errors.
+An unsupported conflict now has an explanation in its own row.
+The other conflict files still load.
+The Abort and Continue merge controls retain their existing behavior.
+Diff errors appear beside the selected file.
+History errors appear inside History without removing previously loaded commit actions.
+Review and resolved-conflict metadata failures also preserve the worktree panels.
+The connection preserves the typed command refusal's fixed reason.
+The Git protocol has no separate retry flag or code field.
+The connection extracts the Git reason code from that field and classifies transient refusals separately.
+A deterministic refusal is retained for its request input and checkout identity.
+A regression creates a real text and binary merge conflict and aborts it through the built website module.
+
+## 1007. A failing scoped Git read stopped the full heartbeat fallback.
+
+Found in review round 3 on 2026-11-15.
+Status: fixed by separating pending scopes from pending full invalidations.
+A full pass retires its captured invalidation versions after visiting eligible worktrees.
+Failed worktrees keep their own pending scopes.
+The sixty-second heartbeat can therefore refresh healthy siblings while one scope keeps failing.
+
+## 1008. One failing Git worktree delayed healthy worktrees.
+
+Found in review round 3 on 2026-11-15.
+Status: fixed with per-worktree retry deadlines.
+Each worktree retains its own failure count and exponential backoff.
+A healthy worktree's event still schedules its read after one hundred milliseconds.
+Successful scopes retire independently of failed scopes.
+
+## 1009. Reconnecting repeatedly reset the Git retry delay.
+
+Found in review round 3 on 2026-11-15.
+Status: fixed with a stable-connection timer and a request budget.
+A reconnect resets backoff only after ten continuous seconds live.
+Automatic reads issue at most 120 requests in any sliding sixty-second interval per worktree.
+Focus, visibility, reconnects, events, heartbeat fallback, and retries share that budget.
+Owner actions retain their immediate readback path.
+A partial detail read resumes its completed file reads after its budget becomes available.
+Tests exercise flapping connections, alternating failures at ten events per second, repeated focus, and a detail list larger than one budget.
+
+## 1010. Alternating Git failures could toast repeatedly and retain every error string.
+
+Found in review round 3 on 2026-11-15.
+Status: fixed with one toast timestamp per worktree.
+Changing the error text does not bypass the sixty-second interval.
+A successful read does not erase that timestamp.
+Removed worktrees are pruned, and signing out clears the timestamps.
+
+## 1011. The full-readback regression could pass with its rule removed.
+
+Found in review round 3 on 2026-11-15.
+Status: fixed by draining pending scopes before delivering the late completion.
+The test now starts its critical assertion with no refresh timer or pending generic invalidation.
+Removing the full-readback eligibility rule makes this regression fail.
+Scoped reads cannot cover an owner's operation that changes sibling comparisons.
+
+## 1012. Focus followed by visibility refreshed Git twice.
+
+Found in review round 3 on 2026-11-15.
+Status: fixed by sharing the background queue's deadline.
+Both triggers invalidate the same queue before its first read starts.
+Later events do not continually postpone an existing deadline.
+A regression requires exactly one state read for focus followed by visibility.
+
+## 1013. Waiting agent events could lose a full refresh or survive closing Git.
+
+Found in review round 3 on 2026-11-15.
+Status: fixed by retaining the stronger event until its agent appears.
+A later scoped event cannot downgrade a waiting full refresh.
+Closing the screen empties the waiting-agent map.
+The existing bound of 256 waiting identities remains in place.
+
+## 1014. A cached change-list refusal could outlive the HEAD that produced it.
+
+Found while checking fix round 4 on 2026-11-15.
+Status: fixed by identifying change-list reads with freshly observed Git state.
+A failed change list can leave the displayed worktree record older than its latest state read.
+A fresh event permits probing state while preserving the refusal cache.
+An unchanged input still does not repeat the refused request.
+A changed HEAD permits a fresh change-list input.
+A second regression retains that latest observed identity even while the displayed record is older.
+
+## 1015. Two existing merge concurrency tests could miss their start marker during a full unit run.
+
+Found while validating fix round 4 on 2026-11-15.
+Status: tracked as a test scheduling failure under concurrent suite execution.
+The first complete run passed all 115 files and 1,373 tests.
+The repeat run included two new scheduler regressions and passed 114 files.
+Two tests in the unchanged main-review test file failed before checking an independent writer.
+Both exhausted their existing five-second wait for the held-merge marker.
+The scheduler change does not modify that engine path or its test file.
+All 45 tests in that file then passed alone with one worker.
+The final complete run with two unit workers also passed both original marker waits.
+The final validation report records the isolated rerun separately.
+No assertion, process-start deadline, or wait was widened.

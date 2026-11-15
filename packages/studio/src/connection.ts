@@ -371,8 +371,15 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
         if (result._tag === "Failure") {
           const error = result.failure as { _tag?: unknown; reason?: unknown; message?: unknown }
           const refused = error?._tag === "CommandError"
+          // The RPC schema carries a fixed public reason, not a separate code or
+          // retry flag. Preserve it before formatting a human-facing message.
+          const reason = refused && typeof error.reason === "string" ? error.reason : undefined
+          const gitCode = reason?.startsWith("Git: ") ? reason.slice(5) : undefined
+          const retryable = !refused || (gitCode !== undefined
+            ? ["timeout", "cancelled", "git_failed", "busy", "git_unavailable", "network_failed"].includes(gitCode)
+            : reason === "Git operation queue is full; retry shortly" || reason === "recovering")
           if (refused && retryKey !== undefined) retryIds.delete(retryKey)
-          throw Object.assign(new Error(typeof error?.reason === "string" ? error.reason : typeof error?.message === "string" ? error.message : "The service refused the request."), { refused })
+          throw Object.assign(new Error(typeof error?.reason === "string" ? error.reason : typeof error?.message === "string" ? error.message : "The service refused the request."), { refused, reason, gitCode, retryable })
         }
         if (retryKey !== undefined) retryIds.delete(retryKey)
         return result.success

@@ -6,9 +6,14 @@ export function gitActionsSource(path: string, source: string): string {
   }
   if (path === "js/screens/git.js") {
     replace('class="diff-note" role=${w.gitError ?', 'class="diff-note" aria-atomic="true" role=${w.gitError ?')
-    replace("<div class=\"cf-body\">${(() =>", "<div class=\"cf-body\">${live.on && !sel.loaded && html`<div class=\"diff-note\" role=\"status\">Loading conflicts…</div>`}${(() =>")
-    replace("f.resolved ? 'Resolved' : left(f)", "f.resolved ? 'Resolved' : live.on && !f.loaded ? 'Loading…' : left(f)")
+    replace("<div class=\"cf-body\">${(() =>", "<div class=\"cf-body\">${live.on && (sel.conflictError || !sel.loaded) && html`<div class=\"diff-note\" role=\"status\">${sel.conflictError || 'Loading conflicts…'}</div>`}${(() =>")
+    replace("f.resolved ? 'Resolved' : left(f)", "f.resolved ? 'Resolved' : live.on && f.conflictError ? f.conflictError : live.on && !f.loaded ? 'Loading…' : left(f)")
     replace("disabled=${sel.resolved} onClick=${() => choose", "disabled=${sel.resolved || (live.on && !sel.loaded)} onClick=${() => choose")
+    replace("if (!w.commits.length) return html`", "if (!w.commits.length && live.on && w.historyError) return html`<div class=\"diff-note\" role=\"status\">${w.historyError}</div>`;\n  if (!w.commits.length) return html`")
+    replace('<div class="git-list"><ol class="git-log">', '<div class="git-list">${live.on && w.historyError && html`<div class="diff-note" role="status">${w.historyError}</div>`}<ol class="git-log">')
+    replace("${sel.resolved ? 'Resolved' : left(sel)", "${sel.resolved ? 'Resolved' : live.on && sel.conflictError ? 'Cannot display this conflict' : left(sel)")
+    replace('<p>Merging <span class="mono">', '${live.on && m.detailError && html`<div class="diff-note" role="status">${m.detailError}</div>`}<p>Merging <span class="mono">')
+    replace('<${Integrate} s=${s} w=${w} project=${project} />', '<${Integrate} s=${s} w=${w} project=${project} />${live.on && w.reviewError && html`<div class="diff-note" role="status">${w.reviewError}</div>`}')
     replace("function updateFromBase(wid) { if (live.on) return refuse();", "function updateFromBase(wid) { if (live.on) return liveGit.updateFromBase(wid);")
     replace("function abortMerge(s, w) { if (live.on) return refuse();", "function abortMerge(s, w) { if (live.on) return liveGit.abortMerge(w.id);")
   }
@@ -19,14 +24,15 @@ export function gitActionsSource(path: string, source: string): string {
     // Automatic reads never disable an owner action. An explicit refresh must
     // start a fresh generation even when an older automatic read is pending.
     replace("if (gitVisible()) return refreshGit(screen.project);", "if (gitVisible()) return refreshGit(screen.project, true);")
-    replace("export function refreshGit(project = screen?.project) { return run('git', () => loadGit(project)); }", "export function refreshGit(project = screen?.project, background = false) {\n  if (background) { if (busy('git') || busy('git-read') || busy('git-plan')) return false; return run('git-read', () => loadGit(project, gitFullPending() ? undefined : [...gitScopes.keys()])); }\n  return run('git', () => { revision++; return loadGit(project); });\n}")
+    replace("export function refreshGit(project = screen?.project) { return run('git', () => loadGit(project)); }", "export function refreshGit(project = screen?.project, background = false) {\n  if (background) { if (busy('git') || busy('git-read') || busy('git-plan')) return false; return run('git-read', () => loadGit(project, gitFullPending() ? undefined : [...gitScopes.keys()], true)); }\n  return run('git', () => { revision++; return loadGit(project); });\n}")
     replace("lost: plan.paths, action: 'Discard', onConfirm:", "lost: plan.paths, action: 'Discard', waitForReply: true, pendingLabel: 'Discarding…', onConfirm:")
     replace("export function gitDetail(id, commit) { return run('git', () => loadGitDetail(id, commit)); }", "export function gitDetail(id, commit) { return run('git', () => { revision++; return loadGitDetail(id, commit); }); }")
     replace("const conflict = read(await request('project.conflict.choose'", "revision++;\n    const conflict = read(await request('project.conflict.choose'")
     replace("if (w.kind !== 'team') { refuse(); return; }", "if (!['team', 'agent'].includes(w.kind)) { refuse(); return; }")
-    replace("const merge = state.mergeHead || changes.items.some((x) => x.conflict) ?", "const resolved = state.mergeHead ? read(await request('project.conflict.resolved', scope(w))) : { items: [], truncated: false };\n    if (version !== revision || S().session.status !== 'in') return;\n    const merge = state.mergeHead || changes.items.some((x) => x.conflict) ?")
+    replace("const merge = state.mergeHead || changes.items.some((x) => x.conflict) ?", "let resolved = { items: [], truncated: false };\n    if (state.mergeHead) { try { resolved = read(await request('project.conflict.resolved', scope(w))); } catch (error) { if (error.gitBudget) throw error; resolved.error = error.message; gitToast(w.id, error.message); if (error.retryable !== false) { retryGitRead(w.id, error); deferred.add(w.id); } } }\n    if (version !== revision || S().session.status !== 'in') return;\n    const merge = state.mergeHead || changes.items.some((x) => x.conflict) ?")
+    replace("from: state.mergeHead || '', by:", "detailError: resolved.error || null, from: state.mergeHead || '', by:")
     replace("files: changes.items.filter((x) => x.conflict).map", "files: [...changes.items.filter((x) => x.conflict), ...resolved.items.map((file) => ({ ...file, resolved: true }))].map")
-    replace("resolved: false, loaded: false })) } : null;", "resolved: !!x.resolved, fingerprint: x.fingerprint, loaded: false })) } : null;")
+    replace("resolved: false, loaded: false })) } : null;", "resolved: !!x.resolved, fingerprint: x.fingerprint, loaded: !!(automatic && w.head === state.head && w.mergeHead === state.mergeHead && w.merge?.files.find((f) => f.path === x.path)?.loaded) })) } : null;")
     replace("truncated: changes.truncated });", "truncated: changes.truncated || resolved.truncated });")
     replace("for (const f of w.merge.files) {", "for (const f of w.merge.files) {\n      if (f.resolved) { files.push({ ...f, loaded: true }); continue; }")
     replace("export function answerReview(id, option) {\n  if (option !== 'merge') { refuse(); return; }", "export function answerReview(id, option, reason) {\n  if (option === 'decline') return declineReview(id, reason);\n  if (option !== 'merge') { refuse(); return; }")

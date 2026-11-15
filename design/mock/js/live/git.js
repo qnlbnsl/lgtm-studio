@@ -10,7 +10,7 @@ export const busy = (key) => !!S()?.ui?.gitPending?.[key];
 const pending = (key, value) => { S().ui.gitPending ||= {}; S().ui.gitPending[key] = value; notify(); };
 export async function run(key, work) {
   if (busy(key)) return false;
-  if (key === 'git' || key === 'git-plan') resetGitRetry();
+  if (key === 'git' || key === 'git-plan') { resetGitRetry(); gitDetailProgress.clear(); }
   pending(key, true);
   const generation = sessionGeneration;
   const current = () => generation === sessionGeneration;
@@ -44,9 +44,57 @@ let serviceRead = 0;
 let refreshTimer;
 let retryPending;
 let gitObserved = 0, gitLoaded = 0, gitEventVersion = 0;
-let gitFullReadAt, gitRetryAt = 0, gitFailures = 0, gitScopeVersion = 0;
-const gitFailureKinds = new Set(), gitScopes = new Map(), gitWaitingAgents = new Map();
-function resetGitRetry() { gitRetryAt = gitFailures = 0; clearTimeout(refreshTimer); }
+let gitFullReadAt, gitScopeVersion = 0, refreshAt, gitReconnectTimer;
+const gitScopes = new Map(), gitWaitingAgents = new Map();
+const gitRetries = new Map(), gitToastAt = new Map(), gitBudgets = new Map();
+const gitRefusals = new Map(), gitDetailProgress = new Map();
+const gitRequestLimit = 120;
+function resetGitRetry() { gitRetries.clear(); }
+function gitBudget(id) {
+  const times = (gitBudgets.get(id) || []).filter((at) => at > Date.now() - 60_000);
+  gitBudgets.set(id, times); return times;
+}
+function gitDue(id) {
+  const times = gitBudget(id);
+  return Math.max(gitRetries.get(id)?.at || 0, times.length >= gitRequestLimit ? times[0] + 60_000 : 0);
+}
+function gitToast(id, message) {
+  if (!gitToastAt.has(id) || Date.now() - gitToastAt.get(id) >= 60_000) { gitToastAt.set(id, Date.now()); act.toast(message, 'error'); }
+}
+function retryGitRead(id, error) {
+  gitScopes.set(id, ++gitScopeVersion);
+  const failures = gitRetries.get(id)?.failures || 0;
+  gitRetries.set(id, { at: error.gitBudget ? error.retryAt : error.retryable === false ? Infinity : Date.now() + Math.min(60_000, 1000 * 2 ** Math.min(failures, 6)), failures: error.gitBudget ? failures : failures + 1 });
+}
+function gitReadRequest(id, automatic, detail = false, observed) {
+  const w = wt(id), state = observed || w;
+  const identity = JSON.stringify([w.folder, w.repo, w.branch, state.head, state.mergeHead]);
+  const context = JSON.stringify([identity, w.files.map((f) => [f.path, f.staged, f.status])]);
+  let refusals = gitRefusals.get(id);
+  // A failed change list can leave the displayed HEAD older than the state
+  // already observed. Only fresh state or a detail read replaces that identity.
+  if (!refusals || (observed || detail) && refusals.context !== identity) { refusals = { context: identity, errors: new Map() }; gitRefusals.set(id, refusals); }
+  let progress = gitDetailProgress.get(id);
+  if (progress?.context !== context) { progress = { context, replies: new Map() }; gitDetailProgress.set(id, progress); }
+  return async (tag, payload) => {
+    const key = JSON.stringify([tag, payload]);
+    if (refusals.errors.has(key)) throw refusals.errors.get(key);
+    if (detail && progress.replies.has(key)) return progress.replies.get(key);
+    if (automatic) {
+      const times = gitBudget(id);
+      if (times.length >= gitRequestLimit) throw Object.assign(new Error('Automatic Git read budget reached.'), { gitBudget: true, retryAt: times[0] + 60_000 });
+      times.push(Date.now());
+    }
+    try {
+      const reply = await request(tag, payload);
+      if (detail) progress.replies.set(key, reply);
+      return reply;
+    } catch (error) {
+      if (error.retryable === false) refusals.errors.set(key, error);
+      throw error;
+    }
+  };
+}
 const gitInvalidations = new Map(), gitReadbacks = new Map();
 const gitVisible = () => typeof document === 'undefined' || document.visibilityState !== 'hidden';
 const gitFullPending = () => gitLoaded < gitObserved || gitInvalidations.size > 0;
@@ -54,19 +102,27 @@ const gitNeedsRead = () => gitFullPending() || gitScopes.size > 0;
 const gitRoster = (rows) => JSON.stringify((rows || []).map(({ id, project, repo, branch, parentId, machine, folder, kind }) => ({ id, project, repo, branch, parentId, machine, folder, kind })).sort((a, b) => a.id.localeCompare(b.id)));
 const gitWorktrees = (project) => S().worktrees.filter((w) => w.project === project || w.kind === 'base' && w.repo === S().projects.find((p) => p.id === project)?.repo);
 function scheduleGitRefresh(delay = 100) {
-  clearTimeout(refreshTimer);
-  if (!gitVisible() || screen?.name !== 'git' || busy('git') || busy('git-read') || busy('git-plan')) return;
-  refreshTimer = setTimeout(() => { if (screen?.name === 'git' && gitVisible() && gitNeedsRead()) void refreshScreen(); }, Math.max(delay, gitRetryAt - Date.now()));
+  if (!gitVisible() || screen?.name !== 'git' || busy('git') || busy('git-read') || busy('git-plan')) { clearTimeout(refreshTimer); refreshAt = undefined; return; }
+  const ids = gitFullPending() ? gitWorktrees(screen.project).map((w) => w.id) : [...gitScopes.keys()];
+  if (!ids.length && !gitFullPending()) return;
+  const at = Math.max(Date.now() + delay, ids.length ? Math.min(...ids.map(gitDue)) : 0);
+  if (!Number.isFinite(at)) { clearTimeout(refreshTimer); refreshAt = undefined; return; }
+  // Keep the first deadline: a stream of events must not postpone it forever.
+  if (refreshAt !== undefined && refreshAt <= at) return;
+  clearTimeout(refreshTimer); refreshAt = at;
+  refreshTimer = setTimeout(() => { refreshAt = undefined; if (screen?.name === 'git' && gitVisible() && gitNeedsRead()) void refreshScreen(); }, at - Date.now());
 }
-function invalidateGitScope(ids) { for (const id of ids) gitScopes.set(id, ++gitScopeVersion); scheduleGitRefresh(); }
+function newGitInput(id) { if (gitRetries.get(id)?.at === Infinity) gitRetries.delete(id); }
+function invalidateGitScope(ids) { for (const id of ids) { newGitInput(id); gitScopes.set(id, ++gitScopeVersion); } scheduleGitRefresh(); }
 function observeGitAgent(agentId, scoped, agents) {
   const agent = agents?.find((a) => a.id === agentId);
-  if (!agent?.folder) { gitWaitingAgents.set(agentId, scoped); if (gitWaitingAgents.size > 256) gitWaitingAgents.delete(gitWaitingAgents.keys().next().value); return; }
+  if (!agent?.folder) { gitWaitingAgents.set(agentId, gitWaitingAgents.has(agentId) ? gitWaitingAgents.get(agentId) && scoped : scoped); if (gitWaitingAgents.size > 256) gitWaitingAgents.delete(gitWaitingAgents.keys().next().value); return; }
   gitWaitingAgents.delete(agentId);
   const shown = gitWorktrees(screen.project).filter((w) => w.folder === agent.folder);
   if (shown.length) { if (scoped) invalidateGitScope(shown.map((w) => w.id)); else invalidateGit(); }
 }
 function invalidateGit(change) {
+  for (const id of gitRetries.keys()) newGitInput(id);
   if (change?.requestId) {
     if (gitReadbacks.get(change.requestId)?.covered) return;
     gitInvalidations.set(change.requestId, ++gitEventVersion);
@@ -88,7 +144,7 @@ export function observe(patch) {
     settingsQueue = { items: [], running: false }; settingsDrafts.clear();
     S().ui.gitPending = {};
     service = accounts = statuses = retryPending = undefined; subscriptionsLoaded = false; S().ui.serviceReady = false; revision++; clearTimeout(refreshTimer);
-    gitInvalidations.clear(); gitReadbacks.clear(); gitScopes.clear(); gitWaitingAgents.clear(); gitFailureKinds.clear(); resetGitRetry(); gitObserved = gitLoaded = 0; gitFullReadAt = undefined;
+    gitInvalidations.clear(); gitReadbacks.clear(); gitScopes.clear(); gitWaitingAgents.clear(); gitToastAt.clear(); gitBudgets.clear(); gitRefusals.clear(); gitDetailProgress.clear(); clearTimeout(gitReconnectTimer); refreshAt = undefined; resetGitRetry(); gitObserved = gitLoaded = 0; gitFullReadAt = undefined;
     Object.assign(patch, { notifications: [], settings: { ntfyServer: '', ntfyTopic: '', ntfyToken: '', tokenSet: false, ntfyEnabled: false, email: {}, notifyOn: {}, quiet: {} } });
     return;
   }
@@ -99,16 +155,25 @@ export function observe(patch) {
     const reconnected = patch.conn?.status === 'live' && S().conn?.status !== 'live';
     const changed = patch.gitRevision !== undefined && patch.gitRevision !== S().gitRevision;
     const rosterChanged = patch.worktrees && gitRoster(patch.worktrees) !== gitRoster(S().worktrees);
-    if (reconnected) resetGitRetry();
+    if (patch.conn && patch.conn.status !== 'live') { clearTimeout(gitReconnectTimer); gitReconnectTimer = undefined; }
+    if (reconnected) {
+      clearTimeout(gitReconnectTimer);
+      gitReconnectTimer = setTimeout(() => { gitReconnectTimer = undefined; if (screen?.name === 'git' && S().conn?.status === 'live') { resetGitRetry(); scheduleGitRefresh(0); } }, 10_000);
+    }
+    if (rosterChanged) for (const w of patch.worktrees) {
+      const old = S().worktrees.find((row) => row.id === w.id);
+      if (!old || gitRoster([old]) !== gitRoster([w])) { gitRetries.delete(w.id); gitRefusals.delete(w.id); gitDetailProgress.delete(w.id); }
+    }
     if (reconnected || rosterChanged) invalidateGit();
     if (reconnected) scheduleGitRefresh(0);
     if (patch.agents) for (const [id, scoped] of [...gitWaitingAgents]) observeGitAgent(id, scoped, patch.agents);
     if (changed) {
+      gitDetailProgress.clear();
       const agent = patch.gitChange?.agentId;
       if (agent) observeGitAgent(agent, !!patch.gitChange.scoped, patch.agents || S().agents);
       else invalidateGit(patch.gitChange);
     }
-    if (patch.gitHeartbeat !== undefined && gitVisible() && !busy('git') && !busy('git-read') && !gitNeedsRead()
+    if (patch.gitHeartbeat !== undefined && gitVisible() && !busy('git') && !busy('git-read') && !gitFullPending()
       && (gitFullReadAt === undefined || Date.now() - gitFullReadAt >= 60_000)) invalidateGit();
     return;
   }
@@ -119,17 +184,17 @@ export function observe(patch) {
 export function openScreen(name, project) {
   if (!live.on) return () => {};
   screen = { name, project };
-  if (name === 'git') { resetGitRetry(); gitObserved++; }
+  if (name === 'git') { resetGitRetry(); gitDetailProgress.clear(); gitObserved++; }
   void refreshScreen();
-  const refresh = () => { if (screen?.name === 'git') { resetGitRetry(); gitObserved++; void refreshGit(screen.project); } else if (screen) void refreshScreen(); };
+  const refresh = () => { if (screen?.name === 'git') { resetGitRetry(); gitDetailProgress.clear(); invalidateGit(); } else if (screen) void refreshScreen(); };
   const visible = () => {
     if (screen?.name !== 'git') return;
-    if (gitVisible()) invalidateGit();
-    else { revision++; gitObserved++; clearTimeout(refreshTimer); }
+    if (gitVisible()) { gitDetailProgress.clear(); invalidateGit(); }
+    else { revision++; gitObserved++; clearTimeout(refreshTimer); refreshAt = undefined; }
   };
   const page = typeof document === 'undefined' ? undefined : document;
   if (page) { addEventListener('focus', refresh); page.addEventListener('visibilitychange', visible); }
-  return () => { screen = undefined; revision++; clearTimeout(refreshTimer); if (page) { removeEventListener('focus', refresh); page.removeEventListener('visibilitychange', visible); } };
+  return () => { screen = undefined; revision++; clearTimeout(refreshTimer); refreshAt = undefined; clearTimeout(gitReconnectTimer); gitWaitingAgents.clear(); if (page) { removeEventListener('focus', refresh); page.removeEventListener('visibilitychange', visible); } };
 }
 async function refreshScreen() {
   if (!mapping || !screen || S().session.status !== 'in') return;
@@ -346,92 +411,109 @@ const read = (reply) => { if (!('result' in reply)) throw new Error('The service
 const writeWt = (id, patch) => engineWrite({ worktrees: S().worktrees.map((w) => w.id === id ? { ...w, ...patch } : w) });
 function local(w) { if (!w || w.machine !== 'local') throw new Error('Git is available only for a workspace on local.'); }
 function destination(w) { return S().worktrees.find((x) => x.repo === w.repo && x.id === w.parentId); }
-async function loadGit(project, ids) {
+async function loadGit(project, ids, automatic = false) {
   if (!mapping) return;
   const version = revision, observed = gitObserved, events = gitEventVersion;
-  const list = gitWorktrees(project), loaded = list.filter((w) => !ids || ids.includes(w.id));
-  const scopes = new Map(gitScopes), failed = new Set();
+  const list = gitWorktrees(project);
+  if (!ids) for (const w of list) if (!gitScopes.has(w.id)) gitScopes.set(w.id, ++gitScopeVersion);
+  const scopes = new Map(gitScopes), failed = new Set(), deferred = new Set();
+  const loaded = list.filter((w) => (!ids || ids.includes(w.id)) && (!automatic || gitDue(w.id) <= Date.now()));
+  for (const id of [...gitRetries.keys(), ...gitToastAt.keys(), ...gitRefusals.keys(), ...gitDetailProgress.keys()]) if (!S().worktrees.some((w) => w.id === id)) { gitRetries.delete(id); gitToastAt.delete(id); gitRefusals.delete(id); gitDetailProgress.delete(id); }
+  // Budget clocks survive roster churn for their sliding minute, then expire.
+  for (const id of gitBudgets.keys()) if (!S().worktrees.some((w) => w.id === id) && !gitBudget(id).length) gitBudgets.delete(id);
   const fail = (w, error) => {
     const message = error.message || 'The service did not complete the request.';
-    failed.add(w.id); writeWt(w.id, { gitError: message, ready: false });
-    if (!gitFailureKinds.has(message)) { gitFailureKinds.add(message); act.toast(message, 'error'); }
+    retryGitRead(w.id, error);
+    if (error.gitBudget) { deferred.add(w.id); return; }
+    failed.add(w.id); writeWt(w.id, { gitError: message, ready: false }); gitToast(w.id, message);
   };
   // Only replies received before this read began can be covered by it.
-  const own = [...gitReadbacks].filter(([, r]) => !r.covered && (!ids || !r.full) && loaded.some((w) => w.id === r.worktreeId)).map(([id]) => id);
+  const own = [...gitReadbacks].filter(([, r]) => !r.covered && (!r.full || !ids && loaded.length === list.length) && loaded.some((w) => w.id === r.worktreeId)).map(([id]) => id);
   try {
     if (!gitVisible()) return;
     for (const w of loaded) {
+      let request = gitReadRequest(w.id, automatic);
       if (version !== revision || S().session.status !== 'in') return;
       if (w.machine !== 'local') { writeWt(w.id, { gitUnsupported: true, gitError: null, ready: false }); continue; }
       try {
         const state = read(await request('project.git.state', { ...scope(w), ...(w.parent ? { target: w.parent } : {}) }));
         if (version !== revision || S().session.status !== 'in') return;
+        request = gitReadRequest(w.id, automatic, false, state);
         const changes = read(await request('project.changes', scope(w)));
         if (version !== revision || S().session.status !== 'in') return;
         const files = mapping.mapGitChanges(changes.items);
         const merge = state.mergeHead || changes.items.some((x) => x.conflict) ? { from: state.mergeHead || '', by: null, startedAt: null, files: changes.items.filter((x) => x.conflict).map((x) => ({ ...(w.merge?.files.find((f) => f.path === x.path) || {}), id: x.path, path: x.path, parts: w.merge?.files.find((f) => f.path === x.path)?.parts || [], resolved: false, loaded: false })) } : null;
         writeWt(w.id, { ...mapping.mapGitState(state, w.parent), files, merge, gitError: null, gitUnsupported: false, ready: !changes.truncated, truncated: changes.truncated });
+      } catch (error) { if (version !== revision || S().session.status !== 'in') return; fail(w, error); continue; }
+      try {
         if (w.kind === 'project') {
           const status = read(await request('project.review.status', { ...scope(w), projectId: project }));
           if (version !== revision) return;
+          writeWt(w.id, { reviewError: null });
           if (status.review) {
             const fresh = mapping.mapMainReview(status.review, undefined, S().projects.find((p) => p.id === project)?.lead || '');
             const old = wt(w.id).review;
             const review = old?.id === fresh.id && old.head === fresh.head && old.baseHead === fresh.baseHead ? { ...old, ...fresh, files: old.files, evidence: { ...old.evidence, tests: fresh.evidence.tests, review: fresh.evidence.review } } : fresh;
-            writeWt(w.id, { review, merged: status.review.outcome === 'merged' && status.review.head === state.head ? status.review.decidedAt : null });
+            writeWt(w.id, { review, merged: status.review.outcome === 'merged' && status.review.head === wt(w.id).head ? status.review.decidedAt : null });
           }
         }
-      } catch (error) { if (version !== revision || S().session.status !== 'in') return; fail(w, error); }
+      } catch (error) {
+        if (version !== revision || S().session.status !== 'in') return;
+        if (error.gitBudget) fail(w, error); else { writeWt(w.id, { reviewError: error.message }); gitToast(w.id, error.message); if (error.retryable !== false) { retryGitRead(w.id, error); deferred.add(w.id); } }
+      }
     }
     const selected = list.find((w) => w.branch === S().inspecting[project]) || list.find((w) => w.kind === 'project') || list[0];
     if (selected && selected.machine === 'local' && !failed.has(selected.id) && loaded.some((w) => w.id === selected.id)) {
-      try { await loadGitDetail(selected.id); } catch (error) { if (version !== revision || S().session.status !== 'in') return; fail(selected, error); }
+      try { await loadGitDetail(selected.id, undefined, automatic); } catch (error) { if (version !== revision || S().session.status !== 'in') return; if (error.gitBudget) fail(selected, error); else { deferred.add(selected.id); gitToast(selected.id, error.message); } }
     }
     if (version === revision && S().session.status === 'in') {
-      if (failed.size) {
-        if (!ids) gitObserved++; else for (const id of failed) gitScopes.set(id, ++gitScopeVersion);
-        gitRetryAt = Date.now() + Math.min(60_000, 1000 * 2 ** Math.min(gitFailures++, 6));
-        throw Object.assign(new Error('Git state could not be read.'), { gitReadFailure: true });
-      }
-      if (!gitWorktrees(project).some((w) => w.gitError)) { resetGitRetry(); gitFailureKinds.clear(); }
-      for (const [id, at] of scopes) if ((!ids || ids.includes(id)) && gitScopes.get(id) === at) gitScopes.delete(id);
+      for (const [id, at] of scopes) if ((!ids || ids.includes(id)) && (!list.some((w) => w.id === id) || loaded.some((w) => w.id === id) && !failed.has(id) && !deferred.has(id)) && gitScopes.get(id) === at) { gitScopes.delete(id); gitRetries.delete(id); gitDetailProgress.delete(id); }
       if (!ids) {
         gitLoaded = Math.max(gitLoaded, observed); gitFullReadAt = Date.now();
         for (const [id, at] of gitInvalidations) if (at <= events) gitInvalidations.delete(id);
       }
+      for (const w of loaded) if (!failed.has(w.id) && !deferred.has(w.id)) { gitRetries.delete(w.id); gitDetailProgress.delete(w.id); }
       // Own completion events can arrive after the reply and after this read
       // began. Other callers' later events remain pending for another read.
-      coverGitRequests(own);
+      coverGitRequests(own.filter((id) => !failed.has(gitReadbacks.get(id)?.worktreeId) && !deferred.has(gitReadbacks.get(id)?.worktreeId) && (!gitReadbacks.get(id)?.full || !failed.size && !deferred.size)));
+      if (failed.size) throw Object.assign(new Error('Git state could not be read.'), { gitReadFailure: true });
     }
   } finally { if (gitNeedsRead()) scheduleGitRefresh(); }
 }
-async function loadGitDetail(id, selectedCommit) {
+async function loadGitDetail(id, selectedCommit, automatic = false) {
   if (!gitVisible()) return;
   const w = wt(id); if (w?.machine !== 'local') return; local(w); const version = revision;
+  const request = gitReadRequest(id, automatic, true);
+  let transient;
+  const detailError = (error) => { if (error.gitBudget) throw error; gitToast(id, error.message); if (error.retryable !== false) transient = error; return error.gitCode === 'unsupported_conflict' ? 'This conflict cannot be shown here. Binary files, deleted files, symbolic links, submodules, and non-UTF-8 text need resolving in your checkout.' : error.message || 'This detail could not be read.'; };
   const ui = S().gitUi[id] || {}, tab = ui.tab || (w.merge ? 'conflicts' : 'changes');
   if (tab === 'history') {
+    try {
     const [history, branches] = await Promise.all([request('project.history', { ...scope(w), limit: 200 }), request('project.branches', { repoId: w.repo })]);
     if (version !== revision) return;
     const commits = read(history).items.map((c) => mapping.mapGitCommit(c, read(branches).items));
-    writeWt(id, { commits, historyTruncated: read(history).truncated });
+    writeWt(id, { commits, historyError: null, historyTruncated: read(history).truncated });
     const commit = selectedCommit || ui.commit || commits[0]?.hash;
     if (commit) {
       const files = mapping.mapCommitFiles(read(await request('project.commit.files', { ...scope(w), commit })).items);
       for (let i = 0; i < files.length; i++) {
         if (version !== revision) return;
-        files[i] = { ...files[i], ...mapping.mapGitDiff(read(await request('project.diff', { ...scope(w), path: files[i].path, commit }))), loaded: true };
+        try { files[i] = { ...files[i], ...mapping.mapGitDiff(read(await request('project.diff', { ...scope(w), path: files[i].path, commit }))), loaded: true }; } catch (error) { if (version !== revision) return; files[i] = { ...files[i], loaded: true, diffError: detailError(error) }; }
       }
       if (version !== revision) return;
       writeWt(id, { commits: wt(id).commits.map((c) => c.hash === commit ? { ...c, files, loaded: true } : c) });
     }
+    } catch (error) { if (version !== revision) return; writeWt(id, { historyError: detailError(error) }); }
   } else if (tab === 'conflicts' && w.merge) {
     const files = [];
     for (const f of w.merge.files) {
       if (version !== revision) return;
+      try {
       const conflict = read(await request('project.conflict', { ...scope(w), path: f.path }));
       const old = wt(id)?.merge?.files.find((x) => x.id === f.id);
       if (old?.selection?.fingerprint === conflict.fingerprint && old.selection.head === conflict.head) conflict.choices = old.selection.choices;
       files.push({ ...mapping.mapConflict(conflict), loaded: true });
+      } catch (error) { if (version !== revision) return; files.push({ ...f, loaded: false, conflictError: detailError(error) }); }
     }
     if (version !== revision) return;
     writeWt(id, { merge: { ...w.merge, files } });
@@ -439,10 +521,14 @@ async function loadGitDetail(id, selectedCommit) {
     const files = [];
     for (const f of w.files) {
       if (version !== revision) return;
-      files.push(f.conflict ? f : { ...f, ...mapping.mapGitDiff(read(await request('project.diff', { ...scope(w), path: f.path, staged: f.staged }))), loaded: true });
+      try { files.push(f.conflict ? f : { ...f, ...mapping.mapGitDiff(read(await request('project.diff', { ...scope(w), path: f.path, staged: f.staged }))), loaded: true }); } catch (error) { if (version !== revision) return; files.push({ ...f, loaded: true, diffError: detailError(error) }); }
     }
     if (version !== revision) return;
     writeWt(id, { files });
+  }
+  if (transient && version === revision) {
+    retryGitRead(id, transient);
+    throw Object.assign(transient, { gitReadFailure: true });
   }
 }
 export function refreshGit(project = screen?.project) { return run('git', () => loadGit(project)); }

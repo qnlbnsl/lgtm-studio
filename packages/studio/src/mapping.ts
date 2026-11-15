@@ -76,6 +76,8 @@ export interface StoreRequest {
 }
 export interface StoreWorktree {
   gitError?: string | null
+  historyError?: string | null
+  reviewError?: string | null
   gitUnsupported?: boolean
   readonly checkout?: "main" | "worktree"
   readonly id: string; readonly repo: string; readonly kind: "base" | "project" | "team" | "agent"; readonly branch: string
