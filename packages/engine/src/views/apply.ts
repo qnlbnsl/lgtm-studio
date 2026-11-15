@@ -63,6 +63,7 @@ interface RequestRow extends RequestTimes, ProjectRequestLink {
 }
 
 interface QuestionRow extends RequestTimes, QuestionMetadata {
+  readonly projectApprovalOutcome?: import("@lgtm/contracts").ProjectApprovalOutcome;
   readonly questionId: string;
   readonly agentId: AgentId;
   readonly status: "open" | "answered";
@@ -320,6 +321,7 @@ const questionsAfter = (state: State, { event, sequence, occurredAt }: EventEnve
     }));
     case "QuestionAnswered": return change(state.questions, event.questionId, (row) => ({
       ...row, status: "answered", closedSequence: sequence, answeredAt: occurredAt, answer: event.text, answeredBy: event.answeredBy, answerDeliveryId: event.deliveryId,
+      ...(event.projectApprovalOutcome === undefined ? {} : { projectApprovalOutcome: event.projectApprovalOutcome }),
     }));
     default: return state.questions;
   }

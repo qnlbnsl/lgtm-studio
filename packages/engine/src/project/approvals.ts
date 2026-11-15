@@ -1,4 +1,4 @@
-import { projectApprovalEffects } from '@lgtm/contracts'
+import { projectApprovalEffects, projectApprovalOutcomes, type ProjectApprovalOutcome } from '@lgtm/contracts'
 import type { Event, Project, QuestionMetadata } from '@lgtm/contracts'
 import * as Effect from 'effect/Effect'
 import { refused, type Input, type Snapshot } from '../commands/internal.ts'
@@ -31,13 +31,19 @@ export const approvalQuestion = (snapshot: Snapshot, agentId: string, metadata: 
   return { projectApproval: metadata.projectApproval, projectApprovalEffect: projectApprovalEffects[metadata.projectApproval], proposedAnswer: 'Accepted' }
 })
 
-export const approvalAnswer = (input: Input, questionId: string, text: string): Effect.Effect<ReadonlyArray<Event>, ReturnType<typeof refused>> => Effect.gen(function* () {
+export const approvalAnswer = (input: Input, questionId: string, text: string): Effect.Effect<{ readonly events: ReadonlyArray<Event>; readonly outcome?: ProjectApprovalOutcome }, ReturnType<typeof refused>> => Effect.gen(function* () {
   const question = own(input.snapshot.questions, questionId)
-  if (question?.projectApproval === undefined) return []
+  if (question?.projectApproval === undefined) return { events: [] }
   if (input.actor._tag !== 'owner') return yield* refused('Only the owner can decide a project approval.')
   const project = question.projectId === undefined ? undefined : own(projectView(input.snapshot).projects, question.projectId)
   if (project === undefined || project.leadAgentId !== question.agentId || project.archiving || project.archivedAt !== undefined) return yield* refused('The project approval is no longer available.')
-  if (question.projectApproval === 'build' && project.endResultApproval === undefined && project.skipPlanningApproval === undefined) return yield* refused(endResultReason)
-  return [{ _tag: 'project.ApprovalDecided', projectId: project.projectId, questionId: question.questionId as import("@lgtm/contracts").QuestionId,
-    approval: question.projectApproval, approved: text === 'Accepted' }]
+  const scope = project.endResultApproval !== undefined || project.skipPlanningApproval !== undefined
+  if (question.projectApproval === 'build' && !scope && text === 'Accepted') return { events: [], outcome: projectApprovalOutcomes.scopeWithdrawn }
+  const approved = text === 'Accepted'
+  const scopeAfter = scope || approved && question.projectApproval !== 'build'
+  const buildingAfter = project.buildApproval !== undefined || approved && ['build', 'skip-planning-and-build'].includes(question.projectApproval)
+  const recorded = question.projectApproval === 'build' ? buildingAfter
+    : question.projectApproval === 'skip-planning-and-build' ? scopeAfter && buildingAfter : scopeAfter
+  return { events: [{ _tag: 'project.ApprovalDecided', projectId: project.projectId, questionId: question.questionId as import("@lgtm/contracts").QuestionId,
+    approval: question.projectApproval, approved }], outcome: recorded ? projectApprovalOutcomes.recorded : projectApprovalOutcomes.notRecorded }
 })

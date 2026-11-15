@@ -50,7 +50,7 @@ export const mockDisplay = (input: Input, selection: MockDisplaySelection) => Ef
     contentType: extname(source.path).toLowerCase() === ".svg" ? "image/svg+xml" : "text/html; charset=utf-8" }
 })
 
-export const designDisplay = (input: Input, selection: DesignDisplaySelection, checked?: Workspace) => Effect.gen(function* () {
+export const designDisplayMetadata = (input: Input, selection: DesignDisplaySelection) => Effect.gen(function* () {
   if (input.actor._tag !== "owner") return yield* refused("display requires the owner session")
   const view = projectView(input.snapshot)
   const revisionId = selection.revisionId ?? own(view.designHeads, selection.repoId)
@@ -63,6 +63,14 @@ export const designDisplay = (input: Input, selection: DesignDisplaySelection, c
   // A registered JSON design remains metadata; it is not relabelled as .fig.
   if (!validArtifactPath(design.file) || ![".fig", ".pen"].includes(extname(design.file).toLowerCase())) return yield* refused("registered design format cannot open in the editor")
   yield* safePath(input, design.file)
+  return { record, project }
+})
+
+// saveMockEditor supplies checked only after withDesignWorkspace validates it,
+// and only within that same uninterrupted Git gate.
+export const designDisplay = (input: Input, selection: DesignDisplaySelection, checked?: Workspace) => Effect.gen(function* () {
+  const { record, project } = yield* designDisplayMetadata(input, selection)
+  const design = record.design
   const atWorkspace = (workspace: Workspace) => Effect.gen(function* () {
     const resolved = yield* Effect.tryPromise({ try: async () => {
       const workspaceRoot = await realpath(workspace.path)

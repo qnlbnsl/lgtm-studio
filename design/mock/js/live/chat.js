@@ -310,3 +310,5 @@ async function readAccountNames() {
 
 // The typed mapping supplies the engine's fixed effect, including historical cards.
 export const approvalEffect = (request) => mapping.approvalEffect(request);
+
+export const approvalOutcome = (request) => mapping.approvalOutcome(request);

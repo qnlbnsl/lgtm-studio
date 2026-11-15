@@ -29,6 +29,8 @@ export const validateSource = (input: Input, source: typeof MockSource.Type) => 
 })
 // This reads bytes only. It never imports a component, starts a preview server,
 // fetches a URL or exposes the artifact through the application's static root.
+// sourceArtifact checks workspacePath; saveMockEditor checks withDesignWorkspace
+// or workspacePath. Each caller must retain that uninterrupted Git gate for this read.
 export const sourceArtifactAtWorkspace = (input: Input, workspace: Workspace, source: typeof MockSource.Type) => {
   return Effect.tryPromise({ try: async () => {
     const path = await filePath(workspace.path, source.path)

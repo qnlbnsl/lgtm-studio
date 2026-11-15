@@ -38,4 +38,23 @@ it('both approval layouts have guarded live replacements', () => {
   const source = readFileSync('design/mock/js/ui.js', 'utf8')
   expect(projectSettingsSource('js/ui.js', source).split('chatLive.approvalEffect(r)').length).toBe(3)
   expect(() => projectSettingsSource('js/ui.js', source.replace('const approvalEffect = r.projectApprovalEffect;', 'moved'))).toThrow('cards moved')
+  expect(projectSettingsSource('js/ui.js', source).split('chatLive.approvalOutcome(r)').length).toBe(3)
+  expect(() => projectSettingsSource('js/ui.js', source.replace('const approvalOutcome = r.projectApprovalOutcome', 'moved'))).toThrow('outcomes moved')
+})
+
+for (const variant of ['card', 'detail']) for (const [answer, outcome] of [
+  ['Handled in settings.', 'Approval recorded.'],
+  ['Accepted', 'Building approval was not recorded because the end result or skipping planning is no longer approved.']
+]) it(`answered ${variant} uses the engine outcome for ${answer}`, () => {
+  const state: any = { ...mapSnapshot(engineSnapshot, 1), ui: { panelReq: engineSnapshot.questions[0]!.id } }
+  const original = engineSnapshot.questions[0]!
+  const request: any = mapHomeRequest({ ...original, kind: 'question', status: 'answered', canAnswer: false, answer,
+    projectApprovalOutcome: outcome, display: { ...original.display, projectApproval: 'build', proposedAnswer: 'Accepted' } } as never, state.agents)
+  expect(request.projectApprovalOutcome).toBe(outcome)
+  const element = document.createElement('div'); document.body.append(element)
+  try {
+    kit.render(kit.h(RequestBlock, { s: state, request, variant }), element)
+    expect(element.querySelector('[role="status"]')?.textContent).toBe(outcome)
+    expect(element.textContent).not.toContain(answer === 'Accepted' ? 'Approval recorded.' : 'Approval not recorded.')
+  } finally { kit.render(null, element); element.remove() }
 })

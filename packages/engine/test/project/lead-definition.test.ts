@@ -254,7 +254,7 @@ it.live('r1 item 2: approval effects and answer outcomes are written by the engi
     ['skip-planning-and-build', 'Accepting lets the lead skip planning, create sprints, teams and tasks, and start building.']
   ] as const
   for (const [projectApproval, effect] of cases) {
-    const id = success(yield* call(f.lead, 'ask', { projectId, projectApproval, projectApprovalEffect: 'Only changes the name.', proposedAnswer: 'Harmless', title: 'Quick check on naming', text: 'A harmless recommendation.' })).questionId
+    const id = success(yield* call(f.lead, 'ask', { projectId, projectApproval, proposedAnswer: 'Harmless', title: 'Quick check on naming', text: 'A harmless recommendation.' })).questionId
     const asked = (yield* readLog).map((row) => row.event).find((event) => event._tag === 'QuestionAsked' && event.questionId === id)!
     expect(asked).toMatchObject({ projectApprovalEffect: effect, proposedAnswer: 'Accepted' })
     success(yield* call(owner, 'answer', { kind: 'question', id, text: 'Yes, accepted. Go ahead.' }))
@@ -345,4 +345,41 @@ it.live('r1 item 8: deleting a stopped team removes only its group from the agen
   expect(((yield* snapshot).board as BoardView).labels.builder).toEqual(['unrelated'])
   const roster = success(yield* call(owner, 'client.snapshot', {})).agents.find((a: any) => a.agentId === 'builder')
   expect(roster.groups).toEqual(['unrelated'])
+})).pipe(Effect.orDie))
+
+for (const text of ['No', 'Accepted']) it.live(`r2 item 2: an open building request closes after scope withdrawal with ${text}`, () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), projectId = f.project.projectId
+  yield* approve(f.lead, projectId, 'end-result')
+  const id = success(yield* call(f.lead, 'ask', { projectId, projectApproval: 'build', text: 'Start building?' })).questionId
+  success(yield* call(owner, 'project.approval.withdraw', { projectId, approval: 'end-result' }))
+  success(yield* call(owner, 'answer', { kind: 'question', id, text }))
+  const expected = text === 'Accepted'
+    ? 'Building approval was not recorded because the end result or skipping planning is no longer approved.'
+    : 'Approval not recorded. Ask again if you still need it.'
+  expect((yield* snapshot).questions[id]).toMatchObject({ status: 'answered', projectApprovalOutcome: expected })
+  expect(projectView(yield* snapshot).projects[projectId]?.buildApproval).toBeUndefined()
+  const rows = yield* readLog
+  expect(rows.filter(({ event }) => event._tag === 'project.ApprovalDecided' && event.questionId === id && event.approved)).toHaveLength(0)
+  const delivery = rows.map(({ event }) => event).filter((event) => event._tag === 'DeliveryQueued' && event.delivery.target === f.project.leadAgentId).at(-1)!
+  expect(JSON.stringify(delivery)).toContain(expected)
+  expect(success(yield* call(owner, 'client.requests', { after: 0, limit: 200 })).items.find((row: any) => row.id === id)).toMatchObject({ projectApprovalOutcome: expected })
+})).pipe(Effect.orDie))
+
+for (const projectApproval of ['end-result', 'build', 'skip-planning-and-build']) it.live(`r2 item 5: a direct grant remains the true outcome when an open ${projectApproval} request is declined`, () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), projectId = f.project.projectId
+  if (projectApproval === 'build') success(yield* call(owner, 'project.approval.grant', { projectId, approval: 'end-result' }))
+  const id = success(yield* call(f.lead, 'ask', { projectId, projectApproval, text: 'Approve the next step?' })).questionId
+  for (const approval of projectApproval === 'skip-planning-and-build' ? ['end-result', 'build'] : [projectApproval]) success(yield* call(owner, 'project.approval.grant', { projectId, approval }))
+  success(yield* call(owner, 'answer', { kind: 'question', id, text: 'Handled in settings.' }))
+  expect((yield* snapshot).questions[id]).toMatchObject({ status: 'answered', projectApprovalOutcome: 'Approval recorded.' })
+  const delivery = (yield* readLog).map(({ event }) => event).filter((event) => event._tag === 'DeliveryQueued' && event.delivery.target === f.project.leadAgentId).at(-1)!
+  expect(JSON.stringify(delivery)).toContain('Approval recorded.')
+  expect(JSON.stringify(delivery)).not.toContain('Approval not recorded.')
+  expect(success(yield* call(owner, 'client.requests', { after: 0, limit: 200 })).items.find((row: any) => row.id === id)).toMatchObject({ projectApprovalOutcome: 'Approval recorded.' })
+})).pipe(Effect.orDie))
+
+it.live('r2 item 5: ask refuses the engine-owned approval effect field', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner)
+  expect(failureOf(yield* call(f.lead, 'ask', { projectId: f.project.projectId, projectApproval: 'end-result', text: 'Approve?', projectApprovalEffect: 'Only renames a file.' }))).toBeDefined()
+  expect(Object.values((yield* snapshot).questions)).toHaveLength(0)
 })).pipe(Effect.orDie))

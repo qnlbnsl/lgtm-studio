@@ -66,6 +66,7 @@ export interface StoreOption { readonly id: string; readonly label: string; read
 export interface StoreRequest {
   readonly projectApproval?: keyof typeof projectApprovalEffects
   readonly projectApprovalEffect?: string
+  readonly projectApprovalOutcome?: import("@lgtm/contracts").ProjectApprovalOutcome
   readonly sourceSequence?: number
   readonly id: string; readonly kind: "approval" | "question"; readonly agent: string; readonly project: string
   readonly task: string | null; readonly title: string; readonly body: string; readonly command: string | null

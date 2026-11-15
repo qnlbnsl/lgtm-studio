@@ -34,15 +34,16 @@ export const answerQuestion = (
   if (actor._tag !== "owner" && actor._tag !== "agent") return yield* refused();
   const row = snapshot.questions[payload.id];
   if (row === undefined || row.status !== "open" || !mayActForHolder(snapshot, actor, row.holder)) return yield* refused();
-  const approvalEvents = yield* approvalAnswer(input, payload.id, payload.text);
+  const approval = yield* approvalAnswer(input, payload.id, payload.text);
   const task = linkedTask(snapshot, row);
   const mayFinishTask = task !== undefined && canChangeLinkedTask(snapshot, row.agentId, task);
   if (mayFinishTask && task.state === "queue") yield* requireBuilding(input, projectView(snapshot).projects[task.projectId]!);
-  const outcome = row.projectApproval === undefined ? "" : "\n" + (payload.text === "Accepted" ? "Approval recorded." : "Approval not recorded. Ask again if you still need it.");
+  const outcome = approval.outcome === undefined ? "" : "\n" + approval.outcome;
   const deliveryId = freshDelivery();
   return { events: [{
     _tag: "QuestionAnswered", agentId: row.agentId, questionId: payload.id, answeredBy: actor, text: payload.text, deliveryId,
-  }, ...approvalEvents, ...(!mayFinishTask || task.state === "done" ? [] : [{ _tag: "project.TaskChanged" as const,
+    ...(approval.outcome === undefined ? {} : { projectApprovalOutcome: approval.outcome }),
+  }, ...approval.events, ...(!mayFinishTask || task.state === "done" ? [] : [{ _tag: "project.TaskChanged" as const,
     projectId: task.projectId, taskId: task.taskId, state: "done" as const, note: "Linked question answered" }]), ...withdrawQueued(snapshot, row.deliveryId), {
     _tag: "DeliveryQueued", delivery: {
       id: deliveryId, target: row.agentId, sender: senderOf(actor), source: { _tag: "question", id: payload.id },

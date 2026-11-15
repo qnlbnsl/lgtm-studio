@@ -44,6 +44,7 @@ export function mapHomeRequest(row: ClientRequest, agents: ReadonlyArray<StoreAg
   return { ...base, ...(approval ? { projectApproval: approval, projectApprovalEffect: projectApprovalEffects[approval] } : {}), sourceSequence: row.sourceSequence, status: row.status, canAnswer: row.canAnswer,
     sprint: row.sprintId ?? question?.sprintId ?? permission?.sprintId ?? null,
     project: row.projectId ?? base.project, task: row.taskId ?? base.task,
+    ...(row.projectApprovalOutcome === undefined ? {} : { projectApprovalOutcome: row.projectApprovalOutcome }),
     title: question?.title ?? (row.kind === "permission" ? attemptTitle(base.title, command ?? (cut && base.body ? base.body : null), kind) : base.title),
     body: question?.text ?? permission?.description ?? base.body,
     ...(cwd ? { folder: cwd } : {}),
@@ -150,3 +151,6 @@ export function mapSubscriptionNames(subscriptions: ReadonlyArray<StoreSubscript
 }
 
 export const approvalEffect = (request: { readonly projectApproval?: keyof typeof projectApprovalEffects }) => request.projectApproval ? projectApprovalEffects[request.projectApproval] : undefined
+
+export const approvalOutcome = (request: { readonly projectApprovalOutcome?: string; readonly answer?: string }) => request.projectApprovalOutcome
+  ?? (request.answer === "Accepted" ? "Approval recorded." : "Approval not recorded. Ask again if you still need it.")

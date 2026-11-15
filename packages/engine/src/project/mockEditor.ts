@@ -4,7 +4,7 @@ import * as Schema from "effect/Schema"
 import { CommandUncertain, refused, type Input, type Payload, type PiecePlan, type PiecePlanner } from "../commands/internal.ts"
 import { canReadProject } from "./access.ts"
 import { fingerprint, sourceArtifactAtWorkspace } from "./artifacts.ts"
-import { designDisplay } from "./display.ts"
+import { designDisplay, designDisplayMetadata } from "./display.ts"
 import { withDesignWorkspace, verifyDesignEvidence } from "./design.ts"
 import { checkObservedWorkspace, workspacePath, workspaceReference } from "./gitApi.ts"
 import { own, projectKey, projectView } from "./view.ts"
@@ -40,12 +40,13 @@ export const saveMockEditor: PiecePlanner = (input, raw) => Effect.gen(function*
   const text = new TextDecoder().decode(bytes)
   if ((yield* input.runtime.log.redactText(text)) !== text) return yield* refused("mock editor export contains private data")
   if (!mockEditorFormatMatches(selected.design.design.file, bytes)) return yield* refused("mock editor export does not match the recorded design format")
+  yield* designDisplayMetadata(input, { repoId: selected.project.repoId, projectId: p.projectId, revisionId: p.designRevision })
   // Evidence, source reads and staging share one uninterrupted gate. The
   // durable attempt preflight has its own earlier gate and must recheck there.
   return yield* withDesignWorkspace(input, selected.design, p.projectId, (workspace, git) => Effect.gen(function* () {
-    yield* workspaceReference(input, p)
     const display = yield* designDisplay(input, { repoId: selected.project.repoId, projectId: p.projectId, revisionId: p.designRevision }, workspace)
     yield* verifyDesignEvidence(input, selected.design, p.projectId, workspace)
+    yield* workspaceReference(input, p)
     const workspaces = new Map([[workspace.worktreeId, workspace]])
     for (const source of selected.revision.bundle.sources) {
       let sourceWorkspace = workspaces.get(source.worktreeId)

@@ -50,6 +50,8 @@ const evidence = (input: Input, record: RepositoryDesign, projectId?: string,
     ? { _tag: "available" as const, fingerprint: file.success.fingerprint } : unavailable,
     tokens: tokenData._tag === "Success" && tokenData.success.fingerprint === record.tokensFingerprint ? tokenData.success : unavailable, components } satisfies typeof RepositoryDesignResult.Type
 })
+// saveMockEditor and withVerifiedDesignEvidence supply workspace only after
+// withDesignWorkspace checks it inside the same uninterrupted Git gate.
 export const verifyDesignEvidence = (input: Input, record: RepositoryDesign, projectId: string, workspace?: Workspace) => Effect.gen(function* () {
   const actual = yield* evidence(input, record, projectId, workspace === undefined ? undefined : (path, maximum) => checkedBytes(input, workspace, path, maximum))
   if (actual.file._tag !== "available" || record.design.tokensPath !== undefined && actual.tokens._tag !== "available"

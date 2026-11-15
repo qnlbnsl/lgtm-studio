@@ -1,4 +1,4 @@
-import { ProjectRequestLinkFields, QuestionMetadataFields } from "./questions.ts"
+import { ProjectApprovalOutcome, ProjectRequestLinkFields, QuestionMetadataFields } from "./questions.ts"
 import { DeliveryContextReferences } from "./project/context.ts"
 import { AgentChoice, ConfigurationReason } from "./agentConfiguration.ts"
 import * as Schema from "effect/Schema"
@@ -214,7 +214,7 @@ export const EngineEvent = Schema.Union([
   Schema.TaggedStruct("PermissionMoved", { ...permission, from: Actor, to: Actor, deliveryId: DeliveryId }),
   Schema.TaggedStruct("PermissionCancelled", { ...permission, reason: Schema.String }),
   Schema.TaggedStruct("QuestionAsked", { ...question, holder: Actor, deliveryId: DeliveryId, text: Schema.String, ...QuestionMetadataFields }),
-  Schema.TaggedStruct("QuestionAnswered", { ...question, answeredBy: Actor, text: Schema.String, deliveryId: DeliveryId }),
+  Schema.TaggedStruct("QuestionAnswered", { ...question, answeredBy: Actor, text: Schema.String, deliveryId: DeliveryId, projectApprovalOutcome: Schema.optionalKey(ProjectApprovalOutcome) }),
   Schema.TaggedStruct("QuestionMoved", { ...question, from: Actor, to: Actor, deliveryId: DeliveryId }),
   Schema.TaggedStruct("OwnerNeeded", {
     ...agent,

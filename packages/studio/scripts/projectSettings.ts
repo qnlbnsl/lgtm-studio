@@ -17,7 +17,9 @@ export function projectSettingsSource(path: string, source: string): string {
   if (path === 'js/ui.js') {
     const anchor = 'const approvalEffect = r.projectApprovalEffect;';
     if (source.split(anchor).length !== 3) throw new Error('Project approval integration: cards moved');
-    return source.replaceAll(anchor, 'const approvalEffect = chatLive.approvalEffect(r);');
+    const outcome = "const approvalOutcome = r.projectApprovalOutcome || (r.answer === 'Accepted' ? 'Approval recorded.' : 'Approval not recorded. Ask again if you still need it.');";
+    if (source.split(outcome).length !== 3) throw new Error('Project approval integration: outcomes moved');
+    return source.replaceAll(anchor, 'const approvalEffect = chatLive.approvalEffect(r);').replaceAll(outcome, 'const approvalOutcome = chatLive.approvalOutcome(r);');
   }
   if (path === 'js/data.js') {
     const anchor = "export const STAGES = ['Define', 'Design', 'Plan', 'Build', 'Review', 'Hand over'];";

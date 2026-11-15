@@ -14566,7 +14566,7 @@ The owner of an existing task outside the queue may now add notes and move it to
 Changing a task title or assignment still requires end result or skip-planning approval.
 A lead’s planning notes and sprint edits, including project.sprint.complete, require that first approval too.
 An agent’s project.stage.set requires it for every stage except Define.
-Setting Build also requires building approval.
+Setting Build, Review or Handover also requires building approval.
 Moving a task out of the queue, starting or resuming workers and prompting idle workers require building approval.
 The owner’s own commands bypass these approval gates.
 Answering a queued task's linked question cannot bypass the building gate.
@@ -14684,3 +14684,44 @@ The earlier one-worker website Git measurement passed in 4.5 minutes.
 The later failures leave its timing unresolved.
 No assertion or operation deadline is widened.
 Issues 928 and 936 record the completed workspace and save optimizations.
+The orchestrator supplied a baseline on 2026-11-14 from master before this unit.
+The website Git journey also reached the 360-second limit on this computer with one browser worker.
+That run used 303 seconds of system time and 116 seconds of user time.
+The timeout therefore predates this unit.
+A few unit tests ran at the same time, so this is one loaded sample.
+
+## s10-lead-21. A withdrawn end result left an open building request unanswerable.
+
+Found in review round 2 on 2026-11-14.
+This records review finding m1.
+Status: fixed in the approval answer planner.
+A denial closes the request even after the first approval is withdrawn.
+Accepting it then closes the request without recording an approval event.
+The card and the delivered answer both say that building approval was not recorded because the end result or skipping planning is no longer approved.
+
+## s10-lead-22. Approval outcomes described the answer text instead of the permissions that remained granted.
+
+Found in review round 2 on 2026-11-14.
+This records review findings m4 and m5.
+Status: fixed in the stored answer outcome and both card layouts.
+A direct owner grant remains effective when the owner later declines an already open request.
+The engine now records its fixed outcome on the answer event using the approvals that exist after that answer.
+The client request read and both card layouts use that same outcome.
+The ask schema refuses the engine-owned projectApprovalEffect field instead of silently ignoring it.
+The schema keeps it only as an optional impossible value in that command.
+Stored question metadata still accepts the engine-written sentence.
+The gate list in s10-lead-11 now includes project.stage.set and project.sprint.complete.
+
+## s10-lead-23. The editor save changed refusal order, and its shared-check helpers needed an explicit boundary.
+
+Found in review round 2 on 2026-11-14.
+This records review findings m2 and m3.
+Status: fixed without another Git process.
+The metadata-only design display checks now run before the shared gate.
+The file display and design evidence checks run before the payload workspace attachment check, as they did before round 1.
+A regression reproduces a changed design file and a lost project attachment together.
+It now returns registered design needs an unchanged file in a dedicated design folder before project is unavailable to this caller.
+The uninterrupted gate and every workspace check remain in place.
+Comments name the checking callers of the display, evidence and artifact helpers.
+A second real editor save refuses a checkout swapped since the first save and leaves the replacement bytes unchanged.
+The refusal still writes its normal audit event.
