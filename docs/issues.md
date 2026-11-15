@@ -14318,3 +14318,65 @@ One cost must be settled first.
 A different `HOME` also hides the owner's Git settings, SSH keys and other tool settings from that agent, unless they are linked or copied in.
 The dialog does not say why the choice is disabled.
 This belongs to the overhaul in `docs/features.md` under "A simpler way to set up harnesses and subscriptions", and to "One agreed layout for the `~/.lgtm` folder".
+
+## 939. The browser tab crashed with "error code 9" during the owner's first real project.
+
+Found: 2026-11-14, by the owner, on the real service, three times in a few minutes.
+Status: open. The cause is not known, and it was not reproduced.
+
+The owner started a new project with a Claude Code lead.
+The browser tab crashed with "error code 9" while the lead was working.
+It crashed a second time soon after.
+It crashed a third time when the owner switched between two agents.
+After the first crash, the lead showed only its working dots for a while, and then replied.
+Chrome shows error code 9 when the tab's process is killed, which most often means that it used too much memory.
+The orchestrator tried to reproduce the crash with a separate headless browser on the same service.
+Every main screen stayed stable for 15 to 20 seconds, with no growth in memory or in page elements.
+Switching between the two project leads' chats ten times did not crash the tab.
+One thing was unusual on the chat screen.
+The page's memory moved between about 20 and 66 megabytes within one or two seconds, while nothing visible changed.
+That points to the chat screen rebuilding a large amount of content again and again.
+A long reply or a long approval card that arrives piece by piece could multiply that work.
+This has not been tested, because no agent was writing during the attempt.
+The page asks for `accounts`, `client.agent.configuration` and `client.agent.context` again every five seconds on every project screen.
+
+## 940. A new project took its name from the first words of its goal.
+
+Found: 2026-11-14, by the owner, on the real service.
+Status: open.
+
+The owner gave a new project a goal that began "Our goal here is to fully wire up the LGTM Studio website".
+The project was named "Goal here is fully".
+The owner called the name weird, and had expected the goal to be kept as the thing to build.
+The name should be chosen by the owner, or be a short sensible title that the owner can change.
+
+## 941. A fresh project's Workflow tab shows the wrong phase and impossible times.
+
+Found: 2026-11-14, by the owner, on the real service.
+Status: open. Issue 846 already records that real phase times are not connected.
+
+A project that had just been created should be in the Define phase.
+The Workflow tab showed it in the Plan phase.
+It said the project started 13,848 days ago.
+It showed Define as lasting 2,308 days, and Design and Themes as lasting 4,616 days.
+The repository tree also shows "Plan" beside both projects.
+The numbers look like sample values or a wrong unit, and they must never be shown as real.
+
+## 942. The project lead felt slow to reply.
+
+Found: 2026-11-14, by the owner, on the real service.
+Status: open. Nothing was measured.
+
+The owner's first messages to a Claude Code lead took long enough that the owner thought the lead was stuck.
+The lead did reply in the end.
+The time from sending a message to the first visible sign of an answer should be measured, and the page should show more than dots while it waits.
+
+## 943. An acceptance request card was far too long.
+
+Found: 2026-11-14, by the owner, on the real service.
+Status: open.
+
+The lead asked the owner to accept its first plan, and the card held the whole plan as one long block.
+The owner asked for the same treatment as the other approval cards.
+The card should show a short, plain version first.
+"Details" should then show the full report, with proper formatting such as headings, lists and tables.
