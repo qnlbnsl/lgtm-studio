@@ -800,7 +800,7 @@ export function ProjectSettings({ s, project: p }) {
     if (live.on) return board.changeApproval(p.id, approval, approved);
     const permission = approval === 'build' ? 'starting-work' : 'planning';
     update(() => { p.permissions = { ...p.permissions, [permission]: { ...p.permissions?.[permission], granted: approved } }; });
-    act.toast('Permission withdrawn');
+    act.toast(approved ? 'Permission granted' : 'Permission withdrawn');
   };
   const deleteTeam = (team) => act.confirm({ title: `Delete ${teamName(team)}?`, waitForReply: live.on, action: 'Delete team', danger: true,
     body: 'Stop its agents and delete or move its tasks first. Its board channel becomes read-only history. Its branch and worktree folder are kept.',

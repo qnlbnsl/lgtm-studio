@@ -1249,12 +1249,17 @@ It does not mean asking again before each action.
 The engine continues to require the owner's exact "Accepted" when granting through a card.
 An ask permission displays "Granted" or "Not granted" beside its dropdown.
 Only a granted ask permission shows "Withdraw".
-Changing a setting clears that permission's grant and invalidates its earlier cards.
+Changing a setting clears that permission's grant and closes its open cards with a fixed note.
+Choosing "Always ask for permission" starts from "Not granted", including on a project approved under pull request 58.
+The lead must ask for a new grant after that change.
 The other permission is unchanged.
 Old approval events still replay and retain their recorded grants.
 Historical grants do not override an explicit denied setting.
 No permission change moves the project stage backwards.
 The engine writes fixed card sentences using the new permission names and the same words as the help lines.
+A combined request becomes a card for only the permissions that still need a grant.
+An answer reports "Approval recorded." only when that card grants a permission.
+A declined card does not report a grant made elsewhere.
 The two outcome sentences remain "Approval recorded." and "Approval not recorded. Ask again if you still need it."
 The old scope-withdrawn outcome is no longer produced.
 
@@ -1264,4 +1269,28 @@ It asks an ordinary confirmation question before creating sprints, teams or task
 A permission allowed by default does not remove that conversation.
 The opening instruction keeps the small-work and nitpick paths requested on 2026-11-14.
 If an action is refused because a permission requires a request, the lead uses `ask` with `projectApproval`.
-If an action is refused because the permission is off, the lead tells the owner and stops.
+If an action is refused because the permission is off, the lead tells the owner and stops attempting that action.
+
+## Project stages follow newly recorded planning and work.
+
+Fixed after review of unit s11-permissions on 2026-11-15.
+Creating a sprint, team or queued task moves a project from Define to Plan in the same command batch.
+Starting or resuming a project worker moves Define or Plan to Build in the same batch.
+Creating a task outside the queue or moving a task out of the queue also moves Define or Plan to Build.
+These automatic moves do not move Design or later stages backwards.
+They never advance beyond Build.
+The owner's explicit stage changes remain available.
+The lead may use `project.stage.set` when an automatic move does not fit.
+These moves are explicit events in new command batches.
+Replaying older stored events does not infer new stage moves.
+New projects still start in Define.
+The lead still confirms the end result with the owner before planning.
+
+Changing a permission setting closes affected permission cards in the same batch.
+The engine writes the fixed note, "Permission request closed because the owner changed its setting."
+Withdrawing a grant also closes its affected cards with a fixed withdrawal note.
+The closed card cannot be answered again.
+An unrelated permission card and an ordinary question stay open.
+The lead receives the closure through the ordinary question-answer delivery.
+A combined card closes when either of its requested permissions changes.
+The lead can request the other permission in a new card.

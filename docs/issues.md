@@ -14825,8 +14825,8 @@ An older card closes without granting the permission.
 A newer request remains available when the permission requires a request.
 Tests cover changing each permission off and back to ask before accepting an older card.
 Tests also cover withdrawal while another request is open.
-A combined card decides each permission separately.
-Changing one setting does not invalidate the other permission on that card.
+Fix round 1 closes affected cards when a setting changes.
+Historical cards that predate these closures still decide each permission separately.
 
 ## s11-4. New permission events needed explicit redaction positions.
 
@@ -14839,3 +14839,71 @@ The new events now preserve only their schema identities and fixed enum values.
 Project records preserve the two fixed permission settings too.
 Ordinary prose continues to pass through secret redaction.
 The project event test covers every event type and collisions with the new enum values.
+
+## s11-5. Projects with Allowed permissions stayed in Define after planning and starting work.
+
+Found in review round 1 on 2026-11-15, as finding M1.
+Status: fixed in the same unit.
+Only card acceptance advanced the stage automatically.
+The normal Allowed path had no card to accept.
+New command batches now record Plan when a sprint, team or queued task is created from Define.
+They record Build when a worker starts or resumes from Define or Plan.
+A new nonqueue task or a task leaving the queue makes the same move to Build.
+The stage move is in the same durable batch as the action.
+Automatic moves do not change Design or stages from Build onward.
+Explicit owner stage commands remain unchanged.
+Old stored events retain their previous stage views during replay.
+Tests register the rebuild check and assert the command batch identities.
+The opening instruction names `project.stage.set` for cases where an automatic move does not fit.
+
+## s11-6. A declined permission card could report a grant made elsewhere.
+
+Found in review round 1 on 2026-11-15, as finding m2.
+Status: fixed in the same unit.
+An owner could choose Allowed and then decline an older open card.
+The outcome incorrectly said "Approval recorded."
+New setting changes close the card with a fixed note before another answer is possible.
+Historical open cards remain readable.
+Their answer outcome now describes only grants made by that card.
+A decline reports "Approval not recorded. Ask again if you still need it."
+A direct owner grant remains intact after a card is declined.
+Tests cover both cases.
+
+## s11-7. A combined card could describe permissions it would not grant.
+
+Found in review round 1 on 2026-11-15, as findings m3 and m7.
+Status: fixed in the same unit.
+A combined request named both permissions even when one was already Allowed.
+The engine now records a card only for the permissions that still need a grant.
+Its fixed sentence names only those permissions.
+Accepting that card reports "Approval recorded." when it grants a permission.
+The older outcome could also hide a partial grant on a historical combined card.
+That outcome now reports the grant made by the card.
+Tests cover either permission already being Allowed and a historical partial grant.
+The legacy end-result withdrawal cascade also has an explicit replay regression.
+
+## s11-8. Changing a permission left obsolete cards open beside newer requests.
+
+Found in review round 1 on 2026-11-15, as finding m5.
+Status: fixed in the same unit.
+Setting changes and withdrawals now close affected cards in the same batch.
+The fixed note explains whether the owner changed the setting or withdrew the grant.
+The lead receives the note through the ordinary answer delivery.
+A later answer to that card is refused.
+Unrelated permission cards and ordinary questions remain open.
+A new card can be requested when the setting requires a request.
+A combined card closes when either requested permission changes.
+
+## s11-9. The opening instruction and permission help left several details unclear.
+
+Found in review round 1 on 2026-11-15, as findings m4, m6 and m8.
+Status: fixed in the same unit.
+The opening no longer describes a project's current permissions as always allowed by default.
+It says that permissions do not replace confirmation of the end result.
+An off permission stops only the refused action.
+The small-work path now says to go straight to one build team without sprints.
+That wording avoids confusing a workflow choice with the Project planning permission.
+The feature list explicitly says that choosing Always ask begins Not granted on legacy approved projects too.
+The live and standalone withdrawal toasts both say "Permission withdrawn".
+The command-line summary uses the visible permission and setting names.
+The browser journey asserts the exact denied-request sentence.

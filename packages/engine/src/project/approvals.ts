@@ -23,7 +23,7 @@ export const requireAgentBuilding = (input: Input, agentId: string) => {
   const project = id === undefined ? undefined : own(view.projects, id)
   return project === undefined ? Effect.void : requireBuilding(input, project)
 }
-const requestedPermissions = (approval: NonNullable<QuestionMetadata['projectApproval']>): ReadonlyArray<LeadPermission> => approval === 'build' ? ['starting-work']
+export const requestedPermissions = (approval: NonNullable<QuestionMetadata['projectApproval']>): ReadonlyArray<LeadPermission> => approval === 'build' ? ['starting-work']
   : approval === 'skip-planning-and-build' ? ['planning', 'starting-work'] : ['planning']
 const changedAt = (project: Project, permission: LeadPermission) => (permission === 'planning' ? project.planningPermissionChangedAt : project.workPermissionChangedAt) ?? 0
 const allowed = (project: Project, permission: LeadPermission) => permissionSetting(project, permission) === 'allowed'
@@ -43,7 +43,10 @@ export const approvalQuestion = (snapshot: Snapshot, agentId: string, metadata: 
   if (needed.length === 0) return yield* refused('This lead permission is already allowed or granted and needs no card.')
   if (Object.values(snapshot.questions).some((q) => q.status === 'open' && q.projectId === projectId && q.projectApproval !== undefined
     && requestedPermissions(q.projectApproval).some((permission) => needed.includes(permission) && q.sourceSequence > changedAt(project, permission)))) return yield* refused('The owner already has a request for this approval.')
-  return { projectApproval: metadata.projectApproval, projectApprovalEffect: projectApprovalEffects[metadata.projectApproval], proposedAnswer: 'Accepted' }
+  // A combined request records only the permissions that still need a grant.
+  const projectApproval = metadata.projectApproval === 'skip-planning-and-build' && needed.length === 1
+    ? needed[0] === 'planning' ? 'end-result' : 'build' : metadata.projectApproval
+  return { projectApproval, projectApprovalEffect: projectApprovalEffects[projectApproval], proposedAnswer: 'Accepted' }
 })
 
 export const approvalAnswer = (input: Input, questionId: string, text: string): Effect.Effect<{ readonly events: ReadonlyArray<Event>; readonly outcome?: ProjectApprovalOutcome }, ReturnType<typeof refused>> => Effect.gen(function* () {
@@ -56,7 +59,7 @@ export const approvalAnswer = (input: Input, questionId: string, text: string): 
   // A setting change or withdrawal invalidates earlier cards, including after toggling back to ask.
   const granted = permissions.filter((permission) => text === 'Accepted' && question.sourceSequence > changedAt(project, permission)
     && permissionSetting(project, permission) === 'ask')
-  const recorded = permissions.every((permission) => allowed(project, permission) || granted.includes(permission))
+  const recorded = granted.length > 0
   return { events: [{ _tag: 'project.PermissionDecided', projectId: project.projectId, questionId: question.questionId as import('@lgtm/contracts').QuestionId,
     granted }], outcome: recorded ? projectApprovalOutcomes.recorded : projectApprovalOutcomes.notRecorded }
 })

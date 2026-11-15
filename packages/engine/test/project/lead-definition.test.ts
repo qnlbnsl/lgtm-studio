@@ -48,7 +48,7 @@ it.live('s10 item 1: opens with Define, short context updates, lead permissions 
   const started = (yield* readLog).find(({ event }) => event._tag === 'AgentStarted' && event.firstPromptDelivery)!.event
   expect(started._tag === 'AgentStarted' && started.firstPromptDelivery?.content).toMatchObject({ text: expect.stringContaining('Within the first minute') })
   const text = JSON.stringify(started)
-  for (const phrase of ['Define', 'one or two sentences', 'about a minute', 'few at a time', 'end result', 'before building', 'builders', 'rename', 'Small work', 'Nitpick work', 'skip planning']) expect(text).toContain(phrase)
+  for (const phrase of ['Define', 'one or two sentences', 'about a minute', 'few at a time', 'end result', 'before building', 'builders', 'rename', 'Small work', 'Nitpick work', 'without sprints']) expect(text).toContain(phrase)
 })).pipe(Effect.orDie))
 
 it.live('s10 item 3: a created project lead receives lead orientation and a role name', () => provideBoard(rig, (runner) => Effect.gen(function* () {
@@ -313,7 +313,7 @@ it.live('r1 item 6: the opening distinguishes fields, controls, denial and build
   yield* setup(runner)
   const started = (yield* readLog).find(({ event }) => event._tag === 'AgentStarted' && event.firstPromptDelivery)!.event
   const text = JSON.stringify(started)
-  for (const phrase of ['During Define, gather context and size the work', 'in the project chat', 'text field', 'Details control', 'If the owner denies', 'ask what to change', 'unchanged', 'without projectApproval', 'allowed by default', 'tell the owner and stop']) expect(text).toContain(phrase)
+  for (const phrase of ['During Define, gather context and size the work', 'in the project chat', 'text field', 'Details control', 'If the owner denies', 'ask what to change', 'unchanged', 'without projectApproval', 'They do not replace', 'do not attempt that action again', 'project.stage.set']) expect(text).toContain(phrase)
   expect(text).not.toContain('Size the work first')
 })).pipe(Effect.orDie))
 
@@ -365,17 +365,18 @@ for (const text of ['No', 'Accepted']) it.live(`r2 item 2: an open starting-work
   expect(success(yield* call(owner, 'client.requests', { after: 0, limit: 200 })).items.find((row: any) => row.id === id)).toMatchObject({ projectApprovalOutcome: expected })
 })).pipe(Effect.orDie))
 
-for (const projectApproval of ['end-result', 'build', 'skip-planning-and-build']) it.live(`r2 item 5: a direct grant remains the true outcome when an open ${projectApproval} request is declined`, () => provideBoard(rig, (runner) => Effect.gen(function* () {
+for (const projectApproval of ['end-result', 'build', 'skip-planning-and-build']) it.live(`r2 item 5: a direct grant stays intact but a declined ${projectApproval} card records no grant`, () => provideBoard(rig, (runner) => Effect.gen(function* () {
   const f = yield* setup(runner), projectId = f.project.projectId
   if (projectApproval === 'build') success(yield* call(owner, 'project.approval.grant', { projectId, approval: 'end-result' }))
   const id = success(yield* call(f.lead, 'ask', { projectId, projectApproval, text: 'Approve the next step?' })).questionId
   for (const approval of projectApproval === 'skip-planning-and-build' ? ['end-result', 'build'] : [projectApproval]) success(yield* call(owner, 'project.approval.grant', { projectId, approval }))
   success(yield* call(owner, 'answer', { kind: 'question', id, text: 'Handled in settings.' }))
-  expect((yield* snapshot).questions[id]).toMatchObject({ status: 'answered', projectApprovalOutcome: 'Approval recorded.' })
+  expect((yield* snapshot).questions[id]).toMatchObject({ status: 'answered', projectApprovalOutcome: 'Approval not recorded. Ask again if you still need it.' })
+  expect(projectView(yield* snapshot).projects[projectId]?.[projectApproval === 'build' ? 'buildApproval' : 'endResultApproval']).toBeDefined()
   const delivery = (yield* readLog).map(({ event }) => event).filter((event) => event._tag === 'DeliveryQueued' && event.delivery.target === f.project.leadAgentId).at(-1)!
-  expect(JSON.stringify(delivery)).toContain('Approval recorded.')
-  expect(JSON.stringify(delivery)).not.toContain('Approval not recorded.')
-  expect(success(yield* call(owner, 'client.requests', { after: 0, limit: 200 })).items.find((row: any) => row.id === id)).toMatchObject({ projectApprovalOutcome: 'Approval recorded.' })
+  expect(JSON.stringify(delivery)).toContain('Approval not recorded. Ask again if you still need it.')
+  expect(JSON.stringify(delivery)).not.toContain('Approval recorded.')
+  expect(success(yield* call(owner, 'client.requests', { after: 0, limit: 200 })).items.find((row: any) => row.id === id)).toMatchObject({ projectApprovalOutcome: 'Approval not recorded. Ask again if you still need it.' })
 })).pipe(Effect.orDie))
 
 it.live('r2 item 5: ask refuses the engine-owned approval effect field', () => provideBoard(rig, (runner) => Effect.gen(function* () {
@@ -473,14 +474,14 @@ for (const permission of ['planning', 'starting-work']) it.live(`s11: changing o
   const id = success(yield* call(f.lead, 'ask', { projectId, projectApproval, text: 'Allow the next step?' })).questionId
   success(yield* setPermission(projectId, permission, 'denied'))
   success(yield* setPermission(projectId, permission, 'ask'))
-  success(yield* call(owner, 'answer', { kind: 'question', id, text: 'Accepted' }))
+  expect(failureOf(yield* call(owner, 'answer', { kind: 'question', id, text: 'Accepted' }))).toBeDefined()
   expect((yield* snapshot).questions[id]?.projectApprovalOutcome).toBe('Approval not recorded. Ask again if you still need it.')
   const fresh = yield* approve(f.lead, projectId, projectApproval)
   expect((yield* snapshot).questions[fresh]?.projectApprovalOutcome).toBe('Approval recorded.')
   success(yield* call(owner, 'project.approval.withdraw', { projectId, approval: projectApproval }))
   const next = success(yield* call(f.lead, 'ask', { projectId, projectApproval, text: 'Ask again?' })).questionId
   success(yield* call(owner, 'project.approval.withdraw', { projectId, approval: projectApproval }))
-  success(yield* call(owner, 'answer', { kind: 'question', id: next, text: 'Accepted' }))
+  expect(failureOf(yield* call(owner, 'answer', { kind: 'question', id: next, text: 'Accepted' }))).toBeDefined()
   expect((yield* snapshot).questions[next]?.projectApprovalOutcome).toBe('Approval not recorded. Ask again if you still need it.')
 })).pipe(Effect.orDie))
 
@@ -495,13 +496,117 @@ it.live('s11: off permissions still let a worker annotate and finish its own sta
   success(yield* call(f.worker, 'project.task.update', { projectId, taskId, state: 'done', note: 'Ready.' }))
 })).pipe(Effect.orDie))
 
-for (const changed of ['planning', 'starting-work']) it.live(`s11: a combined card keeps its unchanged permission when ${changed} changes`, () => provideBoard(rig, (runner) => Effect.gen(function* () {
+for (const changed of ['planning', 'starting-work']) it.live(`s11: a setting change closes a combined card when ${changed} changes`, () => provideBoard(rig, (runner) => Effect.gen(function* () {
   const f = yield* setup(runner), projectId = f.project.projectId
   const id = success(yield* call(f.lead, 'ask', { projectId, projectApproval: 'skip-planning-and-build', text: 'Allow both?' })).questionId
   success(yield* setPermission(projectId, changed, 'denied'))
-  success(yield* call(owner, 'answer', { kind: 'question', id, text: 'Accepted' }))
+  expect(failureOf(yield* call(owner, 'answer', { kind: 'question', id, text: 'Accepted' }))).toBeDefined()
   const project = projectView(yield* snapshot).projects[projectId]!
-  expect(project.endResultApproval !== undefined).toBe(changed !== 'planning')
-  expect(project.buildApproval !== undefined).toBe(changed !== 'starting-work')
+  expect(project.endResultApproval).toBeUndefined()
+  expect(project.buildApproval).toBeUndefined()
+  expect((yield* snapshot).questions[id]).toMatchObject({ status: 'answered', answer: 'Permission request closed because the owner changed its setting.' })
+  yield* approve(f.lead, projectId, changed === 'planning' ? 'build' : 'end-result')
+  expect(projectView(yield* snapshot).projects[projectId]?.[changed === 'planning' ? 'buildApproval' : 'endResultApproval']).toBeDefined()
+})).pipe(Effect.orDie))
+
+it.live('s11 r1: default planning and worker start advance stages in their command batches', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner, 'default'), p = f.project, projectId = p.projectId
+  const planned = success(yield* call(f.lead, 'project.sprint.create', sprintInput(p)))
+  expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('plan')
+  expect((yield* readLog).filter((row) => row.requestId === planned.requestId).map((row) => row.event)).toContainEqual({ _tag: 'project.StageChanged', projectId, stage: 'plan' })
+  const built = success(yield* call(f.lead, 'start', workerInput(rig.work)))
+  expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('build')
+  expect((yield* readLog).filter((row) => row.requestId === built.requestId).map((row) => row.event)).toContainEqual({ _tag: 'project.StageChanged', projectId, stage: 'build' })
+  success(yield* call(f.lead, 'project.team.create', { projectId, name: 'Another team', worktreeId: p.worktreeId }))
+  expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('build')
+  success(yield* call(owner, 'project.stage.set', { projectId, stage: 'review' }))
+  success(yield* call(f.lead, 'start', workerInput(rig.work)))
+  success(yield* call(f.lead, 'project.sprint.create', { ...sprintInput(p), label: 'SP-2' }))
+  expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('review')
+})).pipe(Effect.orDie))
+
+it.live('s11 r1: tasks, teams and resumed workers advance stages without rewriting old events', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner, 'default'), p = f.project, projectId = p.projectId
+  const teamId = success(yield* call(f.lead, 'project.team.create', { projectId, name: 'Builders', worktreeId: p.worktreeId })).teamId
+  expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('plan')
+  const sprintId = success(yield* call(f.lead, 'project.sprint.create', sprintInput(p))).sprintId
+  const task = { projectId, sprintId, teamId, worktreeId: p.worktreeId, owner: p.leadAgentId, title: 'Build', state: 'queue' }
+  success(yield* call(owner, 'project.stage.set', { projectId, stage: 'define' }))
+  const taskId = success(yield* call(f.lead, 'project.task.create', task)).taskId
+  expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('plan')
+  success(yield* call(f.lead, 'project.task.update', { projectId, taskId, state: 'active' }))
+  expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('build')
+  const agentId = success(yield* call(f.lead, 'start', workerInput(rig.work))).agentId
+  success(yield* call(owner, 'stop', { agentId }))
+  success(yield* call(owner, 'project.stage.set', { projectId, stage: 'define' }))
+  success(yield* call(f.lead, 'resume', { agentId }))
+  expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('build')
+  success(yield* call(owner, 'project.stage.set', { projectId, stage: 'define' }))
+  success(yield* call(f.lead, 'project.task.create', { ...task, state: 'active' }))
+  expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('build')
+  // Stored planning events keep their prior projection during replay.
+  success(yield* call(owner, 'project.stage.set', { projectId, stage: 'define' }))
+  yield* appendSetup([eventOf({ _tag: 'project.SprintAdded', ...sprintInput(p), sprintId: 'legacy-sprint', label: 'OLD' })])
+  expect(projectView(yield* snapshot).projects[projectId]?.stage).toBe('define')
+})).pipe(Effect.orDie))
+
+for (const allowed of ['planning', 'starting-work']) it.live(`s11 r1: a combined card only names and grants the permission beside Allowed ${allowed}`, () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), projectId = f.project.projectId
+  success(yield* setPermission(projectId, allowed, 'allowed'))
+  const id = yield* approve(f.lead, projectId, 'skip-planning-and-build')
+  const row = (yield* snapshot).questions[id]!
+  const expected = allowed === 'planning' ? 'Starting work' : 'Project planning'
+  expect(row.projectApprovalEffect).toContain('Accepting grants ' + expected + '.')
+  expect(row.projectApprovalEffect).not.toContain(allowed === 'planning' ? 'Project planning' : 'Starting work')
+  expect(row.projectApprovalOutcome).toBe('Approval recorded.')
+  expect(projectView(yield* snapshot).projects[projectId]?.[allowed === 'planning' ? 'buildApproval' : 'endResultApproval']).toBeDefined()
+})).pipe(Effect.orDie))
+
+it.live('s11 r1: settings close affected cards with a fixed note and refuse later answers', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), projectId = f.project.projectId
+  const ordinary = success(yield* call(f.lead, 'ask', { text: 'An ordinary question' })).questionId
+  const planning = success(yield* call(f.lead, 'ask', { projectId, projectApproval: 'end-result', text: 'Plan?' })).questionId
+  const starting = success(yield* call(f.lead, 'ask', { projectId, projectApproval: 'build', text: 'Start?' })).questionId
+  const changed = success(yield* setPermission(projectId, 'planning', 'allowed'))
+  const row = (yield* snapshot).questions[planning]!
+  expect(row).toMatchObject({ status: 'answered', answer: 'Permission request closed because the owner changed its setting.', projectApprovalOutcome: 'Approval not recorded. Ask again if you still need it.' })
+  expect((yield* readLog).filter((r) => r.requestId === changed.requestId).some(({ event }) => event._tag === 'QuestionAnswered' && event.questionId === planning)).toBe(true)
+  for (const text of ['Accepted', 'No, do not plan yet.']) expect(failureOf(yield* call(owner, 'answer', { kind: 'question', id: planning, text }))).toBeDefined()
+  expect((yield* snapshot).questions[starting]?.status).toBe('open')
+  expect((yield* snapshot).questions[ordinary]?.status).toBe('open')
+  success(yield* setPermission(projectId, 'starting-work', 'denied'))
+  expect((yield* snapshot).questions[starting]?.status).toBe('answered')
+  success(yield* setPermission(projectId, 'starting-work', 'ask'))
+  yield* approve(f.lead, projectId, 'build')
+})).pipe(Effect.orDie))
+
+it.live('s11 r1: legacy end-result withdrawal retains its cascade while new withdrawals stay independent', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), projectId = f.project.projectId
+  yield* appendSetup([eventOf({ _tag: 'project.ApprovalGranted', projectId, approval: 'end-result', requestId: 'old-scope' }),
+    eventOf({ _tag: 'project.ApprovalGranted', projectId, approval: 'build', requestId: 'old-work' }),
+    eventOf({ _tag: 'project.ApprovalWithdrawn', projectId, approval: 'end-result' })])
+  expect(projectView(yield* snapshot).projects[projectId]?.endResultApproval).toBeUndefined()
+  expect(projectView(yield* snapshot).projects[projectId]?.buildApproval).toBeUndefined()
+  yield* approve(f.lead, projectId, 'skip-planning-and-build')
+  success(yield* call(owner, 'project.approval.withdraw', { projectId, approval: 'end-result' }))
+  expect(projectView(yield* snapshot).projects[projectId]?.buildApproval).toBeDefined()
+})).pipe(Effect.orDie))
+
+it.live('s11 r1: declining a historical card after Allowed records no grant by the card', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), projectId = f.project.projectId
+  const id = success(yield* call(f.lead, 'ask', { projectId, projectApproval: 'end-result', text: 'Plan?' })).questionId
+  // Pre-r1 stored setting events did not carry question closures.
+  yield* appendSetup([eventOf({ _tag: 'project.PermissionChanged', projectId, permission: 'planning', setting: 'allowed' })])
+  success(yield* call(owner, 'answer', { kind: 'question', id, text: 'No, do not plan yet.' }))
   expect((yield* snapshot).questions[id]?.projectApprovalOutcome).toBe('Approval not recorded. Ask again if you still need it.')
+})).pipe(Effect.orDie))
+
+it.live('s11 r1: a historical combined card reports a grant of its unchanged permission', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), projectId = f.project.projectId
+  const id = success(yield* call(f.lead, 'ask', { projectId, projectApproval: 'skip-planning-and-build', text: 'Allow both?' })).questionId
+  yield* appendSetup([eventOf({ _tag: 'project.PermissionChanged', projectId, permission: 'planning', setting: 'denied' })])
+  success(yield* call(owner, 'answer', { kind: 'question', id, text: 'Accepted' }))
+  expect((yield* snapshot).questions[id]?.projectApprovalOutcome).toBe('Approval recorded.')
+  expect(projectView(yield* snapshot).projects[projectId]?.endResultApproval).toBeUndefined()
+  expect(projectView(yield* snapshot).projects[projectId]?.buildApproval).toBeDefined()
 })).pipe(Effect.orDie))

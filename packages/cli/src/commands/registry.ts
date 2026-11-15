@@ -157,7 +157,7 @@ const summaries: Record<CommandName, string> = {
   "project.goal.set": "Change a project's goal.",
   "project.archive": "Stop every project agent and archive the project after confirmed stops.",
   "project.restore": "Restore an archived project without launching another lead.",
-  "project.permission.set": "Set Project planning or Starting work to allowed, denied or ask as the owner.",
+  "project.permission.set": "Set Project planning or Starting work to Allowed, Not allowed or Always ask for permission as the owner.",
   "project.approval.grant": "Grant an ask permission as the owner.",
   "project.approval.withdraw": "Withdraw one lead permission grant as the owner.",
   "project.rename": "Rename a project within its repository.",

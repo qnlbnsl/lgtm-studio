@@ -405,6 +405,15 @@ The lead proposes a path based on the size of the work.
 Small work may use one build team whose lead works without sub-workers.
 The project lead may propose doing a nitpick itself.
 Larger work uses sprints and teams with builders.
+New command batches append explicit `project.StageChanged` events as planning and work begin.
+Creating a sprint, team or queued task moves Define to Plan.
+Starting or resuming a project worker moves Define or Plan to Build.
+Creating a nonqueue task or moving a task out of the queue makes the same move to Build.
+Automatic moves leave Design and stages from Build onward untouched.
+The owner's explicit stage changes are unchanged.
+The lead can use `project.stage.set` when an automatic move does not fit.
+The project reducers do not derive these moves from old stored creation or task events.
+Existing stored events keep their previous stage views during replay.
 
 "Project planning" allows the lead to create sprints, teams and tasks.
 "Starting work" allows the lead to start workers and move tasks out of the queue.
@@ -425,6 +434,8 @@ The permission is `planning` or `starting-work`.
 The website and command-line interface use the same client application programming interface (API) command.
 Changing a setting appends `project.PermissionChanged` and clears only that permission's grant.
 Saving the same effective setting preserves its grant.
+Choosing "Always ask for permission" starts from "Not granted", including for a project approved under pull request 58.
+The owner must grant that permission again through a new card or the existing owner command.
 The existing owner commands `project.approval.grant` and `project.approval.withdraw` remain available for ask permissions.
 Withdrawing a grant appends `project.PermissionWithdrawn` and leaves the other grant intact.
 Setting changes and withdrawals never move the stage backwards.
@@ -439,6 +450,8 @@ The supported values remain `end-result`, `skip-planning`, `build`, and `skip-pl
 The first two request Project planning.
 The third requests Starting work.
 The last requests both permissions together.
+If only one still needs a grant, the engine records a card for that permission alone.
+Its fixed effect sentence names only the permission the card can newly grant.
 A combined request refuses if either permission is denied.
 The title and recommendation are the short request.
 The question text holds the full proposal.
@@ -447,12 +460,22 @@ Only the owner's answer with that exact text grants the requested permission thr
 An ordinary question never grants a lead permission.
 Each decision appends `project.PermissionDecided` beside the question answer.
 Its `granted` array records each permission independently.
-A combined card can still grant its unchanged permission when the other setting changes.
+New setting changes close affected cards before they can be answered.
+Historical cards stored before this closure behavior can still grant their unchanged permission.
 A grant lasts until its setting changes or the owner withdraws it.
-A setting change or withdrawal invalidates earlier cards for that permission.
-A stale card can close without restoring the withdrawn grant.
-The outcome is "Approval recorded." when the requested permissions are currently allowed or granted.
+A setting change or withdrawal closes its affected open cards in the same command batch.
+The closure uses ordinary `QuestionAnswered` events and the ordinary answer delivery.
+The fixed setting note is "Permission request closed because the owner changed its setting."
+The fixed withdrawal note is "Permission request closed because the owner withdrew its grant."
+An affected combined card is closed as a whole.
+An unrelated permission card and ordinary questions remain open.
+A closed card refuses later answers.
+Saving the same effective setting does not close a card.
+The engine composes these closures only after validating the owner-only project batch.
+Other piece commands do not gain permission to emit question events.
+The outcome is "Approval recorded." when this card grants at least one permission.
 Otherwise it is "Approval not recorded. Ask again if you still need it."
+A decline never reports a grant made by another action.
 Changing the displayed stage cannot grant either permission.
 
 ## Project names and team deletion.

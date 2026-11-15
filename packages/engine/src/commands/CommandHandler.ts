@@ -1,3 +1,5 @@
+import { withProjectProgress } from '../project/progress.ts';
+import { closeChangedPermissionQuestions } from '../project/permissionQuestions.ts';
 import { closeSignIns, setTerminalSwitch } from "../harnesses/signinRequests.ts";
 import { serviceRestartPending, completeServiceRestart } from "../client/serviceControl.ts"
 import { recoverInstalls } from "../harnesses/lifecycle.ts";
@@ -427,7 +429,8 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
           const planned = yield* Effect.gen(function* () {
             if (!lists.access[name]?.includes(actor._tag)) return yield* refused();
             if (external?.failure !== undefined) return yield* external.failure;
-            const plan = external?.plan ?? (yield* (external?.finalize ?? finalizeLifecycle ?? lists.planners[name]!)({ runtime, actor, snapshot }, payload));
+            const rawPlan = external?.plan ?? (yield* (external?.finalize ?? finalizeLifecycle ?? lists.planners[name]!)({ runtime, actor, snapshot }, payload));
+            const plan = { ...rawPlan, events: withProjectProgress(snapshot, rawPlan.events) };
             if (name === "project.review.decline" || name === "project.mocks.comment") {
               // The named composition appends exactly one project decision after
               // the complete board plan, including unprefixed withdrawals.
@@ -442,6 +445,10 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
             if (namespace !== undefined && !projectLifecycleCommand(name)) {
               if (plan.afterCommit !== undefined) return yield* refused();
               const events = yield* checkPieceBatch(namespace, snapshot, plan, actor, lists);
+              if (name === "project.permission.set" || name === "project.approval.withdraw") {
+                const closed = yield* closeChangedPermissionQuestions({ runtime, actor, snapshot }, plan.events, requestId);
+                return { ...plan, events: withWaitChecks(snapshot, [...events, ...closed], lists) };
+              }
               return { ...plan, events };
             }
             return plan;
