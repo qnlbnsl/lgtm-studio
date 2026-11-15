@@ -24,6 +24,7 @@ export interface ProjectView {
   readonly teams: Readonly<Record<string, Team>>
   readonly sprints: Readonly<Record<string, Sprint>>
   readonly tasks: Readonly<Record<string, ProjectTaskRecord>>
+  readonly deletedTasks?: Readonly<Record<string, ProjectTaskRecord>>
   readonly agentProjects: Readonly<Record<string, string>>
   readonly parents: Readonly<Record<string, string>>
 }

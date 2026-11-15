@@ -298,3 +298,33 @@ it.live('r1 item 6: the opening distinguishes fields, controls, denial and build
   for (const phrase of ['During Define, gather context and size the work', 'in the project chat', 'text field', 'Details control', 'If the owner denies', 'ask what to change', 'unchanged', 'Skipping planning alone does not permit starting workers or building']) expect(text).toContain(phrase)
   expect(text).not.toContain('Size the work first')
 })).pipe(Effect.orDie))
+
+it.live('r1 item 8: deleted queued tasks keep readable, marked history and remain unavailable for writes', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), projectId = f.project.projectId
+  yield* approve(f.lead, projectId, 'end-result')
+  const sprintId = success(yield* call(f.lead, 'project.sprint.create', { projectId, label: 'SP-1', name: 'First', goal: 'Deliver', phase: 'Build', owner: f.project.leadAgentId, needs: [] })).sprintId
+  const team = success(yield* call(f.lead, 'project.team.create', { projectId, name: 'Builders', worktreeId: f.project.worktreeId }))
+  const taskId = success(yield* call(f.lead, 'project.task.create', { projectId, sprintId, teamId: team.teamId, worktreeId: f.project.worktreeId, title: 'Remember this task', owner: f.project.leadAgentId, state: 'queue' })).taskId
+  success(yield* call(f.lead, 'project.task.note', { projectId, taskId, title: 'Context', detail: 'Keep these owner decisions.' }))
+  success(yield* call(f.lead, 'project.task.delete', { projectId, taskId }))
+  success(yield* call(f.lead, 'project.team.delete', { projectId, teamId: team.teamId }))
+  const history = success(yield* call(owner, 'project.task.history', { projectId, taskId })).items
+  expect(history).toEqual(expect.arrayContaining([expect.objectContaining({ detail: 'Keep these owner decisions.' }), expect.objectContaining({ title: 'Task deleted', deleted: true })]))
+  expect(unwrap(success(yield* call(f.lead, 'project.task.history', { projectId, taskId })))).toMatchObject({ items: expect.arrayContaining([expect.objectContaining({ deleted: true })]) })
+  expect(success(yield* call(owner, 'project.read', { projectId, collection: 'tasks' })).items).toHaveLength(0)
+  expect(failureOf(yield* call(f.lead, 'project.task.update', { projectId, taskId, title: 'Resurrect' }))).toBeDefined()
+  expect(failureOf(yield* call(f.other, 'project.task.history', { projectId, taskId }))).toBeDefined()
+})).pipe(Effect.orDie))
+
+it.live('r1 item 8: deleting a stopped team removes only its group from the agent views', () => provideBoard(rig, (runner) => Effect.gen(function* () {
+  const f = yield* setup(runner), projectId = f.project.projectId
+  yield* approve(f.lead, projectId, 'end-result')
+  const team = success(yield* call(f.lead, 'project.team.create', { projectId, name: 'Builders', worktreeId: f.project.worktreeId }))
+  success(yield* call(owner, 'group', { agentId: 'builder', add: [team.group, 'unrelated'], remove: [] }))
+  success(yield* call(owner, 'stop', { agentId: 'builder' }))
+  success(yield* call(f.lead, 'project.team.delete', { projectId, teamId: team.teamId }))
+  expect((yield* snapshot).agents.builder!.groups).toEqual(['unrelated'])
+  expect(((yield* snapshot).board as BoardView).labels.builder).toEqual(['unrelated'])
+  const roster = success(yield* call(owner, 'client.snapshot', {})).agents.find((a: any) => a.agentId === 'builder')
+  expect(roster.groups).toEqual(['unrelated'])
+})).pipe(Effect.orDie))

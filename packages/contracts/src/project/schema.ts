@@ -91,7 +91,7 @@ export const Task = Schema.Struct({
 export type Task = typeof Task.Type
 export const TaskHistoryEntry = Schema.Struct({
   sequence: EventSequence, at: EpochMilliseconds, title: ProjectName, detail: ProjectText,
-  state: TaskState
+  state: TaskState, deleted: Schema.optionalKey(Schema.Boolean)
 })
 export type TaskHistoryEntry = typeof TaskHistoryEntry.Type
 export const ProjectTaskRecord = Schema.Struct({ ...Task.fields, history: Schema.Array(TaskHistoryEntry) })

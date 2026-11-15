@@ -6,7 +6,7 @@ export const projectKey = (projectId: string, id: string) => JSON.stringify([pro
 export const mockScreenKey = (projectId: string, revisionId: string, screenId: string) => JSON.stringify([projectId, revisionId, screenId])
 export const projectView = (snapshot: Snapshot): ProjectView => snapshot.project as ProjectView
 const empty = <T>(): Readonly<Record<string, T>> => Object.create(null)
-export const emptyProject = (): ProjectView => ({ gitAttempts: empty(), gitEvidence: empty(), gitReviews: empty(), taskNotifications: empty(), fileSaveNotices: empty(), setup: { step: "welcome" }, mockScreenReviews: empty(), mockRevisions: empty(), mockHeads: empty(), mockApprovals: empty(), designs: empty(), designHeads: empty(), creations: empty(), repositories: empty(), locations: empty(), workspaces: empty(), projects: empty(), teams: empty(), sprints: empty(), tasks: empty(), agentProjects: empty(), parents: empty() })
+export const emptyProject = (): ProjectView => ({ gitAttempts: empty(), gitEvidence: empty(), gitReviews: empty(), taskNotifications: empty(), fileSaveNotices: empty(), setup: { step: "welcome" }, mockScreenReviews: empty(), mockRevisions: empty(), mockHeads: empty(), mockApprovals: empty(), designs: empty(), designHeads: empty(), creations: empty(), repositories: empty(), locations: empty(), workspaces: empty(), projects: empty(), teams: empty(), sprints: empty(), tasks: empty(), deletedTasks: empty(), agentProjects: empty(), parents: empty() })
 const change = <T>(rows: Readonly<Record<string, T>>, id: string, f: (row: T) => T) => {
   const row = own(rows, id)
   return row === undefined ? rows : { ...rows, [id]: f(row) }
@@ -126,7 +126,13 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
       return withoutScope
     }) }
     case "project.TeamDeleted": { const teams = { ...view.teams }; delete teams[projectKey(event.projectId, event.teamId)]; return { ...view, teams } }
-    case "project.TaskDeleted": { const tasks = { ...view.tasks }; delete tasks[projectKey(event.projectId, event.taskId)]; return { ...view, tasks } }
+    case "project.TaskDeleted": {
+      const key = projectKey(event.projectId, event.taskId), task = own(view.tasks, key)
+      if (task === undefined) return view
+      const tasks = { ...view.tasks }; delete tasks[key]
+      return { ...view, tasks, deletedTasks: { ...view.deletedTasks, [key]: { ...task,
+        history: [...task.history, { sequence: seq, at, title: "Task deleted", detail: task.title, state: task.state, deleted: true }] } } }
+    }
     case "project.StageChanged": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, stage: event.stage })) }
     case "project.TeamAdded": { const { _tag, ...row } = event; return { ...view, teams: { ...view.teams, [projectKey(row.projectId, row.teamId)]: row } } }
     case "project.SprintAdded": { const { _tag, ...row } = event; return { ...view, sprints: { ...view.sprints, [projectKey(row.projectId, row.sprintId)]: row } } }

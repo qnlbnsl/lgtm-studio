@@ -2,7 +2,7 @@ import type { AgentChoice, AgentConfiguration } from "@lgtm/contracts";
 import { configurationMatches } from "../runner/choices.ts";
 import { safeStartFailure, type StartFailure } from "@lgtm/contracts/startFailure";
 import {
-  EventSequence as EventSequenceSchema, eventEffect,
+  EventSequence as EventSequenceSchema, eventEffect, projectTeamGroup, type ProjectView,
   type ProjectRequestLink, type QuestionMetadata, type Account, type Actor, type Caller, type PermissionAction, type AgentId, type Delivery, type Event, type EventEnvelope, type EventSequence, type LifecycleState,
   pieceNamespaces, EngineEvent, type PieceNamespace, type PermissionOption, type SessionReference, type WaitMember,
 } from "@lgtm/contracts";
@@ -232,6 +232,14 @@ const agentsAfter = (state: State, event: Event): State["agents"] => {
       ...row, configuration: { desired: desiredOf(row), ...(event.revision === undefined ? {} : { revision: event.revision }),
         ...(event.applied === undefined ? {} : { applied: event.applied }), status: event.status, reason: event.reason },
     }));
+    case "project.TeamDeleted": {
+      const view = state.project as ProjectView, team = lookup(view.teams, JSON.stringify([event.projectId, event.teamId]));
+      if (team === undefined) return state.agents;
+      const group = team.group ?? projectTeamGroup(event.projectId, event.teamId);
+      return Object.fromEntries(Object.entries(state.agents).map(([id, agent]) => [id,
+        lookup(view.agentProjects, id) === event.projectId && agent.groups.includes(group)
+          ? { ...agent, groups: agent.groups.filter((label) => label !== group) } : agent]));
+    }
     case "AgentGrouped": return change(state.agents, event.agentId, (row) => ({ ...row, groups: event.groups }));
     case "ModeChanged": return change(state.agents, event.agentId, (row) => ({
       ...row, mode: event.mode, permission: event.level,

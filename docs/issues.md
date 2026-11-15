@@ -14609,3 +14609,17 @@ The channel list shows that name with an Archived mark.
 The original channel identity and post history remain unchanged.
 Define is now the first current dot in the projects table.
 The result lists these changes and the earlier removed Rename dialog and added Actions column.
+
+## s10-lead-16. Deleted teams left group labels on stopped agents, and deleted tasks vanished from history reads.
+
+Found in review round 1 on 2026-11-14.
+This records review findings m8 and m11.
+Status: fixed in the deletion and task history projections.
+The stored team deletion removes its group from the stopped or crashed members in the views.
+Other groups remain on those agents.
+Replay updates both the roster and the board views from that deletion.
+Deleted tasks move to a separate history collection and leave the active task list.
+The task history request still enforces the project's read permissions.
+Its last entry says Task deleted and carries a deleted flag.
+Deleted tasks remain unavailable for edits, reassignment and linked work.
+

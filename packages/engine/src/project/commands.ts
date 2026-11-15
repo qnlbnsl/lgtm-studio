@@ -271,9 +271,10 @@ const taskCreate: PiecePlanner = (input, raw) => Effect.gen(function* () {
     reply: () => ({ requestId, taskId }) }
 
 })
-const requireTask = (input: Input, projectId: string, taskId: string, write: boolean) => Effect.gen(function* () {
+const requireTask = (input: Input, projectId: string, taskId: string, write: boolean, includeDeleted = false) => Effect.gen(function* () {
   const project = yield* requireProject(input, projectId, false)
-  const task = own(projectView(input.snapshot).tasks, projectKey(projectId, taskId))
+  const view = projectView(input.snapshot), key = projectKey(projectId, taskId)
+  const task = own(view.tasks, key) ?? (includeDeleted && !write ? own(view.deletedTasks ?? {}, key) : undefined)
   if (task === undefined || write && !canLeadProject(input.snapshot, input.actor, project)
     && !(input.actor._tag === "agent" && input.actor.agentId === task.owner)) return yield* refused("task is unavailable to this caller")
   return { project, task }
@@ -375,7 +376,7 @@ const read: ReadHandler = (input, raw) => Effect.gen(function* () {
   return yield* page(input, raw, entries, true)
 })
 const taskHistory: ReadHandler = (input, raw) => Effect.gen(function* () {
-  const p = raw as Payload<"project.task.history">; const { task } = yield* requireTask(input, p.projectId, p.taskId, false)
+  const p = raw as Payload<"project.task.history">; const { task } = yield* requireTask(input, p.projectId, p.taskId, false, true)
   return yield* page(input, raw, decisionHistory(input.snapshot, task).map((row, index) => [String(index), row] as const), true)
 })
 export const projectPlanners = {

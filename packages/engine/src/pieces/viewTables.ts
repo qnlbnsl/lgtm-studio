@@ -18,6 +18,14 @@ export const pieceViews: Record<PieceNamespace, PieceView> = {
   client: clientPieceView,
   project: { empty: emptyProject, reduce: (view, event, sequence, at = 0) => projectAfter(view as ProjectView, event as Event, sequence, at) },
   board: {
+    // Team deletion updates the core groups from the old team record. Mirror
+    // those groups after the fold, so replay also cleans historical deletions.
+    observe: (snapshot, event) => {
+      if (event._tag !== "project.TeamDeleted") return snapshot.board;
+      const board = snapshot.board as BoardView;
+      return { ...board, labels: Object.fromEntries(Object.entries(board.labels).map(([id, labels]) =>
+        [id, Object.hasOwn(snapshot.agents, id) ? snapshot.agents[id]!.groups : labels])) };
+    },
     empty: emptyBoard,
     reduce: (view, event, sequence) => boardAfter(view as BoardView, {
       event: event as Event, sequence: sequence as EventSequence,
