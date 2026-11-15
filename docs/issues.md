@@ -14432,7 +14432,8 @@ Problems this shows:
 ## 945. The lead's chat showed noise and lost formatting.
 
 Found: 2026-11-14, by reading the same chat.
-Status: open.
+Status: the rendering defects are fixed in the s12 chat change.
+The session-start notices remain open with issue 946.
 
 1. The question card showed the same long text twice, once as the summary and once under "THE QUESTION". The short version was not short.
 2. The lead wrote lists, and the card showed them as one paragraph with dashes in it.
@@ -14818,3 +14819,24 @@ The owner asked for the folder choice to sit in the tab itself, as a dropdown be
 The dropdown lists the places where a session can open.
 The dialog is then not needed.
 This is open.
+
+## s12-1. The committed harness recordings do not cover tool calls.
+
+Found: 2026-11-15, while fixing issue 945.
+Status: open.
+
+The Claude Code and Codex recordings in `packages/testing/fixtures/` contain read-only greeting exchanges.
+Their prompts explicitly prohibit tools and file changes.
+They cannot verify the titles or payloads that current real harnesses send for edits, reads, commands, searches, or questions.
+The chat regression tests use the engine contracts and the tool shapes already exercised by the runner tests.
+A recorded tool session from each harness remains needed.
+
+## s12-2. Legacy Agent Client Protocol edits lost the original file text.
+
+Found: 2026-11-15, while fixing issue 945.
+Status: fixed in the s12 chat change.
+
+The runner translated a legacy Agent Client Protocol (ACP) diff by storing only `newText`.
+It discarded `oldText`, so a viewer could not mark removed lines.
+The translator now stores both sides as a unified replacement hunk.
+Existing durable events cannot recover original text that was already discarded.

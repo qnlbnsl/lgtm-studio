@@ -35,7 +35,7 @@ export function AgentLine({ s, agent, link = true }) {
 }
 
 // ---- text ---------------------------------------------------------------------
-// A small Markdown subset: paragraphs, "- " lists, **bold**, `code`, and [[kind:id|text]] links.
+// A safe Markdown subset: paragraphs, lists, fenced code, **bold**, `code`, and internal references.
 function inline(text, pid) {
   const out = []; let rest = text; let k = 0;
   const re = /(\*\*([^*]+)\*\*)|(`([^`]+)`)|(\[\[(\w+):([\w-]+)\|([^\]]+)\]\])/;
@@ -54,12 +54,45 @@ function inline(text, pid) {
   return out;
 }
 export function Rich({ text, pid }) {
-  const blocks = String(text).split(/\n\n+/);
-  return blocks.map((b, i) => {
-    const lines = b.split('\n');
-    if (lines.every((l) => l.startsWith('- '))) return html`<ul class="bul" key=${i}>${lines.map((l, j) => html`<li key=${j}>${inline(l.slice(2), pid)}</li>`)}</ul>`;
-    return html`<p key=${i}>${inline(b, pid)}</p>`;
-  });
+  const lines = String(text).replace(/\r\n?/g, '\n').split('\n');
+  const blocks = []; let i = 0;
+  const list = (line) => /^(\s*)([-+*]|\d+[.)])\s+(.*)$/.exec(line);
+  const fence = (line) => /^\s*(`{3,}|~{3,})(.*)$/.exec(line);
+  const phrasing = (value) => value.split('\n').map((line, n) => [n > 0 && html`<br />`, inline(line, pid)]);
+  const readList = (indent) => {
+    const ordered = /^\d/.test(list(lines[i])[2]); const entries = [];
+    const start = ordered ? Number.parseInt(list(lines[i])[2], 10) : null;
+    while (i < lines.length) {
+      const match = list(lines[i]);
+      if (!match || match[1].length !== indent || /^\d/.test(match[2]) !== ordered) break;
+      let value = match[3]; i++; const children = [];
+      while (i < lines.length && lines[i].trim()) {
+        const next = list(lines[i]);
+        if (next) {
+          if (next[1].length <= indent) break;
+          children.push(readList(next[1].length));
+        } else if (/^\s+/.test(lines[i])) { value += '\n' + lines[i].trim(); i++; }
+        else break;
+      }
+      entries.push(html`<li>${phrasing(value)}${children}</li>`);
+    }
+    return ordered ? html`<ol class="bul" start=${start}>${entries}</ol>` : html`<ul class="bul">${entries}</ul>`;
+  };
+  while (i < lines.length) {
+    if (!lines[i].trim()) { i++; continue; }
+    const opening = fence(lines[i]);
+    if (opening) {
+      const code = []; i++;
+      while (i < lines.length && !(fence(lines[i])?.[1][0] === opening[1][0] && fence(lines[i])[1].length >= opening[1].length && !fence(lines[i])[2].trim())) code.push(lines[i++]);
+      i++; blocks.push(html`<pre class="code" tabindex="0"><code>${code.join('\n')}</code></pre>`); continue;
+    }
+    const match = list(lines[i]);
+    if (match) { blocks.push(readList(match[1].length)); continue; }
+    const paragraph = [lines[i++]];
+    while (i < lines.length && lines[i].trim() && !list(lines[i]) && !fence(lines[i])) paragraph.push(lines[i++]);
+    blocks.push(html`<p>${phrasing(paragraph.join('\n'))}</p>`);
+  }
+  return blocks;
 }
 
 // ---- menus --------------------------------------------------------------------
@@ -221,10 +254,10 @@ function Cited({ text }) {
 function Paras({ list }) { return (Array.isArray(list) ? list : [list]).filter(Boolean).map((t, i) => html`<p key=${i}><${Cited} text=${t} /></p>`); }
 // A command or a folder in a code box. A long one scrolls inside the box, and the button in
 // its corner copies the whole text.
-export function CodeBox({ text, label }) {
+export function CodeBox({ text, label, copyText = text, children }) {
   const [copied, setCopied] = useState(false);
-  const copy = () => { navigator.clipboard?.writeText(text || ''); setCopied(true); setTimeout(() => setCopied(false), 1500); };
-  return html`<div class="qc-code"><pre class="code" tabindex="0">${text}</pre>
+  const copy = () => { navigator.clipboard?.writeText(copyText || ''); setCopied(true); setTimeout(() => setCopied(false), 1500); };
+  return html`<div class="qc-code"><pre class="code" tabindex="0">${children ?? text}</pre>
     <button type="button" class="qc-copy" aria-label=${(copied ? 'Copied the ' : 'Copy the ') + label} title=${copied ? 'Copied' : 'Copy'} onClick=${copy}><${Icon} name=${copied ? 'check' : 'copy'} size=${14} /></button></div>`;
 }
 // What an answered card says about its answer: a short label, and the owner's words when the
@@ -251,7 +284,9 @@ function BriefCard({ s, r, openThread, who }) {
   const approvalOutcome = r.projectApprovalOutcome || (r.answer === 'Accepted' ? 'Approval recorded.' : 'Approval not recorded. Ask again if you still need it.');
   const opts = r.options || [];
   const rec = isQ ? opts.find((o) => o.primary) || null : null;
-  const brief = r.brief || r.title; const summary = r.summary || (isQ ? r.body : null);
+  const heading = r.brief || r.title;
+  const brief = isQ && r.body && (heading === r.body || r.body.startsWith(heading + '\n')) ? 'Question' : heading;
+  const summary = r.summary && r.summary !== r.body ? r.summary : null;
   const recShort = isQ ? r.recShort || r.recommendation : null; const id = 'qc-' + r.id;
   // The answers on the brief, and the rest in the report.
   const others = isQ ? opts.filter((o) => o !== rec) : [];
@@ -274,7 +309,7 @@ function BriefCard({ s, r, openThread, who }) {
       ${standing.length > 0 && html`<${Menu} class="btn split-more" label=${'More ways to ' + label.toLowerCase()} trigger=${html`<${Icon} name="chevron-down" size=${14} />`}
         items=${standing.map((o) => ({ label: always, why: o.label, disabled: busy, onSelect: () => answer(o.id) }))} width=${320} />`}</span>`;
   };
-  if (liveMode.on && r.status === 'open' && r.heldBy) return html`<section class="req qc" id=${'req-' + r.id}><b>${r.title}</b><p>${r.body}</p><p class="muted">Waiting on ${agentOf(s, r.heldBy).name}</p></section>`;
+  if (liveMode.on && r.status === 'open' && r.heldBy) return html`<section class="req qc" id=${'req-' + r.id}><b>${brief}</b><${Rich} text=${r.body} pid=${r.project} /><p class="muted">Waiting on ${agentOf(s, r.heldBy).name}</p></section>`;
   // An answered card keeps everything it showed. The answer buttons leave, and one line says
   // what the answer was.
   const done = r.status !== 'open';
@@ -287,11 +322,11 @@ function BriefCard({ s, r, openThread, who }) {
   return html`<section aria-busy=${liveMode.on && chatLive.requestBusy(r)} class=${cx('req qc', r.kind, open && 'open', done && 'done')} id=${'req-' + r.id} tabindex="-1" aria-label=${(done ? 'Answered: ' : isQ ? 'Question: ' : 'Approval: ') + brief}>
     ${approvalEffect && html`<p class="qc-sum">${approvalEffect}</p>`}
     <div class="qc-top"><b class="qc-q">${brief}</b>${done ? html`<span class="qc-age">${clock(r.answeredAt)}</span>` : html`<span class=${cx('qc-age', waited >= HOUR && 'long')}>${ago(r.createdAt, now)}</span>`}</div>
-    ${summary && html`<p class="qc-sum">${summary}</p>`}
+    ${summary && html`<div class="qc-sum"><${Rich} text=${summary} pid=${r.project} /></div>`}
+    ${isQ && r.body && r.body !== brief && html`<div class="qc-sum"><${Rich} text=${r.body} pid=${r.project} /></div>`}
     ${recShort && !done && html`<p class=${cx('qc-rec', declined && 'declined')}><${Icon} name="sparkles" size=${14} class="qc-star" /><span>${recShort}</span>${declined && html`<span class="qc-tag">Declined</span>`}</p>`}
     ${open && html`<div class="qc-report" id=${id}>
       <p class="qc-meta">${who && html`<${Avatar} agent=${a} s=${s} size="sm" status=${false} /><span>Asked by ${agentLabel(s, a, { withTeam: true })}</span>`}${r.blocks && html`<span>Blocks ${r.blocks}</span>`}${!isQ && r.tool && html`<span>Tool ${r.tool}</span>`}</p>
-      ${isQ && html`<section class="qc-part q"><h5>The question</h5><${Paras} list=${r.body || r.title} /></section>`}
       ${!isQ && html`<section class="qc-part"><h5>Command</h5>${r.command ? html`<${CodeBox} text=${r.command} label="command" />` : html`<p class="flat">Hidden by the harness. You cannot see this tool's input.</p>`}
         <h5 class="qc-sub">Folder</h5><${CodeBox} text=${r.folder} label="folder" /></section>`}
       ${r.what && html`<section class="qc-part"><h5>What it is about</h5><${Paras} list=${r.what} /></section>`}
@@ -434,12 +469,23 @@ export function RequestBlock({ s, request: r, variant = 'card', openThread = nul
 }
 
 // ---- threads ------------------------------------------------------------------
-function ToolGroup({ item }) {
+function ToolDetail({ detail }) {
+  const [expanded, setExpanded] = useState(false);
+  const text = detail.text || ''; const lines = text.split('\n');
+  const cut = lines.length > 24 || text.length > 2400;
+  const shown = expanded ? text : lines.slice(0, 24).join('\n').slice(0, 2400);
+  const shownLines = shown.split('\n');
+  return html`<section class="tool-box"><h5>${detail.label}</h5>
+    <div class=${detail.kind === 'diff' ? 'tool-diff' : ''}><${CodeBox} text=${shown} copyText=${text} label=${detail.label.toLowerCase()}>${detail.kind === 'diff' ? shownLines.map((line, i) => html`<span class=${cx('diff-line', line.startsWith('+') && 'add', line.startsWith('-') && 'del')}>${line}${i < shownLines.length - 1 ? '\n' : ''}</span>`) : shown}<//></div>
+    ${cut && html`<button type="button" class="btn sm ghost" aria-expanded=${expanded} onClick=${() => setExpanded(!expanded)}>${expanded ? 'Show less' : 'Show more'}</button>`}
+  </section>`;
+}
+export function ToolGroup({ item }) {
+  const details = item.details || [];
   return html`<details class="tools">
     <summary><${Icon} name="wrench" size=${13} /><span>${item.summary}</span><${Icon} name="chevron-right" size=${14} class="chev" /></summary>
-    ${item.lines.map((l, i) => html`<div class="tool-line" key=${i}><span class="verb">${l.verb}</span><span class="arg">${l.arg}</span><span class="res">${l.res}</span></div>`)}
-    ${item.full && html`<div class="tool-box"><h5>Command</h5><${CodeBox} text=${item.full} label="command" /></div>`}
-    ${item.output && html`<div class="tool-box"><h5>Output</h5><${CodeBox} text=${item.output} label="output" /></div>`}
+    ${(item.raw || item.status) && html`<div class="tool-line"><span class="grow mono">${item.raw}</span><span class="res">${item.status}</span></div>`}
+    ${details.map((detail, i) => html`<${ToolDetail} key=${i} detail=${detail} />`)}
   </details>`;
 }
 function LargeItem({ item }) {

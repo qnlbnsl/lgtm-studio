@@ -11,6 +11,20 @@ export interface Translated {
 }
 const record = (value: unknown): Record<string, any> | undefined => typeof value === "object" && value !== null ? value as Record<string, any> : undefined;
 
+// Legacy ACP diffs carry complete before/after text. Keep both sides as a
+// unified replacement hunk instead of silently recording only the new file.
+export function replacementDiff(before: string, after: string): string {
+  if (before === after) return '';
+  const lines = (text: string) => text === '' ? [] : text.replace(/\n$/, '').split('\n');
+  const removed = lines(before), added = lines(after);
+  const side = (text: string, rows: string[], marker: string) => [
+    ...rows.map((line) => marker + line),
+    ...(rows.length && !text.endsWith('\n') ? ['\\ No newline at end of file'] : []),
+  ];
+  return [`@@ -${removed.length ? 1 : 0},${removed.length} +${added.length ? 1 : 0},${added.length} @@`,
+    ...side(before, removed, '-'), ...side(after, added, '+')].join('\n');
+}
+
 // Terminal output and exits are correlated and streamed through the redactor
 // by terminal.ts before this stateless translator handles the tool report.
 // ACP has open unions. Unknown variants are data to ignore; known variants
@@ -31,7 +45,11 @@ export const translate = (value: unknown, replay: boolean): ReadonlyArray<Transl
   const content = Array.isArray(update.content) ? update.content : [];
   const diffs: Translated[] = content.flatMap((part: any) => {
     if (part?.type !== "diff") return [];
-    if (typeof part.path === "string") return [{ kind: "file-change" as const, text: part.newText ?? "", content: { _tag: "file-change" as const, ...correlation, path: part.path, diff: part.newText ?? "" } }];
+    if (typeof part.path === "string") {
+      const diff = typeof part.oldText === 'string' || part.oldText === null
+        ? replacementDiff(part.oldText ?? '', part.newText ?? '') : part.newText ?? '';
+      return [{ kind: "file-change" as const, text: diff, content: { _tag: "file-change" as const, ...correlation, path: part.path, diff } }];
+    }
     return (part.changes ?? []).filter((change: any) => typeof change.path === "string").map((change: any) => ({
       kind: "file-change" as const, text: part.patch?.text ?? "", content: { _tag: "file-change" as const, ...correlation, path: change.path, diff: part.patch?.text ?? "" },
     }));

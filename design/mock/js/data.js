@@ -310,6 +310,18 @@ export function seed() {
     post('p50', 'ch-apiref-review', 'apiref-rl', 'done', 'fyi', 'Round 2 clean. No blockers, no majors.', 2 * HOUR),
   ];
 
+  // Each sample action uses the same collapsed row and detail blocks as live calls.
+  for (const [agent, items] of Object.entries(threads)) threads[agent] = items.flatMap((item) => item.type !== 'tools' ? [item] : item.lines.map((line, i) => ({
+    id: item.id + '-' + i, type: 'tools', ts: item.ts,
+    summary: ({ Read: 'Read', Search: 'Searched', Run: 'Ran', Edit: 'Edited', Assign: 'Assigned', Commit: 'Committed' }[line.verb] || line.verb) + ' ' + (['Read', 'Edit'].includes(line.verb) ? line.arg.split('/').pop() : line.arg),
+    raw: line.verb, status: 'completed', details: [{ label: line.verb === 'Run' ? 'Command' : 'Input', text: line.arg }, ...(line.res ? [{ label: 'Output', text: line.res }] : [])],
+  })));
+  threads['console-lead'].splice(4, 0,
+    { id: 'sample-edit', type: 'tools', ts: at(4 * DAY - 6 * MIN), summary: 'Edited MEMORY.md', raw: 'Edit', status: 'completed', details: [{ label: 'notes/MEMORY.md', kind: 'diff', text: '@@ -1 +1 @@\n-Start every team.\n+Wait for the owner to approve teams.' }] },
+    { id: 'sample-write', type: 'tools', ts: at(4 * DAY - 6 * MIN), summary: 'Wrote sprint.md', raw: 'Write', status: 'completed', details: [{ label: 'notes/sprint.md', kind: 'diff', text: '@@ -0,0 +1,2 @@\n+# Navigation\n+Build the sidebar first.' }] },
+    { id: 'sample-create', type: 'tools', ts: at(4 * DAY - 6 * MIN), summary: 'Created sprint', raw: 'mcp__lgtm__project_sprint_create', status: 'completed', details: [{ label: 'Input', text: '{"label":"SP-01","name":"Navigation foundation"}' }] },
+  );
+
   return {
     ...base(),
     session: { status: (FRAMED && new URLSearchParams(location.hash.split('?')[1] || '').get('session')) || persist('session', 'in'), firstRun: false },
