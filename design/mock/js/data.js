@@ -442,6 +442,7 @@ export function agentStatus(s, a) {
   const open = openRequests(s, { agent: a.id });
   const need = open[0];
   const needWord = need ? { question: 'Needs answer', approval: 'Needs approval', merge: 'Needs merge', failed: 'Failed start' }[need.kind] : null;
+  if (a.crashed) return { dot: 'failed', word: a.activity || 'Crashed', tone: 'error' };
   if (a.state === 'failed') return { dot: 'failed', word: 'Failed start', tone: 'error' };
   if (a.state === 'stopped') return need ? { dot: 'stopped waiting', word: 'Stopped · ' + needWord, tone: 'warn' } : { dot: 'stopped', word: 'Stopped', tone: null };
   if (need) return { dot: 'waiting', word: needWord, tone: 'warn' };

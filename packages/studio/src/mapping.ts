@@ -58,6 +58,7 @@ export interface StoreAgent {
   readonly id: string; readonly project: string; readonly team: string | null; readonly role: string; readonly name: string
   readonly harness: string; readonly subscription: string; readonly model: string; readonly effort: string | null
   readonly folder?: string
+  readonly crashed?: boolean
   readonly permission: string; readonly state: StoreAgentState; readonly activity: string; readonly task: string | null
   readonly context: number; readonly turns: number; readonly tokens: number; readonly workState: string
   readonly stalled: boolean; readonly startedAt: number; readonly lastOutputAt: number
@@ -206,7 +207,7 @@ export function mapAgentState(agent: Pick<RosterEntry, "state" | "startFailure" 
   if (agent.startFailure !== undefined) return "failed"
   switch (agent.state._tag) {
     case "stopped": case "interrupted": return "stopped"
-    case "crashed": return "failed"
+    case "crashed": return "stopped"
     case "paused": return "paused"
     case "starting": return "starting"
     default: return agent.openPermissionRequests + agent.openQuestionsAsked > 0 ? "waiting" : agent.state._tag
@@ -230,7 +231,7 @@ export function mapAgent(agent: EngineAgent, section: Pick<ProjectSection, "proj
   return {
     id: agent.agentId, project: projectId, team: led !== undefined ? null : team?.teamId ?? null,
     role: mapRole(agent.role, led !== undefined), name: agent.name, harness: agent.harness, subscription: agent.account,
-    folder: agent.folder, model: agent.model ?? "", effort: agent.effort ?? null, permission: mapPermission(agent.permission), state,
+    folder: agent.folder, crashed: agent.state._tag === "crashed", model: agent.model ?? "", effort: agent.effort ?? null, permission: mapPermission(agent.permission), state,
     activity: quiet ? "" : agent.displayedState, task: null, context: 0, turns: 0, tokens: 0, workState: WORK_STATE[state],
     stalled: false, startedAt: agent.startedAt, lastOutputAt: agent.startedAt,
     failure: agent.startFailure === undefined ? null : { reason: startFailureText(agent.startFailure) }

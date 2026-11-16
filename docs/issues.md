@@ -2243,7 +2243,7 @@ thread, without failing on its own setup.
 ## 152. A paused agent that cannot reload after a restart has no path back except stop
 
 Found: 2026-11-01, while building unit 6d.
-State: open.
+State: open. Unit s21-recover adds the website's fresh fallback for states that accept resume, but the existing command contract refuses resume while paused.
 
 What happens: when its account returns, a paused agent with a session whose
 adapter cannot reload gets `AgentReloadFailed` with the fixed reason "agent
@@ -5756,7 +5756,7 @@ Why it matters: A long-running service uses more memory without bound.
 ## 332. Recovery leaves an interrupted agent with a session that cannot reload, and writes no event
 
 Found: 2026-11-03, while planning the message board plan.
-State: open.
+State: partly fixed in unit s21-recover. The website can request a fresh session after a refused reload. Automatic recovery still leaves that agent interrupted, and the unrelated board-disposition description below remains open.
 
 What happens: A follower of the board must apply the `waits.ts` test itself (board review round 2, R2-A3).
 What should happen: Not decided.
@@ -17235,3 +17235,38 @@ The first `pnpm live-check` run passed 18 of 23 steps.
 Its "reload" step failed with "SocketReadError: An error occurred during Read".
 A second run on the same commit passed that step and gave the known result of 19 of 23.
 The cause of the single failure is not known.
+
+## s21-1. Chat cannot recover an unloadable session and mislabels a crash
+
+Found: 2026-11-16, while building unit s21-recover.
+State: fixed in unit s21-recover.
+
+The chat Resume control sent only a reload request.
+A refused reload therefore left the agent unavailable.
+The roster mapping also presented a crash as a failed start.
+Resume now requests a fresh session after the engine explicitly refuses a reload.
+The chat uses the existing stopped composer, the engine's existing crash label, and the existing Resume control.
+An unfinished accepted turn now receives recovery's existing carry-on before later queued work.
+The crash handler still withdraws and returns deliveries that it had not accepted.
+Those returned deliveries are not silently revived.
+
+## s21-2. A paused agent still cannot request a fresh session
+
+Found: 2026-11-16, while reading the resume contract for unit s21-recover.
+State: open, as the remaining part of issue 152.
+
+The command contract refuses resume in the paused state.
+The website's fresh fallback cannot override that refusal.
+Changing paused-state admission would change the existing lifecycle contract.
+This unit leaves that contract unchanged.
+
+## s21-5. A sign-in failure crashes the live chat composer
+
+Found: 2026-11-16, while checking the sign-in exception for unit s21-recover.
+State: fixed in unit s21-recover.
+
+The failed-start composer used the mock's `studio` machine identifier as its fallback.
+The live website's machine identifier is `local`.
+Reading the missing machine's name threw an exception before the sign-in control appeared.
+The live composer now uses the agent's project machine for that existing control.
+The sample keeps its original fallback.

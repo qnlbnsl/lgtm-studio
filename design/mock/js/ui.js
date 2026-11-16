@@ -733,13 +733,13 @@ export function Composer({ s, agentId, center }) {
   if (a.state === 'failed') {
     return html`<div class=${cx('composer-wrap', center && 'center')}><div class="composer-state">
       <${Icon} name="circle-alert" class="error-text" /><div class="txt"><b>${a.name} failed to start.</b><small>${a.failure?.reason}. ${draft ? 'Your draft is kept.' : ''}</small></div>
-      <button type="button" class="btn primary" onClick=${() => act.openDialog({ type: 'signin', subscription: a.failure?.subscription || a.subscription, then: openRequests(s, { agent: a.id })[0]?.id })}>Sign in on ${machineOf(s, a.failure?.machine || 'studio').name}</button>
+      <button type="button" class="btn primary" onClick=${() => act.openDialog({ type: 'signin', subscription: a.failure?.subscription || a.subscription, then: openRequests(s, { agent: a.id })[0]?.id })}>Sign in on ${machineOf(s, a.failure?.machine || (liveMode.on ? projectOf(s, a.project).machine : 'studio')).name}</button>
       <button type="button" class="btn" onClick=${() => { const r = openRequests(s, { agent: a.id })[0]; r ? act.answerRequest(r.id, 'resume') : act.resumeAgent(a.id); }}>Resume</button>
     </div></div>`;
   }
   if (a.state === 'stopped') {
     return html`<div class=${cx('composer-wrap', center && 'center')}><div class="composer-state">
-      <${Icon} name="circle-stop" class="muted" /><div class="txt"><b>${a.name} is stopped.</b><small>${draft ? 'Your draft is kept. ' : ''}Resume continues from its last turn.</small></div>
+      <${Icon} name="circle-stop" class="muted" /><div class="txt"><b>${a.crashed ? a.name + ': ' + a.activity : a.name + ' is stopped.'}</b><small>${draft ? 'Your draft is kept. ' : ''}Resume continues from its last turn.</small></div>
       <button type="button" disabled=${liveMode.on && chatLive.busy('agent:' + a.id)} class="btn primary" onClick=${() => act.resumeAgent(a.id)}><${Icon} name="play" size=${13} />Resume</button>
     </div></div>`;
   }

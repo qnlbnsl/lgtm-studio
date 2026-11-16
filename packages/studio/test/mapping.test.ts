@@ -87,7 +87,7 @@ describe("agents", () => {
     expect(mapAgentState(agent("ag-worker"))).toBe("waiting")
     expect(mapAgentState(agent("ag-failed"))).toBe("failed")
     expect(mapAgentState({ ...agent("ag-lead"), state: { _tag: "interrupted", previous: "working" } })).toBe("stopped")
-    expect(mapAgentState({ ...agent("ag-lead"), state: { _tag: "crashed" } })).toBe("failed")
+    expect(mapAgentState({ ...agent("ag-lead"), state: { _tag: "crashed" } })).toBe("stopped")
   })
   it("places an agent in its project and its team", () => {
     expect(mapAgent(agent("ag-lead"), section)).toMatchObject({ project: "pj-orchard", team: null, role: "project-lead", activity: "" })

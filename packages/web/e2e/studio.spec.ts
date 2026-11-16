@@ -26,6 +26,7 @@ import { engineLists } from "../../engine/src/pieces/lists.ts"
 import { Redactor } from "../../engine/src/log/Redactor.ts"
 import { unusedPort } from "../../engine/test/support/browserWeb.ts"
 import { incarnationOf, makeFakeRunner } from "../../engine/test/support/fakeRunner.ts"
+import { crash } from "../../engine/test/support/deliveryRig.ts"
 import { seedAccount, harnessSettings, agentCredential, appendSetup, eventOf, ownerCredential, success, call, makeFakeSecrets, makeRig, removeRig } from "../../engine/test/support/handlerRig.ts"
 import { registerRebuildCheck } from "../../engine/test/support/rebuildCheck.ts"
 import { decisionSetup } from "../../engine/test/support/projectDecisionFixtures.ts"
@@ -212,6 +213,30 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
           await expect.poll(() => runner.callsOf('answerPermission').filter((c) => c.input.requestId === 'studio-thread-permission').length).toBe(1)
         })
 
+        // Resume uses the existing control after a crash, including an
+        // explicit fresh fallback when the engine refuses session reload.
+        const rolesBeforeCrash = success(yield* call(ownerCredential, 'roles.settings.get', {})).settings
+        success(yield* call(ownerCredential, 'roles.settings.set', { settings: { ...rolesBeforeCrash, stallWatch: false } }))
+        for (const reloadable of [true, false]) {
+          const latest = runner.callsOf('load').at(-1)!
+          yield* appendSetup([eventOf({ _tag: 'SessionOpened', agentId: project.workerId,
+            session: { _tag: 'acp', sessionId: 's21-session' }, protocolVersion: 2, reloadable })])
+          yield* crash(runner, { agentId: project.worker.agentId, token: Redacted.value(latest.input.token) })
+          const loads = runner.callsOf('load').length, starts = runner.callsOf('start').length
+          yield* Effect.promise(async () => {
+            await page.goto(`http://127.0.0.1:${port}/#/p/${project.projectId}/chat/${project.workerId}`)
+            const thread = page.locator('.chat-main')
+            await expect(thread.locator('.composer-state')).toContainText('Crashed')
+            await expect(thread.locator('header')).toContainText('Crashed')
+            await expect(thread.locator('.composer-state').getByRole('button', { name: /Sign in/ })).toHaveCount(0)
+            await thread.getByRole('button', { name: 'Resume', exact: true }).click()
+            await expect(thread.locator('textarea')).toBeVisible()
+            await expect.poll(() => reloadable ? runner.callsOf('load').length : runner.callsOf('start').length).toBe((reloadable ? loads : starts) + 1)
+            expect(runner.callsOf(reloadable ? 'start' : 'load')).toHaveLength(reloadable ? starts : loads)
+          })
+        }
+        success(yield* call(ownerCredential, 'roles.settings.set', { settings: rolesBeforeCrash }))
+
         success(yield* call(ownerCredential, 'project.task.update', { projectId: project.projectId, taskId: contextTask, state: 'review' }))
         yield* appendSetup([eventOf({ _tag: 'roles.StallSeen', agentId: project.workerId, noticeRecipient: 'owner', triggerSequence: 1, sourceSequence: 1, occurrence: 1, notice: 'sent' })])
         yield* Effect.promise(async () => {
@@ -261,6 +286,10 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
           await page.locator('.bell').click()
           await expect(page.getByRole('menuitem', { name: /name-one-worker failed to start/ })).toBeVisible()
           await page.getByRole('menuitem', { name: 'Open Home', exact: true }).click()
+          await page.goto(`http://127.0.0.1:${port}/#/p/${project.projectId}/chat/${project.workerId}`)
+          await page.reload()
+          await expect(page.locator('.chat-main .composer-state')).toContainText('failed to start.')
+          await expect(page.locator('.chat-main .composer-state').getByRole('button', { name: /Sign in on/ })).toBeVisible()
         })
 
         const answered = success(yield* call(ownerCredential, "client.requests", { after: 0, limit: 100 }))

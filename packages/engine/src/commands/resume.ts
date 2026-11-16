@@ -43,7 +43,10 @@ export const resume = ({ runtime, snapshot, actor }: Input, agent: Agent, payloa
     }
     // A failed reload keeps what the interruption recorded, so a later
     // resume still knows the agent was mid-turn.
-    const previous = agent.state._tag === "interrupted" ? agent.state.previous : "starting";
+    const thread = snapshot.threads[agent.agentId] ?? [];
+    const lastEnd = thread.findLast((row) => row.event._tag === "TurnEnded" || row.event._tag === "AgentStopped")?.sequence ?? 0;
+    const crashedMidTurn = agent.state._tag === "crashed" && thread.some((row) => row.sequence > lastEnd && row.event._tag === "DeliveryAccepted");
+    const previous = agent.state._tag === "interrupted" ? agent.state.previous : crashedMidTurn ? "working" : "starting";
     return {
       events, sideRows: { revokeAgentTokens: [agent.agentId], agentTokens: [{ agentId: agent.agentId, tokenHash: token.tokenHash, revokedAt: null }] },
       // Issue 78: the failure carries the wait checks it causes. The
@@ -51,7 +54,7 @@ export const resume = ({ runtime, snapshot, actor }: Input, agent: Agent, payloa
       afterCommit: Effect.gen(function* () {
         const opened = yield* reload({
           runtime, actor, agent, spawn, token, mode: fresh ? "start" : "load",
-          midTurn: !fresh && agent.state._tag === "interrupted" && agent.state.previous === "working",
+          midTurn: !fresh && previous === "working",
           timeoutMillis: SETUP_TIMEOUT_MILLIS, storeToken: false,
           still: (current) => current?.state._tag === "starting",
           failed: () => [
