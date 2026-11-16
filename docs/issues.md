@@ -17367,3 +17367,14 @@ State: fixed in s22.
 The whole-suite registration guard found the instruction store and echo tests without the repository's required hook.
 Both now register the existing hook with `noLog: true` because they create no event log.
 The discovery guard remains unchanged.
+
+## s22-15. Browser asset rewriting broke Node resource paths in web tests.
+
+State: fixed in s22.
+
+Three web test files reproduced role resource read failures.
+A direct browser-environment test exposed a rewritten filesystem path starting at `/packages/`.
+Importing the Node.js URL constructor under its ordinary name did not prevent the asset rewrite.
+The instruction store now imports it as `NodeURL` for its filesystem resources.
+Focused regression tests cover the browser environment and replacement of the global constructor.
+The existing web tests and their assertions remain unchanged.

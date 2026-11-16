@@ -64,6 +64,11 @@ it('s22: defaults compose in mapping order and owner advice replaces only the ro
   const custom = await store.compose('worker:custom', { name: 'Owner', roles: { custom: { advice: 'Custom role.', limits: {} } } })
   expect(custom).toContain('Custom role.')
 })
+it('s22: packaged resource loading does not depend on a browser replacement of the global URL', async () => {
+  vi.stubGlobal('URL', class { constructor() { throw new Error('Browser URL replacement') } })
+  try { expect(await new InstructionStore(home).compose('builder')).toContain('# Builder') }
+  finally { vi.unstubAllGlobals() }
+})
 it('s22: each file is independently overridden and unknown paths are never opened', async () => {
   writeFileSync(join(folder, 'worker-base.md'), 'Owner base.')
   writeFileSync(join(folder, 'builder.md'), 'Owner role.')

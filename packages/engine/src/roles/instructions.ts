@@ -2,6 +2,7 @@ import { parseRole, type RoleFile } from '@lgtm/contracts'
 import * as Data from 'effect/Data'
 import { constants as C, promises as fs } from 'node:fs'
 import type { FileHandle } from 'node:fs/promises'
+import { URL as NodeURL } from 'node:url'
 
 export const instructionLimits = { fileBytes: 24 * 1024, composedBytes: 48 * 1024, replyBytes: 256 * 1024 } as const
 const mapping = {
@@ -50,7 +51,8 @@ export class InstructionStore {
       // name is drawn only from the fixed mapping, never from a supplied path.
       this.warn(`Role instruction override ${name} unavailable; using the built-in file.`)
     } finally { for (const handle of handles.reverse()) await handle.close() }
-    return fs.readFile(new URL(`./instructions/${name}.md`, import.meta.url), 'utf8')
+    // This is a Node resource, so avoid browser asset URL rewriting as well.
+    return fs.readFile(new NodeURL(`./instructions/${name}.md`, import.meta.url), 'utf8')
   }
   async compose(role: string, file: RoleFile | null = null): Promise<string> {
     const names = instructionFiles(role), selected = instructionName(role), parsed = parseRole(role)
