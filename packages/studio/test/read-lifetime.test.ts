@@ -64,3 +64,12 @@ it('cancels the screen lifetime when the page closes', async () => {
   window.dispatchEvent(new Event('pagehide'))
   expect(first.aborted).toBe(true)
 })
+
+it('keeps a Harnesses read alive while its legacy Subscriptions address is normalized', async () => {
+  const { readOptions } = await readers()
+  navigate('#/subscriptions')
+  const first = readOptions({}).readSignal
+  navigate('#/harnesses'); window.dispatchEvent(new HashChangeEvent('hashchange'))
+  expect(first.aborted).toBe(false)
+  expect(readOptions({}).readSignal).toBe(first)
+})

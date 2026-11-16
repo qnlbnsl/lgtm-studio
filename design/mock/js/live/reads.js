@@ -1,6 +1,6 @@
 // A queued read belongs to the screen that asked for it. Query changes keep it.
 let page = new AbortController();
-const route = () => typeof location === 'undefined' ? '' : location.hash.split('?')[0];
+const route = () => typeof location === 'undefined' ? '' : location.hash.split('?')[0].replace(/^#\/subscriptions$/, '#/harnesses');
 let path = route();
 const reset = () => { page.abort(); page = new AbortController(); path = route(); };
 const navigate = () => { if (route() !== path) reset(); };

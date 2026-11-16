@@ -260,6 +260,7 @@ function WorktreeFiles({ s, project, route, w, missing }) {
   else if (!sel) body = html`<div class="fx-state" data-empty><${Icon} name="file" size=${20} class="faint" /><strong>No file open</strong></div>`;
   else if (model.opened?.loading || !model.opened) body = html`<div class="fx-state" role="status"><${Icon} name="loader-circle" size=${18} class="spin faint" /><span>Reading from ${machine.name}…</span></div>`;
   else if (model.opened.error) body = html`<div class="fx-state" role="alert"><strong>${model.opened.error}</strong><span class="mono">${sel}</span><button class="btn" onClick=${() => model.open(sel)}>Retry</button></div>`;
+  else if (!file) body = null;
   else if (file.kind === 'image') body = html`<div class="fx-pic"><img src=${image} alt=${sel} /></div>`;
   else if (file.kind === 'binary' || file.kind === 'large') body = html`<div class="fx-state"><${Icon} name=${file.kind === 'binary' ? 'archive' : 'file-text'} size=${20} class="faint" /><strong>${file.kind === 'binary' ? 'Binary file' : 'Too large to show'} · ${fileSize(file.size)}</strong><span>${file.kind === 'binary' ? 'It cannot be read here.' : 'Files over 512 KB are not shown here.'}</span><span><button type="button" class="btn" disabled title="Engine work needed">Download</button></span></div>`;
   else body = html`${worker?.state === 'working' && dirty && html`<p class="fx-busy"><${Icon} name="info" size=${13} />${worker.name} is working in this worktree. When you save, it is told which file you changed.</p>`}

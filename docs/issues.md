@@ -17006,3 +17006,35 @@ A test-only ownership lease follows Node child launches through explicit environ
 Each service ends itself when teardown revokes its lease or its test worker dies.
 The teardown waits for owned services before removing the lease folder.
 Regressions cover normal teardown, a killed worker, early parent death, and service restart.
+
+
+## s18-19. A same-screen address normalization cancelled Harnesses reads.
+
+State: fixed in s18-smallfix round 3.
+
+The application normalizes the legacy Subscriptions address to the Harnesses address.
+Both addresses render the same screen.
+Extending page cancellation through dispatch exposed a read that began before normalization and was then cancelled.
+The screen did not remount to start a replacement read.
+The shared lifetime now gives both addresses the same screen identity.
+A failing lifecycle test and the real service browser journey reproduce the gap.
+
+## s18-20. A cancelled file open could render an absent file.
+
+State: fixed in s18-smallfix round 3.
+
+Suppressing cancellation text left a settled file open without a file or a visible error.
+The renderer then tried to read the absent file’s kind.
+The file body now stays empty when there is no file to render after settlement.
+A mounted regression proves that Reading ends without an error, editor or exception.
+
+
+## s18-21. A settled terminal settings read still looked busy.
+
+State: fixed in s18-smallfix round 3.
+
+The terminal settings promise was released after cancellation.
+The empty-session renderer still chose Reading from the absent settings value alone.
+It now also checks whether the read has settled.
+The read finalizer notifies the renderer after clearing its loading promise.
+A regression renders the actual terminal view before and after a cancelled read.

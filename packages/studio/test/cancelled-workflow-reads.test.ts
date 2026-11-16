@@ -40,3 +40,17 @@ it('the shared toast presenter ignores cancellation and preserves real failures'
   toast(Object.assign(new Error('cancelled'), { cancelledRead: true }), 'error'); expect(f.state.toasts).toEqual([])
   toast(new Error('Service refused'), 'error'); expect(f.state.toasts.map((t: any) => t.text)).toEqual(['Service refused'])
 })
+it('terminal settings stop saying Reading after a cancelled waiting read', async () => {
+  f = await fixture()
+  Object.assign(f.env, {
+    useState: (v: any) => [v, () => {}], useEffect: () => {}, Icon: () => null,
+    html: (parts: TemplateStringsArray, ...values: any[]) => parts.reduce((s, part, n) => s + part + (typeof values[n] === 'string' ? values[n] : ''), ''),
+  })
+  const terminal = f.load('live/terminal.js', 'load, LiveTerminalTab, setMapping')
+  terminal.setMapping({ terminalWorktrees: () => [], terminalSelection: () => undefined })
+  const render = () => terminal.LiveTerminalTab({ s: f.state, project: { id: 'p', machine: 'local' } })
+  const pending = terminal.load().catch((e: any) => e)
+  expect(render()).toContain('Reading terminal settings…')
+  await f.cancel(); expect(await pending).toMatchObject({ cancelledRead: true })
+  expect(render()).not.toContain('Reading terminal settings…')
+})

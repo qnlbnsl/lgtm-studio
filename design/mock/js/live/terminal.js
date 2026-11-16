@@ -25,7 +25,7 @@ export function observe(patch) {
 }
 async function load() {
   if (loading) return loading;
-  loading = engine.request('client.web.settings').then(settings => { enabled = settings.terminalEnabled === true; notify(); }).finally(() => { loading = null; });
+  loading = engine.request('client.web.settings').then(settings => { enabled = settings.terminalEnabled === true; notify(); }).finally(() => { loading = null; notify(); });
   return loading;
 }
 function textOf(terminal) {
@@ -115,7 +115,7 @@ export function LiveTerminalTab({ s, project }) {
   const font = n => { fontSize = Math.max(11, Math.min(18, n)); remember('termFont', fontSize); redraw(); };
   const rename = item => act.openDialog({ type: 'rename', title: 'Rename session', value: item.label, taken: state.sessions.filter(x => x !== item).map(x => x.label), note: 'The name is only a label for this tab. The folder and the machine stay the same.', onRename: value => { item.label = value; redraw(); } });
   if (enabled === false) return html`<div class="term"><div class="term-none"><${Icon} name="square-terminal" size=${22} class="faint" /><strong>The project terminal is turned off.</strong><a class="btn" href=${href('/settings?section=remote')}>Open Service settings</a></div></div>`;
-  if (!session) return html`<div class="term"><div class="term-none"><${Icon} name="square-terminal" size=${22} class="faint" /><strong>${enabled === undefined ? 'Reading terminal settings…' : s.conn.status !== 'live' ? 'The machine is offline.' : project.machine !== 'local' ? 'Project terminals are available only on the local machine.' : 'No sessions are open'}</strong><span class="muted">A session is a shell in one worktree on one machine. Sessions end when this page reloads or its connection is lost.</span>${notice && html`<span role="status">${notice}</span>`}${enabled && newSession('btn primary')}</div></div>`;
+  if (!session) return html`<div class="term"><div class="term-none"><${Icon} name="square-terminal" size=${22} class="faint" /><strong>${enabled === undefined && loading !== null ? 'Reading terminal settings…' : s.conn.status !== 'live' ? 'The machine is offline.' : project.machine !== 'local' ? 'Project terminals are available only on the local machine.' : 'No sessions are open'}</strong><span class="muted">A session is a shell in one worktree on one machine. Sessions end when this page reloads or its connection is lost.</span>${notice && html`<span role="status">${notice}</span>`}${enabled && newSession('btn primary')}</div></div>`;
   const ended = session.ended || s.conn.status !== 'live';
   return html`<div class="term">
     <div class="term-tabs"><div class="term-tablist" role="tablist" aria-label="Terminal sessions">
