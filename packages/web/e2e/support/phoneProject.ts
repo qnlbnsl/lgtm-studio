@@ -2,8 +2,9 @@ import * as Effect from "effect/Effect"
 import { appendSetup, eventOf } from "../../../engine/test/support/handlerRig.ts"
 import { completedSetup } from "./completedSetup.ts"
 
-// Attach the launched agent before it raises its request. The production alert
-// mapper and the website must agree on its project, without a seeded substitute.
+// Seed the repository, worktree and project through setup events before the
+// launched agent raises its request. The project points to that launched agent;
+// it does not replace the agent with a seeded substitute.
 export const phoneProject = (leadAgentId: string, path: string) => Effect.gen(function* () {
   const projectId = "phone-project", repoId = "phone-repository", worktreeId = "phone-worktree"
   yield* appendSetup([

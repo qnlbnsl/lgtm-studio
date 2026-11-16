@@ -17512,6 +17512,30 @@ The earlier Messages card used the stored failure reason or Failed to start.
 That earlier explanation is restored on this card.
 The card remains in Needs you, and the existing chat recovery controls remain available.
 
+## 1164. A resolved crash continuation returns after a later setup crash
+
+Found: 2026-11-16, while reproducing the round 4 recovery review.
+State: fixed in unit s21-recover, round 4.
+
+The resume fold retained its earlier unfinished-crash flag after a replacement session opened.
+It also retained that flag after the owner deliberately stopped the crashed agent.
+A later crash during setup could therefore request a carry-on after the earlier continuation had ended.
+The fold now clears that remembered interruption on SessionOpened and AgentStopped.
+A failed reload that never opens a session still retains the unfinished work through another setup crash.
+The turn table also checks a non-mid-turn pause and a released capacity turn that has finished.
+
+## 1165. A working agent receives a crash carry-on before accepting its delivery
+
+Found: 2026-11-16, while reproducing the round 4 recovery review.
+State: fixed in unit s21-recover, round 4.
+
+Sending a delivery makes the agent working before its content update accepts the work.
+The crash handler returns that unaccepted delivery to its sender as not delivered.
+The resume fold nevertheless treated working state alone as unfinished accepted work.
+The fold now tracks the current delivery and requires its status to remain accepted before carrying on working state.
+The regression keeps an older finished delivery accepted to prove that it cannot substitute for the current delivery.
+The lead can resend the returned work after resume without an extra carry-on.
+
 ## 1125. The live merge review discarded fresh status evidence.
 
 State: fixed on 2026-11-16. This is the same fault as issue 1041.

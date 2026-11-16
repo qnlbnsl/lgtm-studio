@@ -33,12 +33,22 @@ export const resume = ({ runtime, snapshot, actor }: Input, agent: Agent, payloa
     const events: Array<Event> = [{ _tag: "StateChanged", agentId: agent.agentId, state: { _tag: "starting" } }];
     const thread = snapshot.threads[agent.agentId] ?? [];
     let state: LifecycleState = { _tag: "starting" };
+    let currentDelivery: string | undefined;
     let turnEnd = 0, crashedMidTurn = false, capacityHeld = false;
     for (const row of thread) {
+      // Opening the replacement session resolves the prior interruption.
+      // An owner stop also ends that reload continuation. Failed setup does
+      // neither, so a crash during another setup must retain the value.
+      if (row.event._tag === "SessionOpened" || row.event._tag === "AgentStopped") {
+        crashedMidTurn = false;
+        currentDelivery = undefined;
+      }
+      if (row.event._tag === "DeliverySent") currentDelivery = row.event.deliveryId;
       // Reload must carry accepted work through a pause or capacity hold.
       // A second crash during setup preserves the earlier interruption.
       if (row.event._tag === "AgentCrashed" && state._tag !== "starting") {
-        crashedMidTurn = state._tag === "working" || state._tag === "paused" && state.midTurn || capacityHeld;
+        const accepted = currentDelivery !== undefined && snapshot.deliveries[currentDelivery]?.status === "accepted";
+        crashedMidTurn = state._tag === "working" && accepted || state._tag === "paused" && state.midTurn || capacityHeld;
       }
       if (row.event._tag === "DeliveryHeld") capacityHeld = snapshot.deliveries[row.event.deliveryId]?.status === "accepted";
       if (row.event._tag === "DeliveryReleased" || row.event._tag === "AgentStopped" || row.event._tag === "AgentCrashed") capacityHeld = false;
