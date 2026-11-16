@@ -148,3 +148,18 @@ it('ending the session cancels a sent read without changing an admitted owner wr
   expect(await reading).toMatchObject({ cancelledRead: true }); expect(settled).toBe(false)
   written.resolve({ accepted: true }); expect(await writing).toEqual({ accepted: true })
 })
+
+it('renews sent-read cancellation after a refused session check and a pending open resolves', async () => {
+  const h = rig()
+  await vi.waitFor(() => expect(h.attempts()).toBe(1))
+  h.expire(); h.c.reconnect()
+  await vi.waitFor(() => expect(h.state.session?.status).toBe('out'))
+  await expect(h.c.request('client.web.settings', {})).rejects.toMatchObject({ cancelledRead: true })
+  h.opening.resolve(h.client)
+  await vi.waitFor(() => expect(h.state.conn?.status).toBe('live'))
+  const delivered = deferred<object>()
+  ;(h.client as any)['client.web.settings'] = () => Effect.promise(() => delivered.promise)
+  const result = h.c.request('client.web.settings', {}).then(value => ({ value }), error => ({ error }))
+  await Promise.resolve(); delivered.resolve({ terminalEnabled: true })
+  expect(await result).toEqual({ value: { terminalEnabled: true } })
+})

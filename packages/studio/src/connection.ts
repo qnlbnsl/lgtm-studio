@@ -142,7 +142,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
   const setReadState = (state: typeof readState) => {
     readState = state
     if (state === 'ended') sessionReads.abort()
-    else if (state === 'connecting' && sessionReads.signal.aborted) sessionReads = new AbortController()
+    else if (sessionReads.signal.aborted) sessionReads = new AbortController()
     for (const wake of [...readWaiters]) wake()
   }
   const readReady = (signal?: AbortSignal): Promise<void> => new Promise((resolve, reject) => {

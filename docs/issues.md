@@ -12150,7 +12150,7 @@ The lifecycle test covers an opened and then refused review.
 ## 696. A service-page read can show a connection notice during reload.
 
 Found: 2026-11-13, while inspecting the live Notifications screenshot.
-State: fixed in s18-smallfix. The shared website connection waits for connection attempts before sending reads and cancels waiting reads when the page or session ends. Real failures still show the existing sentence.
+State: fixed in s18-smallfix. The shared website connection waits for connection attempts before sending reads and cancels waiting reads on session loss, connection close or the caller’s signal. Real failures still show the existing sentence.
 
 The live page can briefly show "The service is not connected" after a reload.
 The settings then load and the controls work.
@@ -13894,7 +13894,7 @@ A strip under the title names each harness with its state and jumps to its card.
 ## 848. A reload of a live page briefly says "The service is not connected."
 
 Found: 2026-11-14, while checking the new "Harnesses" layout.
-State: fixed in s18-smallfix. The shared website connection waits for connection attempts before sending reads and cancels waiting reads when the page or session ends. Real failures still show the existing sentence.
+State: fixed in s18-smallfix. The shared website connection waits for connection attempts before sending reads and cancels waiting reads on session loss, connection close or the caller’s signal. Real failures still show the existing sentence.
 
 Right after a reload of the "Harnesses" page, a notice says "The service is not connected." and the model rows say "Reading the models."
 Both clear within a few seconds, and the connection mark says "Live" throughout.
@@ -17175,4 +17175,22 @@ All other spawn and fork environments are passed through unchanged.
 Exact environment regressions cover both functions with and without LGTM_SOCKET.
 The allow-list and recorder test remain unchanged.
 The identified entry paths are derived from the preload’s module filename so that the same setup works in Node and browser test environments.
+
+## s18-33. A pending connection could resume with an aborted session read controller.
+
+State: fixed in s18-smallfix round 5.
+
+A refused session check ended the read state while an earlier connection open was still pending.
+When that open completed, the state became live without passing through connecting again.
+The session read controller stayed aborted and rejected asynchronous reads immediately.
+The controller now renews whenever the read state leaves ended.
+A regression refuses the session check, completes the pending open and receives a held asynchronous read.
+
+## s18-34. Two issue state lines still described navigation cancellation.
+
+State: fixed in s18-smallfix round 5.
+
+The state lines of issues 696 and 848 still referred to the removed page lifetime.
+They now name session loss, connection close and the caller’s signal as the cancellation causes.
+Their State check lines remain unchanged.
 
