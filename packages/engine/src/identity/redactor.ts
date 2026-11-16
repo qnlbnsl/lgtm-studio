@@ -51,7 +51,18 @@ const addForms = (secret: string, exact: Set<string>, hex: Set<string>, percent:
   if (secret.length === 0) return;
   const bytes = Buffer.from(secret, "utf8");
   exact.add(secret);
-  exact.add(JSON.stringify(secret).slice(1, -1));
+  const json = JSON.stringify(secret).slice(1, -1);
+  const base64 = bytes.toString("base64");
+  exact.add(json);
+  // Bounded two-step set (issue 232): JSON(JSON(secret)), base64(JSON(secret)),
+  // JSON(base64(secret)), URL(base64(secret)), and base64(base64(secret)).
+  // JSON leaves base64 unchanged. Do not recursively compose forms or add
+  // partial runs for these forms; the eight-character partial gate stays.
+  exact.add(JSON.stringify(json).slice(1, -1));
+  exact.add(Buffer.from(json, "utf8").toString("base64"));
+  exact.add(JSON.stringify(base64).slice(1, -1));
+  percent.add(encodeURIComponent(base64).replace(/%[0-9A-F]{2}/g, (escape) => escape.toLowerCase()));
+  exact.add(Buffer.from(base64, "utf8").toString("base64"));
   exact.add(bytes.toString("base64"));
   exact.add(bytes.toString("base64url"));
   for (const alignment of [0, 1, 2]) {

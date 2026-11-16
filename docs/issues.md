@@ -3837,7 +3837,7 @@ The issue 242 round-7 scope leaves this shared stop-state path unchanged.
 
 Found: 2026-11-02, by the security review of the issue 223 fix (commit
 b88b876, finding F1).
-State: open, for the owner's hostile pass.
+State: fixed in s19-secrets with five bounded two-step forms and whole and streamed regressions.
 
 What happens: the redactor matches a fixed list of forms of each secret,
 built by `addForms` in `packages/engine/src/identity/redactor.ts`, line 49.

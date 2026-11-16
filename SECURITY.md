@@ -141,6 +141,11 @@ These rules apply to every change. A change that breaks one is a security bug.
    Explicit secrets from `secrets.json`, resolved `secret:` variables,
    harness login files, the web password, and owner and agent credentials stay
    registered at any length.
+   Registered values are matched raw, JSON escaped, in base64 and base64url,
+   in partial base64 runs of at least eight characters, URL encoded, and in hexadecimal.
+   The bounded two-step forms are double JSON escaping, base64 of the JSON-escaped value,
+   JSON escaping of base64, URL encoding of base64, and base64 of base64.
+   Encodings are not composed recursively.
    A value inferred only from an inherited environment variable whose name
    matches `KEY`, `TOKEN`, `SECRET` or `PASSWORD` is registered only at eight
    or more characters when its trimmed text is nonempty, is neither `true`
