@@ -1,0 +1,69 @@
+// The only policy that chooses an automatic Git read. It has no clock or I/O.
+export const automaticGapMs = 2_500
+export const fallbackMs = 60_000
+export const maximumAutomaticRequests = 5
+export type GitPhase = "idle" | "due" | "reading" | "backing off"
+export interface GitRefreshRecord {
+  identity: string
+  phase: GitPhase
+  summaryDirty: number
+  reviewDirty: number
+  epoch: number
+  failures: number
+  nextAttempt: number
+  lastSuccess: number | null
+  lastError: string | null
+  lastToast: number | null
+}
+export interface GitRefreshController {
+  records: Map<string, GitRefreshRecord>
+  selected?: string
+  lastStart: number | null
+  reading: string | null
+  enabled: boolean
+  ownerBusy: boolean
+}
+export function createGitController(lastStart: number | null = null): GitRefreshController {
+  return { records: new Map(), lastStart, reading: null, enabled: true, ownerBusy: false }
+}
+export function gitRefreshRecord(identity: string, now: number, epoch = 0): GitRefreshRecord {
+  return { identity, phase: "due", summaryDirty: 1, reviewDirty: 1, epoch, failures: 0,
+    nextAttempt: now, lastSuccess: null, lastError: null, lastToast: null }
+}
+export function dirtyGitRecord(record: GitRefreshRecord, group: "summary" | "review", now: number): void {
+  if (group === "summary") record.summaryDirty++
+  else record.reviewDirty++
+  if (record.phase === "idle") { record.phase = "due"; record.nextAttempt = Math.min(record.nextAttempt, now + 100) }
+}
+export function forceGitRecord(record: GitRefreshRecord, now: number): void {
+  record.epoch++
+  record.summaryDirty++
+  record.reviewDirty++
+  record.failures = 0
+  record.nextAttempt = now
+  record.phase = "due"
+}
+export function finishGitRecord(record: GitRefreshRecord, now: number, error: string | null): void {
+  record.lastError = error
+  if (error !== null) {
+    record.failures++
+    record.phase = "backing off"
+    record.nextAttempt = now + Math.min(1_000 * 2 ** Math.min(record.failures - 1, 6), fallbackMs)
+  } else {
+    record.failures = 0
+    record.lastSuccess = now
+    record.phase = record.summaryDirty || record.reviewDirty ? "due" : "idle"
+    record.nextAttempt = now + (record.phase === "idle" ? fallbackMs : 100)
+  }
+}
+export function nextAutomaticRead(now: number, controller: GitRefreshController): { id: string; at: number } | undefined {
+  if (!controller.enabled || controller.ownerBusy || controller.reading !== null) return undefined
+  let choice: { id: string; due: number } | undefined
+  for (const [id, record] of controller.records) {
+    if (record.phase === "reading") continue
+    const due = record.phase === "idle" ? (record.lastSuccess ?? record.nextAttempt) + fallbackMs : record.nextAttempt
+    if (!choice || due < choice.due || due === choice.due && id === controller.selected) choice = { id, due }
+  }
+  if (!choice) return undefined
+  return { id: choice.id, at: Math.max(now, choice.due, controller.lastStart === null ? now : controller.lastStart + automaticGapMs) }
+}
