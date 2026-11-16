@@ -9,9 +9,8 @@ export const canReceiveAnswer = (snapshot: Snapshot, agentId: string): boolean =
   return agent !== undefined && !deletedAgent(snapshot, agentId) && commandOutcome(agent.state._tag, "prompt") !== "refused";
 };
 
-export const offerQuestionAlert = (snapshot: Snapshot, row: { readonly kind: string; readonly agentId?: string; readonly subject?: { readonly _tag: string; readonly id?: string } }): boolean => {
-  if (row.kind !== "question") return true;
+export const offerQuestionAlert = (snapshot: Snapshot, row: { readonly kind: string; readonly status: string; readonly subject?: { readonly _tag: string; readonly id?: string } }): boolean => {
+  if (row.kind !== "question" || row.status !== "open") return true;
   const question = row.subject?._tag === "question" ? snapshot.questions[row.subject.id!] : undefined;
-  const agentId = question?.agentId ?? row.agentId;
-  return agentId !== undefined && canReceiveAnswer(snapshot, agentId);
+  return question?.status !== "open" || canReceiveAnswer(snapshot, question.agentId);
 };

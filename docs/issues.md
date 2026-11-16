@@ -16865,3 +16865,12 @@ State: fixed in s18-smallfix.
 The connection could become live and resolve a waiting read just before navigation cancelled its page.
 The request continuation now checks cancellation again before dispatch.
 A regression test changes the page during the live notification and verifies that no read is sent.
+
+## s18-6. Question availability hid notification history.
+
+State: fixed in s18-smallfix round 2.
+
+The notification filter hid every question alert after its asker stopped.
+It now hides an alert only while both the alert and its question remain open and the asker cannot receive an answer.
+Cleared alerts and alerts of answered questions remain in the notification history.
+Three regression cases cover these combinations after the asker stops.

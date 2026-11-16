@@ -53,3 +53,14 @@ it('offers the same still-open question again when its asker resumes', async () 
   expect((yield* snapshotFor()).questions.map((r: any) => r.id)).toEqual(['q1']);
   expect((yield* read('client.requests', { after: 0, limit: 200 })).items).toEqual([expect.objectContaining({ id: 'q1', canAnswer: true })]);
 }), registerRebuildCheck()));
+
+for (const history of ['cleared', 'answered', 'cleared and answered'] as const) it(`retains a ${history} question alert after its asker stops`, async () => run(Effect.gen(function* () {
+  yield* seedAgent({ id: 'agent-a', state: 'working' });
+  yield* appendSetup([questionFor('q1'), eventOf({ _tag: 'client.AlertRaised', alertId: 'q-alert', alertKey: 'question:q1', kind: 'question', title: 'A question needs your answer', sourceSequence: 1, agentId: 'agent-a', subject: { _tag: 'question', id: 'q1' } })]);
+  if (history !== 'cleared') success(yield* call(ownerCredential, 'answer', { kind: 'question', id: 'q1', text: 'Use trunk.' }));
+  if (history !== 'answered') yield* appendSetup([eventOf({ _tag: 'client.AlertCleared', alertId: 'q-alert', cause: 'dismissed' })]);
+  yield* appendSetup([eventOf({ _tag: 'AgentStopped', agentId: 'agent-a' })]);
+  expect((yield* read('client.alerts.list', { after: 0, limit: 200 })).items).toEqual([
+    expect.objectContaining({ alertId: 'q-alert', status: history === 'answered' ? 'open' : 'cleared' }),
+  ]);
+}), registerRebuildCheck()));
