@@ -42,6 +42,8 @@ export async function exerciseStudioAlertLinks(page: Page) {
         const nestedId = success(yield* call(project.leadCredential, 'board.post', { channelId, text: 'Nested reply subject.', to: [{ _tag: 'owner' }], reply: 'any', replyTo: replyId })).postId
         const foreign = yield* decisionProject('foreign-alert')
         const foreignPostId = success(yield* call(foreign.leadCredential, 'board.post', { channelId: foreign.team.channelId, text: 'Subject in another project.', to: [{ _tag: 'owner' }], reply: 'any' })).postId
+        const groupChannelId = success(yield* call(ownerCredential, 'board.open', { name: 'group-only', group: 'alert-group', anchorAgentId: project.workerId })).channelId
+        const groupPostId = success(yield* call(project.workerCredential, 'board.post', { channelId: groupChannelId, text: 'Subject from resolved group members.', to: [{ _tag: 'owner' }], reply: 'any' })).postId
         const questionId = success(yield* call(project.leadCredential, 'ask', { title: 'Read this question', text: 'Choose the next task.', proposedAnswer: 'Continue' })).questionId
         yield* appendSetup([
           eventOf({ _tag: 'client.WebSettingsChanged', settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: true, publicAddress: 'https://alerts.example' } }),
@@ -54,8 +56,9 @@ export async function exerciseStudioAlertLinks(page: Page) {
           })),
         ])
         yield* appendSetup(['nested', 'foreign'].map((key) => eventOf({ _tag: 'client.AlertRaised', alertId: `link-${key}`, alertKey: `link:${key}`, kind: 'board.post', agentId: project.leadId, title: alertTitles['board.post'], sourceSequence: 1, subject: { _tag: 'piece', namespace: 'board', id: key === 'nested' ? nestedId : foreignPostId } })))
+        yield* appendSetup([eventOf({ _tag: 'client.AlertRaised', alertId: 'link-group', alertKey: 'link:group', kind: 'board.post', agentId: project.workerId, title: alertTitles['board.post'], sourceSequence: 1, subject: { _tag: 'piece', namespace: 'board', id: groupPostId } })])
         const snapshot = yield* (yield* Views).snapshot
-        const payloads = [...alertKindNames, 'nested', 'foreign'].map((kind) => alertPayload(clientView(snapshot.client).alerts[`link-${kind}`]!, snapshot))
+        const payloads = [...alertKindNames, 'nested', 'foreign', 'group'].map((kind) => alertPayload(clientView(snapshot.client).alerts[`link-${kind}`]!, snapshot))
         expect(payloads.every((p) => p.link !== undefined)).toBe(true)
         yield* serve({ password: Redacted.make(password), staticRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
@@ -73,8 +76,9 @@ export async function exerciseStudioAlertLinks(page: Page) {
             expect(payload.link).not.toContain('Choose the next task.')
             await page.goto(origin + url.hash)
             if (payload.kind.startsWith('board.')) {
-              const subject = payload.alertId === 'link-nested' ? 'Nested reply subject.' : payload.alertId === 'link-foreign' ? 'Subject in another project.' : 'Read and answer this post.'
+              const subject = payload.alertId === 'link-group' ? 'Subject from resolved group members.' : payload.alertId === 'link-nested' ? 'Nested reply subject.' : payload.alertId === 'link-foreign' ? 'Subject in another project.' : 'Read and answer this post.'
               await expect(page.getByRole('complementary', { name: 'Thread', exact: true })).toContainText(subject)
+              if (payload.alertId === 'link-group') expect(url.hash).toBe(`#/p/${project.projectId}/messages/${groupChannelId}?t=${groupPostId}`)
               if (payload.alertId === 'link-foreign') expect(url.hash).toContain(`/p/${foreign.projectId}/messages/`)
               if (payload.alertId === 'link-nested') expect(url.hash).toContain(`?t=${replyId}`)
             } else {

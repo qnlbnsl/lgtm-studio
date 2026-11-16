@@ -395,7 +395,7 @@ const LANES = [
 export function situation(s, a, now) {
   const reqs = openRequests(s, { agent: a.id });
   const quiet = now - (a.lastOutputAt || now);
-  if (a.crashed) return { lane: 'needs', why: a.activity || 'Crashed', tone: 'error' };
+  if (a.crashed) return { lane: 'needs', why: a.failure?.reason || 'Failed to start', tone: 'error' };
   if (a.state === 'failed') return { lane: 'needs', why: a.failure?.reason || 'Failed to start', tone: 'error' };
   if (reqs.length) return { lane: 'needs', why: `${KIND_LABEL[reqs[0].kind]}: ${reqs[0].title}`, tone: 'warn', req: reqs[0] };
   if (a.state === 'stopped') return { lane: 'idle', why: a.activity || 'Stopped' };

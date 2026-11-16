@@ -2,9 +2,9 @@
 // together. A changed source must be reviewed before the live build succeeds.
 export function recoverySource(path: string, source: string): string {
   if (path === 'js/screens/messages.js') {
-    const marker = "if (a.crashed) return { lane: 'needs', why: a.activity || 'Crashed', tone: 'error' };"
+    const marker = "if (a.crashed) return { lane: 'needs', why: a.failure?.reason || 'Failed to start', tone: 'error' };"
     if (source.split(marker).length !== 2) throw new Error(`Recovery lane no longer matches ${path}`)
-    return source.replace(marker, "if (a.crashed === true) return { lane: 'needs', why: a.activity || 'Crashed', tone: 'error' };")
+    return source.replace(marker, "if (a.crashed === true) return { lane: 'needs', why: a.failure?.reason || 'Failed to start', tone: 'error' };")
   }
   if (path === 'js/screens/workflow.js') {
     const waiting = "a.crashed || a.state === 'waiting' || a.state === 'failed'"

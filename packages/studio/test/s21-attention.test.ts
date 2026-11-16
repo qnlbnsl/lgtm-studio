@@ -21,7 +21,7 @@ for (const file of ['app.js', 'ui.js', 'actions.js', 'data.js', 'screens/home.js
   const queries = [...source.matchAll(/(?:openRequests|answerableRequests)\((?:s|st)(?:, \{[^}]*\})?\)/g)]
   for (const [index, match] of queries.entries()) {
     const line = source.slice(0, match.index).split('\n').length
-    const expected = file === 'app.js' || file === 'screens/home.js' || file === 'data.js' && index === 3 ? 1 : 0
+    const expected = file === 'app.js' || file === 'screens/home.js' || file === 'screens/workflow.js' || file === 'data.js' && index === 3 ? 1 : 0
     it(`s21 request audience: ${file}:${line} query ${index + 1} includes ${expected} lead-held permissions`, () => {
       const query = new Function('s', 'st', 'a', 'p', 'project', 't', 'agentId', 'openRequests', 'answerableRequests', 'r', `return ${match[0]}`)
       expect(query(state, state, worker, project, project, team, 'worker', data.openRequests, data.answerableRequests, state.requests[0])).toHaveLength(expected)
@@ -37,6 +37,11 @@ it('s21 lead status retains its master waiting-request count', () => {
 it('s21 crash stays in the Messages needs lane', async () => {
   const { situation } = await import('../../../design/mock/js/screens/messages.js' as string)
   expect(situation(state, { ...worker, crashed: true, state: 'stopped', activity: 'Crashed' }, Date.now())).toMatchObject({ lane: 'needs', tone: 'error' })
+})
+for (const reason of ['The adapter failed to launch.', null]) it(`s21 Messages crash card retains the master reason: ${reason}`, async () => {
+  const { situation } = await import('../../../design/mock/js/screens/messages.js' as string)
+  expect(situation(state, { ...worker, crashed: true, state: 'stopped', activity: 'Crashed', failure: reason ? { reason } : null }, Date.now()))
+    .toMatchObject({ lane: 'needs', tone: 'error', why: reason || 'Failed to start' })
 })
 it('s21 crash stays in the Workflow Waiting group', async () => {
   const { agentGroups } = await import('../../../design/mock/js/screens/workflow.js' as string)

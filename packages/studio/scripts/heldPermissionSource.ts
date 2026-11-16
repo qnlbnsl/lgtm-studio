@@ -1,7 +1,7 @@
 // Require both existing request presenters to retain the owner's permission
 // answer path when the standalone mock is copied into the live build.
 export function heldPermissionSource(path: string, source: string): string {
-  if (path === 'js/app.js' || path === 'js/screens/home.js') {
+  if (path === 'js/app.js' || path === 'js/screens/home.js' || path === 'js/screens/workflow.js') {
     const expected = path === 'js/app.js' ? 6 : 1
     if (source.split('answerableRequests(').length !== expected + 1) throw new Error(`Owner request audience no longer matches ${path}`)
     return source

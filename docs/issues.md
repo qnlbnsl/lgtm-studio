@@ -17330,7 +17330,8 @@ An accepted delivery could outlive its turn's error without a TurnEnded event.
 Resume treated that old acceptance as unfinished work after a later crash.
 Resume now folds the thread with the views' lifecycle reducer.
 It checks the lifecycle state immediately before the crash.
-The same fold provides the turn boundary used by fresh replay.
+Fresh replay uses TurnEnded alone as its boundary, as corrected in round 3b.
+It also requires each replayed delivery to remain accepted.
 A crash carry-on now says that the agent crashed instead of saying that the engine restarted.
 
 ## 1148. Crash mapping and a shared request query changed unrelated attention views
@@ -17412,15 +17413,20 @@ This unit does not add destinations for those subjects.
 ## 1155. The older phone-alert journeys expect routes for unassigned agents
 
 Found: 2026-11-16, while running the round 2 browser journeys.
-State: open, as test coverage that still needs migration from the retired website.
+State: fixed on 2026-11-16, with website coverage added before changing the retired journeys.
 
 The board-alert and phone-flow journeys build the retired website and start agents outside every project.
 They expect notifications to contain that page's old thread address.
 The engine now emits destinations for the website served by Studio.
 That website has no chat for an unassigned agent, as issue 1146 records.
-Both old journeys therefore fail on their missing-link assertions.
-The current website's notification journey covers board subject links, including nested replies and another project's channel.
-The old assertions were not weakened or removed.
+The website's notification journey covers board subject links, including nested replies and another project's channel.
+The studio-board-alert journey now follows an actual carrier link on a 360-pixel phone viewport.
+It reads the subject, posts the owner's reply, and checks one durable wake and delivery to the real child process after two flushes.
+The studio-phone-flow journey follows a project agent's permission alert on the same viewport.
+It checks secure login, one permission answer, released output, and readback after reload without another answer.
+Both retired journeys now navigate directly to their existing thread screens.
+Only their assertions and navigation that depended on the omitted carrier link were replaced.
+Every other old assertion remains, including the explicit Read post gate that the website does not have.
 
 ## 1156. The email browser fixture assumes the repository root as its working directory
 
@@ -17431,6 +17437,80 @@ The email notification fixture copies design/mock through a working-directory-re
 Running the assigned journey from packages/web looks for packages/web/design/mock and fails before opening the page.
 The failure is in the fixture's source-path lookup.
 This unit leaves that unrelated fixture unchanged.
+
+## 1157. Crash recovery forgets accepted work during a pause, hold, or resume setup
+
+Found: 2026-11-16, while reproducing the round 3b recovery review.
+State: fixed in unit s21-recover, round 3b.
+
+A usage pause retains accepted work with its mid-turn flag.
+A capacity hold retains accepted work while the lifecycle is idle.
+Resume previously treated neither state as an unfinished turn after a crash.
+A second crash during session setup also erased the first crash's unfinished-turn evidence.
+The thread fold now retains all three cases for a reload carry-on.
+A capacity hold before acceptance still receives no carry-on after its queued work is withdrawn.
+
+## 1158. A fresh resume drops accepted work after an owner stop or capacity hold
+
+Found: 2026-11-16, while reproducing the round 3b fresh-session review.
+State: fixed in unit s21-recover, round 3b.
+
+The round 2 replay boundary included a stop and every transition from working to idle.
+Those events can cut a turn without completing its accepted delivery.
+Fresh replay now uses TurnEnded alone as its historical boundary.
+An accepted delivery after that boundary is requeued with its original identifier.
+A returned delivery from an errored turn is still excluded by its current status.
+
+## 1159. A group-only board channel loses its notification destination
+
+Found: 2026-11-16, while reproducing the round 3b channel-placement review.
+State: fixed in unit s21-recover, round 3b.
+
+The notification mapper read the channel's stored members.
+A group channel resolves its members through the board instead of storing that list.
+The website receives those resolved members through the board channels command.
+Notification placement now uses that same member resolver.
+A channel anchored by a project worker therefore reaches that project's Messages thread without a team or project-lead anchor.
+
+## 1160. The Workflow waiting count excludes a permission listed on Home
+
+Found: 2026-11-16, while reproducing the round 3b request-count review.
+State: fixed in unit s21-recover, round 3b.
+
+The Workflow overview links its waiting count to Home.
+Its query excluded a permission that the owner could answer while a lead held it.
+The overview now uses Home's answerable audience.
+The website journey follows that count to the matching Home row before answering it.
+
+## 1161. The thread's requests-below indicator excludes an answerable held card
+
+Found: 2026-11-16, while reviewing the round 3b visible-change list.
+State: open for the owner's presentation decision.
+
+The thread can display a permission held by its lead with owner answer controls.
+Its requests-below indicator still uses the earlier audience that excludes held requests.
+The indicator can therefore omit a card that the owner can answer below the current scroll position.
+This round records the difference without changing that indicator.
+
+## 1162. A collapsed team's request count differs from its expanded agent rows
+
+Found: 2026-11-16, while reviewing the round 3b visible-change list.
+State: open for the owner's presentation decision.
+
+The collapsed sidebar team count includes an answerable permission held by a lead.
+The expanded agent rows keep their earlier status audience, which excludes that held permission.
+The count can therefore show one request while the expanded rows show no matching request status.
+This round records the difference without changing the expanded status words.
+
+## 1163. A crashed Messages card replaced the earlier failure explanation
+
+Found: 2026-11-16, while reproducing the round 3b visible-change review.
+State: fixed in unit s21-recover, round 3b.
+
+The crash lane used the activity label Crashed as its explanation.
+The earlier Messages card used the stored failure reason or Failed to start.
+That earlier explanation is restored on this card.
+The card remains in Needs you, and the existing chat recovery controls remain available.
 
 ## 1125. The live merge review discarded fresh status evidence.
 

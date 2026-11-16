@@ -6,6 +6,7 @@ import type { AlertSender, AlertPayload, AlertDestination } from "./AlertSender.
 import { clientView, type AlertRow, type ClientView } from "./view.ts";
 import { own, projectView } from '../../project/view.ts';
 import { boardView } from '../../board/wake.ts';
+import { channelMembers } from '../../board/access.ts';
 
 const clean = (value: string) => value.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, "");
 const cut = (value: string, maximum: number): string => {
@@ -23,10 +24,11 @@ const threadLink = (row: AlertRow, web: ClientView["webSettings"], snapshot: Sna
     const channel = post === undefined ? undefined : own(board.channels, post.channelId);
     if (channel === undefined) return undefined;
     // Match the website's channel placement: team, then project anchor,
-    // then the projects represented by explicit agent members.
+    // then the projects represented by the resolved members returned by
+    // board.channels, including group members and their anchor.
     const team = Object.values(projects.teams).find((team) => team.channelId === channel.channelId);
     const anchor = Object.values(projects.projects).find((project) => project.leadAgentId === channel.anchorAgentId)?.projectId;
-    const members = channel.members.flatMap((member) => {
+    const members = channelMembers(snapshot, channel.channelId).flatMap((member) => {
       const id = member._tag === 'agent' ? own(projects.agentProjects, member.agentId) : undefined;
       return id === undefined ? [] : [id];
     });

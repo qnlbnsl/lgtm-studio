@@ -33,14 +33,20 @@ export const resume = ({ runtime, snapshot, actor }: Input, agent: Agent, payloa
     const events: Array<Event> = [{ _tag: "StateChanged", agentId: agent.agentId, state: { _tag: "starting" } }];
     const thread = snapshot.threads[agent.agentId] ?? [];
     let state: LifecycleState = { _tag: "starting" };
-    let turnEnd = 0, crashedMidTurn = false;
+    let turnEnd = 0, crashedMidTurn = false, capacityHeld = false;
     for (const row of thread) {
-      // Use the same lifecycle fold as the views. Errors and waits can end
-      // work with an idle transition without writing TurnEnded.
-      if (row.event._tag === "AgentCrashed") crashedMidTurn = state._tag === "working";
-      const before = state;
+      // Reload must carry accepted work through a pause or capacity hold.
+      // A second crash during setup preserves the earlier interruption.
+      if (row.event._tag === "AgentCrashed" && state._tag !== "starting") {
+        crashedMidTurn = state._tag === "working" || state._tag === "paused" && state.midTurn || capacityHeld;
+      }
+      if (row.event._tag === "DeliveryHeld") capacityHeld = snapshot.deliveries[row.event.deliveryId]?.status === "accepted";
+      if (row.event._tag === "DeliveryReleased" || row.event._tag === "AgentStopped" || row.event._tag === "AgentCrashed") capacityHeld = false;
       state = nextState(state, row.event);
-      if (row.event._tag === "TurnEnded" || row.event._tag === "AgentStopped" || before._tag === "working" && state._tag === "idle") turnEnd = row.sequence;
+      // Fresh sessions replay accepted work since the last actual turn end.
+      // Stop and hold events can cut a turn; returned deliveries stay excluded
+      // by their status below, even if an error did not write TurnEnded.
+      if (row.event._tag === "TurnEnded") turnEnd = row.sequence;
     }
     if (fresh) {
       const accepted = new Set(thread.flatMap((row) => row.sequence > turnEnd && row.event._tag === "DeliveryAccepted"

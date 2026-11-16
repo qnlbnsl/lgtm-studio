@@ -1,16 +1,18 @@
 import { it } from '@effect/vitest';
 import * as Effect from 'effect/Effect';
 import * as Redacted from 'effect/Redacted';
+import type * as SqlClient from 'effect/sql/SqlClient';
+import type { Views } from '../../src/views/Views.ts';
 import { afterEach, expect, vi } from 'vitest';
 import { accept, crash, deliveryRig, notice, send, spawn } from '../support/deliveryRig.ts';
 import { agentRow, appendSetup, call, eventOf, makeRig, ownerCredential, removeRig, success } from '../support/handlerRig.ts';
-import { endTurn, eventually, snapshot } from '../support/routingRig.ts';
+import { deliveryRow, endTurn, eventually, snapshot } from '../support/routingRig.ts';
 import { registerRebuildCheck } from '../support/rebuildCheck.ts';
 import { RunnerRejected } from '../../src/runner/Runner.ts';
 import { incarnationOf, sessionFor } from '../support/fakeRunner.ts';
 
 afterEach(() => vi.unstubAllEnvs());
-for (const ending of ['finished', 'errored', 'cancelled', 'stopped', 'crashed mid-turn', 'crashed idle', 'crashed after an errored turn'] as const) {
+for (const ending of ['finished', 'errored', 'cancelled', 'stopped', 'crashed mid-turn', 'crashed idle', 'crashed after an errored turn', 'crashed paused mid-turn', 'crashed capacity-held', 'crashed capacity-held before acceptance', 'crashed during resume starting'] as const) {
   it.live(`s21 turn boundary: ${ending}`, () => {
     const rig = makeRig();
     vi.stubEnv('HOME', rig.home); vi.stubEnv('LGTM_HOME', rig.stateFolder);
@@ -19,7 +21,16 @@ for (const ending of ['finished', 'errored', 'cancelled', 'stopped', 'crashed mi
       const agent = yield* spawn(rig, runner);
       if (ending !== 'crashed idle') {
         const id = yield* send(runner, agent, 'Do this task once.');
-        yield* accept(runner, agent, id);
+        if (ending !== 'crashed capacity-held before acceptance') yield* accept(runner, agent, id);
+        if (ending === 'crashed paused mid-turn') {
+          yield* notice(runner, agent, { _tag: 'promptReply', deliveryId: id, outcome: { _tag: 'pause', reason: 'out-of-usage', error: 'Usage limit.' } });
+          expect((yield* eventually(agentRow(agent.agentId), (a) => a?.state._tag === 'paused'))?.state).toMatchObject({ _tag: 'paused', midTurn: true });
+        }
+        if (ending === 'crashed capacity-held' || ending === 'crashed capacity-held before acceptance') {
+          yield* notice(runner, agent, { _tag: 'promptReply', deliveryId: id, outcome: { _tag: 'capacity', error: 'At capacity.' } });
+          expect((yield* eventually(agentRow(agent.agentId), (a) => a?.capacityHeld === true))?.state._tag).toBe('idle');
+          expect(Object.values((yield* snapshot).deliveries).filter((d) => d.content._tag === 'carry-on' && d.status === 'queued')).toHaveLength(ending === 'crashed capacity-held' ? 1 : 0);
+        }
         if (ending === 'finished') yield* endTurn(runner, agent);
         if (ending === 'cancelled') {
           success(yield* call(ownerCredential, 'cancel-reply', { agentId: agent.agentId }));
@@ -35,16 +46,61 @@ for (const ending of ['finished', 'errored', 'cancelled', 'stopped', 'crashed mi
       }
       if (ending === 'stopped') success(yield* call(ownerCredential, 'stop', { agentId: agent.agentId }));
       else yield* crash(runner, agent);
+      if (ending === 'crashed during resume starting') {
+        const services = yield* Effect.context<Views | SqlClient.SqlClient>();
+        runner.script('load', (input) => Effect.gen(function* () {
+          expect((yield* agentRow(agent.agentId))?.state._tag).toBe('starting');
+          yield* crash(runner, { ...agent, token: Redacted.value(input.token) });
+          return sessionFor(input.agentId);
+        }).pipe(Effect.provide(services)));
+        success(yield* call(ownerCredential, 'resume', { agentId: agent.agentId }));
+        expect((yield* agentRow(agent.agentId))?.state._tag).toBe('crashed');
+        runner.script('load', ({ agentId }) => Effect.succeed(sessionFor(agentId)));
+      }
+      if (ending === 'crashed paused mid-turn') {
+        const accountId = (yield* agentRow(agent.agentId))!.account;
+        yield* appendSetup([eventOf({ _tag: 'AccountAvailable', accountId, cause: 'owner cleared' })]);
+      }
       const mark = runner.callsOf('prompt').length;
       success(yield* call(ownerCredential, 'resume', { agentId: agent.agentId }));
       const prompts = runner.callsOf('prompt').slice(mark);
-      expect(prompts).toHaveLength(ending === 'crashed mid-turn' ? 1 : 0);
+      const unfinished = ['crashed mid-turn', 'crashed paused mid-turn', 'crashed capacity-held', 'crashed during resume starting'].includes(ending);
+      expect(prompts).toHaveLength(unfinished ? 1 : 0);
       if (prompts.length) {
         expect(prompts[0]!.input.delivery.content).toMatchObject({ _tag: 'carry-on', text: expect.stringContaining('agent crashed') });
         expect(JSON.stringify(prompts[0]!.input.delivery.content)).not.toContain('engine restarted');
       }
-      expect((yield* agentRow(agent.agentId))?.state._tag).toBe(ending === 'crashed mid-turn' ? 'working' : 'idle');
-    })).pipe(Effect.ensuring(Effect.sync(() => removeRig(rig))));
+      expect((yield* agentRow(agent.agentId))?.state._tag).toBe(unfinished ? 'working' : 'idle');
+    }), undefined, { capacityHoldCondition: () => true }).pipe(Effect.ensuring(Effect.sync(() => removeRig(rig))));
+  });
+}
+
+for (const ending of ['stopped mid-turn', 'capacity-held then crashed', 'errored then crashed'] as const) {
+  it.live(`s21 fresh replay boundary: ${ending}`, () => {
+    const rig = makeRig();
+    vi.stubEnv('HOME', rig.home); vi.stubEnv('LGTM_HOME', rig.stateFolder);
+    return deliveryRig(rig, (runner) => Effect.gen(function* () {
+      yield* registerRebuildCheck();
+      const agent = yield* spawn(rig, runner);
+      yield* appendSetup([eventOf({ _tag: 'SessionOpened', agentId: agent.agentId,
+        session: { _tag: 'acp', sessionId: 'cannot-reload' }, protocolVersion: 2, reloadable: false })]);
+      const id = yield* send(runner, agent, 'Finish the accepted delivery.');
+      yield* accept(runner, agent, id);
+      if (ending === 'stopped mid-turn') success(yield* call(ownerCredential, 'stop', { agentId: agent.agentId }));
+      else {
+        yield* notice(runner, agent, { _tag: 'promptReply', deliveryId: id, outcome: ending === 'capacity-held then crashed'
+          ? { _tag: 'capacity', error: 'At capacity.' } : { _tag: 'error', error: 'The turn failed.' } });
+        yield* eventually(agentRow(agent.agentId), (a) => a?.state._tag === 'idle');
+        yield* crash(runner, agent);
+      }
+      expect((yield* deliveryRow(id))?.status).toBe(ending === 'errored then crashed' ? 'returned' : 'accepted');
+      const mark = runner.callsOf('prompt').length;
+      success(yield* call(ownerCredential, 'resume', { agentId: agent.agentId, fresh: true }));
+      const prompts = runner.callsOf('prompt').slice(mark);
+      expect(prompts.map((c) => c.input.delivery.id)).toEqual(ending === 'errored then crashed' ? [] : [id]);
+      if (prompts.length) expect(prompts[0]!.input.delivery.content).toMatchObject({ _tag: 'prompt', text: 'Finish the accepted delivery.' });
+      expect((yield* agentRow(agent.agentId))?.state._tag).toBe(ending === 'errored then crashed' ? 'idle' : 'working');
+    }), undefined, { capacityHoldCondition: () => true }).pipe(Effect.ensuring(Effect.sync(() => removeRig(rig))));
   });
 }
 for (const unfinished of [true, false]) for (const queued of [true, false]) {

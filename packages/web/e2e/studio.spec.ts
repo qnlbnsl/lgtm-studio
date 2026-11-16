@@ -222,6 +222,9 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
 
         yield* appendSetup([eventOf({ _tag: "PermissionRequested", agentId: project.workerId, permissionRequestId: "s21-held-home", holder: { _tag: "agent", agentId: project.leadId }, deliveryId: "s21-held-home-delivery", toolCallId: "s21-home-tool", description: "Answer while the lead holds it", options: [{ id: "s21-once", name: "Run once", kind: "allow_once", level: "ask", persistent: false }, { id: "s21-no", name: "Refuse this check", kind: "reject_once", level: "read-only", persistent: false }], settingsWrite: false, toolKind: "execute", toolInput: { command: "pnpm test held" } })])
         yield* Effect.promise(async () => {
+          await page.goto(`http://127.0.0.1:${port}/#/p/${project.projectId}/workflow`)
+          await page.getByRole('link', { name: '1 request waiting', exact: true }).click()
+          await expect(page).toHaveURL(`http://127.0.0.1:${port}/#/home`)
           await page.goto(`http://127.0.0.1:${port}/#/home`)
           await expect(page.getByRole('button', { name: '1 requests need you', exact: true })).toBeVisible()
           await expect(page.locator('.sidebar .nav-item[href="#/home"]')).toContainText('1')
@@ -246,6 +249,7 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
           yield* Effect.promise(async () => {
             await page.goto(`http://127.0.0.1:${port}/#/p/${project.projectId}/agents`)
             await expect(page.getByRole('region', { name: 'Needs you', exact: true })).toContainText('name-one-worker')
+            await expect(page.getByRole('region', { name: 'Needs you', exact: true })).toContainText('Failed to start')
             await page.goto(`http://127.0.0.1:${port}/#/p/${project.projectId}/workflow`)
             await expect(page.locator('.wf-group.waiting')).toContainText('name-one-worker')
             await page.goto(`http://127.0.0.1:${port}/#/p/${project.projectId}/chat/${project.workerId}`)
