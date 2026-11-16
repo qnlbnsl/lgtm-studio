@@ -502,6 +502,8 @@ async function loadGitDetail(id, selectedCommit, automatic = false, force = fals
         if (conflicts && f.resolved || !conflicts && f.conflict || !automatic && !force && f.loaded && !f.diffError && !f.conflictError) return;
         try {
           const body = await ask(conflicts ? 'project.conflict' : 'project.diff', { ...scope(w), path: f.path, ...(!conflicts ? { staged: f.staged } : {}) }); if (!body) return;
+          const currentFile = (conflicts ? wt(id).merge?.files : wt(id).files)?.find((x) => x.id === f.id);
+          if (!currentFile || (conflicts ? currentFile.resolved !== f.resolved : currentFile.path !== f.path || currentFile.staged !== f.staged || currentFile.status !== f.status || currentFile.oldPath !== f.oldPath)) return;
           if (conflicts) {
             const old = wt(id).merge?.files.find((x) => x.id === f.id); if (!old) return;
             if (old.selection?.fingerprint === body.fingerprint && old.selection.head === body.head) body.choices = old.selection.choices;

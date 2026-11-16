@@ -417,7 +417,7 @@ it("round 4: a real binary conflict keeps the usable text file and aborts throug
 
 it('two hundred paths on both sides publish progressively without a duplicate restart when events arrive', async () => {
   vi.useFakeTimers(); const held = gate(); const bodies: string[] = [];
-  const files = Array.from({ length: 200 }, (_, i) => ({ id: `${i}`, path: `file-${i >> 1}`, staged: !!(i % 2) }));
+  const files = Array.from({ length: 400 }, (_, i) => ({ id: `${i}`, path: `file-${i >> 1}`, staged: !!(i % 2) }));
   const f = fixture(async (tag, payload) => {
     if (tag === 'project.changes') return { result: { items: files } };
     if (tag === 'project.diff') { const key = `${payload.path}:${payload.staged}`; bodies.push(key); if (bodies.length === 2) await held.held; if (payload.path === 'file-7') throw new Error('one file'); return { result: { hunks: [key] } }; }
@@ -434,7 +434,7 @@ it('two hundred paths on both sides publish progressively without a duplicate re
     expect(bodies).toHaveLength(2);
     expect(f.state.worktrees[0].files[0].hunks).toEqual(['file-0:false']);
     held.release(); await vi.advanceTimersByTimeAsync(0);
-    expect(bodies).toHaveLength(200); expect(new Set(bodies).size).toBe(200);
+    expect(bodies).toHaveLength(400); expect(new Set(bodies).size).toBe(400);
     expect(f.state.worktrees[0].files.every((file: any) => file.loaded)).toBe(true);
     expect(f.state.worktrees[0].ready).toBe(true);
     expect(f.state.worktrees[0].files[14].diffError).toBeTruthy();
@@ -624,4 +624,50 @@ it('preparing a review and choosing a preview publish direct replies without a d
     await vi.advanceTimersByTimeAsync(10000);
     expect(f.calls.slice(before).map(c => c.tag)).toEqual(['project.review.prepare', 'project.conflict.choose']);
   } finally { close(); vi.useRealTimers(); }
+});
+
+for (const selection of ['file', 'worktree']) it(`a ${selection} selection while the first summary is held leaves every initial worktree loaded`, async () => {
+  vi.useFakeTimers(); const held = gate(); let states = 0; const bodies: string[] = [];
+  const files = [{ id: 'one', path: 'one', staged: false, status: 'M' }, { id: 'two', path: 'two', staged: false, status: 'M' }];
+  const f = fixture(async (tag, payload) => {
+    if (tag === 'project.git.state') { if (++states === 1) await held.held; return { result: { head: 'head', mergeHead: null } }; }
+    if (tag === 'project.changes') return { result: { items: files } };
+    if (tag === 'project.diff') { bodies.push(payload.path); return { result: { hunks: [payload.path] } }; }
+    return emptyGitReply(tag);
+  });
+  Object.assign(f.state.worktrees[0], { files, head: 'head', mergeHead: null });
+  f.state.gitUi.workspace.tab = 'changes';
+  f.state.worktrees.push({ ...f.state.worktrees[0], id: 'other', branch: 'other', kind: 'team' });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    expect(states).toBe(1);
+    if (selection === 'file') { f.state.gitUi.workspace.file = 'two'; await f.actions.gitDetail('workspace'); expect(bodies[0]).toBe('two'); }
+    else await f.actions.selectGit('other');
+    held.release(); await vi.advanceTimersByTimeAsync(1000);
+    expect(f.state.worktrees.every((w: any) => w.ready)).toBe(true);
+    expect(f.calls.filter(c => c.tag === 'project.git.state').map(c => c.payload.worktreeId)).toContain('other');
+    expect(f.actions.busy('git-read')).toBe(false); expect(f.toasts).toEqual([]);
+  } finally { held.release(); close(); vi.useRealTimers(); }
+});
+
+it('a progressive reply cannot repopulate a file whose identity changed in an automatic summary', async () => {
+  vi.useFakeTimers(); const held = gate(); let changed = false;
+  const f = fixture(async (tag, payload) => {
+    if (tag === 'project.git.state') return { result: { head: 'head', mergeHead: null } };
+    if (tag === 'project.changes') return { result: { items: [{ id: 'one', path: 'one', status: 'M' }, { id: 'two', path: 'two', status: changed ? 'A' : 'M' }] } };
+    if (tag === 'project.diff') { const body = changed ? 'fresh' : 'old'; if (payload.path === 'two' && !changed) await held.held; return { result: { hunks: [body] } }; }
+    return emptyGitReply(tag);
+  });
+  f.state.gitUi.workspace.tab = 'changes'; const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(0); expect(f.state.worktrees[0].files[0].loaded).toBe(true);
+    changed = true; f.actions.observe({ git: { group: 'summary', worktreeIds: ['workspace'] } });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(f.state.worktrees[0].files[1].status).toBe('A');
+    expect(f.state.worktrees[0].files[1].loaded).not.toBe(true);
+    held.release(); await vi.advanceTimersByTimeAsync(0);
+    expect(f.state.worktrees[0].files[1].loaded).not.toBe(true);
+    f.state.gitUi.workspace.file = 'two'; await f.actions.gitDetail('workspace');
+    expect(f.state.worktrees[0].files[1]).toMatchObject({ status: 'A', loaded: true, hunks: ['fresh'] });
+  } finally { held.release(); close(); vi.useRealTimers(); }
 });

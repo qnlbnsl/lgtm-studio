@@ -15731,3 +15731,15 @@ The first controller wiring marked both actions summary-dirty before dispatch.
 That mark caused an extra automatic read after their direct reply.
 Both actions now raise the epoch and retain their request identifier without dirtying the summary.
 A regression sends their own completion patches and checks that no summary read follows.
+
+## s16-5. An older detail can arrive after its file row changes identity.
+
+Found: 2026-11-15, during the final part B coverage review.
+Status: fixed in part B of unit s16-gitrefresh.
+
+Progressive owner detail loading can overlap an automatic summary.
+That summary can change a file row's status without changing the worktree head.
+A reply for the older row must not mark the new row as loaded.
+The detail publisher now checks the current file identity after its reply arrives.
+A regression changes the status while the second body is held.
+It checks that the old body is discarded and an explicit demand loads the fresh body.
