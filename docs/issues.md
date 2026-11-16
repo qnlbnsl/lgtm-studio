@@ -17236,7 +17236,7 @@ Its "reload" step failed with "SocketReadError: An error occurred during Read".
 A second run on the same commit passed that step and gave the known result of 19 of 23.
 The cause of the single failure is not known.
 
-## s20-1. The live merge review discarded fresh status evidence.
+## 1125. The live merge review discarded fresh status evidence.
 
 State: fixed on 2026-11-16. This is the same fault as issue 1041.
 
@@ -17246,7 +17246,7 @@ The dialog uses its existing passing, failed, stale, and missing states.
 A matrix test covers all 25 combinations of stored and fresh evidence.
 The real-engine browser journey reports passing evidence while the dialog is open.
 
-## s20-2. A pressed merge approval could record a different decision from its rendered label.
+## 1126. A pressed merge approval could record a different decision from its rendered label.
 
 State: fixed on 2026-11-16.
 
@@ -17256,7 +17256,7 @@ The button now captures its displayed decision and reviewed heads.
 The engine still checks the reviewed heads when it handles the approval.
 A regression test replaces the stored evidence before pressing the rendered button.
 
-## s20-3. Service settings displayed controls without execution paths.
+## 1127. Service settings displayed controls without execution paths.
 
 State: fixed on 2026-11-16. This is the website part of issue 802.
 
@@ -17268,7 +17268,7 @@ The empty Git messages section and Approvals heading are absent too.
 The standalone mock retains its sample controls.
 The browser journey checks their absence and reads back the retained role settings from the engine.
 
-## s20-4. The service update button only displayed a not-connected notice.
+## 1128. The service update button only displayed a not-connected notice.
 
 State: fixed on 2026-11-16.
 
@@ -17278,7 +17278,7 @@ The build now omits that button.
 The existing manual update commands remain visible.
 The browser journey checks that the button is absent.
 
-## s20-5. Watching or taking over an agent terminal has no engine attachment path.
+## 1129. Watching or taking over an agent terminal has no engine attachment path.
 
 State: open. This is issue 906, checked on 2026-11-16.
 
@@ -17290,7 +17290,7 @@ Its conversation remains available through the thread.
 The disabled controls and their existing hints remain accurate.
 This task did not build these features.
 
-## s20-6. A project terminal has no resumed attachment protocol.
+## 1130. A project terminal has no resumed attachment protocol.
 
 State: open. This is issue 907, checked on 2026-11-16.
 
@@ -17304,7 +17304,7 @@ An owner shell remains meaningful when the project's agents use the Agent Client
 The disabled Reconnect control and its existing hint remain accurate.
 This task did not build reconnect.
 
-## s20-7. A broader Service settings journey still clicked the removed standing-rules control.
+## 1131. A broader Service settings journey still clicked the removed standing-rules control.
 
 State: fixed in round 2 on 2026-11-16.
 
@@ -17317,7 +17317,7 @@ Every other assertion remains.
 I read the tests and journeys found by label and selector searches for the removed controls.
 I found no other live journey that activated a removed control.
 
-## s20-8. Passing evidence for a newer head appeared current for an older review.
+## 1132. Passing evidence for a newer head appeared current for an older review.
 
 State: fixed in round 2 on 2026-11-16.
 
@@ -17329,7 +17329,7 @@ It showed current passing evidence for the wrong reviewed head.
 The mapper now treats a report for a different reviewed head as stale.
 It uses the dialog's existing stale wording and approval choice.
 
-## s20-9. The reviewer defaults have storage but no execution consumer.
+## 1133. The reviewer defaults have storage but no execution consumer.
 
 State: open. The owner must decide whether to hide these controls.
 
@@ -17339,7 +17339,7 @@ I found its storage in the project settings command.
 I found no execution consumer.
 The controls remain visible because round 2 requests a record without a fix.
 
-## s20-10. Standing permission enforcement will need its website switch restored.
+## 1134. Standing permission enforcement will need its website switch restored.
 
 State: open. Restore the control in the same change that builds enforcement.
 
@@ -17352,7 +17352,7 @@ The owner needs the website switch when enforcement is built.
 The roles.settings.set request can still change the stored flag.
 Round 2 does not change the default or build enforcement.
 
-## s20-11. The engine records the client's approval decision without checking evidence.
+## 1135. The engine records the client's approval decision without checking evidence.
 
 State: open. Round 2 records this behavior without changing it.
 
@@ -17364,7 +17364,7 @@ It does not check whether the current evidence supports that decision.
 A change of evidence alone does not cause an engine refusal.
 The website's captured decision preserves what the pressed button showed.
 
-## s20-12. The Git journey lost its passing-at-open review case.
+## 1136. The Git journey lost its passing-at-open review case.
 
 State: fixed in round 2 on 2026-11-16.
 
@@ -17374,7 +17374,7 @@ The journey now keeps the live-arrival checks and prepares another review after 
 It checks plain approval in both cases.
 It also checks the passing evidence stored with the final merged review.
 
-## s20-13. The review tests omitted a request-level stale-pair refusal.
+## 1137. The review tests omitted a request-level stale-pair refusal.
 
 State: fixed in round 2 on 2026-11-16.
 
@@ -17386,7 +17386,7 @@ The existing error notice shows the message.
 The review stays open and the approval and Cancel controls remain enabled.
 No production change was needed for this error path.
 
-## s20-14. The email journey resolved its sample fixture from the working directory.
+## 1138. The email journey resolved its sample fixture from the working directory.
 
 State: fixed in round 2 on 2026-11-16.
 
@@ -17395,3 +17395,13 @@ It failed before opening the page because packages/web/design/mock does not exis
 I read its sample-copy path and the other helpers' module-relative paths.
 The email helper now resolves design/mock relative to its own source file.
 The journey's assertions and waits remain unchanged.
+
+## 1139. Six browser journeys failed in the full check of the controls unit and passed alone.
+
+The full check ran while three other builders were running their own test suites on the same computer.
+The journeys were `git.spec.ts:183`, `git.spec.ts:233`, `git.spec.ts:316`, `new-project.spec.ts:283`, `studio.spec.ts:902` and `studio.spec.ts:1132`.
+The journey at `studio.spec.ts:902` reached its six minute limit.
+Each of the six passed when it was run alone with one worker.
+This is the same load sensitivity that issues 966, 1014, 1044, 1066, 1079 and 1122 record.
+
+State: open. Recorded on 2026-11-16.
