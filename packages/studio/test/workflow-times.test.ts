@@ -32,5 +32,11 @@ it('renders a fresh Define phase and leaves unknown durations blank, while the m
 it('fails the live build if the workflow timing anchor changes', async () => {
   const { workflowSource } = await import('../scripts/workflowSource.ts')
   expect(() => workflowSource('changed source')).toThrow('Workflow timing integration')
-  expect(workflowSource('const times = phaseTimes(s, p, cur);')).toBe('const times = recordedPhaseTimes(p);')
+  const { readFileSync } = await import('node:fs')
+  const { URL: NodeURL } = await import('node:url')
+  const source = readFileSync(new NodeURL('../../../design/mock/js/screens/workflow.js', import.meta.url), 'utf8')
+  const live = workflowSource(source)
+  expect(live).toContain('function phaseTimes(s, p, cur) { return recordedPhaseTimes(p); }')
+  expect(live).not.toContain('const wt =')
+  expect(live).not.toContain('if (p.phaseTimes !== undefined)')
 })
