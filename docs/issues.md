@@ -1829,7 +1829,7 @@ The notification contains no stderr, exit code or signal.
 ## 113. Nothing closes the open questions of a crashed agent
 
 Found: 2026-11-01, by the unit 6c test writer.
-State: open, needs an owner decision.
+State: the owner’s decision on a "withdrawn" event is still open. Unit s18-smallfix keeps stored questions open and filters unavailable askers from owner reads. Their questions return when they resume.
 
 What happens: issue 74 says question closure must use an agreed contract and
 not invent an answer. No event closes a question without an answer, so the
@@ -5500,7 +5500,7 @@ Why it matters: A passing test command that checks nothing gives false confidenc
 ## 304. Question rows from a stopped or crashed asker stay open
 
 Found: 2026-11-03, while planning the client API plan.
-State: open.
+State: fixed in s18-smallfix. The snapshot, request lists, question counts, and notification reads omit questions whose asker cannot receive a reply. The answer command refuses them.
 
 What happens: Engine question rows from a stopped or crashed asker stay open in the views, and answering one queues a reply to a dead agent (client API row 107).
 What should happen: Not decided. Question closure stays with issue 113.
@@ -16855,3 +16855,15 @@ The prior report counted collections and abort controllers but omitted the visit
 The task's result and ownership document now list these scalar owners as well.
 The live controller projects the module's timestamp through an accessor instead of retaining a mirror.
 The typed owner-busy property is read-only and derived from pending state.
+
+## s18-1. Question projections disagreed with prompt admission.
+
+State: fixed in s18-smallfix.
+
+The snapshot and request index offered open questions from stopped or crashed agents.
+The roster counted the same questions.
+The answer command could queue an answer for an unavailable asker.
+The shared question availability rule now follows the engine’s prompt admission table.
+Notification reads apply the same rule before the alert follower catches up.
+The website refreshes its filtered records across stop, crash, and resume transitions.
+The stored question remains open.

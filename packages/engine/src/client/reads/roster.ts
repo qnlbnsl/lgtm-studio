@@ -1,3 +1,4 @@
+import { canReceiveAnswer } from "../../routing/questionAvailability.ts";
 import { displayedState, type Caller, type RosterEntry } from "@lgtm/contracts";
 import type { Snapshot } from "../../commands/internal.ts";
 import { mayReadAgent } from "../../api/visibility.ts";
@@ -5,7 +6,7 @@ import { mayReadAgent } from "../../api/visibility.ts";
 export const roster = (caller: Caller, view: Snapshot): ReadonlyArray<RosterEntry> =>
   Object.values(view.agents).filter((row) => mayReadAgent(caller, row.agentId, view)).map((row) => {
     const openPermissionRequests = Object.values(view.requests).filter((request) => request.agentId === row.agentId && request.status === "open").length;
-    const openQuestionsAsked = Object.values(view.questions).filter((question) => question.agentId === row.agentId && question.status === "open").length;
+    const openQuestionsAsked = Object.values(view.questions).filter((question) => question.agentId === row.agentId && question.status === "open" && canReceiveAnswer(view, row.agentId)).length;
     const start = view.threads[row.agentId]?.find(({ event }) => event._tag === "AgentStarted");
     return {
       agentId: row.agentId, name: row.name, role: row.role, groups: row.groups, parent: row.parent,

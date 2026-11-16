@@ -1,3 +1,4 @@
+import { canReceiveAnswer } from "../routing/questionAvailability.ts";
 import type { Caller } from "@lgtm/contracts";
 import { pieceNamespaces } from "@lgtm/contracts";
 import * as Effect from "effect/Effect";
@@ -29,7 +30,7 @@ export const snapshot = (caller: Caller, lists: EngineLists = engineLists) => Ef
     id: row.permissionRequestId, agentId: row.agentId, holder: row.holder,
     sourceSequence: row.sourceSequence, openedAt: row.openedAt,
   }));
-  const questions = filter(view.questions, (row) => row.status === "open" && readable(row.agentId)).map((row) => ({
+  const questions = filter(view.questions, (row) => row.status === "open" && readable(row.agentId) && canReceiveAnswer(view, row.agentId)).map((row) => ({
     id: row.questionId, agentId: row.agentId, holder: row.holder,
     sourceSequence: row.sourceSequence, openedAt: row.openedAt,
   }));

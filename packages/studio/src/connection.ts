@@ -292,7 +292,10 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
         accountLimits = { ...accountLimits, [event.accountId]: event._tag === "AccountOutOfUsage" ? event.resetAt ?? null : null }
         write({ accountLimits })
       }
-      if (event._tag === "StateChanged" && current !== undefined && item.sequence > current.sequence) {
+      if (event._tag === "StateChanged" && (['stopped', 'crashed'].includes(event.state._tag)
+        || current?.agents.some(agent => agent.agentId === event.agentId && ['stopped', 'crashed'].includes(agent.state._tag)))) {
+        yield* refresh(item.sequence)
+      } else if (event._tag === "StateChanged" && current !== undefined && item.sequence > current.sequence) {
         publish({ ...current, sequence: item.sequence, agents: current.agents.map((agent) => {
           if (agent.agentId !== event.agentId) return agent
           const updated = { ...agent, state: event.state }
