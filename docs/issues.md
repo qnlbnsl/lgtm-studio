@@ -17366,6 +17366,18 @@ Replaying an unfinished delivery can repeat a step that was already performed.
 Proposed wording: "Resume tries the saved session. If it cannot reload, a new session retries unfinished deliveries and may repeat steps."
 The screen text was not changed in this unit.
 
+## s21-12. Restart messages still say that running agents are stopped
+
+Found: 2026-11-16, while reading the round 2 review and the restart texts.
+State: open for the owner's wording decision.
+
+The service confirmation, terminal API confirmation, and website toast still describe agents as stopped.
+A service restart preserves their recorded lifecycle for recovery.
+The affected files are serviceControl.ts, api/server.ts, and design/mock/js/live/service-settings.js.
+Proposed confirmation: "Restart LGTM Studio? Recoverable agents will reconnect after restart. Agents you stopped stay stopped."
+Proposed toast: "LGTM Studio is restarting. Reconnect to see recovered agents."
+The existing text was not changed in this unit.
+
 ## s21-13. An already-delivered holder copy receives no answered-elsewhere notice
 
 Found: 2026-11-16, while running the round 2 idle-lead permission regression.
@@ -17409,3 +17421,13 @@ That website has no chat for an unassigned agent, as issue s21-7 records.
 Both old journeys therefore fail on their missing-link assertions.
 The current website's notification journey covers board subject links, including nested replies and another project's channel.
 The old assertions were not weakened or removed.
+
+## s21-17. The email browser fixture assumes the repository root as its working directory
+
+Found: 2026-11-16, while running the round 2 browser journeys from packages/web.
+State: open.
+
+The email notification fixture copies design/mock through a working-directory-relative path.
+Running the assigned journey from packages/web looks for packages/web/design/mock and fails before opening the page.
+The failure is in the fixture's source-path lookup.
+This unit leaves that unrelated fixture unchanged.
