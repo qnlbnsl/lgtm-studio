@@ -24,12 +24,12 @@ export interface GitRefreshController {
   lastStart: number | null
   readonly reading: string | null
   enabled: boolean
-  ownerBusy: boolean
+  readonly ownerBusy: boolean
 }
 export function createGitController(lastStart: number | null = null): GitRefreshController {
   return { records: new Map(), lastStart,
     get reading() { return [...this.records].find(([, record]) => record.phase === "reading")?.[0] ?? null },
-    enabled: true, ownerBusy: false }
+    enabled: true, get ownerBusy() { return false } }
 }
 export function gitRefreshRecord(identity: string, now: number, epoch = 0): GitRefreshRecord {
   return { identity, phase: "due", summaryDirty: 1, reviewDirty: 1, epoch, failures: 0,

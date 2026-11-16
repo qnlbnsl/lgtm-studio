@@ -21,20 +21,17 @@ export async function run(key, work) {
 const mutatesGit = (tag) => /^project\.(stage|unstage|discard$|commit$|pull$|push$|fetch$|integrate$|update$|merge\.abort$|conflict\.(choose|resolve|reopen)$|review\.(prepare|approve|decline)$)/.test(tag);
 async function request(tag, payload = {}, options = {}) {
   const c = gitController;
-  if (!c || !/^project\.(git\.|changes$|diff$|history$|branches$|commit\.files$|conflict(?:\.|$)|review\.|stage|unstage|discard|commit$|pull$|push$|fetch$|integrate$|update$|merge\.abort$)/.test(tag)) return Object.keys(options).length ? engine.request(tag, payload, options) : engine.request(tag, payload);
-  const mutation = mutatesGit(tag);
-  if (mutation) {
-    const w = wt(payload.worktreeId), headChange = /\.(commit|pull|push|fetch|integrate|update|abort|approve)$/.test(tag);
-    const ids = tag === 'project.fetch' ? [...c.records.keys()] : w ? headChange ? affectedGit(w, wt(payload.destinationId) || (tag === 'project.review.approve' ? destination(w) : undefined)) : [w.id] : [];
-    if (tag === 'project.pull' && w) ids.push(...S().worktrees.filter((x) => x.repo === w.repo && !x.parentId).map((x) => x.id));
-    // These two actions publish their own reply without changing the summary.
-    const directReply = tag === 'project.review.prepare' || tag === 'project.conflict.choose';
-    for (const id of ids) { const r = c.records.get(id); if (r) { r.epoch++; retireGitRead(r); r.detailAbort?.abort(); if (!directReply) { mapping.dirtyGitRecord(r, 'summary', Date.now()); if (headChange || tag.includes('review.')) mapping.dirtyGitRecord(r, 'review', Date.now()); } } }
-  }
+  if (!c || !mutatesGit(tag)) return Object.keys(options).length ? engine.request(tag, payload, options) : engine.request(tag, payload);
+  const w = wt(payload.worktreeId), headChange = /\.(commit|pull|push|fetch|integrate|update|abort|approve)$/.test(tag);
+  const ids = tag === 'project.fetch' ? [...c.records.keys()] : w ? headChange ? affectedGit(w, wt(payload.destinationId) || (tag === 'project.review.approve' ? destination(w) : undefined)) : [w.id] : [];
+  if (tag === 'project.pull' && w) ids.push(...S().worktrees.filter((x) => x.repo === w.repo && !x.parentId).map((x) => x.id));
+  // These two actions publish their own reply without changing the summary.
+  const directReply = tag === 'project.review.prepare' || tag === 'project.conflict.choose';
+  for (const id of ids) { const r = c.records.get(id); if (r) { supersedeGit(r); if (!directReply) { mapping.dirtyGitRecord(r, 'summary', Date.now()); if (headChange || tag.includes('review.')) mapping.dirtyGitRecord(r, 'review', Date.now()); } } }
   // Read controllers belong to the reader, never to this transport wrapper.
   // Sent commands remain alive across screen lifecycle changes.
   return engine.request(tag, payload, { ...options, onRequestId: (id) => {
-    if (mutation) { c.ownIds.add(id); if (c.ownIds.size > 256) c.ownIds.delete(c.ownIds.values().next().value); }
+    c.ownIds.add(id); if (c.ownIds.size > 256) c.ownIds.delete(c.ownIds.values().next().value);
     options.onRequestId?.(id);
   } });
 }
@@ -319,10 +316,9 @@ const identity = (w) => JSON.stringify([w.repo, w.folder, w.branch, w.machine, w
 const gitRows = (project, rows = S().worktrees) => rows.filter((w) => w.machine === 'local' && (w.project === project || w.kind === 'base' && w.repo === S().projects.find((p) => p.id === project)?.repo));
 const selectedGit = (project) => gitRows(project).find((w) => w.branch === S().inspecting[project]) || gitRows(project).find((w) => w.kind === 'project') || gitRows(project)[0];
 function recordFor(w, c = gitController) {
-  if (!c) { const r = mapping.gitRefreshRecord(identity(w), Date.now()); r.reviewDirty = w.reviewLoaded ? 0 : 1; return r; }
   let r = c.records.get(w.id);
   if (!r || r.identity !== identity(w)) {
-    if (r) { r.epoch++; retireGitRead(r); r.detailAbort?.abort(); }
+    if (r) { supersedeGit(r); }
     r = mapping.gitRefreshRecord(identity(w), Date.now(), (r?.epoch || 0) + 1); c.records.set(w.id, r);
   }
   return r;
@@ -330,10 +326,11 @@ function recordFor(w, c = gitController) {
 function reconcileGit(rows = S().worktrees) {
   const c = gitController; if (!c) return;
   const list = gitRows(c.project, rows), ids = new Set(list.map((w) => w.id));
-  for (const [id, r] of c.records) if (!ids.has(id)) { r.epoch++; retireGitRead(r); r.detailAbort?.abort(); c.records.delete(id); }
+  for (const [id, r] of c.records) if (!ids.has(id)) { supersedeGit(r); c.records.delete(id); }
   for (const w of list) recordFor(w, c);
   scheduleGit();
 }
+function supersedeGit(r) { r.epoch++; retireGitRead(r); r.detailAbort?.abort(); }
 // Every summary ending releases its phase here, using its controller as a lease.
 function retireGitRead(r, abort = r.summaryAbort, result) {
   if (r.summaryAbort !== abort || r.phase !== 'reading') return;
@@ -345,7 +342,7 @@ function holdGit() { if (gitController) clearTimeout(gitController.timer); }
 function suspendGit() {
   const c = gitController; if (!c) return;
   c.enabled = false; clearTimeout(c.timer);
-  for (const r of c.records.values()) { r.epoch++; retireGitRead(r); r.detailAbort?.abort(); }
+  for (const r of c.records.values()) { supersedeGit(r); }
 }
 function stopGit() {
   const c = gitController; if (!c) return;
@@ -353,9 +350,10 @@ function stopGit() {
 }
 function startGit(project) {
   if (!mapping) return;
-  const c = gitController = mapping.createGitController(lastAutomaticStart);
+  const c = gitController = mapping.createGitController();
   c.project = project; c.ownIds = new Set();
   Object.defineProperties(c, {
+    lastStart: { get: () => lastAutomaticStart, set: (value) => { lastAutomaticStart = value; } },
     ownerBusy: { get: () => busy('git') },
     selected: { get: () => selectedGit(project)?.id }
   });
@@ -369,10 +367,10 @@ function startGit(project) {
 }
 function dirtyAllGit() {
   const c = gitController; if (!c) return;
-  const now = Date.now();
+  const now = Date.now(), due = Math.min(now + 100, ...[...c.records.values()].filter((r) => r.phase === 'due' && !r.failures).map((r) => r.nextAttempt));
   for (const r of c.records.values()) {
     mapping.dirtyGitRecord(r, 'summary', now);
-    if (r.phase === 'due' && !r.failures) r.nextAttempt = now + 100;
+    if (r.phase === 'due' && !r.failures) r.nextAttempt = Math.min(r.nextAttempt, due);
   }
   scheduleGit();
 }
@@ -388,10 +386,10 @@ function scheduleGit() {
     const r = c.records.get(admitted.id), w = wt(admitted.id);
     if (!r || !w) { reconcileGit(); return; }
     if (r.phase === 'idle' || r.summaryDirty === 0 && r.lastSuccess !== null && Date.now() >= r.lastSuccess + mapping.fallbackMs) mapping.dirtyGitRecord(r, 'summary', Date.now());
-    c.lastStart = lastAutomaticStart = Date.now();
     let requests = 0;
     const automaticRequest = (tag, payload, options) => {
       if (++requests > mapping.maximumAutomaticRequests) throw new Error('The service returned no usable Git record.');
+      if (requests === 1) c.lastStart = Date.now();
       return request(tag, payload, options);
     };
     try { await readGitRecord(w, c.project, r, c, false, false, automaticRequest); }
@@ -399,7 +397,7 @@ function scheduleGit() {
   }, Math.max(0, next.at - Date.now()));
 }
 async function readGitRecord(w, project, r, c, forced, reviews = false, send = request) {
-  if (forced) { retireGitRead(r); r.epoch++; r.failures = 0; r.nextAttempt = Date.now(); r.summaryDirty++; if (reviews || w.review?.status === 'open') r.reviewDirty++; }
+  if (forced) { supersedeGit(r); r.failures = 0; r.nextAttempt = Date.now(); r.summaryDirty++; if (reviews || w.review?.status === 'open') r.reviewDirty++; }
   const epoch = r.epoch, summary = r.summaryDirty, reviewCount = r.reviewDirty;
   const valid = () => r.epoch === epoch && S().session.status === 'in' && (!c || gitController === c && c.enabled && c.records.get(w.id) === r);
   if (!valid() || !wt(w.id) || identity(wt(w.id)) !== r.identity) return;
@@ -458,11 +456,11 @@ async function readGitRecord(w, project, r, c, forced, reviews = false, send = r
   return valid() ? failure : undefined;
 }
 async function loadGit(project, ids, reviews = false) {
-  if (!mapping || !project) return;
+  if (!mapping || !project || live.on && !gitController) return;
   const c = gitController; let failure;
   const rows = gitRows(project).filter((w) => !ids || ids.includes(w.id)).map((w) => ({ w, epoch: c?.records.get(w.id)?.epoch }));
   for (const { w, epoch } of rows) {
-    if (c && (gitController !== c || !c.enabled)) break;
+    if (c && gitController !== c) break;
     const current = wt(w.id);
     if (!current || identity(current) !== identity(w) || c && c.records.get(w.id)?.epoch !== epoch) continue;
     const r = recordFor(current, c), error = await readGitRecord(current, project, r, c, true, reviews); failure ||= error;
@@ -471,6 +469,7 @@ async function loadGit(project, ids, reviews = false) {
 }
 
 async function loadGitDetail(id, selectedCommit, automatic = false, force = false, send = request) {
+  if (live.on && !gitController) return;
   const w = wt(id); local(w); if (!mapping) return;
   const c = gitController, r = recordFor(w, c), epoch = r.epoch;
   if (automatic && r.detailAbort) return;
@@ -525,7 +524,6 @@ async function loadGitDetail(id, selectedCommit, automatic = false, force = fals
             writeWt(id, { merge: { ...wt(id).merge, files: wt(id).merge.files.map((x) => x.id === f.id ? { ...mapping.mapConflict(body), loaded: true } : x) } });
           } else { const diff = mapping.mapGitDiff(body); writeWt(id, { files: wt(id).files.map((x) => x.id === f.id ? { ...x, ...diff, loaded: true, diffError: diff.diffError || '' } : x) }); }
         } catch (error) {
-          if (error?.name !== 'AbortError' && !conflicts && valid()) writeWt(id, { files: wt(id).files.map((x) => x.id === f.id && !x.loaded ? { ...x, loaded: true, diffError: error.message || 'The service did not complete the request.' } : x) });
           failed(error);
         }
       });
@@ -533,7 +531,10 @@ async function loadGitDetail(id, selectedCommit, automatic = false, force = fals
   } catch (error) { failed(error); }
   finally { if (!progressive && r.detailAbort === abort) r.detailAbort = undefined; }
 }
-export function refreshGit(project = screen?.project, quiet = false) { return run('git', () => loadGit(project, undefined, !quiet)); }
+export function refreshGit(project = screen?.project) { return run('git', () => {
+  for (const r of gitController?.records.values() || []) supersedeGit(r);
+  return loadGit(project, undefined, true);
+}); }
 export function gitDetail(id, commit) { return run('git', () => loadGitDetail(id, commit)); }
 export function selectGit(id, tab, commit) {
   update((s) => { const w = wt(id); s.inspecting[w.project || screen?.project] = w.branch; s.gitUi[id] = { ...s.gitUi[id], ...(tab ? { tab } : {}), ...(commit ? { commit } : {}) }; });

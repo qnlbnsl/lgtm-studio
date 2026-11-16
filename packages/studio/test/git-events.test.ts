@@ -14,7 +14,7 @@ it('forwards review and evidence invalidations without changing their contents',
 })
 it('ignores attempts and maps only completions to the visible project', () => {
   expect(gitEventPatch(item({ _tag: 'project.GitAttempted', attempt: { worktreeId: 'source', requestId: 'operation' } }), snapshot)).toBeUndefined()
-  expect(gitEventPatch(item({ _tag: 'project.GitFinished', operationRequestId: 'operation' }))).toEqual({ group: 'summary', worktreeIds: [], requestId: 'operation', completed: true })
+  expect(gitEventPatch(item({ _tag: 'project.GitFinished', operationRequestId: 'operation' }))).toEqual({ group: 'summary', worktreeIds: [], requestId: 'operation' })
 })
 it('a turn uses current placement and needs no waiting collection', () => {
   expect(gitEventPatch(item({ _tag: 'TurnEnded', agentId: 'worker' }), snapshot)?.worktreeIds).toEqual(['source'])

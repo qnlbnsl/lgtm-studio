@@ -5,7 +5,7 @@ import { gitActionsSource } from "../scripts/gitActions.ts";
 
 const copied = (path: string) => gitActionsSource(path, readFileSync(`${process.cwd()}/design/mock/${path}`, "utf8"));
 const gate = () => { let release!: () => void; const held = new Promise<void>((resolve) => { release = resolve; }); return { held, release }; };
-function fixture(request: (tag: string, payload: any) => Promise<unknown>) {
+function fixture(request: (tag: string, payload: any) => Promise<unknown>, ignoreAbort = false) {
   const project = { id: "project", repo: "repo", lead: "lead" };
   const state: any = { session: { status: "in" }, ui: {}, projects: [project], inspecting: {}, gitUi: { workspace: { tab: "conflicts" } },
     worktrees: [{ id: "workspace", project: project.id, repo: project.repo, branch: "project", machine: "local", kind: "project", files: [], commits: [], merge: null,
@@ -13,11 +13,11 @@ function fixture(request: (tag: string, payload: any) => Promise<unknown>) {
   const controllers: refreshPolicy.GitRefreshController[] = [];
   const calls: any[] = [], active = new Set<unknown>(); let sequence = 0;
   const send = async (tag: string, payload: any, options: any = {}) => {
-    options.onRequestId?.("own-" + ++sequence);
+    const requestId = "own-" + ++sequence; options.onRequestId?.(requestId);
     const call = { tag, payload, signal: options.signal }; calls.push(call); active.add(call);
     let stop = () => {};
-    const abort = new Promise<never>((_, reject) => { stop = () => reject(new DOMException("cancelled", "AbortError")); if (options.signal?.aborted) stop(); else options.signal?.addEventListener("abort", stop, { once: true }); });
-    try { return await Promise.race([request(tag, payload), abort]); } finally { options.signal?.removeEventListener("abort", stop); active.delete(call); }
+    const abort = ignoreAbort ? undefined : new Promise<never>((_, reject) => { stop = () => reject(new DOMException("cancelled", "AbortError")); if (options.signal?.aborted) stop(); else options.signal?.addEventListener("abort", stop, { once: true }); });
+    try { return await (ignoreAbort ? request(tag, payload) : Promise.race([request(tag, payload), abort])); } finally { options.signal?.removeEventListener("abort", stop); active.delete(call); }
   };
   const dialogs: any[] = [], toasts: string[] = [], listeners = new Map<string, () => void>();
   const act: any = { confirm: (d: any) => dialogs.push(d), closeDialog: vi.fn(), openDialog: vi.fn(), toast: (s: string) => toasts.push(s) };
@@ -307,7 +307,7 @@ it('a foreign dirty counter during owner readback survives while own completions
     const count = f.calls.filter(c => c.tag === 'project.git.state').length;
     await vi.advanceTimersByTimeAsync(100);
     expect(f.calls.filter(c => c.tag === 'project.git.state')).toHaveLength(count + 1);
-    f.actions.observe({ git: { group: 'summary', worktreeIds: [], requestId: own, completed: true } });
+    f.actions.observe({ git: { group: 'summary', worktreeIds: [], requestId: own } });
     await vi.advanceTimersByTimeAsync(4000);
     expect(f.calls.filter(c => c.tag === 'project.git.state')).toHaveLength(count + 1);
   } finally { held.release(); close(); vi.useRealTimers(); }
@@ -436,9 +436,11 @@ it('two hundred paths on both sides publish progressively without a duplicate re
     expect(f.state.worktrees[0].files[0].hunks).toEqual(['file-0:false']);
     held.release(); await vi.advanceTimersByTimeAsync(0);
     expect(bodies).toHaveLength(400); expect(new Set(bodies).size).toBe(400);
-    expect(f.state.worktrees[0].files.every((file: any) => file.loaded)).toBe(true);
+    expect(f.state.worktrees[0].files.filter((file: any) => file.path !== 'file-7').every((file: any) => file.loaded)).toBe(true);
     expect(f.state.worktrees[0].ready).toBe(true);
-    expect(f.state.worktrees[0].files[14].diffError).toBeTruthy();
+    expect(f.state.worktrees[0].files[14].diffError).toBeUndefined();
+    expect(f.state.worktrees[0].files[14].loaded).not.toBe(true);
+    expect(f.toasts).toEqual(['one file']);
   } finally { held.release(); close(); vi.useRealTimers(); }
 });
 
@@ -477,7 +479,7 @@ it('Refresh Git retries repaired summary and detail refusals without a head chan
   try {
     await vi.advanceTimersByTimeAsync(0); expect(f.state.worktrees[0].stale).toBe(true);
     phase = 'changes'; expect(await f.actions.refreshGit('project')).toBe(false);
-    phase = 'diff'; await f.actions.refreshGit('project'); expect(f.state.worktrees[0].files[0].diffError).toBeTruthy();
+    phase = 'diff'; await f.actions.refreshGit('project'); expect(f.state.worktrees[0].files[0].diffError).toBeUndefined(); expect(f.state.worktrees[0].files[0].loaded).not.toBe(true);
     phase = 'repaired'; await f.actions.refreshGit('project');
     expect(f.state.worktrees[0]).toMatchObject({ ready: true, stale: false, files: [{ loaded: true, hunks: ['repaired'] }] });
   } finally { close(); vi.useRealTimers(); }
@@ -619,10 +621,10 @@ it('preparing a review and choosing a preview publish direct replies without a d
     await vi.advanceTimersByTimeAsync(0); const before = f.calls.length;
     await f.actions.openReview(f.state.worktrees[0], f.state.projects[0]);
     const prepare = f.calls.findIndex(c => c.tag === 'project.review.prepare');
-    f.actions.observe({ git: { group: 'review', worktreeIds: ['workspace'], requestId: 'own-' + (prepare + 1), completed: true } });
+    f.actions.observe({ git: { group: 'review', worktreeIds: ['workspace'], requestId: 'own-' + (prepare + 1) } });
     await f.actions.choose('workspace', 'file', 'hunk', 'ours');
     const choose = f.calls.findIndex(c => c.tag === 'project.conflict.choose');
-    f.actions.observe({ git: { group: 'summary', worktreeIds: [], requestId: 'own-' + (choose + 1), completed: true } });
+    f.actions.observe({ git: { group: 'summary', worktreeIds: [], requestId: 'own-' + (choose + 1) } });
     await vi.advanceTimersByTimeAsync(10000);
     expect(f.calls.slice(before).map(c => c.tag)).toEqual(['project.review.prepare', 'project.conflict.choose']);
   } finally { close(); vi.useRealTimers(); }
@@ -903,7 +905,177 @@ it('owned request suppression stays bounded during a long visit', async () => {
     for (let n = 0; n < 270; n++) expect(await f.actions.stage('workspace', [], true, true)).toBe(true);
     const ids = (f.controllers[0] as any).ownIds; expect(ids.size).toBe(256);
     const count = f.calls.length, own = 'own-' + (f.calls.findLastIndex(c => c.tag === 'project.stage.all') + 1);
-    f.actions.observe({ git: { group: 'summary', worktreeIds: [], requestId: own, completed: true } });
+    f.actions.observe({ git: { group: 'summary', worktreeIds: [], requestId: own } });
     await vi.advanceTimersByTimeAsync(100); expect(f.calls).toHaveLength(count);
   } finally { close(); vi.useRealTimers(); }
+});
+
+it('a successful Push after leaving for the same project sends no ownerless readback', async () => {
+  vi.useFakeTimers(); const pushed = gate();
+  const files = Array.from({ length: 30 }, (_, i) => ({ id: String(i), path: `file-${i}` }));
+  const f = fixture(async tag => {
+    if (tag === 'project.push') { await pushed.held; return {}; }
+    if (tag === 'project.changes') return { result: { items: files } };
+    if (tag === 'project.diff') return { result: { hunks: [] } };
+    if (tag === 'client.alerts.settings') return {};
+    if (tag === 'client.alerts.list' || tag === 'client.requests') return { items: [] };
+    return emptyGitReply(tag);
+  });
+  f.state.gitUi.workspace.tab = 'changes'; const close = f.actions.openScreen('git', 'project');
+  let leave: (() => void) | undefined;
+  try {
+    await vi.advanceTimersByTimeAsync(0); expect(f.calls.filter(c => c.tag === 'project.diff')).toHaveLength(30);
+    const action = f.actions.syncGit('workspace', 'push');
+    leave = f.actions.openScreen('notifications', 'project'); await vi.advanceTimersByTimeAsync(0);
+    const before = f.calls.length, rows = JSON.stringify(f.state.worktrees);
+    pushed.release(); expect(await action).toBe(true); await vi.advanceTimersByTimeAsync(0);
+    expect(f.calls.slice(before)).toEqual([]); expect(JSON.stringify(f.state.worktrees)).toBe(rows);
+    expect(f.toasts).toEqual([]);
+    const readCount = f.calls.length;
+    expect(await f.actions.refreshGit('project')).toBe(true);
+    expect(f.calls).toHaveLength(readCount);
+  } finally { pushed.release(); leave?.(); close(); vi.useRealTimers(); }
+});
+
+it('a retired old lease cannot finish a newer forced read on the same record', async () => {
+  vi.useFakeTimers(); const old = gate(), fresh = gate(); let held = false, states = 0;
+  const f = fixture(async tag => {
+    if (tag === 'project.git.state' && held) { if (++states === 1) await old.held; else await fresh.held; }
+    return emptyGitReply(tag);
+  }, true);
+  const close = f.actions.openScreen('git', 'project'); let refresh: Promise<boolean> | undefined;
+  try {
+    await vi.advanceTimersByTimeAsync(0); held = true;
+    f.listeners.get('focus')!(); await vi.advanceTimersByTimeAsync(100);
+    const r = f.controllers[0]!.records.get('workspace')!, oldLease = r.summaryAbort;
+    refresh = f.actions.refreshGit('project'); await vi.advanceTimersByTimeAsync(0);
+    const newLease = r.summaryAbort; expect(newLease).not.toBe(oldLease); expect(r.phase).toBe('reading');
+    old.release(); await vi.advanceTimersByTimeAsync(0);
+    expect(r.summaryAbort).toBe(newLease); expect(r.phase).toBe('reading'); expect(newLease!.signal.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(10); fresh.release(); expect(await refresh).toBe(true);
+    expect(r.phase).toBe('idle'); expect(r.lastSuccess).toBe(Date.now()); expect(r.summaryDirty).toBe(0); expect(f.toasts).toEqual([]);
+  } finally { old.release(); fresh.release(); await refresh; close(); vi.useRealTimers(); }
+});
+
+it('a fresh forced refresh failure shows one toast without a prior throttle', async () => {
+  vi.useFakeTimers(); let broken = false;
+  const f = fixture(async tag => { if (broken && tag === 'project.git.state') throw new Error('forced refused'); return emptyGitReply(tag); });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(0); expect(f.controllers[0]!.records.get('workspace')!.lastToast).toBeNull();
+    broken = true; expect(await f.actions.refreshGit('project')).toBe(false);
+    expect(f.toasts).toEqual(['forced refused']); expect(f.state.worktrees[0].stale).toBe(true);
+  } finally { close(); vi.useRealTimers(); }
+});
+
+for (const trigger of ['focus', 'reconnect', 'return']) it(`${trigger} selects first among uneven already-due records without postponing a deadline`, async () => {
+  vi.useFakeTimers(); const reads: string[] = [];
+  const f = fixture(async (tag, payload) => { if (tag === 'project.git.state') reads.push(payload.worktreeId); return emptyGitReply(tag); });
+  for (const id of ['two', 'three', 'four']) f.state.worktrees.push({ ...f.state.worktrees[0], id, branch: id, kind: 'team' });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(0); reads.length = 0; f.state.inspecting.project = 'four';
+    const c = f.controllers[0]!, now = Date.now();
+    for (const [id, r] of c.records) { r.phase = 'due'; r.summaryDirty = 1; r.nextAttempt = now + (id === 'four' ? 50 : 0); }
+    if (trigger === 'focus') f.listeners.get('focus')!();
+    if (trigger === 'reconnect') { f.state.conn = { status: 'reconnecting' }; f.actions.observe({ conn: { status: 'live' } }); }
+    if (trigger === 'return') { const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true); document.dispatchEvent(new Event('visibilitychange')); hidden.mockReturnValue(false); document.dispatchEvent(new Event('visibilitychange')); }
+    expect([...c.records.values()].map(r => r.nextAttempt)).toEqual([now, now, now, now]);
+    await vi.advanceTimersByTimeAsync(0); expect(reads).toEqual(['four']);
+    await vi.advanceTimersByTimeAsync(9000); expect(new Set(reads)).toEqual(new Set(['workspace', 'two', 'three', 'four']));
+  } finally { close(); vi.restoreAllMocks(); vi.useRealTimers(); }
+});
+
+it('service settings tags never enter Git mutation bookkeeping', async () => {
+  vi.useFakeTimers(); vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
+  const f = fixture(async () => ({})), close = f.actions.openScreen('git', 'project');
+  try {
+    const c = f.controllers[0]!, r = c.records.get('workspace')!, before = { ...r };
+    for (const tag of ['project.settings', 'project.settings.set']) {
+      await f.actions.request(tag, { worktreeId: 'workspace' });
+      expect(r).toEqual(before); expect((c as any).ownIds.size).toBe(0);
+      expect(f.calls.at(-1).signal).toBeUndefined();
+    }
+  } finally { close(); vi.restoreAllMocks(); vi.useRealTimers(); }
+});
+
+for (const fail of [false, true]) it(`Refresh Git owns every row during the first load: failure=${fail}`, async () => {
+  vi.useFakeTimers(); const initial = gate(), forced = gate(); let states = 0, forcing = false;
+  const reviews: string[] = [];
+  const f = fixture(async (tag, payload) => {
+    if (tag === 'project.git.state') { if (++states === 1) await initial.held; else if (forcing && payload.worktreeId === 'workspace') await forced.held; }
+    if (tag === 'project.review.status') { reviews.push(payload.worktreeId); if (fail && payload.worktreeId === 'four') throw new Error('four refused'); }
+    return emptyGitReply(tag);
+  });
+  for (const id of ['two', 'three', 'four']) f.state.worktrees.push({ ...f.state.worktrees[0], id, branch: id });
+  const close = f.actions.openScreen('git', 'project'); let action: Promise<boolean> | undefined;
+  try {
+    forcing = true; action = f.actions.refreshGit('project');
+    await vi.advanceTimersByTimeAsync(0); initial.release(); await vi.advanceTimersByTimeAsync(0);
+    expect(reviews).toEqual([]);
+    forced.release(); expect(await action).toBe(!fail);
+    expect(reviews).toEqual(['workspace', 'two', 'three', 'four']);
+    expect(f.toasts).toEqual(fail ? ['four refused'] : []);
+  } finally { initial.release(); forced.release(); await action; close(); vi.useRealTimers(); }
+});
+
+it('a failed file detail keeps successful bodies and puts its reason only in the toast', async () => {
+  vi.useFakeTimers();
+  const f = fixture(async (tag, payload) => {
+    if (tag === 'project.changes') return { result: { items: [{ id: 'good', path: 'good', loaded: false, hunks: [] }, { id: 'bad', path: 'bad', loaded: false, hunks: [] }] } };
+    if (tag === 'project.diff') { if (payload.path === 'bad') throw new Error('engine detail reason'); return { result: { hunks: ['retained'] } }; }
+    return emptyGitReply(tag);
+  });
+  f.state.gitUi.workspace.tab = 'changes'; const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    expect(f.state.worktrees[0].files[0]).toMatchObject({ loaded: true, hunks: ['retained'] });
+    expect(f.state.worktrees[0].files[1]).toMatchObject({ loaded: false, hunks: [] });
+    expect(f.state.worktrees[0].files[1].diffError).toBeUndefined();
+    expect(JSON.stringify(f.state.worktrees[0].files)).not.toContain('engine detail reason');
+    expect(f.toasts).toEqual(['engine detail reason']);
+  } finally { close(); vi.useRealTimers(); }
+});
+
+it('a request-free automatic pass leaves the gap available to the next worktree', async () => {
+  vi.useFakeTimers(); const reads: string[] = [];
+  const f = fixture(async (tag, payload) => { if (tag === 'project.git.state') reads.push(payload.worktreeId); return emptyGitReply(tag); });
+  f.state.worktrees.push({ ...f.state.worktrees[0], id: 'team', branch: 'team', kind: 'team' });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(0); reads.length = 0;
+    const c = f.controllers[0]!, lastStart = c.lastStart;
+    f.actions.observe({ git: { group: 'review', worktreeIds: ['team'] } }); await vi.advanceTimersByTimeAsync(100);
+    expect(c.lastStart).toBe(lastStart); expect(reads).toEqual([]);
+    f.actions.observe({ git: { group: 'summary', worktreeIds: ['workspace'] } }); await vi.advanceTimersByTimeAsync(100);
+    expect(reads).toEqual(['workspace']); expect(c.lastStart).toBe(Date.now());
+  } finally { close(); vi.useRealTimers(); }
+});
+
+it('a disabled visit stops before changing any unclaimed row counters or backoff', async () => {
+  vi.useFakeTimers(); const held = gate();
+  const f = fixture(async tag => { if (tag === 'project.git.state') await held.held; return emptyGitReply(tag); });
+  for (const id of ['two', 'three', 'four']) f.state.worktrees.push({ ...f.state.worktrees[0], id, branch: id, kind: 'team' });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    const c = f.controllers[0]!;
+    for (const [id, r] of c.records) if (id !== 'workspace') { r.failures = 4; r.nextAttempt = Date.now() + 60000; }
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true); document.dispatchEvent(new Event('visibilitychange'));
+    const before = [...c.records].filter(([id]) => id !== 'workspace').map(([, r]) => ({ ...r }));
+    held.release(); await vi.advanceTimersByTimeAsync(0);
+    expect([...c.records].filter(([id]) => id !== 'workspace').map(([, r]) => ({ ...r }))).toEqual(before);
+    expect(f.calls).toHaveLength(1); expect(f.toasts).toEqual([]);
+  } finally { held.release(); close(); vi.restoreAllMocks(); vi.useRealTimers(); }
+});
+
+it('a pending owner command keeps its existing busy state across Git visits', async () => {
+  vi.useFakeTimers(); const held = gate();
+  const f = fixture(async tag => { if (tag === 'project.push') { await held.held; return {}; } return emptyGitReply(tag); });
+  let close = f.actions.openScreen('git', 'project'); let action: Promise<boolean> | undefined;
+  try {
+    await vi.advanceTimersByTimeAsync(0); action = f.actions.syncGit('workspace', 'push');
+    close(); close = f.actions.openScreen('git', 'project');
+    expect(f.actions.busy('git')).toBe(true); expect(await f.actions.syncGit('workspace', 'push')).toBe(false);
+    held.release(); expect(await action).toBe(true); expect(f.actions.busy('git')).toBe(false);
+  } finally { held.release(); await action; close(); vi.useRealTimers(); }
 });

@@ -15655,8 +15655,11 @@ The busy guard dropped the new visit's first load.
 This behavior predated unit s16-gitrefresh.
 Part B gives each screen visit an independent controller and cancels the previous visit's reads.
 Fix round 1 derives read activity from each controller's record phases instead of a shared pending key.
-An old completion cannot retire a newer read's lease.
-The regression holds both visits' first reads and releases the old one first.
+The regression that holds both visits' first reads and releases the old one first proves independence between visits.
+It did not protect replacement leases on the same record.
+Fix round 2 adds `a retired old lease cannot finish a newer forced read on the same record`.
+That test uses a transport that ignores abort, releases the old read while the replacement is held, and then requires the replacement to finish idle with a current success time.
+Removing the lease identity check fails this regression.
 
 ## 1044. Two journeys of the retired page's Git screen also fail under load.
 
@@ -15812,7 +15815,11 @@ A failed forced refresh emitted both a fixed toast and an engine-reason toast.
 Detail and cancellation failures also introduced two unapproved sentences.
 Forced failures now use one existing error toast.
 Lifecycle aborts emit no toast.
-Detail failures use the engine's reason or the pre-existing service-failure sentence.
+Detail failures use the engine's reason or the pre-existing service-failure sentence in the toast.
+The earlier repeated-failure regression did not protect the single-toast rule because the throttle masked duplication.
+Fix round 2 adds `a fresh forced refresh failure shows one toast without a prior throttle`.
+The initial read succeeds, and the first forced failure has no previous toast timestamp.
+Removing the forced-read exclusion from the automatic toast decision fails this regression.
 
 ## s16-13. Review-only passes reread unchanged displayed details.
 
@@ -15852,9 +15859,11 @@ Status: fixed in fix round 1 of part B.
 
 The Git transport wrapper matched every project request tag.
 A pending project settings write could therefore be aborted when the Git tab was hidden.
-The wrapper now matches only Git, review, and conflict tags.
-The owning readers supply their cancellation signals.
-Regressions hold both settings reads and settings writes across a hidden-tab transition.
+The owning readers now supply their cancellation signals.
+The earlier held-settings regressions protect cancellation but did not protect the wrapper's classification.
+Fix round 2 removes the duplicate read-tag matcher and retains one mutation classifier.
+The regression `service settings tags never enter Git mutation bookkeeping` requires settings reads and writes to leave epochs, dirty counters, and owned identifiers unchanged.
+Replacing the classifier with the old broad project-prefix match fails this regression.
 
 ## s16-17. Recovery order did not consistently prioritize the selected worktree.
 
@@ -15862,10 +15871,13 @@ Found: 2026-11-15, in review-b, finding 10.
 Status: fixed in fix round 1 of part B.
 
 Slightly different deadlines could put another worktree before the selected row on focus or reconnect.
-Healthy records now receive the same recovery deadline.
-The selector's existing selection tie-breaker reads the selected row first.
-Four healthy rows start three seconds apart and the last starts nine seconds after the first.
-The report now states this timing and preserves failed records' backoff.
+Fix round 2 aligns healthy records to the earliest existing due deadline or the coalescing deadline, whichever is earlier.
+The selector's selection tie-breaker reads the selected row first.
+The earlier recovery regressions began with idle records and did not protect deadline alignment.
+The runtime regressions for focus, reconnect, and return now begin with uneven already-due records.
+They require the selected row first and all four starts within nine seconds.
+Removing either deadline alignment or the selection tie-break fails the focus regression.
+Failed records retain their backoff.
 
 ## s16-18. Foreign attempt events invalidated state before completion.
 
@@ -15887,8 +15899,9 @@ Owned request identifiers also grew for the entire visit.
 The unrelated Git revision increments are removed from the source and build patches.
 Owned identifiers are bounded to the latest 256 entries.
 The long-visit regression checks the bound and recent completion suppression.
-The old background parameter name is removed.
-The pre-existing quiet-demand call shape remains for the Part A regressions.
+Fix round 1 removed the old background parameter name but retained its test-only quiet-demand call shape.
+Fix round 2 removes that parameter and exercises automatic reads through public focus and observation events.
+It also removes the unread completion field from mapped events.
 
 ## s16-20. A removed row could be recreated by a stale load loop.
 
@@ -15925,3 +15938,97 @@ A later one-worker run also missed the issue 579/583 marker.
 The cause of the missed marker has not been established.
 No engine code or test deadline was changed.
 The same startup-marker sensitivity was previously observed in issue s11-12.
+
+## s16-23. A read-back could start without a Git visit after an owner command finished.
+
+Found: 2026-11-15, in review-b2, major 1.
+Status: fixed in fix round 2 of part B.
+
+A successful Push after leaving the Git screen could allocate a throwaway record and read thirty file bodies without a visit owner.
+Live summary and detail entry points now return when no controller exists.
+The throwaway-record branch is removed.
+The runtime regression starts Push with thirty changed files, leaves for another screen of the same project, and then completes Push.
+It requires success with no read-back requests or row writes.
+
+## s16-24. Four critical Git fixes lacked tests that failed when the fixes were removed.
+
+Found: 2026-11-15, in review-b2, major 2.
+Status: fixed in fix round 2 of part B.
+
+Removing the lease check, forced-toast exclusion, tag matcher, or selected-first behavior previously passed the Git suite.
+New runtime regressions hold a replacement lease, fail a fresh forced refresh, inspect settings bookkeeping, and recover uneven due records.
+Each of the four temporary mutations now fails its targeted assertion.
+The duplicate tag matcher is removed, so the classifier mutation targets the single remaining mutation list.
+The mutation logs and restored-source checks are recorded in the task result.
+
+## s16-25. A pending owner command keeps Git controls busy across visits.
+
+Found: 2026-11-15, in review-b2, minor 13.
+Status: retained existing behavior.
+
+Sent owner commands survive hiding or leaving the Git screen.
+Their pending flags therefore remain until the command settles.
+A command that never returns can keep owner Git controls disabled across visits.
+This is the behavior of the pre-Part B baseline and follows the decision to preserve sent commands.
+The regression `a pending owner command keeps its existing busy state across Git visits` checks the busy state, refuses a second Push, and clears the state when the first Push settles.
+No timeout policy is introduced in this fix round.
+
+## s16-26. Refresh Git could lose forced review reads and its failure result during the initial load.
+
+Found: 2026-11-15, in review-b2, minor 5.
+Status: fixed in fix round 2 of part B.
+
+The initial loop could claim rows after the refresh captured their epochs.
+The refresh then skipped those rows and could report success despite a review failure.
+The public refresh now supersedes all visit records before starting its loop.
+Four-row runtime regressions require every row's forced review read and one failure result with one toast.
+
+## s16-27. A failed file detail wrote the engine reason into the file body.
+
+Found: 2026-11-15, in review-b2, minor 6.
+Status: fixed in fix round 2 of part B.
+
+The new detail error slot changed the visible failed-file behavior without approval.
+The detail catch again uses only the existing toast and leaves the failed body unloaded.
+A regression preserves a successful neighboring body and requires the failed file to contain no engine reason.
+Temporarily restoring the body write fails that regression.
+
+## s16-28. An automatic pass with no request consumed a gap slot.
+
+Found: 2026-11-15, in review-b2, minor 7.
+Status: fixed in fix round 2 of part B.
+
+A review invalidation for a team row could complete without sending any request.
+Admission still advanced the global automatic timestamp and delayed the next row.
+The timestamp now changes only when the automatic request builder sends its first request.
+A runtime regression requires the next summary read within the coalescing window after a request-free pass.
+
+## s16-29. Recovery events postponed already-due healthy records.
+
+Found: 2026-11-15, in review-b2, minor 8.
+Status: fixed in fix round 2 of part B.
+
+Focus, return, and reconnect replaced existing due deadlines with a later coalescing deadline.
+Recovery now preserves the earliest healthy deadline while aligning selected-first admission.
+The uneven already-due runtime regressions in s16-17 protect both properties.
+
+## s16-30. The disabled-load loop guard had no effective regression.
+
+Found: 2026-11-15, in review-b2, minor 12.
+Status: resolved in fix round 2 of part B.
+
+The new hidden-visit regression holds the first read and snapshots every unclaimed row's counters and backoff after suspension.
+It requires those records to remain unchanged with no further requests after the held reply settles.
+Removing the explicit enabled guard also passes this regression because suspension changes every row's epoch before the loop resumes.
+The redundant enabled guard is therefore removed.
+The epoch check and the reader's claim validation still refuse disabled visits.
+
+## s16-31. The Git state inventory omitted visibility, timer, and timestamp ownership.
+
+Found: 2026-11-15, in review-b2, minor 11.
+Status: fixed in fix round 2 of part B.
+
+The prior report counted collections and abort controllers but omitted the visit's enabled flag, timer, and tab timestamp.
+The task's result and ownership document now list these scalar owners as well.
+The live controller projects the module's timestamp through an accessor instead of retaining a mirror.
+The typed owner-busy property is read-only and derived from pending state.

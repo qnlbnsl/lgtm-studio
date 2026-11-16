@@ -63,10 +63,10 @@ it("selection breaks due-time ties without starving an older worktree", () => {
 })
 
 it("a held pass, owner action, or hidden screen has no automatic selection", () => {
-  const c = createGitController(); c.records.set("one", gitRefreshRecord("one", 0))
+  const c = createGitController(); let ownerBusy = false; Object.defineProperty(c, "ownerBusy", { get: () => ownerBusy }); c.records.set("one", gitRefreshRecord("one", 0))
   c.records.get("one")!.phase = "reading"; expect(nextAutomaticRead(0, c)).toBeUndefined()
-  c.records.get("one")!.phase = "due"; c.ownerBusy = true; expect(nextAutomaticRead(0, c)).toBeUndefined()
-  c.ownerBusy = false; c.enabled = false; expect(nextAutomaticRead(0, c)).toBeUndefined()
+  c.records.get("one")!.phase = "due"; ownerBusy = true; expect(nextAutomaticRead(0, c)).toBeUndefined()
+  ownerBusy = false; c.enabled = false; expect(nextAutomaticRead(0, c)).toBeUndefined()
 })
 
 it('review-only results preserve the summary clock and admit its earlier fallback without resetting summary backoff', () => {
