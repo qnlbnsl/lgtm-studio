@@ -139,3 +139,5 @@ export function workspaceIdentity(row: Workspace, workspaces: ReadonlyArray<Work
   return { kind, project: kind === 'base' ? null : project?.projectId ?? null, team: team?.teamId ?? builderTeam?.teamId ?? row.teamId ?? null,
     owner: row.owner ?? (kind === 'project' ? project?.leadAgentId : undefined) ?? null, parent: parent?.branch ?? null, parentId: parent?.worktreeId ?? null } as const
 }
+
+export * from './gitRefresh.ts'

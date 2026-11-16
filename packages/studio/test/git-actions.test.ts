@@ -1,3 +1,4 @@
+import * as refreshPolicy from '../src/gitRefresh.ts';
 import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
 import { gitActionsSource } from "../scripts/gitActions.ts";
@@ -44,7 +45,7 @@ it("review 6: approval stays enabled during a held background read and disables 
     `${source}\nreturn { installMappings, openScreen, openReview, observe, busy, run };`);
   const actions = load({ state }, { on: true }, (patch: object) => Object.assign(state, patch), () => {}, { request },
     { openDialog: (value: unknown) => { dialog = value; }, toast: (message: string) => { throw new Error(message); } }, () => {}, () => {});
-  actions.installMappings({ mapGitChanges: () => [], mapGitState: () => ({}), mapMainReview: () => review });
+  actions.installMappings({ ...refreshPolicy, mapGitChanges: () => [], mapGitState: () => ({}), mapMainReview: () => review });
   const kit = await import("../../../design/mock/vendor/htm-preact/standalone.module.js" as string);
   const dialogSource = gitActionsSource("js/dialogs.js", readFileSync(`${process.cwd()}/design/mock/js/dialogs.js`, "utf8"));
   const component = dialogSource.slice(dialogSource.indexOf("function MergeReview("), dialogSource.indexOf("registerDialog('merge-review'"));

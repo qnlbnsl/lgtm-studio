@@ -1,3 +1,4 @@
+import * as refreshPolicy from '../src/gitRefresh.ts';
 import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
 import { gitActionsSource } from "../scripts/gitActions.ts";
@@ -15,7 +16,7 @@ function fixture(request: (tag: string, payload: any) => Promise<unknown>) {
   const actions = new Function("store", "live", "engineWrite", "notify", "engine", "act", "update", "addEventListener", "removeEventListener",
     `${source}\nreturn { installMappings, openScreen, refreshGit, busy, declineReview, discard, stage, integrate, selectGit, commit, syncGit, abortMerge, updateFromBase, answerReview };`)(
     { state }, { on: true }, (p: object) => Object.assign(state, p), () => {}, { request }, act, (f: (s: any) => void) => f(state), () => {}, () => {});
-  actions.installMappings({ mapGitState: (s: any) => s, mapGitChanges: (items: any[]) => items,
+  actions.installMappings({ ...refreshPolicy, mapGitState: (s: any) => s, mapGitChanges: (items: any[]) => items,
     mapMainReview: (r: any) => r, mapConflict: (c: any) => ({ ...c, id: c.path, selection: c }) });
   return { state, actions, act, dialogs, toasts };
 }

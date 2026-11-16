@@ -13,7 +13,7 @@ export function gitActionsSource(path: string, source: string): string {
   }
   if (path === "js/live/git.js") {
     // Appended actions depend on these source helpers and their parameter order.
-    for (const signature of ["function affectedGit(w, target) {", "async function loadGit(project, ids, reviews = false) {"]) {
+    for (const signature of ["function affectedGit(w, target) {", "async function loadGit(project, ids, reviews = false) {", "async function loadGitDetail(id, selectedCommit, automatic = false) {", "mapping.nextAutomaticRead(Date.now(), c)"]) {
       if (!source.includes(signature)) throw new Error(`Git actions integration no longer matches ${path}: missing ${signature}`)
     }
     // Index and file-only actions read back their checkout. Head-changing
@@ -21,17 +21,9 @@ export function gitActionsSource(path: string, source: string): string {
     replace("return gitDetail(id, commit);", "if (!tab) return run('git', () => { revision++; return loadGit(wt(id)?.project || screen?.project, [id]); });\n  return gitDetail(id, commit);")
     // Automatic reads never disable an owner action. An explicit refresh must
     // start a fresh generation even when an older automatic read is pending.
-    replace("if (screen.name === 'git') return refreshGit(screen.project);", "if (screen.name === 'git') return refreshGit(screen.project, true);")
-    replace("export function refreshGit(project = screen?.project) { return run('git', () => loadGit(project)); }", "export function refreshGit(project = screen?.project, background = false) {\n  if (background) { if (busy('git')) return false; return run('git-read', () => loadGit(project)); }\n  return run('git', () => { revision++; return loadGit(project, undefined, true); });\n}")
     replace("lost: plan.paths, action: 'Discard', onConfirm:", "lost: plan.paths, action: 'Discard', waitForReply: true, pendingLabel: 'Discarding…', onConfirm:")
-    replace("export function gitDetail(id, commit) { return run('git', () => loadGitDetail(id, commit)); }", "export function gitDetail(id, commit) { return run('git', () => { revision++; return loadGitDetail(id, commit); }); }")
     replace("const conflict = read(await request('project.conflict.choose'", "revision++;\n    const conflict = read(await request('project.conflict.choose'")
     replace("if (w.kind !== 'team') { refuse(); return; }", "if (!['team', 'agent'].includes(w.kind)) { refuse(); return; }")
-    replace("const merge = state.mergeHead || changes.items.some((x) => x.conflict) ?", "const resolved = state.mergeHead ? read(await request('project.conflict.resolved', scope(w))) : { items: [], truncated: false };\n    if (version !== revision || S().session.status !== 'in') return;\n    const merge = state.mergeHead || changes.items.some((x) => x.conflict) ?")
-    replace("files: changes.items.filter((x) => x.conflict).map", "files: [...changes.items.filter((x) => x.conflict), ...resolved.items.map((file) => ({ ...file, resolved: true }))].map")
-    replace("resolved: false, loaded: false })) } : null;", "resolved: !!x.resolved, fingerprint: x.fingerprint, loaded: false })) } : null;")
-    replace("truncated: changes.truncated });", "truncated: changes.truncated || resolved.truncated });")
-    replace("for (const f of w.merge.files) {", "for (const f of w.merge.files) {\n      if (f.resolved) { files.push({ ...f, loaded: true }); continue; }")
     replace("export function answerReview(id, option) {\n  if (option !== 'merge') { refuse(); return; }", "export function answerReview(id, option, reason) {\n  if (option === 'decline') return declineReview(id, reason);\n  if (option !== 'merge') { refuse(); return; }")
     replace("if (!value) { refuse(); return; }", "if (!value) return reopen(id, fid);")
     replace("await loadGit(screen?.project);\n}); }\nexport function discard", "await loadGit(screen?.project, [w.id]);\n}); }\nexport function discard")

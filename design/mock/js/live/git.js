@@ -11,11 +11,12 @@ const pending = (key, value) => { S().ui.gitPending ||= {}; S().ui.gitPending[ke
 export async function run(key, work) {
   if (busy(key)) return false;
   pending(key, true);
+  if (key === 'git') holdGit();
   const generation = sessionGeneration;
   const current = () => generation === sessionGeneration;
   try { await work(); return true; }
   catch (e) { if (current() && S().session.status === 'in') act.toast(e.message || 'The service did not complete the request.', 'error'); return false; }
-  finally { if (current()) pending(key, false); }
+  finally { if (current()) { pending(key, false); if (key === 'git') scheduleGit(); } }
 }
 const request = (tag, payload = {}) => engine.request(tag, payload);
 const draftValues = () => Object.fromEntries([...settingsDrafts].map(([key, draft]) => [key, draft.value]));
@@ -45,22 +46,25 @@ export function observe(patch) {
   if (patch.settings && S().session.status === 'in') patch.settings = { ...patch.settings, ...draftValues() };
   if (patch.worktrees) patch.worktrees = patch.worktrees.map((w) => ({ ...w, ...(S().worktrees?.find((x) => x.id === w.id && x.folder === w.folder && x.branch === w.branch) || {}), ...Object.fromEntries(Object.entries(w).filter(([k]) => !['files', 'commits', 'ahead', 'behind', 'merge'].includes(k))) }));
   if (patch.subscriptions && subscriptionsLoaded) patch.subscriptions = S().subscriptions;
-  if (screen && (patch.conn?.status === 'live' || patch.projects)) {
+  if (screen?.name === 'git') reconcileGit(patch.worktrees);
+  if (screen && screen.name !== 'git' && (patch.conn?.status === 'live' || patch.projects)) {
     clearTimeout(refreshTimer); refreshTimer = setTimeout(() => refreshScreen(), 100);
   }
 }
 export function openScreen(name, project) {
   if (!live.on) return () => {};
+  stopGit();
   if (name === 'git') engineWrite({ worktrees: S().worktrees.map((w) => ({ ...w, reviewLoaded: false })) });
   screen = { name, project };
-  void refreshScreen();
-  const refresh = () => { if (screen) void refreshScreen(); };
+  if (name === 'git') startGit(project); else void refreshScreen();
+  const visit = screen;
+  const refresh = () => { if (screen === visit) { if (name === 'git') dirtyAllGit(); else void refreshScreen(); } };
   addEventListener('focus', refresh);
-  return () => { screen = undefined; revision++; clearTimeout(refreshTimer); removeEventListener('focus', refresh); };
+  return () => { if (screen !== visit) return; stopGit(); screen = undefined; revision++; clearTimeout(refreshTimer); removeEventListener('focus', refresh); };
 }
 async function refreshScreen() {
   if (!mapping || !screen || S().session.status !== 'in') return;
-  if (screen.name === 'git') return refreshGit(screen.project);
+  if (screen.name === 'git') return;
   if (busy('settings') || busy('read-service')) { clearTimeout(refreshTimer); refreshTimer = setTimeout(refreshScreen, 200); return; }
   return run('read-service', () => loadService(screen?.name));
 }
@@ -279,66 +283,183 @@ function affectedGit(w, target) {
   const roots = new Set(target ? [w.id, target.id] : [w.id]);
   return S().worktrees.filter((x) => x.repo === w.repo && (roots.has(x.id) || roots.has(x.parentId))).map((x) => x.id);
 }
+// All automatic admission lives in this visit's controller and its single timer.
+let gitController;
+let lastAutomaticStart = null;
+const identity = (w) => JSON.stringify([w.repo, w.folder, w.branch, w.machine, w.parentId]);
+const gitRows = (project, rows = S().worktrees) => rows.filter((w) => w.machine === 'local' && (w.project === project || w.kind === 'base' && w.repo === S().projects.find((p) => p.id === project)?.repo));
+const selectedGit = (project) => gitRows(project).find((w) => w.branch === S().inspecting[project]) || gitRows(project).find((w) => w.kind === 'project') || gitRows(project)[0];
+function recordFor(w, c = gitController) {
+  if (!c) { const r = mapping.gitRefreshRecord(identity(w), Date.now()); r.reviewDirty = w.reviewLoaded ? 0 : 1; return r; }
+  let r = c.records.get(w.id);
+  if (!r || r.identity !== identity(w)) {
+    r?.summaryAbort?.abort(); r?.detailAbort?.abort();
+    r = mapping.gitRefreshRecord(identity(w), Date.now(), (r?.epoch || 0) + 1); c.records.set(w.id, r);
+  }
+  return r;
+}
+function reconcileGit(rows = S().worktrees) {
+  const c = gitController; if (!c) return;
+  const list = gitRows(c.project, rows), ids = new Set(list.map((w) => w.id));
+  for (const [id, r] of c.records) if (!ids.has(id)) { r.epoch++; r.summaryAbort?.abort(); r.detailAbort?.abort(); c.records.delete(id); }
+  for (const w of list) recordFor(w, c);
+  scheduleGit();
+}
+function holdGit() {
+  const c = gitController; if (!c) return;
+  clearTimeout(c.timer);
+  for (const r of c.records.values()) {
+    r.epoch++; r.summaryAbort?.abort(); r.detailAbort?.abort();
+    if (r.phase === 'reading') { r.phase = 'due'; r.nextAttempt = Date.now(); }
+  }
+}
+function stopGit() {
+  const c = gitController; if (!c) return;
+  c.enabled = false; clearTimeout(c.timer);
+  for (const r of c.records.values()) { r.epoch++; r.summaryAbort?.abort(); r.detailAbort?.abort(); }
+  gitController = undefined;
+  pending('git-read', false);
+}
+function startGit(project) {
+  if (!mapping) return;
+  const c = gitController = { ...mapping.createGitController(lastAutomaticStart), project };
+  reconcileGit();
+  // Opening the screen is an owner demand. It must not disable its controls.
+  clearTimeout(c.timer); pending('git-read', true); c.reading = 'initial';
+  void loadGit(project).catch(() => {}).finally(() => { if (gitController === c) { c.reading = null; pending('git-read', false); scheduleGit(); } });
+}
+function dirtyAllGit() {
+  const c = gitController; if (!c) return;
+  for (const r of c.records.values()) mapping.dirtyGitRecord(r, 'summary', Date.now());
+  scheduleGit();
+}
+function scheduleGit() {
+  const c = gitController; if (!c) return;
+  clearTimeout(c.timer); c.ownerBusy = busy('git'); c.selected = selectedGit(c.project)?.id;
+  const next = mapping.nextAutomaticRead(Date.now(), c); if (!next) return;
+  c.timer = setTimeout(async () => {
+    if (gitController !== c) return;
+    c.timer = undefined;
+    c.ownerBusy = busy('git');
+    const admitted = mapping.nextAutomaticRead(Date.now(), c);
+    if (!admitted || admitted.at > Date.now()) { scheduleGit(); return; }
+    const r = c.records.get(admitted.id), w = wt(admitted.id);
+    if (!r || !w) { reconcileGit(); return; }
+    c.lastStart = lastAutomaticStart = Date.now(); c.reading = w.id;
+    pending('git-read', true);
+    try {
+      await readGitRecord(w, c.project, r, c, false);
+      if (gitController === c && c.selected === w.id && !busy('git')) await loadGitDetail(w.id, undefined, true);
+    } finally { if (gitController === c) { c.reading = null; pending('git-read', false); scheduleGit(); } }
+  }, Math.max(0, next.at - Date.now()));
+}
+async function readGitRecord(w, project, r, c, forced, reviews = false) {
+  if (forced) { r.epoch++; r.failures = 0; r.summaryDirty++; if (reviews) r.reviewDirty++; }
+  const epoch = r.epoch, summary = r.summaryDirty, reviewCount = r.reviewDirty;
+  const valid = () => r.epoch === epoch && S().session.status === 'in' && (!c || gitController === c && c.enabled && c.records.get(w.id) === r);
+  r.summaryAbort?.abort(); const abort = r.summaryAbort = new AbortController();
+  const ask = async (tag, payload) => { if (!valid()) return; const reply = await engine.request(tag, payload, { signal: abort.signal }); return valid() ? read(reply) : undefined; };
+  r.phase = 'reading'; let failure = null;
+  try {
+    let state;
+    if (forced || summary || !r.lastSuccess) {
+      state = await ask('project.git.state', { ...scope(w), ...(w.parent ? { target: w.parent } : {}) }); if (!state) return;
+      const changes = await ask('project.changes', scope(w)); if (!changes) return;
+      const old = wt(w.id), headChanged = old.head !== state.head || old.mergeHead !== state.mergeHead;
+      const files = mapping.mapGitChanges(changes.items).map((f) => {
+        const cached = !headChanged && old.files.find((x) => x.id === f.id && x.path === f.path && x.staged === f.staged && x.status === f.status);
+        return cached ? { ...f, kind: cached.kind, hunks: cached.hunks, add: cached.add, del: cached.del, diffError: cached.diffError, loaded: cached.loaded } : f;
+      });
+      let resolved = { items: [], truncated: false };
+      if (state.mergeHead) try { resolved = await ask('project.conflict.resolved', scope(w)); if (!resolved) return; } catch (e) { failure = e; }
+      if (!valid()) return;
+      const merge = state.mergeHead || changes.items.some((x) => x.conflict) ? { from: state.mergeHead || '', by: null, startedAt: null,
+        files: [...changes.items.filter((x) => x.conflict), ...resolved.items.map((f) => ({ ...f, resolved: true }))].map((x) => {
+          const cached = !headChanged && old.merge?.files.find((f) => f.path === x.path && !!f.resolved === !!x.resolved);
+          return { ...cached, id: x.path, path: x.path, parts: cached?.parts || [], resolved: !!x.resolved, fingerprint: x.fingerprint || cached?.fingerprint, loaded: !!cached?.loaded };
+        }) } : null;
+      writeWt(w.id, { ...mapping.mapGitState(state, w.parent), files, merge, ready: !changes.truncated, truncated: changes.truncated || resolved.truncated });
+      r.summaryDirty = Math.max(0, r.summaryDirty - summary);
+    }
+    if (w.kind === 'project' && (reviews || reviewCount || !wt(w.id).reviewLoaded || wt(w.id).review?.status === 'open')) {
+      try {
+        const status = await ask('project.review.status', { ...scope(w), projectId: project }); if (!status) return;
+        writeWt(w.id, { reviewLoaded: true });
+        if (status.review) {
+          const fresh = mapping.mapMainReview(status.review, undefined, S().projects.find((p) => p.id === project)?.lead || '');
+          const old = wt(w.id).review;
+          const review = old?.id === fresh.id && old.head === fresh.head && old.baseHead === fresh.baseHead ? { ...old, ...fresh, files: old.files, evidence: { ...old.evidence, tests: fresh.evidence.tests, review: fresh.evidence.review } } : fresh;
+          writeWt(w.id, { review, merged: status.review.outcome === 'merged' && status.review.head === (state?.head || wt(w.id).head) ? status.review.decidedAt : null });
+        }
+      } catch (e) { failure ||= e; }
+    }
+    if (valid() && !failure) r.reviewDirty = Math.max(0, r.reviewDirty - reviewCount);
+  } catch (e) { failure = e; }
+  finally {
+    if (valid()) {
+      mapping.finishGitRecord(r, Date.now(), failure ? failure.message || 'The worktree could not be refreshed.' : null);
+      if (failure && (r.lastToast === null || Date.now() - r.lastToast >= 60000)) { r.lastToast = Date.now(); act.toast('This worktree could not be refreshed.', 'error'); }
+    }
+    if (r.summaryAbort === abort) r.summaryAbort = undefined;
+  }
+  return failure;
+}
 async function loadGit(project, ids, reviews = false) {
   if (!mapping) return;
-  const version = revision;
-  const list = S().worktrees.filter((w) => w.project === project || w.kind === 'base' && w.repo === S().projects.find((p) => p.id === project)?.repo);
-  for (const w of list.filter((w) => !ids || ids.includes(w.id))) {
-    local(w);
-    const state = read(await request('project.git.state', { ...scope(w), ...(w.parent ? { target: w.parent } : {}) }));
-    const changes = read(await request('project.changes', scope(w)));
-    if (version !== revision || S().session.status !== 'in') return;
-    const files = mapping.mapGitChanges(changes.items);
-    const merge = state.mergeHead || changes.items.some((x) => x.conflict) ? { from: state.mergeHead || '', by: null, startedAt: null, files: changes.items.filter((x) => x.conflict).map((x) => ({ ...(w.merge?.files.find((f) => f.path === x.path) || {}), id: x.path, path: x.path, parts: w.merge?.files.find((f) => f.path === x.path)?.parts || [], resolved: false, loaded: false })) } : null;
-    writeWt(w.id, { ...mapping.mapGitState(state, w.parent), files, merge, ready: !changes.truncated, truncated: changes.truncated });
-    if (w.kind === 'project' && (reviews || !w.reviewLoaded || w.review?.status === 'open')) {
-      const status = read(await request('project.review.status', { ...scope(w), projectId: project }));
-      if (version !== revision) return;
-      writeWt(w.id, { reviewLoaded: true });
-      if (status.review) {
-        const fresh = mapping.mapMainReview(status.review, undefined, S().projects.find((p) => p.id === project)?.lead || '');
-        const old = wt(w.id).review;
-        const review = old?.id === fresh.id && old.head === fresh.head && old.baseHead === fresh.baseHead ? { ...old, ...fresh, files: old.files, evidence: { ...old.evidence, tests: fresh.evidence.tests, review: fresh.evidence.review } } : fresh;
-        writeWt(w.id, { review, merged: status.review.outcome === 'merged' && status.review.head === state.head ? status.review.decidedAt : null });
+  const c = gitController; let failure;
+  for (const w of gitRows(project).filter((w) => !ids || ids.includes(w.id))) {
+    if (c && gitController !== c) return;
+    const error = await readGitRecord(w, project, recordFor(w, c), c, true, reviews); failure ||= error;
+  }
+  const selected = selectedGit(project);
+  if (selected && (!ids || ids.includes(selected.id)) && (!c || gitController === c)) await loadGitDetail(selected.id);
+  if (failure) throw failure;
+}
+async function loadGitDetail(id, selectedCommit, automatic = false) {
+  const w = wt(id); local(w); if (!mapping) return;
+  const c = gitController, r = recordFor(w, c), epoch = r.epoch;
+  r.detailAbort?.abort(); const abort = r.detailAbort = new AbortController();
+  const valid = () => !abort.signal.aborted && r.epoch === epoch && wt(id) && S().session.status === 'in' && (!c || gitController === c && c.enabled && c.records.get(id) === r);
+  const ask = async (tag, payload) => { if (!valid()) return; const value = read(await engine.request(tag, payload, { signal: abort.signal })); return valid() ? value : undefined; };
+  const ui = S().gitUi[id] || {}, tab = ui.tab || (w.merge ? 'conflicts' : 'changes');
+  const failed = () => { if (valid()) act.toast('The file detail could not be loaded.', 'error'); };
+  try {
+    if (tab === 'history') {
+      if (automatic) return;
+      const history = await ask('project.history', { ...scope(w), limit: 200 }); if (!history) return;
+      const branches = await ask('project.branches', { repoId: w.repo }); if (!branches) return;
+      const commits = history.items.map((entry) => ({ ...wt(id).commits?.find((old) => old.hash === entry.hash), ...mapping.mapGitCommit(entry, branches.items) }));
+      writeWt(id, { commits, historyTruncated: history.truncated });
+      const commit = selectedCommit || ui.commit || commits[0]?.hash; if (!commit) return;
+      const existing = commits.find((entry) => entry.hash === commit); if (existing?.loaded) return;
+      const inventory = await ask('project.commit.files', { ...scope(w), commit }); if (!inventory) return;
+      const files = mapping.mapCommitFiles(inventory.items);
+      writeWt(id, { commits: wt(id).commits.map((entry) => entry.hash === commit ? { ...entry, files, loaded: true } : entry) });
+      for (const f of files) { try { const diff = await ask('project.diff', { ...scope(w), path: f.path, commit }); if (!diff) return;
+        writeWt(id, { commits: wt(id).commits.map((entry) => entry.hash === commit ? { ...entry, files: entry.files.map((x) => x.id === f.id ? { ...x, ...mapping.mapGitDiff(diff), loaded: true } : x) } : entry) });
+      } catch { failed(); } }
+    } else {
+      const conflicts = tab === 'conflicts' && w.merge;
+      const files = conflicts ? w.merge.files : w.files;
+      const selected = files.find((f) => f.id === ui[conflicts ? 'cfile' : 'file']) || files.find((f) => conflicts || !f.conflict);
+      const ordered = [selected, ...files.filter((f) => f !== selected)].filter(Boolean);
+      for (const f of automatic ? ordered.slice(0, 1) : ordered) {
+        if (!valid()) return;
+        if (conflicts && f.resolved || !conflicts && f.conflict || !automatic && f.loaded) continue;
+        try {
+          const body = await ask(conflicts ? 'project.conflict' : 'project.diff', { ...scope(w), path: f.path, ...(!conflicts ? { staged: f.staged } : {}) }); if (!body) return;
+          if (conflicts) {
+            const old = wt(id).merge?.files.find((x) => x.id === f.id); if (!old) return;
+            if (old.selection?.fingerprint === body.fingerprint && old.selection.head === body.head) body.choices = old.selection.choices;
+            writeWt(id, { merge: { ...wt(id).merge, files: wt(id).merge.files.map((x) => x.id === f.id ? { ...mapping.mapConflict(body), loaded: true } : x) } });
+          } else writeWt(id, { files: wt(id).files.map((x) => x.id === f.id ? { ...x, ...mapping.mapGitDiff(body), loaded: true, diffError: undefined } : x) });
+        } catch { failed(); }
       }
     }
-  }
-  const selected = list.find((w) => w.branch === S().inspecting[project]) || list.find((w) => w.kind === 'project') || list[0];
-  if (selected && (!ids || ids.includes(selected.id))) await loadGitDetail(selected.id);
+  } catch { failed(); }
+  finally { if (r.detailAbort === abort) r.detailAbort = undefined; }
 }
-async function loadGitDetail(id, selectedCommit) {
-  const w = wt(id); local(w); const version = revision;
-  const ui = S().gitUi[id] || {}, tab = ui.tab || (w.merge ? 'conflicts' : 'changes');
-  if (tab === 'history') {
-    const [history, branches] = await Promise.all([request('project.history', { ...scope(w), limit: 200 }), request('project.branches', { repoId: w.repo })]);
-    if (version !== revision) return;
-    const commits = read(history).items.map((c) => mapping.mapGitCommit(c, read(branches).items));
-    writeWt(id, { commits, historyTruncated: read(history).truncated });
-    const commit = selectedCommit || ui.commit || commits[0]?.hash;
-    if (commit) {
-      const files = mapping.mapCommitFiles(read(await request('project.commit.files', { ...scope(w), commit })).items);
-      for (let i = 0; i < files.length; i++) files[i] = { ...files[i], ...mapping.mapGitDiff(read(await request('project.diff', { ...scope(w), path: files[i].path, commit }))), loaded: true };
-      if (version !== revision) return;
-      writeWt(id, { commits: wt(id).commits.map((c) => c.hash === commit ? { ...c, files, loaded: true } : c) });
-    }
-  } else if (tab === 'conflicts' && w.merge) {
-    const files = [];
-    for (const f of w.merge.files) {
-      const conflict = read(await request('project.conflict', { ...scope(w), path: f.path }));
-      const old = wt(id)?.merge?.files.find((x) => x.id === f.id);
-      if (old?.selection?.fingerprint === conflict.fingerprint && old.selection.head === conflict.head) conflict.choices = old.selection.choices;
-      files.push({ ...mapping.mapConflict(conflict), loaded: true });
-    }
-    if (version !== revision) return;
-    writeWt(id, { merge: { ...w.merge, files } });
-  } else {
-    const files = [];
-    for (const f of w.files) files.push(f.conflict ? f : { ...f, ...mapping.mapGitDiff(read(await request('project.diff', { ...scope(w), path: f.path, staged: f.staged }))), loaded: true });
-    if (version !== revision) return;
-    writeWt(id, { files });
-  }
-}
-export function refreshGit(project = screen?.project) { return run('git', () => loadGit(project)); }
+export function refreshGit(project = screen?.project, background = false) { return run(background ? 'git-read' : 'git', () => loadGit(project, undefined, !background)); }
 export function gitDetail(id, commit) { return run('git', () => loadGitDetail(id, commit)); }
 export function selectGit(id, tab, commit) {
   update((s) => { const w = wt(id); s.inspecting[w.project || screen?.project] = w.branch; s.gitUi[id] = { ...s.gitUi[id], ...(tab ? { tab } : {}), ...(commit ? { commit } : {}) }; });
