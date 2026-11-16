@@ -17066,8 +17066,10 @@ State: fixed in s18-smallfix round 3.
 The first shared ownership hook also added its preload and lease variables to agent children.
 The full suite caught the changed environment through the account-login allow-list assertion.
 A recorded adapter replay also failed to initialize with that extra preload.
-The hook now preserves runner-built agent environments unchanged.
-Explicit service and foreground launcher entries still receive ownership metadata.
+Round 3 preserved runner-built agent environments only when LGTM_SOCKET was present.
+Round 5 found that recorder-built environments without that variable were still changed.
+The hook now adds ownership only to the identified service or CLI entry.
+Every other child keeps its supplied environment unchanged.
 Services already own their agent children through scoped runner teardown.
 The existing environment and replay assertions remain unchanged.
 
@@ -17117,8 +17119,11 @@ State: open.
 
 `scripts/service-test-owner.mjs` wraps spawn and fork only.
 It does not inject a lease into exec, execFile, execSync, execFileSync or spawnSync calls.
-A spawn or fork environment that already has LGTM_SOCKET is preserved unless the arguments name the TypeScript service or CLI entry directly.
-A bin/lgtm wrapper launched with that environment therefore also skips lease injection.
+Round 5 limits injection to the identified service entry, CLI entry or bin/lgtm launcher.
+An arbitrary helper program receives no ownership metadata, even when it later starts a service.
+Node launches using unrecognized prefix options are also outside the identified forms.
+The hook follows only the argument-free Node flags named in its nodeFlags set.
+All ordinary child environments remain exactly as supplied by their caller.
 A child that removes the ownership variables or Node startup options can also escape the preload.
 Those launch forms still need explicit fixture teardown and do not gain interruption cleanup from this hook.
 The new real-runner test proves that serveDetach’s direct service spawn does receive a lease record.
@@ -17156,3 +17161,18 @@ Sent reads now also use the session’s read cancellation signal.
 That signal ends when the shared read state ends and is renewed for a later connection attempt.
 It has no navigation listener and is never attached to an owner write.
 A regression proves that the sent read settles with the mark while an admitted write still completes normally.
+
+## s18-32. Test ownership metadata leaked into the recorder’s filtered adapter environment.
+
+State: fixed in s18-smallfix round 5.
+
+The ownership preload used LGTM_SOCKET to guess whether an environment was product-filtered.
+The recorder’s filtered adapter environment has no socket variable, so the hook added LGTM_TEST_OWNER and a Node preload.
+The unchanged recorder allow-list assertion exposed the leak in the orchestrator’s whole-suite run.
+The preload now injects ownership only when the actual child entry is the service or the CLI.
+A service path supplied as data to an ordinary script does not qualify.
+All other spawn and fork environments are passed through unchanged.
+Exact environment regressions cover both functions with and without LGTM_SOCKET.
+The allow-list and recorder test remain unchanged.
+The identified entry paths are derived from the preload’s module filename so that the same setup works in Node and browser test environments.
+

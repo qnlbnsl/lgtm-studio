@@ -1,9 +1,10 @@
-// Test-only ownership follows services through launchers, explicit environments,
+// Test-only ownership follows identified service and CLI entries through
 // detached groups and execve. A service signals itself, never a recycled PID.
 import childProcess from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -16,14 +17,29 @@ const identity = (pid) => {
 let owner;
 try { owner = JSON.parse(process.env.LGTM_TEST_OWNER || 'null'); } catch {}
 const originalSpawn = childProcess.spawn, originalFork = childProcess.fork;
+const repository = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const serviceEntry = join(repository, 'packages/engine/src/service.ts');
+const cliEntry = join(repository, 'packages/cli/src/bin.ts');
+const launcherEntry = join(repository, 'bin/lgtm');
+// Recognize the entry, never a service path supplied as data to another program.
+// Only these argument-free Node flags are followed; unknown launch forms need
+// explicit fixture teardown rather than broader environment injection.
+const nodeFlags = new Set(['--trace-warnings', '--no-warnings', '--experimental-strip-types', '--enable-source-maps']);
+const ownedEntry = (command, args, options) => {
+  const cwd = options.cwd instanceof URL ? fileURLToPath(options.cwd) : options.cwd ?? process.cwd();
+  const path = value => value instanceof URL ? fileURLToPath(value) : typeof value === 'string' ? resolve(cwd, value) : undefined;
+  if ([serviceEntry, cliEntry, launcherEntry].includes(path(command))) return true;
+  if (command !== process.execPath) return false;
+  let index = 0;
+  while (nodeFlags.has(args[index])) index++;
+  if (args[index] === '--') index++;
+  return [serviceEntry, cliEntry].includes(path(args[index]));
+};
 const guarded = (options = {}, command, args = []) => {
-  if (!owner) return options;
+  // Product-built environments are complete. Add ownership only for our own
+  // service or command-line entry, regardless of LGTM_SOCKET being present.
+  if (!owner || !ownedEntry(command, args, options)) return options;
   const env = { ...(options.env ?? process.env) };
-  const serviceLaunch = [command, ...args].some(arg => typeof arg === 'string' && arg.endsWith('/engine/src/service.ts'))
-    || [command, ...args].some(arg => typeof arg === 'string' && arg.endsWith('/cli/src/bin.ts')) && args.includes('serve');
-  // The runner has already applied its credential allow-list to agent children.
-  // Services own those children through their existing scoped runner teardown.
-  if (typeof env.LGTM_SOCKET === 'string' && !serviceLaunch) return options;
   env.LGTM_TEST_OWNER = JSON.stringify(owner);
   const hook = `--import=${import.meta.url}`;
   env.NODE_OPTIONS = [hook, env.NODE_OPTIONS].filter(Boolean).join(' ');
