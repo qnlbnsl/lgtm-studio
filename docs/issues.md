@@ -17297,3 +17297,26 @@ The live website's machine identifier is `local`.
 Reading the missing machine's name threw an exception before the sign-in control appeared.
 The live composer now uses the agent's project machine for that existing control.
 The sample keeps its original fallback.
+
+## s21-6. Phone alert links target an absent thread route
+
+Found: 2026-11-16, while building unit s21-recover.
+State: fixed in unit s21-recover.
+
+The notification transport emitted a thread route that the website does not handle.
+Agent alerts now link to the existing project chat route.
+Permission and question links use the existing request-focus parameter.
+Board alerts link to the existing Messages channel and post thread.
+Login also discarded those bookmarks by always navigating to Home.
+Login now retains the existing subject route when a phone bookmark uses one of those forms.
+The link contains identifiers instead of request text or credentials.
+
+## s21-7. An agent outside a project has no reachable website chat
+
+Found: 2026-11-16, while checking notification destinations for unit s21-recover.
+State: open.
+
+The website reaches agent chats through a project.
+An agent outside every project has no matching website chat route.
+The notification sender omits that unusable link.
+This unit does not add a screen or a route for an unassigned agent.

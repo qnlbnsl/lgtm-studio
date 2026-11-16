@@ -4,6 +4,7 @@ import { html, useState, useEffect, useRef, Icon, cx, update, go, href, parseRou
 import { HARNESSES, machineOf } from '../data.js';
 import * as act from '../actions.js';
 import * as board from '../live/board.js';
+import * as alertsLive from '../live/alerts.js';
 
 const LOOPBACK = /^(localhost|127(\.\d+){3}|\[::1\])$/;
 // The service accepts sign-in only over HTTPS or from the computer it runs on.
@@ -42,7 +43,7 @@ export function Login({ s }) {
     act.signIn(pw).then((next) => {
       setBusy(false);
       if (next === 'rejected') { setPw(''); return; }
-      if (next === 'in') go(s.session.firstRun ? '/setup' : '/home');
+      if (next === 'in') go(live.on ? alertsLive.afterSignIn(s.session.firstRun) : s.session.firstRun ? '/setup' : '/home');
     });
   };
   const retry = () => { setRetrying(true); act.retryService().then(() => setRetrying(false)); };
