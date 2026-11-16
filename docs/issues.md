@@ -15665,3 +15665,16 @@ Master has the same sequence.
 This problem predates unit s16-gitrefresh.
 This finding came from reading rather than from a test.
 A later fix can retry the new visit's first load after the busy pass finishes.
+
+## 1044. Two journeys of the retired page's Git screen also fail under load.
+
+**Status: open.** Found on 2026-11-15 during the full check of the Git read-back change.
+
+The journeys are "Git: actual owner prepares, reviews and approves main; dialog focus and real destination bytes" and "Git: current failed and then stale reported evidence remains data, and the owner can explicitly approve".
+Both are in `packages/web/e2e/git.spec.ts`.
+Both failed in the full check while the machine's load average was above 20.
+The first passed when it ran alone.
+The second failed once and passed once when it ran alone under the same load.
+Each failure was a text assertion in the merge review dialog that ran out of time.
+The change under test did not touch `packages/web/src`, which these journeys exercise.
+Issues 966 and 1014 record the other load-sensitive journeys.
