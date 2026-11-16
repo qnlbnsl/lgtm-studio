@@ -17038,3 +17038,14 @@ The empty-session renderer still chose Reading from the absent settings value al
 It now also checks whether the read has settled.
 The read finalizer notifies the renderer after clearing its loading promise.
 A regression renders the actual terminal view before and after a cancelled read.
+
+
+## s18-22. A blocked startup preload could hide a test ownership watcher.
+
+State: fixed in s18-smallfix round 3.
+
+The ownership preload originally followed the test’s existing startup preloads.
+A preload that waited indefinitely could prevent the watcher from starting.
+The ownership preload now runs first.
+A failing regression kills the worker while its service is blocked before main.
+The service now ends itself even in that startup window.

@@ -21,7 +21,7 @@ const guarded = (options = {}) => {
   const env = { ...(options.env ?? process.env) };
   env.LGTM_TEST_OWNER = JSON.stringify(owner);
   const hook = `--import=${import.meta.url}`;
-  env.NODE_OPTIONS = [env.NODE_OPTIONS, hook].filter(Boolean).join(' ');
+  env.NODE_OPTIONS = [hook, env.NODE_OPTIONS].filter(Boolean).join(' ');
   return { ...options, env };
 };
 childProcess.spawn = function (command, args, options) {
