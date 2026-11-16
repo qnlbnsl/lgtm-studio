@@ -21,9 +21,12 @@ import * as Schema from "effect/Schema"
 import { DisplayFrame } from "@lgtm/contracts/project/display"
 import { mapConnection, mapOwner, mapSnapshot, type ConnectionStatus, type EngineRecords, type StoreConn, type StoreOwner } from "./mapping.ts"
 
+import { gitEventPatch, type GitEventPatch } from './gitEvents.ts'
+
 export type SessionStatus = "checking" | "in" | "out" | "rejected" | "expired" | "unavailable" | "logout-unconfirmed"
 export interface StorePatch extends Partial<EngineRecords> {
   readonly chatEvent?: unknown
+  readonly git?: GitEventPatch | undefined
   readonly session?: { readonly status: SessionStatus; readonly firstRun: boolean }
   readonly conn?: StoreConn
   readonly owner?: StoreOwner
@@ -44,6 +47,11 @@ export interface StorePatch extends Partial<EngineRecords> {
 }
 export type Write = (patch: StorePatch) => void
 
+export interface RequestOptions {
+  readonly signal?: AbortSignal
+  readonly onRequestId?: (id: string) => void
+}
+
 // The connection object that design/mock/js/app.js accepts in live mode.
 export interface LiveConnection {
   readonly kind: "engine"
@@ -52,7 +60,7 @@ export interface LiveConnection {
   readonly mocks: typeof mocks
   call(tag: string, payload: unknown): void
   push(kind: string, payload: unknown): void
-  request(tag: string, payload: object): Promise<unknown>
+  request(tag: string, payload: object, options?: RequestOptions): Promise<unknown>
   terminalOutput?(sessionId: string, receive: (item: TerminalOutput) => void, failed: () => void): () => void
   signInOutput?(sessionId: string, receive: (item: SignInOutput) => void, failed: () => void): () => void
   open(write: Write): void
@@ -237,7 +245,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
             if (signal.aborted) return
             setConn("live")
             if (item.sequence <= after) return
-            if (!signal.aborted) write({ chatEvent: item })
+            if (!signal.aborted) write({ chatEvent: item, ...("event" in item ? { git: gitEventPatch(item, current) } : {}) })
             if ("event" in item) {
               if (item.event._tag === "project.SettingsChanged") yield* refreshOwner()
               yield* apply(item, refresh)
@@ -316,7 +324,8 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
       void Effect.runPromise(program, { signal: abort.signal }).catch(() => { if (!abort.signal.aborted) failed() }).finally(() => outer?.removeEventListener('abort', cancel))
       return cancel
     },
-    async request(tag, payload) {
+    async request(tag, payload, options = {}) {
+      options.signal?.throwIfAborted()
       const client = activeClient
       if (tag === "display.open" || tag === "display.close") {
         // Cleanup still uses the owner cookie when the WebSocket has gone away.
@@ -344,8 +353,10 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
         : tag === "client.harness.install" ? JSON.stringify([tag, payload]) : undefined
       const id = retryKey === undefined ? requestId() : retryIds.get(retryKey) ?? requestId()
       if (retryKey !== undefined) retryIds.set(retryKey, id)
+      options.onRequestId?.(id)
+      const signal = options.signal ? AbortSignal.any([controller!.signal, options.signal]) : controller!.signal
       try {
-        const result = await Effect.runPromise(invoke({ ...payload, ...(secret ? { value: secret } : {}), requestId: id }).pipe(Effect.result), { signal: controller!.signal })
+        const result = await Effect.runPromise(invoke({ ...payload, ...(secret ? { value: secret } : {}), requestId: id }).pipe(Effect.result), { signal })
         if (result._tag === "Failure") {
           const error = result.failure as { _tag?: unknown; reason?: unknown; message?: unknown }
           const refused = error?._tag === "CommandError"

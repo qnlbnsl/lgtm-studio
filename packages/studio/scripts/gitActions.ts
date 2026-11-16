@@ -5,6 +5,8 @@ export function gitActionsSource(path: string, source: string): string {
     source = source.replace(from, to)
   }
   if (path === "js/screens/git.js") {
+    replace("onSelect=${() => setUi({ file: f.id })}", "onSelect=${() => { setUi({ file: f.id }); if (live.on) liveGit.gitDetail(w.id); }}")
+    replace("onClick=${() => setUi({ cfile: f.id })}", "onClick=${() => { setUi({ cfile: f.id }); if (live.on) liveGit.gitDetail(w.id); }}")
     replace("<div class=\"cf-body\">${(() =>", "<div class=\"cf-body\">${live.on && !sel.loaded && html`<div class=\"diff-note\" role=\"status\">Loading conflicts…</div>`}${(() =>")
     replace("f.resolved ? 'Resolved' : left(f)", "f.resolved ? 'Resolved' : live.on && !f.loaded ? 'Loading…' : left(f)")
     replace("disabled=${sel.resolved} onClick=${() => choose", "disabled=${sel.resolved || (live.on && !sel.loaded)} onClick=${() => choose")
@@ -13,25 +15,16 @@ export function gitActionsSource(path: string, source: string): string {
   }
   if (path === "js/live/git.js") {
     // Appended actions depend on these source helpers and their parameter order.
-    for (const signature of ["function affectedGit(w, target) {", "async function loadGit(project, ids, reviews = false) {"]) {
+    for (const signature of ["function affectedGit(w, target) {", "async function confirmGit(command, readback) {", "async function loadGit(project, ids, reviews = false) {", "async function loadGitDetail(id, selectedCommit, automatic = false, force = false, send = request) {", "mapping.nextAutomaticRead(Date.now(), c)"]) {
       if (!source.includes(signature)) throw new Error(`Git actions integration no longer matches ${path}: missing ${signature}`)
     }
     // Index and file-only actions read back their checkout. Head-changing
     // actions use the source helper to include only affected dependencies.
-    replace("return gitDetail(id, commit);", "if (!tab) return run('git', () => { revision++; return loadGit(wt(id)?.project || screen?.project, [id]); });\n  return gitDetail(id, commit);")
+    replace("return gitDetail(id, commit);", "if (!tab) return run('git', () => { return loadGit(wt(id)?.project || screen?.project, [id]); });\n  return gitDetail(id, commit);")
     // Automatic reads never disable an owner action. An explicit refresh must
     // start a fresh generation even when an older automatic read is pending.
-    replace("if (screen.name === 'git') return refreshGit(screen.project);", "if (screen.name === 'git') return refreshGit(screen.project, true);")
-    replace("export function refreshGit(project = screen?.project) { return run('git', () => loadGit(project)); }", "export function refreshGit(project = screen?.project, background = false) {\n  if (background) { if (busy('git')) return false; return run('git-read', () => loadGit(project)); }\n  return run('git', () => { revision++; return loadGit(project, undefined, true); });\n}")
     replace("lost: plan.paths, action: 'Discard', onConfirm:", "lost: plan.paths, action: 'Discard', waitForReply: true, pendingLabel: 'Discarding…', onConfirm:")
-    replace("export function gitDetail(id, commit) { return run('git', () => loadGitDetail(id, commit)); }", "export function gitDetail(id, commit) { return run('git', () => { revision++; return loadGitDetail(id, commit); }); }")
-    replace("const conflict = read(await request('project.conflict.choose'", "revision++;\n    const conflict = read(await request('project.conflict.choose'")
     replace("if (w.kind !== 'team') { refuse(); return; }", "if (!['team', 'agent'].includes(w.kind)) { refuse(); return; }")
-    replace("const merge = state.mergeHead || changes.items.some((x) => x.conflict) ?", "const resolved = state.mergeHead ? read(await request('project.conflict.resolved', scope(w))) : { items: [], truncated: false };\n    if (version !== revision || S().session.status !== 'in') return;\n    const merge = state.mergeHead || changes.items.some((x) => x.conflict) ?")
-    replace("files: changes.items.filter((x) => x.conflict).map", "files: [...changes.items.filter((x) => x.conflict), ...resolved.items.map((file) => ({ ...file, resolved: true }))].map")
-    replace("resolved: false, loaded: false })) } : null;", "resolved: !!x.resolved, fingerprint: x.fingerprint, loaded: false })) } : null;")
-    replace("truncated: changes.truncated });", "truncated: changes.truncated || resolved.truncated });")
-    replace("for (const f of w.merge.files) {", "for (const f of w.merge.files) {\n      if (f.resolved) { files.push({ ...f, loaded: true }); continue; }")
     replace("export function answerReview(id, option) {\n  if (option !== 'merge') { refuse(); return; }", "export function answerReview(id, option, reason) {\n  if (option === 'decline') return declineReview(id, reason);\n  if (option !== 'merge') { refuse(); return; }")
     replace("if (!value) { refuse(); return; }", "if (!value) return reopen(id, fid);")
     replace("await loadGit(screen?.project);\n}); }\nexport function discard", "await loadGit(screen?.project, [w.id]);\n}); }\nexport function discard")
@@ -45,9 +38,7 @@ export function abortMerge(id) {
   const expectedHead = w.head, expectedMergeHead = w.mergeHead;
   act.confirm({ title: 'Abort this merge?', body: w.branch + ' goes back to how it was before ' + w.merge.from + ' was merged in. Your conflict choices are lost. Files added during the merge are removed.', action: 'Abort merge', waitForReply: true, pendingLabel: 'Aborting…',
     onConfirm: () => run('git', async () => {
-      revision++;
-      try { await request('project.merge.abort', { ...scope(w), expectedHead, expectedMergeHead, confirmed: true }); }
-      finally { await loadGit(screen?.project, affectedGit(w), true); }
+      await confirmGit(() => request('project.merge.abort', { ...scope(w), expectedHead, expectedMergeHead, confirmed: true }), () => loadGit(screen?.project, affectedGit(w), true));
     }) });
 }
 function reopen(id, fid) {
@@ -57,18 +48,15 @@ function reopen(id, fid) {
   const observed = { ...scope(w), path: file.path, expectedHead: w.head, expectedMergeHead: w.mergeHead, fingerprint: file.fingerprint, confirmed: true };
   act.confirm({ title: 'Reopen this conflict?', body: 'The current contents of ' + file.path + ' are replaced by the original conflict. Edits made after the file was last read are refused.', action: 'Reopen file', waitForReply: true, pendingLabel: 'Reopening…',
     onConfirm: () => run('git', async () => {
-      revision++;
-      try { await request('project.conflict.reopen', observed); }
-      finally { await loadGit(screen?.project, [w.id]); }
+      await confirmGit(() => request('project.conflict.reopen', observed), () => loadGit(screen?.project, [w.id]));
     }) });
 }
 export function updateFromBase(id) { return run('git', async () => {
-  const w = wt(id); local(w); const parent = destination(w); local(parent); revision++;
-  try { await request('project.update', { ...scope(w), destinationId: parent.id, expectedHead: parent.head }); }
-  finally { await loadGit(screen?.project, affectedGit(w, parent), true); }
+  const w = wt(id); local(w); const parent = destination(w); local(parent);
+  await confirmGit(() => request('project.update', { ...scope(w), destinationId: parent.id, expectedHead: parent.head }), () => loadGit(screen?.project, affectedGit(w, parent), true));
 }); }
 export async function declineReview(id, reason) { const completed = await run('git', async () => {
-  const w = S().worktrees.find((w) => w.review?.id === id); local(w); const r = w.review; revision++;
+  const w = S().worktrees.find((w) => w.review?.id === id); local(w); const r = w.review;
   if (!reason?.trim()) throw new Error('Give a reason for sending the review back.');
   const review = read(await request('project.review.decline', { ...scope(w), projectId: r.project, reviewId: r.id, expectedHead: r.head, expectedBaseHead: r.baseHead, reason: reason.trim() }));
   writeWt(w.id, { review: mapping.mapMainReview(review, undefined, r.agent) });

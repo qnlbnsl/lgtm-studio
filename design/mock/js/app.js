@@ -407,7 +407,7 @@ function mountLive(el) {
     if (patch.session && patch.session.status !== 'checking' && patch.session.status !== 'in') {
       chat.reset(); engineWrite({ threads: {}, pending: {} });
     }
-    if (patch.chatEvent) { chat.receive(patch.chatEvent); return; }
+    if (patch.chatEvent) { if (patch.git) liveGit.observe({ git: patch.git }); chat.receive(patch.chatEvent); return; }
     chat.enrich(patch);
     // The Workflow and Mocks tabs keep one record per project. Each live project gets an
     // empty one, frozen like the rest, so the tabs show their empty structure.
