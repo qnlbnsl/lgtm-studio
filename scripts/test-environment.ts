@@ -1,7 +1,7 @@
 import { mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, afterEach } from "vitest";
+import { afterAll } from "vitest";
 
 // @ts-expect-error This preload must run directly in child Node processes.
 import { installServiceTestOwner } from './service-test-owner.mjs';
@@ -18,6 +18,7 @@ afterAll(() => rmSync(stateDirectory, { recursive: true, force: true }));
 
 // Existing fixture teardown runs first. The lease also catches a failed hook,
 // an orphaned grandchild, and a test worker that is terminated with SIGKILL.
-let serviceOwner = installServiceTestOwner();
-afterEach(async () => { await serviceOwner.close(); serviceOwner = installServiceTestOwner(); });
+// A lease belongs to the whole test file. Services started in beforeAll must
+// remain alive across its tests; afterAll revokes ownership for the file.
+const serviceOwner = installServiceTestOwner();
 afterAll(async () => { await serviceOwner.close(); });

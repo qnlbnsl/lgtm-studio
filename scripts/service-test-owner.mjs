@@ -47,7 +47,7 @@ if (owner && (isService || isLauncher)) {
     if (stopping) return;
     if (existsSync(join(owner.root, 'active')) && identity(owner.pid) === owner.birth) return;
     stopping = true;
-    // SIGKILL cannot run an afterEach hook. This watcher lives in the owned
+    // SIGKILL cannot run an afterAll hook. This watcher lives in the owned
     // process, so it also closes services when a test worker is interrupted.
     setTimeout(() => process.kill(process.pid, 'SIGKILL'), 5000).unref();
     process.kill(process.pid, 'SIGTERM');

@@ -17005,7 +17005,9 @@ The exact historical test invocation was not saved with the process evidence.
 A new reproduction also found that an early launcher death could make the newer service accept process 1 when its private parent argument was missing.
 The foreground entry now requires the saved launcher identity.
 A test-only ownership lease follows Node child launches through explicit environments and detached launchers.
-Each service ends itself when teardown revokes its lease or its test worker dies.
+Each covered service ends itself when file teardown revokes its lease or its test worker dies.
+Round 4 moved lease revocation from each test to each file so that beforeAll services survive between tests.
+Issue s18-28 records launch forms that the lease does not follow.
 The teardown waits for owned services before removing the lease folder.
 Regressions cover normal teardown, a killed worker, early parent death, and service restart.
 
@@ -17089,6 +17091,49 @@ Waiting reads still wait for the connection, and sent reads still finish across 
 Existing Files and Git guards prevent a departed view’s late replies from updating the current view.
 The navigation tests cover waiting and sent thread reads, mocks, approval checks and Files query changes.
 
+## s18-26. A container’s process-1 foreground launcher was refused.
+
+State: fixed in s18-smallfix round 4.
+
+The foreground service required a saved parent identifier greater than one.
+A container launcher can legitimately be process one.
+The private entry now accepts an explicit positive integer, including one.
+Missing and invalid identities remain refused.
+A regression runs the real service with the process-one parent condition supplied by a startup preload.
+
+## s18-27. Test teardown revoked a file’s shared service after its first test.
+
+State: fixed in s18-smallfix round 4.
+
+The ownership setup revoked its lease after each test.
+A service started in beforeAll therefore ended before the file’s second test.
+The lease now belongs to the test file and is revoked only in afterAll.
+The setup comment states that rule.
+A real-runner fixture starts through serveDetach, verifies its lease record, and uses the same service in a second test.
+
+## s18-28. The test ownership preload does not follow every launch form.
+
+State: open.
+
+`scripts/service-test-owner.mjs` wraps spawn and fork only.
+It does not inject a lease into exec, execFile, execSync, execFileSync or spawnSync calls.
+A spawn or fork environment that already has LGTM_SOCKET is preserved unless the arguments name the TypeScript service or CLI entry directly.
+A bin/lgtm wrapper launched with that environment therefore also skips lease injection.
+A child that removes the ownership variables or Node startup options can also escape the preload.
+Those launch forms still need explicit fixture teardown and do not gain interruption cleanup from this hook.
+The new real-runner test proves that serveDetach’s direct service spawn does receive a lease record.
+No broader coverage is claimed.
+
+## s18-29. Process regression cleanup could signal a reused service identifier.
+
+State: fixed in s18-smallfix round 4.
+
+The early-parent-death foreground fixture signalled its service identifier after the passing assertion had already observed exit.
+The external ownership fixture also checked liveness without comparing the saved process start time.
+Both fixtures now record the start time while their child is alive.
+They signal a service only when its current start time still matches that record.
+The launcher-death fixture uses the same check for its fallback cleanup.
+
 ## s18-30. The cancellation inventory overstated several assertions.
 
 State: fixed in s18-smallfix round 4.
@@ -17111,24 +17156,3 @@ Sent reads now also use the session’s read cancellation signal.
 That signal ends when the shared read state ends and is renewed for a later connection attempt.
 It has no navigation listener and is never attached to an owner write.
 A regression proves that the sent read settles with the mark while an admitted write still completes normally.
-
-## s18-26. A container’s process-1 foreground launcher was refused.
-
-State: fixed in s18-smallfix round 4.
-
-The foreground service required a saved parent identifier greater than one.
-A container launcher can legitimately be process one.
-The private entry now accepts an explicit positive integer, including one.
-Missing and invalid identities remain refused.
-A regression runs the real service with the process-one parent condition supplied by a startup preload.
-
-## s18-29. Process regression cleanup could signal a reused service identifier.
-
-State: fixed in s18-smallfix round 4.
-
-The early-parent-death foreground fixture signalled its service identifier after the passing assertion had already observed exit.
-The external ownership fixture also checked liveness without comparing the saved process start time.
-Both fixtures now record the start time while their child is alive.
-They signal a service only when its current start time still matches that record.
-The launcher-death fixture uses the same check for its fallback cleanup.
-
