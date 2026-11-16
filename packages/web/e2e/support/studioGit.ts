@@ -179,6 +179,11 @@ export async function exerciseStudioGit(page: Page) {
           expect(git(source.path, 'rev-list', '--parents', '-n', '1', 'HEAD').split(' ')).toHaveLength(3)
           expect(errors).toEqual([])
         })
+        yield* Effect.promise(async () => {
+          await page.getByRole('button', { name: 'Open merge review', exact: true }).click()
+          await expect(page.getByRole('dialog')).toContainText('Missing')
+          await expect(page.getByRole('button', { name: 'Approve without evidence', exact: true })).toBeEnabled()
+        })
         const reviewer = yield* seedAgent({ id: 'reviewer', parent: project.leadAgentId, folder: source.path })
         const [thread] = yield* appendSetup([eventOf({ _tag: 'ThreadItem', agentId: reviewer.agentId, itemId: 'browser-report', content: { _tag: 'text', text: 'Synthetic report for the browser journey.' }, replay: false })])
         for (const kind of ['tests', 'review']) success(yield* call(ownerCredential, 'project.review.report', {
@@ -186,15 +191,27 @@ export async function exerciseStudioGit(page: Page) {
           summary: 'Synthetic passed report for the browser journey.', threadAgentId: reviewer.agentId, threadSequence: thread!.sequence
         }))
         yield* Effect.promise(async () => {
+          await expect(page.getByRole('dialog')).toContainText('current: passed')
+          await expect(page.getByRole('button', { name: 'Approve without evidence', exact: true })).toHaveCount(0)
+          await expect(page.getByRole('button', { name: 'Approve and merge', exact: true })).toBeEnabled()
+          // Keep the live arrival case above and the already-passing preparation case.
+          await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click()
           await page.getByRole('button', { name: 'Refresh Git', exact: true }).click()
-          await expect(page.getByRole('button', { name: 'Open merge review', exact: true })).toBeEnabled()
+          await expect(page.locator('.git')).toHaveAttribute('aria-busy', 'false')
           await page.getByRole('button', { name: 'Open merge review', exact: true }).click()
           await expect(page.getByRole('dialog')).toContainText('current: passed')
+          await expect(page.getByRole('button', { name: 'Approve without evidence', exact: true })).toHaveCount(0)
           await page.getByRole('button', { name: 'Approve and merge', exact: true }).click()
           await expect(page.getByRole('dialog')).toHaveCount(0)
           await expect(page.locator('.git')).toHaveAttribute('aria-busy', 'false')
           expect(readFileSync(join(rig.work, 'file.txt'), 'utf8')).toBe('ours\ntheirs\n')
           expect(errors).toEqual([])
+        })
+        const reviews = Object.values(projectView(yield* (yield* Views).snapshot).gitReviews)
+        expect(reviews.find((review) => review.head === git(source.path, 'rev-parse', 'HEAD') && review.outcome === 'merged')).toMatchObject({ decision: 'approve' })
+        expect(reviews.find((review) => review.outcome === 'merged' && review.decision === 'approve')?.evidence).toMatchObject({
+          tests: { state: 'current', report: { status: 'passed', head: git(source.path, 'rev-parse', 'HEAD') } },
+          review: { state: 'current', report: { status: 'passed', head: git(source.path, 'rev-parse', 'HEAD') } }
         })
       })).pipe(Effect.provide(buildServices(rig, engineLists).pipe(Layer.provide(dependencies))), Effect.provide(runner.layer))
     })).pipe(Effect.provide(SqliteClient.layer({ filename: rig.database, readerWorker: true })), Effect.scoped) as Effect.Effect<void, unknown>)

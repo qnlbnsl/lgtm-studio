@@ -436,7 +436,7 @@ async function readGitRecord(w, project, r, c, forced, reviews = false, send = r
         const status = await ask('project.review.status', { ...scope(w), projectId: project }); if (!status) return;
         writeWt(w.id, { reviewLoaded: true });
         if (status.review) {
-          const fresh = mapping.mapMainReview(status.review, undefined, S().projects.find((p) => p.id === project)?.lead || '');
+          const fresh = mapping.mapMainReview(status.review, undefined, S().projects.find((p) => p.id === project)?.lead || '', status.evidence);
           const old = wt(w.id).review;
           const review = old?.id === fresh.id && old.head === fresh.head && old.baseHead === fresh.baseHead ? { ...old, ...fresh, files: old.files, evidence: { ...old.evidence, tests: fresh.evidence.tests, review: fresh.evidence.review } } : fresh;
           writeWt(w.id, { review, merged: status.review.outcome === 'merged' && status.review.head === (state?.head || wt(w.id).head) ? status.review.decidedAt : null });
@@ -588,12 +588,13 @@ export function openReview(w, project) { return run('git', async () => {
   writeWt(w.id, { review: mapping.mapMainReview(prepared.review, prepared.comparison, project.lead) });
   act.openDialog({ type: 'merge-review', worktreeId: w.id, requestId: prepared.review.reviewId });
 }); }
-export function answerReview(id, option) {
+export function answerReview(id, option, reason, approval) {
   if (option !== 'merge') { refuse(); return; }
   return run('git', async () => {
     const w = S().worktrees.find((w) => w.review?.id === id); local(w); const r = w.review;
-    const review = read(await request('project.review.approve', { ...scope(w), projectId: r.project, reviewId: r.id, expectedHead: r.head, expectedBaseHead: r.baseHead, confirmed: true,
-      decision: r.evidence.tests.ok && r.evidence.review.ok ? 'approve' : 'approve_without_evidence' }));
+    const shown = approval || { head: r.head, baseHead: r.baseHead, decision: r.evidence.tests.ok && r.evidence.review.ok ? 'approve' : 'approve_without_evidence' };
+    const review = read(await request('project.review.approve', { ...scope(w), projectId: r.project, reviewId: r.id, expectedHead: shown.head, expectedBaseHead: shown.baseHead, confirmed: true,
+      decision: shown.decision }));
     writeWt(w.id, { review: mapping.mapMainReview(review, undefined, r.agent) });
     if (review.outcome === 'merged') act.closeDialog();
     await confirmGit(async () => { if (review.outcome !== 'merged') throw new Error(review.reason || 'The merge was refused.'); }, () => loadGit(r.project, affectedGit(w, wt(r.destinationId) || destination(w)), true));

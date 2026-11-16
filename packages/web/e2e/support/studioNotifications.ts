@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto"
 import { cpSync, mkdirSync } from "node:fs"
-import { resolve, join } from "node:path"
+import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { expect, test, type Page } from "@playwright/test"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -30,7 +31,7 @@ export async function exerciseStudioNotifications(page: Page) {
     const studioRoot = await buildStudio(join(rig.root, 'studio'))
     // The untouched sample mock sits in a subfolder of the website, so one server shows both.
     const sampleRoot = join(studioRoot, 'standalone-sample')
-    cpSync(resolve('design/mock'), sampleRoot, { recursive: true, dereference: true })
+    cpSync(fileURLToPath(new URL('../../../../design/mock/', import.meta.url)), sampleRoot, { recursive: true, dereference: true })
     const port = await unusedPort()
     mkdirSync('.foundry', { recursive: true })
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
