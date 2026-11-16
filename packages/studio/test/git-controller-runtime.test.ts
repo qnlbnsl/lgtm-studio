@@ -1,3 +1,4 @@
+const { errorText } = await import('../../../design/mock/js/live/reads.js' as string);
 import * as refreshPolicy from '../src/gitRefresh.ts';
 import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
@@ -20,7 +21,7 @@ function fixture(request: (tag: string, payload: any) => Promise<unknown>, ignor
     try { return await (ignoreAbort ? request(tag, payload) : Promise.race([request(tag, payload), abort])); } finally { options.signal?.removeEventListener("abort", stop); active.delete(call); }
   };
   const dialogs: any[] = [], toasts: string[] = [], listeners = new Map<string, () => void>();
-  const act: any = { confirm: (d: any) => dialogs.push(d), closeDialog: vi.fn(), openDialog: vi.fn(), toast: (s: string) => toasts.push(s) };
+  const act: any = { confirm: (d: any) => dialogs.push(d), closeDialog: vi.fn(), openDialog: vi.fn(), toast: (error: unknown) => { const text = errorText(error); if (text) toasts.push(text); } };
   const source = copied("js/live/git.js").replace(/^import .*;$/gm, "").replace(/export /g, "");
   const actions = new Function("store", "live", "engineWrite", "notify", "engine", "act", "update", "addEventListener", "removeEventListener",
     `${source}\nreturn { installMappings, openScreen, refreshGit, observe, busy, declineReview, discard, stage, integrate, selectGit, commit, abortMerge, resolve, gitDetail, openReview, choose, syncGit, run, request };`)(

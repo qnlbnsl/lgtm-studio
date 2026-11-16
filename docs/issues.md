@@ -16883,7 +16883,8 @@ A query change cancelled the screen’s waiting reads.
 A read started synchronously after navigation was cancelled again by the later route event.
 The shared lifetime now compares the route path without its query.
 An event for the current path does not replace the lifetime signal.
-The website request boundary silently drops a cancelled read before either its success or error handler runs.
+Round 3 corrected the cancellation boundary to reject with a mark, so each caller can release its state.
+Shared error presenters suppress that mark.
 Actual connection failures and owner writes keep their existing behaviour.
 The separate cancellation checks added to the board and chat readers were removed.
 
@@ -16956,3 +16957,17 @@ An unavailable asker’s question is hidden from actionable lists.
 If it is the only blocker, the task remains blocked without a visible question explaining that state until the asker resumes.
 This follows from keeping the stored question open.
 No task projection or stored event was changed for this observation.
+
+
+## s18-15. A cancelled website read kept its caller busy forever.
+
+State: fixed in s18-smallfix round 3.
+
+The round 2 request boundary replaced a cancelled rejection with a promise that never settled.
+Busy keys, loading promises, retry loops and automatic Git records could then stay occupied.
+The boundary now preserves the marked rejection.
+The shared toast presenter, notice presenter and inline error helper suppress cancellation text.
+The existing caller finalizers release their state.
+A cancelled multi-worktree Git refresh also ends its current pass before starting another read.
+The controller’s admission policy stays unchanged.
+Cancellation regressions exercise every latched row in the round 3 caller inventory.

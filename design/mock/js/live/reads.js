@@ -13,11 +13,9 @@ export function readOptions(options) {
   return { ...options, readSignal: page.signal };
 }
 
-// Dropping a cancelled read must run neither its success nor its error UI.
-// The abandoned promise has no listeners left on the connection or page.
-export function silenceCancelledRead(reply) {
-  return reply.catch(error => {
-    if (error?.name === 'AbortError' && error.cancelledRead === true) return new Promise(() => {});
-    throw error;
-  });
+// Cancellation still rejects, so every reader can release its state in finally.
+// Only presenters discard the mark; genuine failures retain their message.
+export function errorText(error, fallback = 'The service did not complete the request.') {
+  if (error?.cancelledRead === true) return '';
+  return typeof error === 'string' ? error : error?.message || fallback;
 }

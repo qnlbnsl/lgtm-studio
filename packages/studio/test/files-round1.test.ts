@@ -1,3 +1,4 @@
+const { errorText } = await import('../../../design/mock/js/live/reads.js' as string)
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeAll, expect, it, vi } from 'vitest'
 import * as mapping from '../src/files.ts'
@@ -17,7 +18,7 @@ function fixture(reply?: (tag: string, payload: any) => Promise<any>) {
   }))
   const s: any = { session: { status: 'in' }, conn: { status: 'live' }, boardRevision: 0 }
   let editor: any
-  const env = { ...kit, engine: { request }, store: { state: s }, useMedia: () => false, machineOf: () => ({ name: 'local', status: 'online' }), agentOf: () => null,
+  const env = { ...kit, errorText, engine: { request }, store: { state: s }, useMedia: () => false, machineOf: () => ({ name: 'local', status: 'online' }), agentOf: () => null,
     Icon: () => null, cx: (...values: any[]) => values.filter(Boolean).join(' '), href: (s: string) => s, go: vi.fn(), plural: (n: number) => `${n} lines`, isMac: false,
     Menu: () => null, Dialog: ({ children, foot }: any) => kit.html`<section>${children}${foot}</section>`, fileSize: (n: number) => `${n} bytes`,
     CodeEditor: (props: any) => { editor = props; return kit.html`<div class="test-editor">${props.doc}</div>` } }

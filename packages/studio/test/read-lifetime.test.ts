@@ -7,9 +7,9 @@ import { engineConnection } from '../src/connection.ts'
 const readers = () => import('../../../design/mock/js/live/reads.js' as string)
 const navigate = (hash: string) => window.history.replaceState({}, '', hash)
 async function builtEngine() {
-  const { readOptions, silenceCancelledRead } = await readers()
+  const { readOptions } = await readers()
   const source = readRequestsSource(readFileSync('design/mock/js/engine.js', 'utf8'))
-  return Function('readOptions', 'silenceCancelledRead', source.replace(/^import[^\n]*\n/, '').replaceAll('export ', '') + '\nreturn { request, setConnection };')(readOptions, silenceCancelledRead)
+  return Function('readOptions', source.replace(/^import[^\n]*\n/, '').replaceAll('export ', '') + '\nreturn { request, setConnection };')(readOptions)
 }
 
 it('retains a waiting read across a query change on the same screen', async () => {
@@ -34,7 +34,7 @@ it('does not cancel a new screen read when its navigation event arrives later', 
   expect(readOptions({}).readSignal).toBe(next)
 })
 
-it('silently drops a cancelled read at the shared website request boundary', async () => {
+it('settles a cancelled read at the shared website request boundary', async () => {
   const engine = await builtEngine()
   const connection = engineConnection({ location: { protocol: 'http:', host: '127.0.0.1:12345' }, debug() {},
     fetch: (async () => new Response(null, { status: 204 })) as typeof fetch, connect: (() => Effect.never) as never })
@@ -44,8 +44,8 @@ it('silently drops a cancelled read at the shared website request boundary', asy
   engine.request('client.web.settings', {}).then(() => { settled = true }, (e: unknown) => { settled = true; error = e })
   connection.close()
   for (let i = 0; i < 10; i++) await Promise.resolve()
-  expect(error).toBeUndefined()
-  expect(settled).toBe(false)
+  expect(error).toMatchObject({ name: 'AbortError', cancelledRead: true })
+  expect(settled).toBe(true)
 })
 
 it('preserves actual failures and cancelled writes at the shared boundary', async () => {

@@ -373,15 +373,17 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
       return cancel
     },
     async request(tag, payload, options = {}) {
-      if (isReadRequest(tag, payload)) {
-        const signals = [options.signal, options.readSignal].filter((s): s is AbortSignal => s !== undefined)
-        const readSignal = signals.length ? AbortSignal.any(signals) : undefined
+      const reading = isReadRequest(tag, payload)
+      const signals = [options.signal, ...(reading ? [options.readSignal] : [])].filter((s): s is AbortSignal => s !== undefined)
+      const readSignal = signals.length ? AbortSignal.any(signals) : undefined
+      const cancelledRead = () => Object.assign(new DOMException('The read was cancelled.', 'AbortError'), { cancelledRead: true })
+      if (reading) {
         try {
           await readReady(readSignal)
           readSignal?.throwIfAborted()
         } catch (error) {
           if (readSignal?.aborted || error instanceof DOMException && error.name === 'AbortError') {
-            throw Object.assign(new DOMException('The read was cancelled.', 'AbortError'), { cancelledRead: true })
+            throw cancelledRead()
           }
           throw error
         }
@@ -414,7 +416,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
       const id = retryKey === undefined ? requestId() : retryIds.get(retryKey) ?? requestId()
       if (retryKey !== undefined) retryIds.set(retryKey, id)
       options.onRequestId?.(id)
-      const signal = options.signal ? AbortSignal.any([controller!.signal, options.signal]) : controller!.signal
+      const signal = readSignal ? AbortSignal.any([controller!.signal, readSignal]) : controller!.signal
       try {
         const result = await Effect.runPromise(invoke({ ...payload, ...(secret ? { value: secret } : {}), requestId: id }).pipe(Effect.result), { signal })
         if (result._tag === "Failure") {
@@ -425,6 +427,9 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
         }
         if (retryKey !== undefined) retryIds.delete(retryKey)
         return result.success
+      } catch (error) {
+        if (reading && signal.aborted) throw cancelledRead()
+        throw error
       } finally { if (secret) Redacted.wipeUnsafe(secret) }
     },
     open(next) {

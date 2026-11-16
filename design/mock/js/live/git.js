@@ -15,7 +15,7 @@ export async function run(key, work) {
   const generation = sessionGeneration;
   const current = () => generation === sessionGeneration;
   try { await work(); return true; }
-  catch (e) { if (current() && e.name !== 'AbortError' && S().session.status === 'in') act.toast(e.message || 'The service did not complete the request.', 'error'); return false; }
+  catch (e) { if (current() && e.name !== 'AbortError' && S().session.status === 'in') act.toast(e, 'error', 'The service did not complete the request.'); return false; }
   finally { if (current()) { pending(key, false); if (key === 'git') scheduleGit(); } }
 }
 const mutatesGit = (tag) => /^project\.(stage|unstage|discard$|commit$|pull$|push$|fetch$|integrate$|update$|merge\.abort$|conflict\.(choose|resolve|reopen)$|review\.(prepare|approve|decline)$)/.test(tag);
@@ -204,7 +204,7 @@ async function drainSettings(queue) {
     while (queue.items.length && current()) {
       const item = queue.items.shift(); let saved = false;
       try { revision++; await writeSettings(item.patch, current); saved = current(); }
-      catch (e) { if (current()) act.toast(e.message || 'The service did not complete the request.', 'error'); }
+      catch (e) { if (current()) act.toast(e, 'error', 'The service did not complete the request.'); }
       if (current()) {
         for (const field of Object.keys(item.patch)) if (settingsDrafts.get(field)?.edit === item.edit) settingsDrafts.delete(field);
         if (service) settingsPatch(mapping.mapServiceSettings(service.project, service.harnesses, service.roles, service.web, service.roleFile));
@@ -362,7 +362,7 @@ function startGit(project) {
   // The initial demand captures epochs, so a newer owner read-back always wins.
   clearTimeout(c.timer);
   void loadGit(project).catch((e) => {
-    if (gitController === c && c.enabled && e.name !== 'AbortError') act.toast(e.message || 'The service did not complete the request.', 'error');
+    if (gitController === c && c.enabled && e.name !== 'AbortError') act.toast(e, 'error', 'The service did not complete the request.');
   }).finally(scheduleGit);
 }
 function dirtyAllGit() {
@@ -464,6 +464,8 @@ async function loadGit(project, ids, reviews = false) {
     const current = wt(w.id);
     if (!current || identity(current) !== identity(w) || c && c.records.get(w.id)?.epoch !== epoch) continue;
     const r = recordFor(current, c), error = await readGitRecord(current, project, r, c, true, reviews); failure ||= error;
+    // A cancelled visit cannot begin another worktree read on the new page.
+    if (error?.name === 'AbortError') break;
   }
   if (failure) throw failure;
 }

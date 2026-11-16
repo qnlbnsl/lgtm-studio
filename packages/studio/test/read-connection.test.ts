@@ -48,7 +48,7 @@ for (const cancel of ['page', 'request', 'close', 'sign out'] as const) it(`drop
   if (cancel === 'close') h.c.close()
   else if (cancel === 'sign out') await h.c.signOut()
   else abort.abort()
-  expect(((await result) as Error).name).toBe('AbortError')
+  expect(await result).toMatchObject({ name: 'AbortError', cancelledRead: true })
   h.opening.resolve(h.client)
   await Promise.resolve()
   expect(h.dispatched()).toBe(0)
@@ -132,4 +132,18 @@ it('drops a queued read if navigation wins just as the connection becomes live',
   h.opening.resolve(h.client)
   expect(((await reply) as Error).name).toBe('AbortError')
   expect(h.dispatched()).toBe(0)
+})
+
+for (const cancel of ['page', 'request', 'close', 'sign out'] as const) it(`settles an admitted read with its cancellation mark on ${cancel}`, async () => {
+  const h = rig(), abort = new AbortController(); let sent = false
+  ;(h.client as any)['client.web.settings'] = () => { sent = true; return Effect.never }
+  h.opening.resolve(h.client)
+  await vi.waitFor(() => expect(h.state.conn?.status).toBe('live'))
+  const outcome = h.c.request('client.web.settings', {}, cancel === 'page' ? { readSignal: abort.signal } : { signal: abort.signal }).catch(e => e)
+  await vi.waitFor(() => expect(sent).toBe(true))
+  if (cancel === 'close') h.c.close()
+  else if (cancel === 'sign out') await h.c.signOut()
+  else abort.abort()
+  let error: any; void outcome.then(e => { error = e })
+  await vi.waitFor(() => expect(error).toMatchObject({ name: 'AbortError', cancelledRead: true }))
 })

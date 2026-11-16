@@ -92,7 +92,7 @@ export function Display({ selection, title = 'Recorded preview', action = 'Open 
     if (!r.frame) { setPending(false); return; }
     setPending(true);
     try { await release(r.frame); r.frame = null; if (r.alive) setUnclosed(false); }
-    catch (e) { if (r.alive) { setUnclosed(true); toast(e.message, 'error'); } }
+    catch (e) { if (r.alive) { setUnclosed(true); toast(e, 'error'); } }
     finally { if (r.alive) setPending(false); }
   };
   const open = async () => {
@@ -103,7 +103,7 @@ export function Display({ selection, title = 'Recorded preview', action = 'Open 
       const f = await r.connection.request('display.open', selection);
       if (!r.alive || generation !== r.generation) { await release(f); return; }
       r.frame = f; setFrame(f);
-    } catch (e) { if (r.alive) toast(e.message, 'error'); }
+    } catch (e) { if (r.alive) toast(e, 'error'); }
     finally { if (r.alive && generation === r.generation) setPending(false); }
   };
   useEffect(() => { const r = ref.current; r.alive = true; return () => {
