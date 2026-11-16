@@ -15718,3 +15718,16 @@ A failed change list could leave the displayed head older than the successful st
 The new reader publishes the state immediately.
 A changed head clears mutable bodies before the next detail demand.
 The failed summary keeps the approved stale sentence visible.
+
+## s16-4. Direct Git replies must not queue a redundant summary pass.
+
+Found: 2026-11-15, while inspecting part B's first journey measurement.
+Status: fixed in part B of unit s16-gitrefresh.
+
+Preparing a review publishes the prepared review directly.
+Choosing a conflict preview publishes the chosen conflict directly.
+Neither action changes the worktree summary.
+The first controller wiring marked both actions summary-dirty before dispatch.
+That mark caused an extra automatic read after their direct reply.
+Both actions now raise the epoch and retain their request identifier without dirtying the summary.
+A regression sends their own completion patches and checks that no summary read follows.

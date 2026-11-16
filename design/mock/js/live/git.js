@@ -27,7 +27,9 @@ async function request(tag, payload = {}, options = {}) {
     const w = wt(payload.worktreeId), headChange = /\.(commit|pull|push|fetch|integrate|update|abort|approve)$/.test(tag);
     const ids = tag === 'project.fetch' ? [...c.records.keys()] : w ? headChange ? affectedGit(w, wt(payload.destinationId) || (tag === 'project.review.approve' ? destination(w) : undefined)) : [w.id] : [];
     if (tag === 'project.pull' && w) ids.push(...S().worktrees.filter((x) => x.repo === w.repo && !x.parentId).map((x) => x.id));
-    for (const id of ids) { const r = c.records.get(id); if (r) { r.epoch++; mapping.dirtyGitRecord(r, 'summary', Date.now()); if (headChange || tag.includes('review.')) mapping.dirtyGitRecord(r, 'review', Date.now()); } }
+    // These two actions publish their own reply without changing the summary.
+    const directReply = tag === 'project.review.prepare' || tag === 'project.conflict.choose';
+    for (const id of ids) { const r = c.records.get(id); if (r) { r.epoch++; if (!directReply) { mapping.dirtyGitRecord(r, 'summary', Date.now()); if (headChange || tag.includes('review.')) mapping.dirtyGitRecord(r, 'review', Date.now()); } } }
   }
   const call = { abort: new AbortController(), id: payload.worktreeId }; c.calls.add(call);
   const signal = options.signal ? AbortSignal.any([options.signal, call.abort.signal]) : call.abort.signal;

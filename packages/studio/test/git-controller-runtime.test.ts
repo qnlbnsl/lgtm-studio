@@ -19,10 +19,10 @@ function fixture(request: (tag: string, payload: any) => Promise<unknown>) {
     try { return await Promise.race([request(tag, payload), abort]); } finally { options.signal?.removeEventListener("abort", stop); active.delete(call); }
   };
   const dialogs: any[] = [], toasts: string[] = [], listeners = new Map<string, () => void>();
-  const act: any = { confirm: (d: any) => dialogs.push(d), closeDialog: vi.fn(), toast: (s: string) => toasts.push(s) };
+  const act: any = { confirm: (d: any) => dialogs.push(d), closeDialog: vi.fn(), openDialog: vi.fn(), toast: (s: string) => toasts.push(s) };
   const source = copied("js/live/git.js").replace(/^import .*;$/gm, "").replace(/export /g, "");
   const actions = new Function("store", "live", "engineWrite", "notify", "engine", "act", "update", "addEventListener", "removeEventListener",
-    `${source}\nreturn { installMappings, openScreen, refreshGit, observe, busy, declineReview, discard, stage, integrate, selectGit, commit, abortMerge, resolve, gitDetail };`)(
+    `${source}\nreturn { installMappings, openScreen, refreshGit, observe, busy, declineReview, discard, stage, integrate, selectGit, commit, abortMerge, resolve, gitDetail, openReview, choose };`)(
     { state }, { on: true }, (p: object) => Object.assign(state, p), () => {}, { request: send }, act, (f: (s: any) => void) => f(state), (name: string, fn: () => void) => listeners.set(name, fn), (name: string) => listeners.delete(name));
   actions.installMappings({ ...refreshPolicy, mapGitState: (s: any) => s, mapGitChanges: (items: any[]) => items,
     mapGitCommit: (c: any) => c, mapCommitFiles: (items: any[]) => items, mapGitDiff: (r: any) => r,
@@ -599,5 +599,29 @@ it('an explicit history demand retries a failed body while retaining completed i
     broken = false; await f.actions.refreshGit('project');
     expect(paths).toEqual(['one', 'two', 'two']);
     expect(f.state.worktrees[0].commits[0].files.every((f: any) => f.loaded)).toBe(true);
+  } finally { close(); vi.useRealTimers(); }
+});
+
+it('preparing a review and choosing a preview publish direct replies without a duplicate automatic pass', async () => {
+  vi.useFakeTimers();
+  const f = fixture(async tag => {
+    if (tag === 'project.review.prepare') return { result: { review: { id: 'prepared' }, comparison: {} } };
+    if (tag === 'project.conflict.choose' || tag === 'project.conflict') return { result: { path: 'file', parts: [{ id: 'hunk', hunk: 0 }], head: 'head', fingerprint: 'fingerprint' } };
+    if (tag === 'project.git.state') return { result: { head: 'head', mergeHead: 'merge' } };
+    if (tag === 'project.changes') return { result: { items: [{ id: 'file', path: 'file', conflict: true }] } };
+    return emptyGitReply(tag);
+  });
+  f.state.worktrees[0].parentId = 'base'; f.state.worktrees.push({ ...f.state.worktrees[0], id: 'base', kind: 'base', branch: 'main', project: null });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(0); const before = f.calls.length;
+    await f.actions.openReview(f.state.worktrees[0], f.state.projects[0]);
+    const prepare = f.calls.findIndex(c => c.tag === 'project.review.prepare');
+    f.actions.observe({ git: { group: 'review', worktreeIds: ['workspace'], requestId: 'own-' + (prepare + 1), completed: true } });
+    await f.actions.choose('workspace', 'file', 'hunk', 'ours');
+    const choose = f.calls.findIndex(c => c.tag === 'project.conflict.choose');
+    f.actions.observe({ git: { group: 'summary', worktreeIds: [], requestId: 'own-' + (choose + 1), completed: true } });
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(f.calls.slice(before).map(c => c.tag)).toEqual(['project.review.prepare', 'project.conflict.choose']);
   } finally { close(); vi.useRealTimers(); }
 });
