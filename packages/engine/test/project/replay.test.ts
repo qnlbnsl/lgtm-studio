@@ -31,3 +31,19 @@ it("uses recorded times for every story step and keeps project-scoped IDs and pr
   expect(view.tasks[projectKey("__proto__", "toString")]?.history.map((entry) => entry.at)).toEqual([2000, 42, 2000, 3000, 4000])
   expect(view.tasks[projectKey("__proto__", "toString")]?.story?.activity.every((step) => step.at !== undefined)).toBe(true)
 })
+
+it('projects workflow times from event envelopes, including approvals, replay and repeated stages', () => {
+  const events = [
+    envelope(1, { _tag: 'project.Created', projectId: 'p', name: 'One', goal: '', repoId: 'r', worktreeId: 'w', machineId: 'local', leadAgentId: 'lead', stage: 'define' }, 1000),
+    envelope(2, { _tag: 'project.ApprovalGranted', projectId: 'p', requestId: 'approve', approval: 'end-result' }, 2000),
+    envelope(3, { _tag: 'project.StageChanged', projectId: 'p', stage: 'plan' }, 3000),
+    envelope(4, { _tag: 'project.StageChanged', projectId: 'p', stage: 'build' }, 4000),
+    envelope(5, { _tag: 'project.StageChanged', projectId: 'p', stage: 'plan' }, 5000)
+  ]
+  const view = projectView(events.reduce(apply, emptyViews()))
+  expect(view.projects.p).toMatchObject({ createdAt: 1000, stage: 'plan', phaseTimes: [
+    { phase: 'define', start: 1000, end: 2000 },
+    { phase: 'build', start: 4000, end: 5000 }, { phase: 'plan', start: 5000 }
+  ] })
+  expect(events.map(row => Schema.decodeUnknownSync(EventEnvelope)(JSON.parse(JSON.stringify(row)))).reduce(apply, emptyViews())).toEqual(events.reduce(apply, emptyViews()))
+})

@@ -13898,7 +13898,7 @@ The numbers 843 and 844 are used by entries that another session holds uncommitt
 ## 846. The project "Workflow" tab shows phase lengths of thousands of days
 
 Found: 2026-11-14, on the same walk.
-State: open.
+State: fixed in s17-firstrun by projecting recorded envelope times in the engine and mapping them to the Workflow tab.
 
 On the real project "Connect website engine", the "Workflow" tab shows "Define 2307 days" and "Design and teams 4615 days".
 The project was created on 2026-11-13.
@@ -15009,7 +15009,7 @@ The name should be chosen by the owner, or be a short sensible title that the ow
 ## 941. A fresh project's Workflow tab shows the wrong phase and impossible times.
 
 Found: 2026-11-14, by the owner, on the real service.
-Status: open. Issue 846 already records that real phase times are not connected.
+State: fixed in s17-firstrun by projecting recorded envelope times in the engine and mapping them to the Workflow tab.
 
 A project that had just been created should be in the Define phase.
 The Workflow tab showed it in the Plan phase.
@@ -15114,7 +15114,7 @@ The team's branch and worktree folder remain in place.
 ## 949. Workflow phase times still come from sample calculations.
 
 Found again on 2026-11-14 while implementing unit s10-lead.
-Status: open under issues 846 and 941.
+State: fixed in s17-firstrun by projecting recorded envelope times in the engine and mapping them to the Workflow tab.
 The new project's Define stage is now mapped to the website.
 The Workflow screen still calculates sample phase times from its created-at field.
 Unit s10-lead does not build phase timing records.
@@ -16347,3 +16347,14 @@ The second failed once and passed once when it ran alone under the same load.
 Each failure was a text assertion in the merge review dialog that ran out of time.
 The change under test did not touch `packages/web/src`, which these journeys exercise.
 Issues 966 and 1014 record the other load-sensitive journeys.
+
+## s17-1. The engine does not record every phase shown by the Workflow tab.
+
+State: open for the missing phase records.
+
+The event envelopes retain project creation and stage change times.
+Unit s17 projects these times without changing stored events.
+The engine has no project stages for Verify and Keep running.
+A skipped phase has no timing record.
+The website leaves those durations blank.
+Only the latest visit to each recorded phase is shown.

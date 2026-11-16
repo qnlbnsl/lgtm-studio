@@ -1,4 +1,4 @@
-import type { Event, ProjectView, ProjectTaskRecord, TaskHistoryEntry } from "@lgtm/contracts"
+import type { Event, ProjectRecord, ProjectView, ProjectTaskRecord, TaskHistoryEntry } from "@lgtm/contracts"
 import type { Snapshot } from "../commands/internal.ts"
 
 export const own = <T>(rows: Readonly<Record<string, T>>, id: string): T | undefined => Object.hasOwn(rows, id) ? rows[id] : undefined
@@ -13,6 +13,13 @@ const change = <T>(rows: Readonly<Record<string, T>>, id: string, f: (row: T) =>
 }
 // The fourth reducer argument is the persisted envelope time. Replay and live
 // publication must never create a new clock value for a task's history.
+// Keep the latest visit to each stage, so timing records stay bounded.
+const enterStage = (row: ProjectRecord, stage: NonNullable<ProjectRecord['stage']>, at: ProjectRecord['createdAt']): ProjectRecord => {
+  if (stage === row.stage || at === undefined) return { ...row, stage }
+  const times = (row.phaseTimes ?? []).map(time => time.phase === row.stage && time.end === undefined ? { ...time, end: at } : time)
+  return { ...row, stage, phaseTimes: [...times.filter(time => time.phase !== stage), { phase: stage, start: at }] }
+}
+
 export const projectAfter = (view: ProjectView, event: Event, sequence: number, occurredAt: number): ProjectView => {
   const at = occurredAt as TaskHistoryEntry["at"]
   const seq = sequence as TaskHistoryEntry["sequence"]
@@ -99,7 +106,7 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
           if (own(memberships, child) === undefined && own(memberships, parent) === row.projectId) { memberships[child] = row.projectId; changed = true }
         }
       }
-      return { ...view, projects: { ...view.projects, [row.projectId]: { ...row, stage: row.stage ?? "plan" } }, agentProjects: memberships }
+      return { ...view, projects: { ...view.projects, [row.projectId]: { ...row, stage: row.stage ?? "plan", createdAt: at, phaseTimes: [{ phase: row.stage ?? "plan", start: at }] } }, agentProjects: memberships }
     }
     case "project.Placed": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, machineId: event.machineId, worktreeId: event.worktreeId })) }
     case "project.PreferencesChanged": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, shell: event.shell })) }
@@ -143,7 +150,7 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
       const approvalId = event._tag === "project.ApprovalGranted" ? event.requestId : event.questionId
       const building = event.approval === "build" || event.approval === "skip-planning-and-build"
       const stage = row.stage === "define" || row.stage === "plan" ? building ? "build" as const : "plan" as const : row.stage
-      return { ...row, ...(stage === undefined ? {} : { stage }),
+      return { ...(stage === undefined ? row : enterStage(row, stage, at)),
         ...(event.approval === "end-result" ? { endResultApproval: approvalId }
           : event.approval === "skip-planning" ? { skipPlanningApproval: approvalId }
           : event.approval === "skip-planning-and-build" ? { skipPlanningApproval: approvalId, buildApproval: approvalId }
@@ -163,7 +170,7 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
       return { ...view, tasks, deletedTasks: { ...view.deletedTasks, [key]: { ...task,
         history: [...task.history, { sequence: seq, at, title: "Task deleted", detail: task.title, state: task.state, deleted: true }] } } }
     }
-    case "project.StageChanged": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, stage: event.stage })) }
+    case "project.StageChanged": return { ...view, projects: change(view.projects, event.projectId, (row) => enterStage(row, event.stage, at)) }
     case "project.TeamAdded": { const { _tag, ...row } = event; return { ...view, teams: { ...view.teams, [projectKey(row.projectId, row.teamId)]: row } } }
     case "project.SprintAdded": { const { _tag, ...row } = event; return { ...view, sprints: { ...view.sprints, [projectKey(row.projectId, row.sprintId)]: row } } }
     case "project.SprintChanged": { const { _tag, projectId, sprintId, ...patch } = event; return { ...view, sprints: change(view.sprints, projectKey(projectId, sprintId), (row) => ({ ...row, ...patch })) } }

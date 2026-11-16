@@ -45,6 +45,7 @@ export interface StoreProject {
   readonly id: string; readonly repo: string; readonly name: string; readonly prefix: string; readonly goal: string
   readonly stage: StoreStage | ""; readonly phase: string; readonly branch: string; readonly folder: string
   readonly machine: string; readonly lead: string; readonly shell: string; readonly createdAt: number | null
+  readonly phaseTimes: ReadonlyArray<{ readonly phase: string; readonly start: number; readonly end?: number }>
   readonly archived: boolean; readonly hasMocks: boolean; readonly tests: "on" | "off" | ""; readonly agentReview: "on" | "off" | ""
 }
 export interface StoreTeam {
@@ -179,7 +180,7 @@ export function mapProject(project: EngineProject, workspaces: ReadonlyArray<Eng
     },
     worktree: project.worktreeId, id: project.projectId, repo: project.repoId, name: project.name, prefix: prefixOf(project.name), goal: project.goal,
     stage: mapStage(project.stage), phase: project.stage ?? "", branch: workspace?.branch ?? "", folder: workspace?.path ?? "",
-    machine: project.machineId, lead: project.leadAgentId, shell: project.shell ?? "", createdAt: null,
+    machine: project.machineId, lead: project.leadAgentId, shell: project.shell ?? "", createdAt: project.createdAt ?? null, phaseTimes: project.phaseTimes ?? [],
     archived: project.archivedAt !== undefined, hasMocks: false, tests: "on", agentReview: "on"
   }
 }

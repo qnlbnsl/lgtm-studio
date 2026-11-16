@@ -1000,11 +1000,22 @@ test('workflows: sees default phases, clones, edits and saves across reload with
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck()
         const project = yield* decisionSetup(); yield* completedSetup(project.projectId)
+        yield* appendSetup([eventOf({ _tag: 'project.Created', projectId: 's17-fresh', repoId: project.repoId,
+          worktreeId: project.worktreeId, leadAgentId: 's17-fresh-lead', machineId: 'local', name: 'Fresh workflow', goal: 'Check timing', stage: 'define' })])
         yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
           await page.goto(`http://127.0.0.1:${port}/`)
           await page.locator('#login-password').fill(password)
           await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+          await page.goto(`http://127.0.0.1:${port}/#/p/${project.projectId}/workflow`)
+          await expect(page.locator('.wf-status')).toContainText('Phase 4 of 8 · Build')
+          await expect(page.locator('.wf-time')).toContainText('Started')
+          await page.locator('.wf-rail button').filter({ hasText: 'Define' }).click()
+          await expect(page.locator('.wf-time')).toHaveText('')
+          await page.goto(`http://127.0.0.1:${port}/#/p/s17-fresh/workflow`)
+          await expect(page.locator('.wf-status')).toContainText('Phase 1 of 8 · Define')
+          await expect(page.locator('.wf-time')).toContainText('Started')
+          await expect(page.locator('.wf-time')).not.toContainText('days')
           await page.locator('.sidebar').getByRole('link', { name: 'Workflows', exact: true }).click()
           await expect(page.getByText('Default, read-only', { exact: true }).first()).toBeVisible()
           for (const name of ['Define', 'Design and teams', 'Plan', 'Build', 'Verify', 'Review', 'Hand over', 'Keep running']) await expect(page.locator('.wfl-phase h3').getByText(name, { exact: true })).toHaveCount(1)

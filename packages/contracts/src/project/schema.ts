@@ -58,6 +58,12 @@ export const Project = Schema.Struct({
   stage: Schema.optionalKey(ProjectStage), shell: Schema.optionalKey(ProjectName), archivedAt: Schema.optionalKey(EpochMilliseconds), archiving: Schema.optionalKey(Schema.Boolean)
 })
 export type Project = typeof Project.Type
+// Read projections retain envelope times. The stored Project event stays unchanged.
+export const ProjectRecord = Schema.Struct({ ...Project.fields,
+  createdAt: Schema.optionalKey(EpochMilliseconds),
+  phaseTimes: Schema.optionalKey(Schema.Array(Schema.Struct({ phase: ProjectStage, start: EpochMilliseconds, end: Schema.optionalKey(EpochMilliseconds) })))
+})
+export type ProjectRecord = typeof ProjectRecord.Type
 export const CreationFolderIdentity = Schema.Struct({ device: Schema.NonEmptyString, inode: Schema.NonEmptyString })
 export const ProjectDeletion = Schema.Struct({
   projectId: ProjectId, agentIds: Schema.Array(AgentId), channelIds: Schema.Array(ChannelId),

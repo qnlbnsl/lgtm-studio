@@ -3,6 +3,7 @@
 import { html, useState, Icon, cx, href, go, ago, clock, dayLabel, useNow, plural, update, uid, MIN, HOUR, DAY } from '../lib.js';
 import { PHASES, byId, agentOf, agentsOfTeam, sprintsOf, openRequests, teamsOf, teamName, leadOf, repoOf, routeForAgent, routeForRequest, KIND_LABEL, agentLabel } from '../data.js';
 import * as act from '../actions.js';
+import { recordedPhaseTimes } from '../live/workflow.js';
 import { Avatar, Empty } from '../ui.js';
 
 const POINTS = { minor: 1, major: 3, blocker: 9 };
@@ -249,6 +250,7 @@ const INFO = {
       { icon: 'book-open', label: 'Lessons', sub: 'Written into the skills the agents read' }] },
 };
 function phaseTimes(s, p, cur) {
+  if (p.phaseTimes !== undefined) return recordedPhaseTimes(p);
   const end = p.archived ? p.createdAt + 2 * DAY : s.T; const wt = [1, 2, 6, 9, 3, 4, 2, 1]; const total = wt.slice(0, cur + 1).reduce((a, b) => a + b, 0);
   let t = p.createdAt;
   return PHASES.map((_, i) => { if (i > cur) return null; const start = t; t += (end - p.createdAt) * wt[i] / total; return { start, end: i < cur ? t : null }; });
@@ -328,13 +330,13 @@ function Overview({ s, p, w }) {
           return html`<li key=${x.id} class=${stt}><button type="button" aria-current=${n === i ? 'true' : null} onClick=${() => setSel(n)}>
             <span class="mark">${stt === 'done' ? html`<${Icon} name="check" size=${11} />` : stt === 'now' ? html`<i></i>` : x.n}</span>
             <span class="name">${x.name}</span>
-            <span class="meta">${stt === 'done' ? ago(t.start, t.end) : stt === 'now' ? 'Now' : ''}</span></button></li>`; })}
+            <span class="meta">${stt === 'done' ? (t?.end != null ? ago(t.start, t.end) : '') : stt === 'now' ? 'Now' : ''}</span></button></li>`; })}
       </ol>
       <section class="wf-detail" aria-label=${ph.name}>
         <header><h2><span class="faint num">${ph.n}</span> ${ph.name}</h2>
           <span class=${cx('badge', status === 'done' && 'success', status === 'now' && 'info')}>${status === 'done' ? 'Done' : status === 'now' ? 'Now' : 'Not started'}</span>
           <span class="grow"></span>
-          <span class="muted wf-time">${status === 'done' ? `${when(tm.start, now)} · took ${ago(tm.start, tm.end)}` : status === 'now' ? `Started ${ago(tm.start, now)} ago` : `After ${PHASES[i - 1].name}`}</span></header>
+          <span class="muted wf-time">${status === 'done' ? (tm?.end != null ? `${when(tm.start, now)} · took ${ago(tm.start, tm.end)}` : '') : status === 'now' ? (tm ? `Started ${ago(tm.start, now)} ago` : '') : `After ${PHASES[i - 1].name}`}</span></header>
         <dl class="wf-parts">
           <dt>What happens</dt><dd>${ph.what}</dd>
           <dt>Run by</dt><dd class="row" style="flex-wrap:wrap;gap:4px">${ran.map((r) => html`<span class="badge outline" key=${r}>${r}</span>`)}</dd>
