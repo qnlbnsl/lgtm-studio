@@ -7,7 +7,7 @@ import {
   HOUR, plural, isMac, live, guardStore, engineWrite, refusal, refuse,
 } from './lib.js';
 import {
-  seed, emptyState, projectOf, repoOf, agentOf, teamOf, teamName, teamsOf, agentsOfTeam, leadOf, openRequests, agentStatus, projectStatus,
+  seed, emptyState, projectOf, repoOf, agentOf, teamOf, teamName, teamsOf, agentsOfTeam, leadOf, answerableRequests, agentStatus, projectStatus,
   KIND_LABEL, routeForRequest, routeForAgent, byId, agentLabel, machineOf, HARNESSES,
 } from './data.js';
 import * as act from './actions.js';
@@ -59,11 +59,11 @@ function TreeRow({ kind, depth, open, onToggle, to, current, icon, label, state,
 function ProjectTree({ s, route }) {
   const path = route.path;
   const only = s.prefs.onlyNeedingYou;
-  const repos = s.repos.map((r) => ({ r, projects: s.projects.filter((p) => p.repo === r.id && !p.archived && (!only || openRequests(s, { project: p.id }).length)) })).filter((x) => !only || x.projects.length);
+  const repos = s.repos.map((r) => ({ r, projects: s.projects.filter((p) => p.repo === r.id && !p.archived && (!only || answerableRequests(s, { project: p.id }).length)) })).filter((x) => !only || x.projects.length);
   if (!repos.length) return html`<div class="empty" data-empty style="padding:12px 8px"><strong>Nothing needs you</strong><span>Every project is running or idle.</span></div>`;
   return repos.map(({ r, projects }) => {
     const rk = 'repo:' + r.id; const ropen = s.expanded[rk] ?? false;
-    const rn = openRequests(s).filter((q) => projectOf(s, q.project).repo === r.id).length;
+    const rn = answerableRequests(s).filter((q) => projectOf(s, q.project).repo === r.id).length;
     return html`<div key=${r.id}>
       <${TreeRow} kind="repo" depth=${0} open=${ropen} onToggle=${() => act.toggleExpanded(rk)} to=${'/r/' + r.id} current=${path === '/r/' + r.id || path.startsWith(`/r/${r.id}/design`)}
         icon=${html`<${Icon} name="folder-git-2" size=${14} class="faint" />`} label=${r.name} state=${!ropen && rn ? rn : null} tone="warn"
@@ -83,7 +83,7 @@ function ProjectTree({ s, route }) {
               <${TreeRow} kind="agent" depth=${2} to=${`/p/${p.id}/chat/${lead.id}`} current=${onLead}
                 icon=${html`<${Avatar} agent=${lead} s=${s} size="sm" />`} label="Project lead" state=${ls.tone ? ls.word.replace('Waiting on ', '') : null} tone=${ls.tone} />
               ${teamsOf(s, p.id).map((t) => {
-                const tk = 'team:' + t.id; const topen = s.expanded[tk] ?? false; const tn = openRequests(s, { team: t.id }).length;
+                const tk = 'team:' + t.id; const topen = s.expanded[tk] ?? false; const tn = answerableRequests(s, { team: t.id }).length;
                 return html`<div key=${t.id}>
                   <${TreeRow} kind="team" depth=${2} open=${topen} onToggle=${() => act.toggleExpanded(tk)} to=${`/p/${p.id}/team/${t.id}`}
                     current=${inProject && route.parts[2] === 'team' && route.parts[3] === t.id}
@@ -123,7 +123,7 @@ function MockControls({ s }) {
     ]} />`;
 }
 function Sidebar({ s, route, onNavigate }) {
-  const n = openRequests(s).length; const failedNotes = (s.notifications || []).filter((x) => x.delivery === 'failed').length;
+  const n = answerableRequests(s).length; const failedNotes = (s.notifications || []).filter((x) => x.delivery === 'failed').length;
   const is = (p) => route.path === p || route.path.startsWith(p + '/');
   const nav = (to, icon, label, extra) => html`<a class="nav-item" href=${href(to)} aria-current=${is(to) ? 'page' : null}><${Icon} name=${icon} size=${15} /><span class="truncate">${label}</span>${extra}</a>`;
   const folded = s.prefs.sidebarFolded;
@@ -174,7 +174,7 @@ function Sidebar({ s, route, onNavigate }) {
 
 // ---- top bar ------------------------------------------------------------------
 function Bell({ s }) {
-  const now = useNow(); const open = openRequests(s);
+  const now = useNow(); const open = answerableRequests(s);
   return html`<${Menu} class="icon-btn bell" label=${open.length ? `${open.length} requests need you` : 'Nothing needs you'} align="end" width=${360}
     trigger=${html`<${Icon} name="bell" size=${16} />${open.length > 0 && html`<span class="count warn">${open.length}</span>`}`}
     header=${html`<div class="menu-label">${open.length ? 'Needs you, longest wait first' : 'Nothing needs you'}</div>`}
@@ -251,7 +251,7 @@ function ProjectView({ s, route, project }) {
   const other = s.ui.panelAgent && agentOf(s, s.ui.panelAgent);
   const side = other && other.project === project.id && other.id !== chatAgent?.id ? other : null;
   const narrow = useMedia('(max-width: 1180px)');
-  const open = openRequests(s, { project: project.id }).length;
+  const open = answerableRequests(s, { project: project.id }).length;
   const tabs = [
     { id: 'board', label: 'Board' },
     { id: 'workflow', label: 'Workflow' },

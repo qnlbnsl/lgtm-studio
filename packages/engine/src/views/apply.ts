@@ -169,7 +169,7 @@ const change = <T>(record: Keyed<T>, key: string, update: (row: T) => T): Keyed<
 // state machine cannot disagree. An event the table calls invalid in the
 // current state changes nothing: the engine refuses such events before they
 // are written, and a stored history is never rejected here.
-const nextState = (current: LifecycleState, event: Event): LifecycleState => {
+export const nextState = (current: LifecycleState, event: Event): LifecycleState => {
   const effect = eventEffect(current._tag, event._tag);
   switch (effect) {
     case "invalid":

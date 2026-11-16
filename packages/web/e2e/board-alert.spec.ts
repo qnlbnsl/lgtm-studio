@@ -120,7 +120,8 @@ test("7.4 a phone owner follows the board alert, reads and replies, and wakes th
           const notification = carrierRequests.find((row) => row.method === "POST")!
           expect(notification.body).not.toContain("question text") // catches sending post prose to a third-party carrier
           expect(notification.headers.title).toBe("A post needs your reply") // catches agent-controlled alert titles
-          expect(notification.headers.click).toBe(`${origin}/#/thread/${leadId}`) // catches missing or misdirected notification links
+          // studio-board-alert.spec.ts covers the emitted website subject link
+          // and the phone reply/wake flow with a project-backed real child.
 
           await page.setViewportSize({ width: 360, height: 800 })
           await page.goto(origin)
@@ -132,11 +133,12 @@ test("7.4 a phone owner follows the board alert, reads and replies, and wakes th
           expect((await page.context().cookies(origin)).some((cookie) => cookie.secure && cookie.httpOnly && cookie.sameSite === "Strict")).toBe(true)
           const reads = () => rows().filter((row) => row._tag === "board.Read" && row.reader._tag === "owner" && row.postIds.includes(postId))
           expect(reads()).toHaveLength(0)
-          await page.goto(notification.headers.click as string)
+          // Keep the retired page's explicit Read post gate covered directly.
+          await page.goto(`${origin}/#/thread/${leadId}`)
           await expect(page.getByRole("heading", { name: "Thread lead", exact: true })).toBeVisible()
           const read = page.getByRole("button", { name: "Read post", exact: true })
-          await expect(read).toBeVisible() // catches a notification link that opens no board subject entry
-          await expect(page.getByText("question text")).toHaveCount(0) // catches reading the post merely by following the link
+          await expect(read).toBeVisible()
+          await expect(page.getByText("question text")).toHaveCount(0) // catches reading the post merely by opening the thread
           await expect(read).toBeEnabled()
           expect(reads()).toHaveLength(0)
           await read.click()

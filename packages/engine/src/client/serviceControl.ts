@@ -4,7 +4,7 @@ import { readFile, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import * as Effect from 'effect/Effect'
-import { refused, type Input, type PiecePlanner } from '../commands/internal.ts'
+import { refused, type PiecePlanner } from '../commands/internal.ts'
 import type { ReadHandler } from '../api/reads.ts'
 
 // Installed only by the executable service, never by importing its module.
@@ -103,10 +103,10 @@ export const serviceControlPlanners = {
 } satisfies Record<string, PiecePlanner>
 // The command handler calls this only after the owner event and receipt commit.
 // A replay reads that receipt and never enters this continuation again.
-export const completeServiceRestart = <E>(input: Input, stop: (agentId: string) => Effect.Effect<unknown, E>) => Effect.uninterruptible(Effect.gen(function* () {
+export const completeServiceRestart = () => Effect.uninterruptible(Effect.gen(function* () {
   pending = true
-  for (const agent of Object.values((yield* input.runtime.views.snapshot).agents)) {
-    if (agent.state._tag !== 'stopped') yield* stop(agent.agentId)
-  }
+  // The executable interrupts its service scope, exactly as SIGTERM does.
+  // Keep lifecycle state durable so recovery can distinguish running agents
+  // from agents the owner deliberately stopped before this restart.
   yield* Effect.sync(() => restarter!())
 })).pipe(Effect.onError(() => Effect.sync(() => { pending = false })))

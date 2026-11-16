@@ -226,7 +226,15 @@ export function stopAgent(agentId) {
     lost: approvals.length ? [`${approvals.length} waiting approvals will be cancelled`] : [], action: 'Stop agent', onConfirm: send });
   return send();
 }
-export function resumeAgent(agentId) { return attempt('agent:' + agentId, () => engine.request('resume', { agentId })); }
+export function resumeAgent(agentId) {
+  return attempt('agent:' + agentId, async () => {
+    try { await engine.request('resume', { agentId }); }
+    catch (error) {
+      if (error?.refused !== true || error.message !== 'cannot reload') throw error;
+      await engine.request('resume', { agentId, fresh: true });
+    }
+  });
+}
 export function compact(agentId) { return attempt('agent:' + agentId, () => engine.request('compact', { agentId })); }
 export function setAgentConfig(agentId, patch) {
   if (Object.keys(patch).some((key) => !['model', 'effort'].includes(key))) { refuse(); return; }
