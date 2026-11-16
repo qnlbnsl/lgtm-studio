@@ -4,7 +4,7 @@ import * as RpcGroup from "effect/rpc/RpcGroup"
 import { ClientRequest } from "../requests.ts"
 import type { CallerKind } from "../commands.ts"
 import { AgentId, EventSequence, RequestId } from "../ids.ts"
-import { LeadPermission, LeadPermissionSetting, Project, ProjectCreation, ProjectId, ProjectName, ProjectSettings, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskHistoryEntry, TaskId, Team, Workspace } from "./schema.ts"
+import { LeadPermission, LeadPermissionSetting, Project, ProjectRecord, ProjectCreation, ProjectId, ProjectName, ProjectSettings, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskHistoryEntry, TaskId, Team, Workspace } from "./schema.ts"
 
 import { ProjectMockRpcGroup, projectMockAccess, SetupState } from "./mocks.ts"
 import { ProjectDesignRpcGroup, projectDesignAccess } from "./design.ts"
@@ -31,7 +31,7 @@ const taskChanges = {
 export const ProjectAgentSummary = Schema.Struct({ agentId: AgentId, projectId: ProjectId, status: Schema.Literals(["Needs you", "Reviewing", "Working", "Ready"]) })
 export const ProjectSnapshot = Schema.Struct({
   sequence: EventSequence, truncated: Schema.Boolean, setup: Schema.optionalKey(SetupState),
-  projects: Schema.Array(Project), repositories: Schema.Array(Repository), workspaces: Schema.Array(Workspace),
+  projects: Schema.Array(ProjectRecord), repositories: Schema.Array(Repository), workspaces: Schema.Array(Workspace),
   teams: Schema.Array(Team), sprints: Schema.Array(Sprint), tasks: Schema.Array(Task), agents: Schema.Array(ProjectAgentSummary)
 })
 export const ProjectRpcGroup = RpcGroup.make(
@@ -64,7 +64,7 @@ export const ProjectRpcGroup = RpcGroup.make(
   Rpc.make("preferences.set", { payload: { ...project, shell: ProjectName }, success: Ack, error: Refused }),
   Rpc.make("stage.set", { payload: { ...project, stage: ProjectStage }, success: Ack, error: Refused }),
   Rpc.make("read", { payload: { ...request, ...paging, projectId: Schema.optionalKey(ProjectId), collection: Schema.Literals(["projects", "teams", "sprints", "tasks", "agents"]) },
-    success: Schema.Union([page(Schema.Union([Project, Team, Sprint, Task, ProjectAgentSummary])), Schema.Struct({ ...request, data: Schema.String })]), error: Refused }),
+    success: Schema.Union([page(Schema.Union([ProjectRecord, Team, Sprint, Task, ProjectAgentSummary])), Schema.Struct({ ...request, data: Schema.String })]), error: Refused }),
   Rpc.make("requests", { payload: { ...project, ...paging, kind: Schema.optionalKey(ClientRequest.fields.kind), status: Schema.optionalKey(ClientRequest.fields.status) },
     success: Schema.Union([page(ClientRequest), Schema.Struct({ ...request, data: Schema.String })]), error: Refused }),
   Rpc.make("team.delete", { payload: { ...project, teamId: Team.fields.teamId }, success: Ack, error: Refused }),

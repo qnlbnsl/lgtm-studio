@@ -4775,7 +4775,7 @@ Why it matters: an agent can stay blocked on a request that no client can see.
 ## 260. A detached service discards its output and hides startup refusal details
 
 Found: 2026-11-03, in the post-build review of commit `8ff4c9b`, finding s08 F-2.
-State: open, deferred by the owner on 2026-11-03.
+State: partly fixed in s17-firstrun for refusals observed before the socket answers, by printing a redacted category from the startup channel. The launcher does not read a readiness handshake. A refusal after the socket answers can still report "started". The service's own output is still discarded. Issue 1083 tracks the remaining gap.
 
 Evidence: `.scratch/foundry-runs/engine-build-1/review-post-build/results/lgtm-engine-s08.md` (not tracked), F-2, confirms the path by source
 inspection and hand reasoning.
@@ -11277,7 +11277,7 @@ The browser tests therefore ignore console errors that name status 401.
 ## 626. `lgtm serve --detach` does not say why the service failed to start
 
 Found: 2026-11-13, while starting the engine with a test state folder for the live website.
-State: open.
+State: partly fixed in s17-firstrun for refusals observed before the socket answers, by printing a redacted category from the startup channel. The launcher does not read a readiness handshake. A refusal after the socket answers can still report "started". The service's own output is still discarded. Issue 1083 tracks the remaining gap.
 
 With a long `LGTM_HOME`, the engine's socket path exceeds 100 bytes, and the service exits at once.
 The service prints "socket path exceeds 100 bytes", but `serve --detach` discards the child's output.
@@ -11610,7 +11610,7 @@ The test is case 3.1a in `packages/engine/test/client/snapshot.test.ts`.
 ## 655. The live website stays on "Reconnecting" when the snapshot fails, and says nothing
 
 Found: 2026-11-13, in the same check as issue 654.
-State: open.
+State: fixed in s17-firstrun by the snapshot refusal notice in the website connection menu, with retries and successful-snapshot clearing.
 
 When `client.snapshot` fails for a reason other than a lost connection, the live website retries without end.
 It shows "Reconnecting" and gives the owner no reason.
@@ -13910,7 +13910,7 @@ The numbers 843 and 844 are used by entries that another session holds uncommitt
 ## 846. The project "Workflow" tab shows phase lengths of thousands of days
 
 Found: 2026-11-14, on the same walk.
-State: open.
+State: fixed in s17-firstrun by projecting recorded envelope times in the engine and mapping them to the Workflow tab.
 
 On the real project "Connect website engine", the "Workflow" tab shows "Define 2307 days" and "Design and teams 4615 days".
 The project was created on 2026-11-13.
@@ -15023,7 +15023,7 @@ The name should be chosen by the owner, or be a short sensible title that the ow
 ## 941. A fresh project's Workflow tab shows the wrong phase and impossible times.
 
 Found: 2026-11-14, by the owner, on the real service.
-Status: open. Issue 846 already records that real phase times are not connected.
+State: fixed in s17-firstrun by projecting recorded envelope times in the engine and mapping them to the Workflow tab.
 
 A project that had just been created should be in the Define phase.
 The Workflow tab showed it in the Plan phase.
@@ -15128,7 +15128,7 @@ The team's branch and worktree folder remain in place.
 ## 949. Workflow phase times still come from sample calculations.
 
 Found again on 2026-11-14 while implementing unit s10-lead.
-Status: open under issues 846 and 941.
+State: fixed in s17-firstrun by projecting recorded envelope times in the engine and mapping them to the Workflow tab.
 The new project's Define stage is now mapped to the website.
 The Workflow screen still calculates sample phase times from its created-at field.
 Unit s10-lead does not build phase timing records.
@@ -16356,6 +16356,146 @@ The second failed once and passed once when it ran alone under the same load.
 Each failure was a text assertion in the merge review dialog that ran out of time.
 The change under test did not touch `packages/web/src`, which these journeys exercise.
 Issues 966 and 1014 record the other load-sensitive journeys.
+
+## 1076. The engine does not record every phase shown by the Workflow tab.
+
+Found: 2026-11-15, during unit s17-firstrun.
+State: open for the missing phase records.
+
+The event envelopes retain project creation and stage change times.
+Unit s17 projects these times without changing stored events.
+The engine has no project stages for Verify and Keep running.
+A skipped phase has no timing record.
+The website leaves those durations blank.
+Only the latest visit to each recorded phase is shown.
+
+## 1077. The first s17 draft changed successful startup and refused a web outage.
+
+Found: 2026-11-15, during review of unit s17-firstrun.
+State: corrected in fix round 1.
+
+The first draft waited for recovery before reporting a successful detached start.
+Its deadline could kill the recovering service.
+The first draft also stopped the engine when the optional web port was occupied.
+Both changes went beyond the assignment.
+The launcher again reports success when its child holds the lock and its socket answers.
+The service disconnects its startup channel before recovery.
+An occupied web port leaves the engine running.
+The existing outage event, alert, and retry supervisor remain active.
+The successful command keeps its original output and exit status.
+
+## 1078. Snapshot failures lost their explanation during connection retries.
+
+Found: 2026-11-15, during unit s17-firstrun.
+State: fixed in s17-firstrun and corrected in fix round 1.
+
+A typed snapshot refusal puts its fixed failure sentence in the existing connection menu.
+A short typed refusal reason may follow the sentence.
+Other error details are omitted.
+Transport failures keep the existing connection text.
+The session probe runs before the refusal notice is published.
+A 401 goes to sign-in without publishing the notice first.
+Retries keep their existing backoff.
+The next successful snapshot clears the sentence.
+
+## 1079. Git synchronization tests can miss their helper markers under heavy load.
+
+Found: 2026-11-15, during the required s17 test run.
+State: open for timing investigation, as in issues 966 and 1014.
+
+The required s17 test run failed three cases in `packages/engine/test/project/main-review.test.ts`.
+The issue 579 cases use a five-second wall-clock wait for a Git startup marker.
+The failed runs happened under heavy load.
+The reviewer ran the file alone and passed all 45 tests.
+The earlier claim that these failures were reproduced on the baseline is withdrawn.
+A baseline regression has not been established.
+Issues 966 and 1014 record other fixed waits that fail under heavy load and pass alone.
+The s17 unit does not change Git execution or these tests.
+The assertions and waits remain unchanged.
+
+## 1080. Closing the startup channel could crash the service before its lock message.
+
+Found: 2026-11-15, during review of unit s17-firstrun.
+State: fixed in fix round 1.
+
+The lock-acquired send had lost its callback.
+A launcher that disconnected could leave an unhandled channel error in the service.
+The send now checks the channel and supplies a callback.
+A real child-process test disconnects the launcher before that send and verifies continued service.
+
+## 1081. An exit event could hide the final redacted startup reason.
+
+Found: 2026-11-15, during review of unit s17-firstrun.
+State: fixed in fix round 1.
+
+The launcher could report failure before the channel delivered the refusal.
+A failed child now reaches its close event before the launcher chooses the failure text.
+Tests order the exit and reason events both ways.
+Successful starts retain their original lock and socket check.
+
+
+## 1082. A successful child exit without a listener left the launcher waiting forever.
+
+Found: 2026-11-15, during fix round 2 of unit s17-firstrun.
+State: fixed in fix round 2.
+
+A new child can lose the service lock while the previous service is shutting down.
+That child exits zero without making the socket answer.
+The launcher's deadline had excluded every exited child.
+The deadline now includes a child that exited zero.
+The command reports "lgtm: service did not answer" and exits one at the original deadline.
+An ordered-event test verifies the deadline without signalling the exited child.
+The nonzero-exit path still waits for its final channel message, as recorded in 1081.
+
+## 1083. A startup refusal can follow the launcher's successful socket probe.
+
+Found: 2026-11-15, during review of unit s17-firstrun.
+State: open beyond the early redacted-category fix in issues 260 and 626.
+
+The service opens its Unix socket before all startup work has finished.
+The launcher reports success when its child holds the lock and the socket answers.
+It does not read a readiness handshake.
+A later startup refusal can therefore follow a reported "started" result.
+The service's standard output and standard error are still discarded on the detached path.
+The startup channel carries a fixed redacted category when a refusal is observed before success.
+It does not retain the service's own output.
+This unit preserves the original successful startup timing.
+
+## 1084. A persistent snapshot refusal blinked during the session probe on each retry.
+
+Found: 2026-11-15, during fix round 2 of unit s17-firstrun.
+State: fixed in fix round 2.
+
+The retry handler cleared the notice before checking the session.
+A repeated refusal therefore replaced the sentence twice on every retry.
+The handler now retains the sentence during another refusal and its session probe.
+A successful snapshot, a transport drop, or sign-out clears it.
+A held-probe regression checks every connection patch for the retained sentence.
+
+## 1085. The startup-reason helper redacted an interruption-only cause.
+
+Found: 2026-11-15, during fix round 2 of unit s17-firstrun.
+State: fixed in fix round 2.
+
+The helper treated an interruption-only cause as a generic startup failure.
+A throwing redactor could turn that path into a defect.
+The helper now returns no reason without invoking the redactor for that cause.
+A cause that also contains a real failure still produces a redacted category.
+A unit test supplies a throwing redactor to the interruption-only cause.
+A real service test confirms that a clean stop exits zero.
+The clean-stop test also passed before this correction.
+No shutdown failure in the real service was reproduced.
+
+## 1086. The recovery regression waited 31 seconds after the launcher had exited.
+
+Found: 2026-11-15, during fix round 2 of unit s17-firstrun.
+State: fixed in fix round 2.
+
+The real-process test now delays recovery by two seconds.
+It still checks the command's output, exit status, and the surviving service.
+An ordered-event test injects a 100-millisecond launcher deadline.
+Its simulated recovery completes after 200 milliseconds without a kill.
+The production deadline remains 30 seconds.
 
 ## 1045. An automatic pass can cross the boundary of a measured minute.
 

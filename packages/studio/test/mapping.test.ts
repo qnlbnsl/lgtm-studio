@@ -70,7 +70,7 @@ describe("projects and teams", () => {
       permissions: { planning: { setting: 'allowed', granted: false }, 'starting-work': { setting: 'allowed', granted: false } },
       worktree: "wt-project", id: "pj-orchard", repo: "rp-orchard", name: "Harvest report", prefix: "HR", goal: "Count the apples every morning.",
       stage: "Build", phase: "build", branch: "feature/harvest", folder: "/srv/repos/orchard/.worktrees/harvest", machine: "local",
-      lead: "ag-lead", shell: "bash", createdAt: null, archived: false, hasMocks: false, tests: "on", agentReview: "on"
+      lead: "ag-lead", shell: "bash", createdAt: null, phaseTimes: [], archived: false, hasMocks: false, tests: "on", agentReview: "on"
     })
     expect(mapProject(section.projects[1]!, section.workspaces)).toMatchObject({ archived: true, stage: "", shell: "" })
   })

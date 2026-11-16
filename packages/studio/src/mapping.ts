@@ -45,6 +45,7 @@ export interface StoreProject {
   readonly id: string; readonly repo: string; readonly name: string; readonly prefix: string; readonly goal: string
   readonly stage: StoreStage | ""; readonly phase: string; readonly branch: string; readonly folder: string
   readonly machine: string; readonly lead: string; readonly shell: string; readonly createdAt: number | null
+  readonly phaseTimes: ReadonlyArray<{ readonly phase: string; readonly start: number; readonly end?: number }>
   readonly archived: boolean; readonly hasMocks: boolean; readonly tests: "on" | "off" | ""; readonly agentReview: "on" | "off" | ""
 }
 export interface StoreTeam {
@@ -94,7 +95,7 @@ export interface StoreTask {
   readonly files: ReadonlyArray<never>; readonly history: ReadonlyArray<never>
 }
 export type ConnectionStatus = "live" | "reconnecting" | "offline"
-export interface StoreConn { readonly status: ConnectionStatus; readonly lastHeard: number }
+export interface StoreConn { readonly status: ConnectionStatus; readonly lastHeard: number; readonly notice?: string }
 
 // What one snapshot gives the store. Every key replaces the store's key of the same name.
 export interface EngineRecords {
@@ -180,7 +181,7 @@ export function mapProject(project: EngineProject, workspaces: ReadonlyArray<Eng
     },
     worktree: project.worktreeId, id: project.projectId, repo: project.repoId, name: project.name, prefix: prefixOf(project.name), goal: project.goal,
     stage: mapStage(project.stage), phase: project.stage ?? "", branch: workspace?.branch ?? "", folder: workspace?.path ?? "",
-    machine: project.machineId, lead: project.leadAgentId, shell: project.shell ?? "", createdAt: null,
+    machine: project.machineId, lead: project.leadAgentId, shell: project.shell ?? "", createdAt: project.createdAt ?? null, phaseTimes: project.phaseTimes ?? [],
     archived: project.archivedAt !== undefined, hasMocks: false, tests: "on", agentReview: "on"
   }
 }
@@ -370,4 +371,16 @@ export function mapSnapshot(snapshot: Pick<ClientSnapshot, "agents" | "requests"
 
 export function mapConnection(status: ConnectionStatus, lastHeard: number): StoreConn {
   return { status, lastHeard }
+}
+
+// CommandError reasons arrive through the client's typed, redacted refusal contract.
+// Transport and untyped errors may carry private local details.
+export function snapshotFailureMessage(error: unknown): string | undefined {
+  const fixed = 'The service could not send its data.'
+  if (typeof error !== 'object' || error === null || !('_tag' in error) || error._tag !== 'CommandError') return undefined
+  const refusal = error as { _tag?: unknown; requestId?: unknown; reason?: unknown }
+  const reason = refusal.reason
+  return refusal._tag === 'CommandError' && typeof refusal.requestId === 'string'
+    && typeof reason === 'string' && reason.length > 0 && reason.length <= 256 && !/[\x00-\x1f\x7f]/.test(reason)
+    ? `${fixed} ${reason}` : fixed
 }

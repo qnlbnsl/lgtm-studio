@@ -6,7 +6,7 @@
 // (`packages/engine/src/service.ts`); `serveDetach` is the function behind
 // `lgtm serve --detach` (`packages/cli/src/serve.ts`).
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, chmodSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -14,6 +14,9 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+
+import { connect } from "@lgtm/client";
+import { randomUUID } from "node:crypto";
 
 import { serveDetach } from "../src/serve.ts";
 
@@ -189,3 +192,155 @@ live("7.4 two serve --detach calls at once leave exactly one service, one report
       return pids.length === 1 && pids[0] === started.pid;
     }, 15_000);
   }));
+
+const runDetach = (environment: Record<string, string>) => new Promise<{ code: number | null; text: string }>((resolve) => {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../src/bin.ts', import.meta.url)), 'serve', '--detach'], { env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
+  children.push(child);
+  let text = '';
+  child.stdout!.on('data', chunk => { text += chunk });
+  child.stderr!.on('data', chunk => { text += chunk });
+  child.once('close', code => resolve({ code, text }));
+});
+
+it('reports refused state permissions and redacts a matching web password', async () => {
+  const root = makeRoot();
+  mkdirSync(root.state, { mode: 0o750 }); chmodSync(root.state, 0o750);
+  const first = await runDetach(environmentFor(root));
+  expect(first.code).toBe(1);
+  expect(first.text).toContain('state folder mode is not 0700');
+  const secret = 'state folder mode is not 0700';
+  const redacted = await runDetach({ ...environmentFor(root), LGTM_WEB_PASSWORD: secret, API_TOKEN: 's17-private-token' });
+  expect(redacted.code).toBe(1);
+  expect(redacted.text).toContain('[REDACTED]');
+  expect(redacted.text).not.toContain(secret);
+  expect(redacted.text).not.toContain('s17-private-token');
+  expect(redacted.text.length).toBeLessThan(1024);
+});
+
+it('reports a state folder that cannot be created without exposing paths or contents', async () => {
+  const root = makeRoot();
+  writeFileSync(root.state, 's17-private-file-content');
+  const result = await runDetach({ ...environmentFor(root), LGTM_HOME: join(root.state, 'missing') });
+  expect(result.code).toBe(1);
+  expect(result.text).toContain('state folder cannot be inspected');
+  expect(result.text).not.toContain(root.state);
+  expect(result.text).not.toContain('s17-private-file-content');
+});
+
+live('keeps the engine and its outage alert running when the configured web port is occupied', () => Effect.gen(function* () {
+  const root = makeRoot(), env = environmentFor(root);
+  // Start headless to persist an ephemeral port through the authenticated API.
+  const first = yield* serveDetach({ environment: env });
+  yield* waitFor('the authenticated API to finish recovery', () => new Promise<boolean>(resolve => {
+    const probe = request({ socketPath: root.socket, path: '/' }, response => { response.resume(); resolve(response.statusCode !== 503) });
+    probe.once('error', () => resolve(false)); probe.end();
+  }));
+  const server = createServer();
+  yield* Effect.promise(() => new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)));
+  try {
+    const port = (server.address() as import('node:net').AddressInfo).port;
+    yield* Effect.scoped(Effect.gen(function* () {
+      const client = yield* connect({ environment: env });
+      yield* client['client.web.settings.set']({ requestId: randomUUID() as never, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } });
+    }));
+    yield* Effect.promise(() => stopPid((first as { pid: number }).pid));
+    const result = yield* Effect.promise(() => runDetach({ ...env, LGTM_WEB_PASSWORD: 's17-test-password' }));
+    expect(result.code).toBe(0);
+    expect(result.text).toMatch(/^started \(pid \d+\)\n$/);
+    yield* waitFor('the API and web outage alert', async () => {
+      try {
+        return await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+          const client = yield* connect({ environment: env });
+          const state = yield* client['client.web.settings']({ requestId: randomUUID() as never });
+          const alerts = yield* client['client.alerts.list']({ requestId: randomUUID() as never, after: 0 as never, limit: 200 });
+          return state.serverState === 'port-taken' && alerts.items.some(alert => alert.kind === 'client.web-down');
+        })));
+      } catch { return false; }
+    });
+    const db = new DatabaseSync(join(root.state, 'events.sqlite'), { readOnly: true });
+    try { expect(db.prepare("SELECT COUNT(*) AS count FROM events WHERE event_type = 'client.WebServerDown'").get()!.count).toBe(1); }
+    finally { db.close(); }
+    expect(result.text).not.toContain('s17-test-password');
+  } finally {
+    yield* Effect.promise(() => new Promise<void>(resolve => server.close(() => resolve())));
+  }
+}));
+
+it('reports unreadable state permissions and a refused long socket address', async () => {
+  const root = makeRoot();
+  mkdirSync(root.state, { mode: 0o700 }); chmodSync(root.state, 0o000);
+  try {
+    const unreadable = await runDetach(environmentFor(root));
+    expect(unreadable.code).toBe(1);
+    expect(unreadable.text).toContain('state folder mode is not 0700');
+  } finally { chmodSync(root.state, 0o700); }
+  const tooLong = await runDetach({ ...environmentFor(root), LGTM_HOME: join(root.state, 'long-address-'.repeat(10)) });
+  expect(tooLong.code).toBe(1);
+  expect(tooLong.text).toContain('socket path exceeds 100 bytes');
+  expect(tooLong.text).not.toContain(root.state);
+});
+
+// Loader hooks affect only this test's own child. No production test switch is added.
+const serviceHook = (root: Root, from: string, to: string) => {
+  const loader = join(root.root, 'service-hook.mjs');
+  writeFileSync(loader, `import { registerHooks } from 'node:module';
+registerHooks({ load(url, context, next) {
+ const loaded = next(url, context);
+ if (url === ${JSON.stringify(new URL('../../engine/src/service.ts', import.meta.url).href)}) {
+  const source = String(loaded.source);
+  if (!source.includes(${JSON.stringify(from)})) throw new Error('Service test hook did not match');
+  return { ...loaded, source: source.replace(${JSON.stringify(from)}, ${JSON.stringify(to)}) };
+ }
+ return loaded;
+} });
+`);
+  return { ...environmentFor(root), NODE_OPTIONS: `--import=${new URL('file://' + loader).href}` };
+};
+
+it('prints started and exits before short recovery finishes, leaving the service alive', async () => {
+  const root = makeRoot(), marker = join(root.root, 'recovery-finished');
+  const env = serviceHook(root, 'yield* (yield* Restart.Restart).recover;',
+    `yield* Effect.sleep(2_000); (yield* Effect.promise(() => import('node:fs'))).writeFileSync(${JSON.stringify(marker)}, 'done'); yield* (yield* Restart.Restart).recover;`);
+  const result = await runDetach(env);
+  expect(result.code).toBe(0);
+  expect(result.text).toMatch(/^started \(pid \d+\)\n$/);
+  expect(existsSync(marker)).toBe(false);
+  await Effect.runPromise(waitFor('the short recovery delay', () => existsSync(marker)));
+  expect(servicesOf(root)).toHaveLength(1);
+  expect(await answers(root.socket)).toBe(true);
+}, 90_000);
+
+it('keeps serving when its launcher disconnects just before the lock-acquired send', async () => {
+  const root = makeRoot();
+  const env = serviceHook(root, 'if (process.connected) process.send?.({ _tag: "LgtmLockAcquired" }, () => {});',
+    `yield* Effect.promise(() => new Promise(resolve => { process.send?.({ _tag: 'TestBeforeLockSend' }, () => {}); process.once('disconnect', resolve); })); if (process.connected) process.send?.({ _tag: "LgtmLockAcquired" }, () => {});`);
+  const child = spawn(process.execPath, [servicePath], { env, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+  children.push(child);
+  await new Promise<void>(resolve => child.on('message', message => { if ((message as { _tag?: string })._tag === 'TestBeforeLockSend') { child.disconnect(); resolve(); } }));
+  await Effect.runPromise(waitFor('the orphaned service socket', () => child.exitCode !== null ? true : answers(root.socket)));
+  expect(child.exitCode).toBeNull();
+  expect(await answers(root.socket)).toBe(true);
+});
+
+it('stops cleanly without invoking startup redaction on an interruption-only cause', async () => {
+  const root = makeRoot();
+  const env = serviceHook(root, 'failureReason = startupFailure(cause, redact);',
+    `failureReason = startupFailure(cause, () => { process.stderr.write('unexpected-shutdown-redaction'); throw new Error('shutdown redactor must not run'); });`);
+  const child = spawn(process.execPath, [servicePath], { env, stdio: ['ignore', 'ignore', 'pipe'] });
+  children.push(child);
+  let stderr = '';
+  child.stderr!.on('data', chunk => { stderr += chunk; });
+  const exit = new Promise<number | null>(resolve => child.once('close', resolve));
+  await Effect.runPromise(waitFor('the initialized service', async () => {
+    try {
+      return await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+        const client = yield* connect({ environment: env });
+        yield* client['client.snapshot']({ requestId: randomUUID() as never });
+        return true;
+      })));
+    } catch { return false; }
+  }));
+  child.kill('SIGTERM');
+  expect(await exit).toBe(0);
+  expect(stderr).not.toContain('unexpected-shutdown-redaction');
+});
