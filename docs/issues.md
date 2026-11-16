@@ -17377,3 +17377,35 @@ The engine withdraws queued copies but leaves the already-sent copy unchanged.
 No existing delivery tells the lead that another actor answered.
 A later answer attempt receives the generic command refusal.
 This unit records that gap without inventing a notice or a stored event.
+
+## s21-14. A board alert uses the alert agent's project for another project's channel
+
+Found: 2026-11-16, while running the round 2 alert-route regressions.
+State: fixed in unit s21-recover, round 2.
+
+A board alert could combine one project's address with another project's channel.
+The link now follows the website's team, project-anchor, and member placement rules for channels.
+A reply to a reply already linked to its immediate parent's existing thread correctly.
+The engine and browser tests now cover both cases.
+
+## s21-15. Merge and sprint alerts with an agent open that agent's chat
+
+Found: 2026-11-16, while reading the round 2 review and running the alert-kind journey.
+State: open.
+
+An alert with an agent uses that agent's chat unless its subject is a board post or a request.
+A merge or sprint alert can therefore open chat instead of its merge or sprint.
+This unit does not add destinations for those subjects.
+
+## s21-16. The older phone-alert journeys expect routes for unassigned agents
+
+Found: 2026-11-16, while running the round 2 browser journeys.
+State: open, as test coverage that still needs migration from the retired website.
+
+The board-alert and phone-flow journeys build the retired website and start agents outside every project.
+They expect notifications to contain that page's old thread address.
+The engine now emits destinations for the website served by Studio.
+That website has no chat for an unassigned agent, as issue s21-7 records.
+Both old journeys therefore fail on their missing-link assertions.
+The current website's notification journey covers board subject links, including nested replies and another project's channel.
+The old assertions were not weakened or removed.

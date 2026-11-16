@@ -16,13 +16,27 @@ const cut = (value: string, maximum: number): string => {
 const threadLink = (row: AlertRow, web: ClientView["webSettings"], snapshot: Snapshot): string | undefined => {
   if (!web.proxyMode || web.publicAddress === undefined || row.agentId === undefined) return undefined;
   const projects = projectView(snapshot);
-  const projectId = own(projects.agentProjects, row.agentId);
+  let projectId = own(projects.agentProjects, row.agentId);
+  const board = boardView(snapshot);
+  const post = row.subject?._tag === 'piece' && row.subject.namespace === 'board' ? own(board.posts, row.subject.id) : undefined;
+  if (row.subject?._tag === 'piece' && row.subject.namespace === 'board') {
+    const channel = post === undefined ? undefined : own(board.channels, post.channelId);
+    if (channel === undefined) return undefined;
+    // Match the website's channel placement: team, then project anchor,
+    // then the projects represented by explicit agent members.
+    const team = Object.values(projects.teams).find((team) => team.channelId === channel.channelId);
+    const anchor = Object.values(projects.projects).find((project) => project.leadAgentId === channel.anchorAgentId)?.projectId;
+    const members = channel.members.flatMap((member) => {
+      const id = member._tag === 'agent' ? own(projects.agentProjects, member.agentId) : undefined;
+      return id === undefined ? [] : [id];
+    });
+    projectId = team?.projectId ?? anchor ?? (projectId !== undefined && members.includes(projectId) ? projectId : members[0]);
+  }
   if (projectId === undefined || own(projects.projects, projectId) === undefined) return undefined;
   const path = `/p/${encodeURIComponent(projectId)}`;
   let route = `${path}/chat/${encodeURIComponent(row.agentId)}`;
   if (row.subject?._tag === 'permission' || row.subject?._tag === 'question') route += `?req=${encodeURIComponent(row.subject.id)}`;
   if (row.subject?._tag === 'piece' && row.subject.namespace === 'board') {
-    const post = own(boardView(snapshot).posts, row.subject.id);
     if (post === undefined) return undefined;
     route = `${path}/messages/${encodeURIComponent(post.channelId)}?t=${encodeURIComponent(post.replyTo ?? post.postId)}`;
   }

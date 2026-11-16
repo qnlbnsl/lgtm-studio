@@ -17,7 +17,7 @@ import { unusedPort } from '../../../engine/test/support/browserWeb.ts'
 import { makeFakeRunner } from '../../../engine/test/support/fakeRunner.ts'
 import { appendSetup, call, eventOf, makeFakeSecrets, makeRig, ownerCredential, removeRig, success } from '../../../engine/test/support/handlerRig.ts'
 import { registerRebuildCheck } from '../../../engine/test/support/rebuildCheck.ts'
-import { decisionSetup } from '../../../engine/test/support/projectDecisionFixtures.ts'
+import { decisionProject, decisionSetup } from '../../../engine/test/support/projectDecisionFixtures.ts'
 import { buildStudio } from '../../../studio/scripts/build.ts'
 import { completedSetup } from './completedSetup.ts'
 
@@ -38,6 +38,10 @@ export async function exerciseStudioAlertLinks(page: Page) {
         const channelId = success(yield* call(ownerCredential, 'board.open', { name: 'alert-subjects' })).channelId
         success(yield* call(ownerCredential, 'board.members', { channelId, add: [project.leadId], remove: [] }))
         const postId = success(yield* call(project.leadCredential, 'board.post', { channelId, text: 'Read and answer this post.', to: [{ _tag: 'owner' }], reply: 'any' })).postId
+        const replyId = success(yield* call(project.leadCredential, 'board.post', { channelId, text: 'First reply subject.', to: [{ _tag: 'owner' }], reply: 'any', replyTo: postId })).postId
+        const nestedId = success(yield* call(project.leadCredential, 'board.post', { channelId, text: 'Nested reply subject.', to: [{ _tag: 'owner' }], reply: 'any', replyTo: replyId })).postId
+        const foreign = yield* decisionProject('foreign-alert')
+        const foreignPostId = success(yield* call(foreign.leadCredential, 'board.post', { channelId: foreign.team.channelId, text: 'Subject in another project.', to: [{ _tag: 'owner' }], reply: 'any' })).postId
         const questionId = success(yield* call(project.leadCredential, 'ask', { title: 'Read this question', text: 'Choose the next task.', proposedAnswer: 'Continue' })).questionId
         yield* appendSetup([
           eventOf({ _tag: 'client.WebSettingsChanged', settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: true, publicAddress: 'https://alerts.example' } }),
@@ -49,8 +53,9 @@ export async function exerciseStudioAlertLinks(page: Page) {
               : kind === 'question' ? { _tag: 'question', id: questionId } : { _tag: 'agent', id: project.leadId },
           })),
         ])
+        yield* appendSetup(['nested', 'foreign'].map((key) => eventOf({ _tag: 'client.AlertRaised', alertId: `link-${key}`, alertKey: `link:${key}`, kind: 'board.post', agentId: project.leadId, title: alertTitles['board.post'], sourceSequence: 1, subject: { _tag: 'piece', namespace: 'board', id: key === 'nested' ? nestedId : foreignPostId } })))
         const snapshot = yield* (yield* Views).snapshot
-        const payloads = alertKindNames.map((kind) => alertPayload(clientView(snapshot.client).alerts[`link-${kind}`]!, snapshot))
+        const payloads = [...alertKindNames, 'nested', 'foreign'].map((kind) => alertPayload(clientView(snapshot.client).alerts[`link-${kind}`]!, snapshot))
         expect(payloads.every((p) => p.link !== undefined)).toBe(true)
         yield* serve({ password: Redacted.make(password), staticRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
@@ -68,7 +73,10 @@ export async function exerciseStudioAlertLinks(page: Page) {
             expect(payload.link).not.toContain('Choose the next task.')
             await page.goto(origin + url.hash)
             if (payload.kind.startsWith('board.')) {
-              await expect(page.getByRole('complementary', { name: 'Thread', exact: true })).toContainText('Read and answer this post.')
+              const subject = payload.alertId === 'link-nested' ? 'Nested reply subject.' : payload.alertId === 'link-foreign' ? 'Subject in another project.' : 'Read and answer this post.'
+              await expect(page.getByRole('complementary', { name: 'Thread', exact: true })).toContainText(subject)
+              if (payload.alertId === 'link-foreign') expect(url.hash).toContain(`/p/${foreign.projectId}/messages/`)
+              if (payload.alertId === 'link-nested') expect(url.hash).toContain(`?t=${replyId}`)
             } else {
               await expect(page.locator('.chat-main h1')).toHaveText('Project lead')
               if (payload.kind === 'approval') await expect(page.locator('#req-link-permission').getByRole('button', { name: 'Allow', exact: true })).toBeVisible()
