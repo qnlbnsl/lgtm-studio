@@ -17497,3 +17497,17 @@ Every successful engine-requested compaction restores the full instructions on t
 The restored text costs roughly 10 kibibytes for a default lead and can reach the 48 kibibyte composition bound.
 A compaction started by the harness itself is not detected.
 These limits are now stated in `docs/roles.md`.
+
+## s22-28. Older integration fixtures expected behavior changed by the second review.
+
+State: corrected in s22 round 2.
+
+Three orientation assertions expected named builder advice for the mismatched role `lead:builder`.
+They now require the exact lead base while retaining their identity, roster and transport assertions.
+The carry-on dispatch test expected a bare second prompt after a failed first turn.
+It now requires the complete repeated instruction block and unchanged carry-on text.
+Its prompt count, ordering and acceptance assertions remain intact.
+The maximum stored role-file fixture placed all repeated short secrets in one advice value.
+Redaction of its replacement markers now exceeds the composition bound.
+The test requires that single-role refusal and spreads the same repetitions across ten roles for its admitted fixture.
+It still checks exact content, one redaction at storage, the full 64 kibibyte bound and refusal of one additional byte.
