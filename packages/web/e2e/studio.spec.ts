@@ -884,7 +884,7 @@ test("live website: subscriptions, notifications and service settings persist th
         expect(savedProject.workspaceFolder).toBe(rig.work)
         expect(savedProject.lead).toMatchObject({ harness: 'first', model: 'other-model', effort: 'high', permission: 'edit' })
         const savedRoles = success(yield* call(ownerCredential, 'roles.settings.get', {})).settings
-        expect(savedRoles).toMatchObject({ stallWatch: true, standingRules: true, limits: { stallMinutes: 37, capacityBackoffMinutes: 6, capacityRetries: 2, crashRetries: 0, teamIdleMinutes: 90 } })
+        expect(savedRoles).toMatchObject({ stallWatch: true, limits: { stallMinutes: 37, capacityBackoffMinutes: 6, capacityRetries: 2, crashRetries: 0, teamIdleMinutes: 90 } })
       })).pipe(Effect.provide(buildServices(rig, engineLists).pipe(Layer.provide(dependencies))), Effect.provide(runner.layer))
     })).pipe(Effect.provide(SqliteClient.layer({ filename: rig.database, readerWorker: true })), Effect.scoped) as Effect.Effect<void, unknown, never>)
     expect(await page.evaluate(() => (window as unknown as { violations?: string[] }).violations ?? [])).toEqual([])

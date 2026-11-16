@@ -1,3 +1,5 @@
+import { removeSettingsRow } from './settingsControls.ts'
+
 // Wire the copied live screen without changing the frozen sample design.
 export function serviceSettingsSource(path: string, source: string): string {
   const replace = (from: string, to: string, count = 1) => {
@@ -35,6 +37,25 @@ export function serviceSettingsSource(path: string, source: string): string {
     replace('label="Wake it once first" onChange=', 'label="Nudge a stalled agent automatically" onChange=')
     replace('A stuck agent gets one wake. Ten minutes later its lead is told. A stuck lead goes to the project lead, and a stuck project lead comes to you.', 'A stalled agent receives up to the saved number of nudges. Further stalls go to its lead. Replacement is advice to the lead.')
     replace('<${Row} label="Replace the worker"', '<${Row} label="Automatic nudges" id="sd-n"><${Num} id="sd-n" value=${set.nudgeAttempts} min=${0} max=${9} unit="at most" onChange=${(v) => setS({ nudgeAttempts: v })} /><//>\n      <${Row} label="Replace the worker"')
+    // Reuse Project settings' checked removal of whole rows in the live copy.
+    const removeFrom = (name: string, next: string, labels: string[]) => {
+      const start = source.indexOf('function ' + name + '('), end = source.indexOf('function ' + next + '(', start)
+      if (start < 0 || end < start) throw new Error(`Service settings integration: ${name} moved`)
+      let screen = source.slice(start, end)
+      for (const label of labels) screen = removeSettingsRow(screen, label, 'Service settings integration')
+      source = source.slice(0, start) + screen + source.slice(end)
+    }
+    removeFrom('Defaults', 'Remote', ['Need-to-know messages', 'Remove agent credits when merging'])
+    removeFrom('StallWatch', 'WorkflowSettings', ['Standing permission rules'])
+    replace('<h3>Approvals</h3>', '')
+    removeFrom('WorkflowSettings', 'GitMessages', ['Write tests first', 'Agent review', 'Review rounds'])
+    // The message model was the only control in this section.
+    const gitStart = source.indexOf('function GitMessages('), gitEnd = source.indexOf('function About(', gitStart)
+    if (gitStart < 0 || gitEnd < gitStart) throw new Error('Service settings integration: Git messages moved')
+    source = source.slice(0, gitStart) + source.slice(gitEnd)
+    replace("  ['git', 'Git messages', 'git-commit-horizontal', GitMessages, 'The model that writes commit and pull request messages.'],", '')
+    replace('<button type="button" class="btn" onClick=${refuse}>Update the service</button>', '')
+
   }
   return source
 }

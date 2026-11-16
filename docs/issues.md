@@ -13338,13 +13338,13 @@ The first reviewer selector must read these defaults.
 
 ## 802. Several service controls still lack their execution paths.
 
-State: open. Checked against the code on 2026-11-15. Controls still show the not-connected notice (design/mock/js/actions.js, packages/studio/src/connection.ts) and standing permission rules remain unbuilt per AGENTS.md. Kind: visible to the owner.
+State: fixed for the website by s20-controls on 2026-11-16. The inert controls are absent from the website. Their execution paths remain unbuilt. The standalone mock retains its sample controls. Kind: visible to the owner.
 
 The need-to-know default has no team-creation privacy setting to consume it.
 Removing agent credits would need a defined commit-rewriting policy before the approved Git heads change.
 The Git message model has no service-owned message-generation request to consume it.
 The tests-first default, agent-review default, and review-round limit have no workflow executor to consume them.
-These controls retain the notice that they are not connected and change nothing.
+The website omits these controls because they change nothing.
 Standing permission rules still await the owner's harness recordings, as AGENTS.md requires.
 The existing standing-rules setting is outside this implementation and still does not enforce permission rules.
 
@@ -14503,7 +14503,7 @@ An owner who types quickly across these fields might lose one value in the same 
 
 ## 906. Agent terminal watching and takeover need engine support.
 
-State: open. Checked against the code on 2026-11-15. design/mock/js/live/terminal.js lines 127-128 still draw Watch agent session and Take over agent session disabled with Engine work needed. Kind: visible to the owner.
+State: open. Checked by s20-controls on 2026-11-16. Watch agent session and Take over agent session remain disabled with Engine work needed. Interactive terminal attachment and keyboard handoff are unbuilt. Agent Client Protocol mode has no terminal to attach. Kind: visible to the owner.
 
 The project terminal API opens private owner shells only.
 It cannot attach to an agent's terminal or transfer that terminal's keyboard.
@@ -14512,7 +14512,7 @@ Both controls show “Engine work needed” on hover.
 
 ## 907. Ended project shells cannot reconnect.
 
-State: open. Checked against the code on 2026-11-15. design/mock/js/live/terminal.js line 133 still draws the Reconnect button disabled with title Engine work needed. Kind: visible to the owner.
+State: open. Checked by s20-controls on 2026-11-16. Reconnect remains disabled with Engine work needed. The engine has no resumed terminal attachment or ownership transfer for a replacement connection. An ended shell cannot be resumed. Kind: visible to the owner.
 
 A project shell belongs to its opening connection.
 Reloading the page or losing that connection ends the shell after the grace period.
@@ -16250,7 +16250,7 @@ Ordinary journey runs keep the unwrapped service and install no measurement list
 ## 1041. Fresh evidence from review status never reaches an already open merge dialog.
 
 Found: 2026-11-15, by the reviewer's real-engine probe in review-a2.
-Status: open, awaiting the owner's approval for a change to what the dialog shows.
+State: fixed by s20-controls on 2026-11-16. The live status read maps the separate fresh evidence into the existing dialog. The pressed approval preserves the decision and reviewed heads that the dialog showed.
 
 The engine stores review evidence when project.review.prepare opens a review.
 A later project.review.report updates the separate evidence table.
@@ -17235,7 +17235,7 @@ Its "reload" step failed with "SocketReadError: An error occurred during Read".
 A second run on the same commit passed that step and gave the known result of 19 of 23.
 The cause of the single failure is not known.
 
-## s19-1. Cursor does not publish its authentication file path.
+## 1200. Cursor does not publish its authentication file path.
 
 Found: 2026-11-16, during the secret hiding work.
 State: mitigated by covering both candidate paths.
@@ -17247,7 +17247,7 @@ The source now inspects both `$XDG_CONFIG_HOME/cursor/auth.json` and `HOME/.conf
 The official references are https://cursor.com/docs/cli/reference/authentication and https://cursor.com/docs/cli/reference/configuration.
 No real credential file was opened.
 
-## s19-2. Slow account stores need a bounded initial read.
+## 1201. Slow account stores need a bounded initial read.
 
 Found: 2026-11-16, while fixing issue 224.
 State: fixed with asynchronous inspection and a total 500 millisecond budget.
@@ -17256,13 +17256,13 @@ The existing launch reader performs synchronous filesystem operations.
 Calling it for every account during startup could block the service on a slow filesystem.
 The initial reader now uses asynchronous operations with the same file and leaf limits.
 At most two initial inspections occupy logical slots across repeated batches.
-Uncancelled system calls can outlive those slots, as recorded in issue s19-9.
+Uncancelled system calls can outlive those slots, as recorded in issue 1208.
 A shared snapshot cache reads each distinct store once per batch.
 The account writer waits for the bounded inspection before publishing its change.
 A timed-out or unreadable store is retried at its next launch.
 Successful snapshots seed the existing synchronous refresh path.
 
-## s19-3. Replacement lengths cannot assign text to its original chunks.
+## 1202. Replacement lengths cannot assign text to its original chunks.
 
 Found: 2026-11-16, while fixing issue 233.
 State: fixed with original-span mapping.
@@ -17278,7 +17278,7 @@ The held suffix never exceeds the longest registered form minus one character.
 The existing stop-state loss after the runner emits its tail remains tracked in issue 231.
 This change flushes the runner's carry on stop without changing that event acceptance policy.
 
-## s19-4. A new adapter message identity could still end the security carry.
+## 1203. A new adapter message identity could still end the security carry.
 
 Found: 2026-11-16, while checking the final issue 233 implementation.
 State: fixed with one security carry across message identities.
@@ -17290,7 +17290,7 @@ Each pending chunk now retains its own item identifier and speaker.
 The security carry survives until turn termination.
 Original-span mapping preserves the ordinary text's source identity.
 
-## s19-5. Partial safe chunks broke complete configuration reports.
+## 1204. Partial safe chunks broke complete configuration reports.
 
 Found: 2026-11-16, in the full secret-hiding gate.
 State: fixed by recognizing safe chunk endings.
@@ -17305,7 +17305,7 @@ A short chunk with a possible suffix is kept whole within that same bound.
 Hash-only credential probes retain their maximum window while a credential-alphabet suffix remains possible.
 The configuration and end-to-end flow assertions are unchanged.
 
-## s19-6. The isolated suite home lacked the launcher test's Node installation.
+## 1205. The isolated suite home lacked the launcher test's Node installation.
 
 Found: 2026-11-16, in the full secret-hiding gate.
 State: resolved in the test environment without changing the test.
@@ -17316,7 +17316,7 @@ Its prerequisite failed before it exercised the launcher.
 The final suite home links only the existing Node.js binary into that directory.
 All credential directories remain temporary.
 
-## s19-7. Repairing a credential store could expose an adjacent tool report.
+## 1206. Repairing a credential store could expose an adjacent tool report.
 
 Found: 2026-11-16, while checking unreadable-store recovery after the carry change.
 State: fixed by retaining the message's withheld interval for following tool metadata.
@@ -17328,7 +17328,7 @@ Loss of coverage now discards the undecided message carry with a fixed marker.
 Following tool metadata remains withheld until a healthy message starts a new interval.
 The existing half-written and oversized-store journeys pass without changes to their assertions or waits.
 
-## s19-8. The passing full suite emits client-test warnings.
+## 1207. The passing full suite emits client-test warnings.
 
 Found: 2026-11-16, in the final secret-hiding gate.
 State: observed outside the four assigned fixes.
@@ -17339,7 +17339,7 @@ Several retired web-page tests emit React state-update warnings about missing `a
 All affected files passed in the complete 632-file run.
 No test assertion or warning threshold was changed for this task.
 
-## s19-9. Abandoned preload reads occupied every logical slot forever.
+## 1208. Abandoned preload reads occupied every logical slot forever.
 
 Found: 2026-11-16, from independent review finding m2.
 State: fixed with deadline abandonment and deduplication of source path sets.
@@ -17355,7 +17355,7 @@ Ran: a healthy later batch completes after the abandoned reads.
 Read: Node.js cannot cancel an already-running stat system call.
 Read: such a call can continue occupying an operating-system worker after its logical slot is released.
 
-## s19-10. Every redaction synchronously inspects preloaded account stores.
+## 1209. Every redaction synchronously inspects preloaded account stores.
 
 Found: 2026-11-16, from independent review finding m3.
 State: recorded without a fix, as assigned.
@@ -17366,7 +17366,7 @@ Read: this now includes enabled accounts that have never launched.
 Read: a broken store for one of those accounts also makes `healthyAll()` false.
 Read: initial preloading has a deadline, but these later metadata checks do not use that asynchronous path.
 
-## s19-11. Cursor's default credential file can refuse another configuration folder.
+## 1210. Cursor's default credential file can refuse another configuration folder.
 
 Found: 2026-11-16, from independent review finding m5.
 State: recorded without a fix, as assigned.
@@ -17374,9 +17374,9 @@ State: recorded without a fix, as assigned.
 Read: the Cursor source checks both the configured folder and the default-home candidate.
 Read: an unreadable or malformed default file therefore refuses an account whose configured folder is healthy.
 Read: this is stricter than inspecting only the account's own file.
-Read: issue s19-1 records why both candidate paths are covered.
+Read: issue 1200 records why both candidate paths are covered.
 
-## s19-12. Double-base64 pipelines need inner and outer alignment runs.
+## 1211. Double-base64 pipelines need inner and outer alignment runs.
 
 Found: 2026-11-16, from independent review finding M4.
 State: fixed for bounded contiguous runs, with remaining encoding limits recorded.
@@ -17397,7 +17397,7 @@ Read: base64 of a JSON-escaped value has no added partial alignment runs.
 Read: hash-only credentials have no two-step decoding probes.
 Read: rule 6 now states these limits without removing its existing requirements.
 
-## s19-13. Escaped slashes and mixed percent escapes add unmatched base64 spellings.
+## 1212. Escaped slashes and mixed percent escapes add unmatched base64 spellings.
 
 Found: 2026-11-16, from independent review finding m7.
 State: recorded without a fix, as assigned.
@@ -17408,7 +17408,7 @@ Read: the percent form encodes the complete base64 value with `encodeURIComponen
 Read: partly escaping its reserved characters can therefore produce an unmatched spelling.
 Read: rule 6 now states those spelling limits.
 
-## s19-14. Ordinary words were held behind a broad token alphabet.
+## 1213. Ordinary words were held behind a broad token alphabet.
 
 Found: 2026-11-16, from independent review finding B1.
 State: fixed with proper-prefix matching and public token-prefix context.
@@ -17425,9 +17425,9 @@ Ran: every token split is checked in raw, hexadecimal, both base64 alphabets, an
 Read: a genuine prefix of a value-known secret can still delay that suffix until the next text or the turn's termination.
 Read: this remaining time delay has no wall-clock bound before termination.
 Read: its character count is bounded by one less than the longest registered form.
-Read: issue s19-16 records the queue limit that can end that delay earlier with a withheld marker.
+Read: issue 1215 records the queue limit that can end that delay earlier with a withheld marker.
 
-## s19-15. Permission control can precede a genuine held secret suffix.
+## 1214. Permission control can precede a genuine held secret suffix.
 
 Found: 2026-11-16, from independent review finding M1.
 State: documented and covered by stored replay and service-reload tests.
@@ -17441,7 +17441,7 @@ Ran: replay and an actual service restart preserve that order.
 Read: the existing website renderer keeps a permission boundary between the message segments.
 Read: merging those segments across the request would move later text before its recorded action.
 
-## s19-16. The content queue behind a genuine secret prefix was unbounded.
+## 1215. The content queue behind a genuine secret prefix was unbounded.
 
 Found: 2026-11-16, from independent review finding M2.
 State: fixed with item and byte budgets.
@@ -17455,7 +17455,7 @@ Read: covered match context remains available for a later secret remainder.
 Ran: both overflow cases publish the queued tools in their original order before the adapter gate opens.
 Ran: neither the raw held prefix nor the private continuation appears in their output.
 
-## s19-17. The termination tests did not establish that a carry existed.
+## 1216. The termination tests did not establish that a carry existed.
 
 Found: 2026-11-16, from independent review finding M3.
 State: fixed with genuine-prefix fixtures and negative flush mutations.
@@ -17476,7 +17476,7 @@ Ran: its flush therefore cannot be rescued by a later idle report.
 Read: the existing stop diagnostic also needed a genuine registered prefix after ordinary suffixes began streaming immediately.
 Ran: that diagnostic passes with its original assertions and waits unchanged.
 
-## s19-18. Rebuilding encoding forms and prefix tables slowed every streamed chunk.
+## 1217. Rebuilding encoding forms and prefix tables slowed every streamed chunk.
 
 Found: 2026-11-16, from independent review finding m1.
 State: fixed with bounded compiled-state caching and failure tries.
@@ -17493,7 +17493,7 @@ Ran: final whole-text medians were 35.03 milliseconds after the change and 19.87
 Read: this is a whole-text ratio of 1.76, so no requested forms were dropped.
 Read: registry values and token hashes are still checked on every call.
 
-## s19-19. Public encoded-prefix context also needs the preceding base64 group.
+## 1218. Public encoded-prefix context also needs the preceding base64 group.
 
 Found: 2026-11-16, while implementing the owner's public-prefix clarification.
 State: fixed with already-published alignment context.
@@ -17506,7 +17506,7 @@ Read: no raw held suffix is released by retaining that context.
 Ran: a Unicode mutation test also caught a code-point scan mismatching the redactor's 16-bit Unicode transformation format (UTF-16) chunk spans.
 Read: the matcher now scans the same code units as those spans.
 
-## s19-20. New regression fixtures needed explicit protocol and state boundaries.
+## 1219. New regression fixtures needed explicit protocol and state boundaries.
 
 Found: 2026-11-16, while writing the round-two regressions.
 State: corrected before accepting their results.
@@ -17523,7 +17523,7 @@ Ran: a genuine registered prefix corrected the old stop diagnostic fixture witho
 Ran: the isolated live check passed 4 of 23 steps and failed the two steps that awaited model-driven team work.
 Read: this is not equivalent to the known signed-in master result of 19 of 23 steps.
 
-## s19-21. An unbounded prefix trie exhausted memory for a large credential leaf.
+## 1220. An unbounded prefix trie exhausted memory for a large credential leaf.
 
 Found: 2026-11-16, while reviewing the new compiled-state cache.
 State: fixed with a trie-size limit and compact failure-table fallback.
@@ -17540,7 +17540,7 @@ Ran: all seventeen redactor tests passed after the correction.
 Ran: the in-progress whole-suite run was stopped before accepting it as final evidence.
 Ran: the complete suite was restarted against the corrected implementation.
 
-## s19-22. A candidate already containing private characters published its public prefix unnecessarily.
+## 1221. A candidate already containing private characters published its public prefix unnecessarily.
 
 Found: 2026-11-16, in the round-two complete suite.
 State: fixed while retaining immediate publication of public-only tails.
@@ -17554,7 +17554,7 @@ Ran: the every-split test failed before pinning this distinction in the implemen
 Ran: all seventeen redactor tests and both unchanged terminal assertions pass after the correction.
 Read: no terminal-specific output rewriting or stored shape change was needed.
 
-## s19-23. The restart fixture relied on an ordinary sentence being unaccepted.
+## 1222. The restart fixture relied on an ordinary sentence being unaccepted.
 
 Found: 2026-11-16, in the round-two complete suite.
 State: corrected with a genuine held-prefix fixture and the original assertions.
@@ -17572,3 +17572,173 @@ Ran: the completed failing whole run contained 633 passing files, two failing fi
 Ran: the final complete suite was restarted after these corrections.
 Ran: the final complete suite passed all 635 files with 9706 passing tests and two existing skips.
 Ran: the complete typecheck passed after the type-only fixture correction.
+
+## 1125. The live merge review discarded fresh status evidence.
+
+State: fixed on 2026-11-16. This is the same fault as issue 1041.
+
+The status read mapped the stored review without its separate fresh evidence.
+The live read now passes fresh evidence to the typed review mapping.
+The dialog uses its existing passing, failed, stale, and missing states.
+A matrix test covers all 25 combinations of stored and fresh evidence.
+The real-engine browser journey reports passing evidence while the dialog is open.
+
+## 1126. A pressed merge approval could record a different decision from its rendered label.
+
+State: fixed on 2026-11-16.
+
+The approval handler read the latest store after the button had been rendered.
+A store refresh could change the decision before that button received its click.
+The button now captures its displayed decision and reviewed heads.
+The engine still checks the reviewed heads when it handles the approval.
+A regression test replaces the stored evidence before pressing the rendered button.
+
+## 1127. Service settings displayed controls without execution paths.
+
+State: fixed on 2026-11-16. This is the website part of issue 802.
+
+The website displayed the need-to-know default and the agent-credit removal setting.
+It also displayed the Git message model and three unbuilt workflow defaults.
+Standing permission rules stored a flag without enforcing permissions.
+The build now removes these controls with the same checked row-removal helper as Project settings.
+The empty Git messages section and Approvals heading are absent too.
+The standalone mock retains its sample controls.
+The browser journey checks their absence and reads back the retained role settings from the engine.
+
+## 1128. The service update button only displayed a not-connected notice.
+
+State: fixed on 2026-11-16.
+
+The About section displayed an Update the service button without an execution path.
+The button changed no engine state.
+The build now omits that button.
+The existing manual update commands remain visible.
+The browser journey checks that the button is absent.
+
+## 1129. Watching or taking over an agent terminal has no engine attachment path.
+
+State: open. This is issue 906, checked on 2026-11-16.
+
+The project terminal opens a separate owner shell.
+Watching an interactive agent needs an association with its existing terminal and an authenticated output transport.
+Taking over also needs exclusive keyboard ownership and a handoff back to the agent.
+An Agent Client Protocol agent has no terminal.
+Its conversation remains available through the thread.
+The disabled controls and their existing hints remain accurate.
+This task did not build these features.
+
+## 1130. A project terminal has no resumed attachment protocol.
+
+State: open. This is issue 907, checked on 2026-11-16.
+
+The session belongs to its opening owner connection.
+The output stream permits one attachment.
+Its attached flag stays set after detachment.
+The disconnect grace period does not provide a resumed attachment.
+Reconnect would need an engine protocol for a live session and explicit connection ownership.
+An exited or cleaned-up shell cannot resume.
+An owner shell remains meaningful when the project's agents use the Agent Client Protocol.
+The disabled Reconnect control and its existing hint remain accurate.
+This task did not build reconnect.
+
+## 1131. A broader Service settings journey still clicked the removed standing-rules control.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the journey and its service support file.
+I ran the unchanged journey at studio.spec.ts:792.
+It timed out while clicking Standing permission rules.
+The journey now asserts that the switch is absent.
+The orchestrator approved removing its dependent standingRules expectation by name.
+Every other assertion remains.
+I read the tests and journeys found by label and selector searches for the removed controls.
+I found no other live journey that activated a removed control.
+
+## 1132. Passing evidence for a newer head appeared current for an older review.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the status handler and the typed review mapper.
+The status handler evaluates evidence against the checkout's current head.
+The open review can still name an earlier head.
+I ran a new regression test before changing the mapper.
+It showed current passing evidence for the wrong reviewed head.
+The mapper now treats a report for a different reviewed head as stale.
+It uses the dialog's existing stale wording and approval choice.
+
+## 1133. The reviewer defaults have storage but no execution consumer.
+
+State: open. The owner must decide whether to hide these controls.
+
+I read the Default reviewers and Reviewer from another vendor controls.
+I searched the engine source for reviewDefaults.
+I found its storage in the project settings command.
+I found no execution consumer.
+The controls remain visible because round 2 requests a record without a fix.
+
+## 1134. Standing permission enforcement will need its website switch restored.
+
+State: open. Restore the control in the same change that builds enforcement.
+
+I read standingRulesEnabled in the stall-watch switch module.
+It treats an absent value as enabled.
+I searched the engine source and found no caller today.
+Hiding the website switch does not change permission execution today.
+A stored true value or an absent value would enable the flag when a future consumer calls it.
+The owner needs the website switch when enforcement is built.
+The roles.settings.set request can still change the stored flag.
+Round 2 does not change the default or build enforcement.
+
+## 1135. The engine records the client's approval decision without checking evidence.
+
+State: open. Round 2 records this behavior without changing it.
+
+I read admitMainReview and the approval planner.
+The engine checks the owner, confirmation, review identity, and reviewed pair.
+The Git operation checks the actual checkout heads before merging.
+The planner stores the client's decision value.
+It does not check whether the current evidence supports that decision.
+A change of evidence alone does not cause an engine refusal.
+The website's captured decision preserves what the pressed button showed.
+
+## 1136. The Git journey lost its passing-at-open review case.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the Git browser journey.
+Round 1 replaced its passing-at-open case with evidence arriving while the dialog was open.
+The journey now keeps the live-arrival checks and prepares another review after the reports exist.
+It checks plain approval in both cases.
+It also checks the passing evidence stored with the final merged review.
+
+## 1137. The review tests omitted a request-level stale-pair refusal.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the existing refusal test and admitMainReview.
+The existing test returned a decided review with a refused outcome.
+It did not reject the approval request.
+I ran a new regression test that rejects the request with the admission refusal message.
+The existing error notice shows the message.
+The review stays open and the approval and Cancel controls remain enabled.
+No production change was needed for this error path.
+
+## 1138. The email journey resolved its sample fixture from the working directory.
+
+State: fixed in round 2 on 2026-11-16.
+
+I ran the email journey at studio.spec.ts:979 alone from packages/web.
+It failed before opening the page because packages/web/design/mock does not exist.
+I read its sample-copy path and the other helpers' module-relative paths.
+The email helper now resolves design/mock relative to its own source file.
+The journey's assertions and waits remain unchanged.
+
+## 1139. Six browser journeys failed in the full check of the controls unit and passed alone.
+
+The full check ran while three other builders were running their own test suites on the same computer.
+The journeys were `git.spec.ts:183`, `git.spec.ts:233`, `git.spec.ts:316`, `new-project.spec.ts:283`, `studio.spec.ts:902` and `studio.spec.ts:1132`.
+The journey at `studio.spec.ts:902` reached its six minute limit.
+Each of the six passed when it was run alone with one worker.
+This is the same load sensitivity that issues 966, 1014, 1044, 1066, 1079 and 1122 record.
+
+State: open. Recorded on 2026-11-16.
