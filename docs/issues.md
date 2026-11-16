@@ -17049,3 +17049,25 @@ A preload that waited indefinitely could prevent the watcher from starting.
 The ownership preload now runs first.
 A failing regression kills the worker while its service is blocked before main.
 The service now ends itself even in that startup window.
+
+
+## s18-23. Test ownership metadata crossed the runner’s environment boundary.
+
+State: fixed in s18-smallfix round 3.
+
+The first shared ownership hook also added its preload and lease variables to agent children.
+The full suite caught the changed environment through the account-login allow-list assertion.
+A recorded adapter replay also failed to initialize with that extra preload.
+The hook now preserves runner-built agent environments unchanged.
+Explicit service and foreground launcher entries still receive ownership metadata.
+Services already own their agent children through scoped runner teardown.
+The existing environment and replay assertions remain unchanged.
+
+
+## s18-24. The ownership regression omitted the engine test registration.
+
+State: fixed in s18-smallfix round 3.
+
+The engine’s discovery guard found the new ownership test without its required rebuild registration.
+The test now registers the existing no-log case because it launches external services rather than opening an event log in its own scope.
+The discovery assertion remains unchanged.

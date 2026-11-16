@@ -16,19 +16,24 @@ const identity = (pid) => {
 let owner;
 try { owner = JSON.parse(process.env.LGTM_TEST_OWNER || 'null'); } catch {}
 const originalSpawn = childProcess.spawn, originalFork = childProcess.fork;
-const guarded = (options = {}) => {
+const guarded = (options = {}, command, args = []) => {
   if (!owner) return options;
   const env = { ...(options.env ?? process.env) };
+  const serviceLaunch = [command, ...args].some(arg => typeof arg === 'string' && arg.endsWith('/engine/src/service.ts'))
+    || [command, ...args].some(arg => typeof arg === 'string' && arg.endsWith('/cli/src/bin.ts')) && args.includes('serve');
+  // The runner has already applied its credential allow-list to agent children.
+  // Services own those children through their existing scoped runner teardown.
+  if (typeof env.LGTM_SOCKET === 'string' && !serviceLaunch) return options;
   env.LGTM_TEST_OWNER = JSON.stringify(owner);
   const hook = `--import=${import.meta.url}`;
   env.NODE_OPTIONS = [hook, env.NODE_OPTIONS].filter(Boolean).join(' ');
   return { ...options, env };
 };
 childProcess.spawn = function (command, args, options) {
-  return Array.isArray(args) ? originalSpawn.call(this, command, args, guarded(options)) : originalSpawn.call(this, command, guarded(args));
+  return Array.isArray(args) ? originalSpawn.call(this, command, args, guarded(options, command, args)) : originalSpawn.call(this, command, guarded(args, command));
 };
 childProcess.fork = function (module, args, options) {
-  return Array.isArray(args) ? originalFork.call(this, module, args, guarded(options)) : originalFork.call(this, module, guarded(args));
+  return Array.isArray(args) ? originalFork.call(this, module, args, guarded(options, module, args)) : originalFork.call(this, module, guarded(args, module));
 };
 syncBuiltinESMExports();
 

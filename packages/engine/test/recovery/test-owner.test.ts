@@ -3,6 +3,9 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it, vi } from 'vitest'
+import { registerRebuildCheck } from '../support/rebuildCheck.ts'
+// The fixture owns external service processes, not an in-process event log.
+registerRebuildCheck({ noLog: true })
 const service = fileURLToPath(new URL('../../src/service.ts', import.meta.url))
 const ownership = fileURLToPath(new URL('../../../../scripts/service-test-owner.mjs', import.meta.url))
 const alive = (pid: number) => { try { const s = readFileSync(`/proc/${pid}/stat`, 'utf8'); return s.slice(s.lastIndexOf(')') + 2)[0] !== 'Z' } catch { return false } }
