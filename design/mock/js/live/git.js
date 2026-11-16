@@ -426,6 +426,7 @@ async function readGitRecord(w, project, r, c, forced, reviews = false) {
   finally {
     if (valid()) {
       mapping.finishGitRecord(r, Date.now(), failure ? failure.message || 'The worktree could not be refreshed.' : null);
+      writeWt(w.id, { stale: !!failure });
       if (failure && (r.lastToast === null || Date.now() - r.lastToast >= 60000)) { r.lastToast = Date.now(); act.toast('This worktree could not be refreshed.', 'error'); }
     }
     if (r.summaryAbort === abort) r.summaryAbort = undefined;
