@@ -78,6 +78,9 @@ const exit = (code: number): void => {
   process.stdout.write("", () => process.stderr.write("", () => process.exit(code)))
 }
 
+// Foreground output can fail after a hangup, including the final flush.
+if (process.argv.length === 3 && process.argv[2] === "serve") process.stdout.on("error", () => {})
+
 const fiber = Effect.runFork(main(process.argv.slice(2), process.env))
 let signalCode: number | undefined
 for (const [signal, code] of [["SIGTERM", 143], ["SIGINT", 130], ["SIGHUP", 129]] as const) {

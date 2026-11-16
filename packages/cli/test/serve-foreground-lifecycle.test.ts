@@ -57,3 +57,33 @@ it('preserves a startup failure category when a signal arrives during startup', 
   expect(await h.result).toMatchObject({ _tag: 'Failure', failure: { message: 'service failed to start: state folder mode is not 0700' } })
   expect(h.child.kill).toHaveBeenCalledOnce()
 })
+
+for (const code of [0, 1]) it(`keeps an early owner stop quiet and returns child outcome ${code}`, async () => {
+  const h = launch()
+  await vi.waitFor(() => expect(rig.spawn).toHaveBeenCalledOnce())
+  h.signal.abort(); h.close(code)
+  expect(await h.result).toMatchObject({ _tag: 'Success', success: code })
+})
+
+it('ignores a failed forwarding write and waits for the service to close', async () => {
+  const h = launch()
+  await vi.waitFor(() => expect(rig.spawn).toHaveBeenCalledOnce())
+  h.child.emit('message', { _tag: 'LgtmServiceStarted' })
+  // A closed pipe stands in for a terminal whose output has been hung up.
+  const { Writable } = await import('node:stream')
+  const output = new Writable({ write(_bytes, _encoding, done) { done(Object.assign(new Error('closed'), { code: 'EPIPE' })) } })
+  const original = process.stdout.write
+  vi.spyOn(process.stdout, 'write').mockImplementation(function (this: typeof process.stdout, ...args: any[]) {
+    if (args[0]?.toString() === 'service shutdown\n') return (output.write as any)(...args)
+    return (original as any).apply(this, args)
+  })
+  const errors: unknown[] = []
+  // Observe only to keep the red test from ending the test runner itself.
+  output.on('error', e => { errors.push(e); process.stdout.emit('error', e) })
+  let done = false; void h.result.then(() => { done = true })
+  h.child.stdout.emit('data', Buffer.from('service shutdown\n'))
+  await new Promise(resolve => setImmediate(resolve))
+  expect(errors).toHaveLength(1); expect(done).toBe(false)
+  h.signal.abort(); h.close(0)
+  expect(await h.result).toMatchObject({ _tag: 'Success', success: 0 })
+})

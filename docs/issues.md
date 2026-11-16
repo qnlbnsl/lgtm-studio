@@ -16971,3 +16971,21 @@ The existing caller finalizers release their state.
 A cancelled multi-worktree Git refresh also ends its current pass before starting another read.
 The controller’s admission policy stays unchanged.
 Cancellation regressions exercise every latched row in the round 3 caller inventory.
+
+## s18-16. An early foreground stop reported a failed start.
+
+State: fixed in s18-smallfix round 3.
+
+A signal before startup completed could end the child through its default signal action.
+The launcher reported a startup failure even though the owner requested the stop.
+An owner stop without a reported failure category now returns the child’s outcome quietly.
+A reported startup category and an unclean shutdown after startup still fail.
+
+## s18-17. A closed foreground output stream could crash the launcher.
+
+State: fixed in s18-smallfix round 3.
+
+Forwarding service logs to a closed terminal could emit an unhandled stream error.
+The forwarding path now ignores output write failures and waits for the child to end.
+The final command flush also tolerates the closed foreground output.
+A closed pipe stands in for a terminal hangup in the regression test.

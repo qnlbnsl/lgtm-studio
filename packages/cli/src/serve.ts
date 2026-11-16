@@ -75,7 +75,9 @@ export const serveForeground = (options: { readonly environment: Record<string, 
       if (message._tag === "LgtmServiceStarted") started = true;
       if (message._tag === "LgtmStartupFailed" && "reason" in message && typeof message.reason === "string" && message.reason.length <= 512) reason = message.reason;
     });
-    child.stdout!.on("data", (line: Buffer) => process.stdout.write(line));
+    const ignoreOutputError = () => {};
+    process.stdout.on("error", ignoreOutputError);
+    child.stdout!.on("data", (line: Buffer) => { try { process.stdout.write(line, ignoreOutputError); } catch { /* The terminal has closed. */ } });
     const closed = new Promise<number>((resolve) => {
       child.once("error", () => resolve(1));
       child.once("close", (code) => resolve(code === 0 ? 0 : 1));
@@ -87,15 +89,17 @@ export const serveForeground = (options: { readonly environment: Record<string, 
     };
     options.signal?.addEventListener("abort", stop, { once: true });
     if (options.signal?.aborted) stop();
-    return { closed, stop, reason: () => reason, started: () => started, refused: () => refused };
-  }), ({ stop, closed }) => Effect.promise(async () => {
+    return { closed, stop, ignoreOutputError, reason: () => reason, started: () => started, refused: () => refused };
+  }), ({ stop, closed, ignoreOutputError }) => Effect.promise(async () => {
     options.signal?.removeEventListener("abort", stop);
     stop();
     await closed;
+    process.stdout.removeListener("error", ignoreOutputError);
   }));
   const code = yield* Effect.promise(() => running.closed);
   if (running.refused()) return yield* Effect.fail(new Error(alreadyRunning));
   if (running.started() && (code !== 0 || !options.signal?.aborted)) return yield* Effect.fail(new Error("The service stopped unexpectedly."));
+  if (options.signal?.aborted && running.reason() === undefined) return code;
   if (code !== 0 || !options.signal?.aborted) return yield* Effect.fail(new Error(running.reason() === undefined ? "service failed to start" : `service failed to start: ${running.reason()}`));
   return 0;
 }));

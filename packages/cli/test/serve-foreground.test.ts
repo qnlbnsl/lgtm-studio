@@ -155,3 +155,16 @@ for (const restarted of [false, true]) it.runIf(process.platform === 'linux')(`t
   const again = launch(r)
   await ready(r, again)
 }, 30_000)
+
+it('waits for shutdown after its terminal output pipe closes', async () => {
+  const r = root(), hook = join(r.folder, 'shutdown-output.mjs')
+  writeFileSync(hook, "if (process.argv[1]?.endsWith('/engine/src/service.ts')) process.prependOnceListener('SIGTERM', () => process.stdout.write('test shutdown forwarding\\n'));\n")
+  const p = launch(r, ['serve'], { NODE_OPTIONS: `--import=${hook}` })
+  await ready(r, p)
+  // Closing the pipe reader reproduces a terminal that can no longer receive
+  // output. The fixture forces a forwarded write during the real shutdown.
+  p.child.stdout!.destroy(); p.child.kill('SIGHUP')
+  expect(await p.closed).toBe(0)
+  expect(p.error()).not.toMatch(/EPIPE|Unhandled|service failed to start/)
+  expect(await answers(r.socket)).toBe(false)
+}, 30000)
