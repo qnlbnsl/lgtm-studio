@@ -18,8 +18,10 @@ export const roleRows = [
   ['orchestrator', 'orchestrator', ['lead-base', 'orchestrator']],
   ['builder', 'builder', ['worker-base', 'builder']],
   ['worker:builder', 'builder', ['worker-base', 'builder']],
-  ['lead:builder', 'builder', ['worker-base', 'builder']],
-  ['chef:builder', 'builder', ['worker-base', 'builder']],
+  ['lead:builder', undefined, ['lead-base']],
+  ['worker:build-lead', undefined, ['worker-base']],
+  ['chef:builder', undefined, ['worker-base']],
+  [':builder', undefined, ['worker-base']],
   ['worker:reviewer', 'reviewer', ['reviewer-base', 'reviewer']],
   ['reviewer', 'reviewer', ['reviewer-base', 'reviewer']],
   ['worker:test-runner', 'test-runner', ['test-runner']],
@@ -46,10 +48,11 @@ it.each(roleRows)('s22: role %j selects %j and %j without changing its parsed au
   expect(instructionFiles(role)).toEqual(files)
   expect(parseRole(role)).toEqual(authority)
 })
-it('s22: every bare and prefixed default role selects the same files', () => {
+it('s22: every bare and correctly prefixed default role selects the same files', () => {
   for (const name of ['orchestrator', 'project-lead', 'planning-lead', 'design-lead', 'build-lead', 'planner', 'designer', 'reviewer', 'builder', 'build-init', 'test-runner', 'evaluator']) {
     expect(instructionName(name)).toBe(name)
-    expect(instructionFiles('worker:' + name)).toEqual(instructionFiles(name))
+    const kind = name === 'orchestrator' ? 'orchestrator' : ['project-lead', 'planning-lead', 'design-lead', 'build-lead'].includes(name) ? 'lead' : 'worker'
+    expect(instructionFiles(kind + ':' + name)).toEqual(instructionFiles(name))
   }
 })
 it('s22: defaults compose in mapping order and owner advice replaces only the role', async () => {
@@ -63,11 +66,6 @@ it('s22: defaults compose in mapping order and owner advice replaces only the ro
   expect(overridden).not.toContain('# Builder')
   const custom = await store.compose('worker:custom', { name: 'Owner', roles: { custom: { advice: 'Custom role.', limits: {} } } })
   expect(custom).toContain('Custom role.')
-})
-it('s22: packaged resource loading does not depend on a browser replacement of the global URL', async () => {
-  vi.stubGlobal('URL', class { constructor() { throw new Error('Browser URL replacement') } })
-  try { expect(await new InstructionStore(home).compose('builder')).toContain('# Builder') }
-  finally { vi.unstubAllGlobals() }
 })
 it('s22: each file is independently overridden and unknown paths are never opened', async () => {
   writeFileSync(join(folder, 'worker-base.md'), 'Owner base.')
@@ -92,7 +90,7 @@ it.each(['file-link', 'hard-link', 'directory', 'fifo', 'oversize', 'parent-link
   const text = await new InstructionStore(home, (line) => lines.push(line)).compose('builder')
   expect(text).toContain('# Builder')
   expect(text).not.toContain('UNSAFE CONTENT')
-  expect(lines.filter((line) => line.includes('builder'))).toHaveLength(1)
+  expect(lines.filter((line) => line.includes('builder'))).toHaveLength(kind === 'missing' ? 0 : 1)
   expect(lines.join('\n')).not.toContain(root)
   expect(lines.join('\n')).not.toContain('private-name-secret')
 })

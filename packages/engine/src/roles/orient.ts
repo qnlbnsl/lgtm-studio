@@ -5,6 +5,7 @@ import { roster } from "../client/reads/roster.ts";
 import { refused, type Input } from "../commands/internal.ts";
 import { composeInstructions } from "./compose.ts";
 import { instructionLimits } from "./instructions.ts";
+export const unavailableAdvice = "Role instructions are unavailable. Ask your lead for the current brief.";
 
 export const orient = (input: Input, payload: Record<string, unknown>) => {
   if (input.actor._tag !== "agent") return Effect.fail(refused());
@@ -14,14 +15,16 @@ export const orient = (input: Input, payload: Record<string, unknown>) => {
   if (self === undefined) return Effect.fail(refused());
   const role = parseRole(self.role);
   return Effect.gen(function* () {
-    const advice = yield* composeInstructions(input.runtime, input.snapshot, self.role);
-    const reply = agentReadReply(payload.requestId, {
+    const advice = yield* composeInstructions(input.runtime, input.snapshot, self.role).pipe(Effect.catchTag("CommandRefused", () => Effect.succeed(unavailableAdvice)));
+    const makeReply = (advice: string) => agentReadReply(payload.requestId, {
       agentId: self.agentId, name: self.name, kind: role.kind,
       ...(role.name === undefined ? {} : { roleName: role.name }), parent: self.parent,
       ...(self.parentName === undefined ? {} : { parentName: self.parentName }),
       openPermissionRequests: self.openPermissionRequests, openQuestionsAsked: self.openQuestionsAsked,
       agents, advice,
     });
+    let reply = makeReply(advice);
+    if (Buffer.byteLength(JSON.stringify(reply)) > instructionLimits.replyBytes) reply = makeReply(unavailableAdvice);
     if (Buffer.byteLength(JSON.stringify(reply)) > instructionLimits.replyBytes) return yield* refused("Role orientation exceeds 256 KiB.");
     return { reply };
   });

@@ -62,6 +62,8 @@ After line 2, write the body:
 - checks you propose for later;
 - what you noticed but did not file, and why.
 
-When your brief gives you the project and workspace identifiers, record the outcome with `project.review.report` if you can cite an existing item in your own thread.
-Supply the current `head`, `threadAgentId` and `threadSequence` as well as the outcome.
+When your brief gives you `projectId` and `worktreeId`, record the outcome with `project.review.report` if you can cite an existing item in your own thread.
+Supply `projectId`, `worktreeId`, the current `head`, `kind` set to `review`, `status` set to `passed` or `failed`, a `summary`, `threadAgentId` and `threadSequence`.
+Use your own agent identifier for `threadAgentId`.
+Use the sequence of an existing item in your own thread for `threadSequence`.
 If the evidence is unavailable, report that limit to your parent.

@@ -1,7 +1,7 @@
 # Rules for every lead
 
 You lead other agents on a team that LGTM Studio runs.
-Read this file first, then the file for your role, then the brief you were sent.
+Read these shared rules, then the role section below, then the brief you were sent.
 
 ## How you start
 
@@ -38,7 +38,7 @@ A brief is the only context the agent has. Write it so that it stands alone.
 - The project lead is created by the engine as `lead:project-lead`.
 - These role strings select instructions and do not grant authority.
 - Name agents by role and number, never by a person's name.
-- After a wave starts, write one `board.post` addressed to those agents with `reply` set to `all`. You get one completion when all have replied. Alternatively call `wait` with mode `all`.
+- After a wave starts, write one `board.post` addressed to those agents with `reply` set to `all`. You get one completion when all have replied. Alternatively call `wait` with the agents' identifiers in `members`, `mode` set to `all` and `block` set to `true`.
 - A settled wait proves only that the agents stopped working. Read each report and check its evidence.
 - Do not poll, and do not post acknowledgements. Every post wakes someone.
 - An agent that stopped or never answered has not succeeded. Use `roles.handoff` before you start its replacement.

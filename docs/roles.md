@@ -23,10 +23,13 @@ The authority parser, parent chain and holder checks remain independent of these
 | `test-runner` | `test-runner.md`. |
 | `evaluator` | `evaluator.md`. |
 
-A bare default role name selects the same instructions as its name after a colon.
+A bare default role name selects the same instructions as its name after the matching kind and a colon.
 For example, `builder` and `worker:builder` select the builder instructions.
 Both `lead:project-lead` and the older `project-lead` select the project lead instructions.
 An unknown name receives the base of its parsed kind.
+A known name with the wrong kind receives only that kind's base.
+For example, `lead:builder` receives only `lead-base.md`, and `worker:build-lead` receives only `worker-base.md`.
+An unknown kind such as `chef:builder` receives only the generic worker base and no owner advice named for builder.
 Workers receive `worker-base.md`.
 Leads and orchestrators receive `lead-base.md`.
 A display name does not change the authority granted to an agent.
@@ -38,22 +41,38 @@ The engine prepends the composed instructions to the caller's first ordinary pro
 It delivers both in the same turn through the adapter.
 The caller's stored prompt and its size remain unchanged.
 The thread and chat retain their existing prompt text.
-Exact user-message echoes of the injected prefix are removed before they reach the thread.
+User-message echoes of the injected block are removed before they reach the thread.
+Once its engine header is recognized, a changed echo is suppressed through its closing marker.
+A malformed closing marker withholds the remaining echo rather than storing instructions.
 
 For a project lead, the order is the lead base, the project lead role, the engine's project opening instruction, and the goal.
 The opening instruction describes Define and the owner's approval mechanics.
 A role override cannot remove that instruction.
+A fresh resume repeats the role rules without repeating that original project opening prompt.
 
 A fresh resume receives instructions again.
 Startup recovery and account return also supply them when they open a new session.
-Loading an existing session does not repeat them.
+Loading an existing session does not repeat them or read the instruction files.
+A size or read failure cannot prevent that load.
 A successful compaction keeps the same session and restores the instructions on its next ordinary prompt.
 An agent can call `roles.orient` to read the current composed text in `advice`.
 That read resolves current overrides again.
-A session keeps the instruction text resolved at its start for compaction restoration.
+A fresh session keeps its initial composition for compaction restoration.
+A loaded session resolves the current composition only when restoration is needed after compaction.
+The engine owes the instructions until a carrying turn succeeds without error or cancellation.
+Capacity, usage pauses, prompt errors and cancellation leave them owed for the retry.
+A failed send also leaves them owed.
+Each successful engine-requested compaction re-adds the full text on the next ordinary prompt.
+That costs roughly 10 KiB for a default lead, or up to the 48 KiB composition bound for overrides.
+A compaction started by the harness itself is not detected.
 
 Engine prose is redacted and escaped on every line before delivery.
-The adapter receives it inside a fresh data envelope under an instruction header.
+The adapter receives it in its own `Engine role instructions` block with a fresh random marker.
+The block identifies the sending agent when a lead's brief follows it.
+That brief keeps its separate agent-data envelope.
+The engine block contains no delivery identifier and grants no replay acceptance proof.
+An owner's unaccepted first prompt is requeued after restart even when the saved history contains the instruction block.
+A prompt already accepted before the crash receives the existing carry-on behavior.
 No instruction line can become a leading harness slash command.
 
 ## How the owner overrides a file
@@ -70,6 +89,7 @@ It replaces the role text and keeps the bases.
 Advice for a custom named role is appended after that kind's base.
 An empty advice string intentionally removes the role text.
 The role file's limits retain their existing meaning.
+Saving named advice is refused if any applicable composition would exceed the instruction bound.
 
 Repository folders are not searched for role overrides.
 There is no role instruction editor or new file-management command in this change.
@@ -82,11 +102,17 @@ The home folder and each override directory must be real directories without sym
 An override must be a regular file with one hard link.
 Directory descriptors remain open during the bounded read to prevent a pathname replacement from redirecting it.
 These file checks use the same descriptor filesystem approach as workflow storage.
+Overrides do not apply without `/proc/self/fd` or when the configured home path is a symbolic link.
+The engine uses the defaults in those cases.
+A missing descriptor filesystem has a distinct fixed diagnostic.
 
 A missing, unsafe, unreadable or oversized override falls back to its built-in file.
-Each fallback emits one redacted diagnostic with a fixed instruction name.
+A merely missing override is silent.
+An unsafe, unreadable or oversized override emits one redacted diagnostic with a fixed instruction name.
 The diagnostic includes no supplied path or file content.
-An unreadable built-in file refuses the operation.
+An unreadable built-in file refuses a new start.
+Orientation still returns identity and roster with a fixed unavailable-advice note.
+Existing-session loads remain independent of these reads.
 
 The composed instruction text may contain at most 48 KiB of UTF-8 text.
 The engine checks the bound before starting an agent and after redaction and escaping.
@@ -94,9 +120,20 @@ An excessive composition returns a typed command refusal.
 The caller's prompt is outside this instruction budget.
 
 The encoded `roles.orient` reply may contain at most 256 KiB, including its roster and data envelope.
-An oversized reply is refused without truncating the advice or roster.
+If the advice makes that reply too large, orientation replaces it with the fixed unavailable-advice note.
+If the roster and metadata alone exceed the bound, the reply is refused.
+The engine does not silently truncate the roster.
 The existing JSON role file remains limited to 64 KiB.
 Its encoded stored event remains limited to 200 KiB.
+
+## Same-user access to overrides
+
+An agent with shell access or full permission runs as the same operating-system user as the engine.
+It can write an override that the next agent of that role receives as engine instructions.
+This is the same file-access exposure as `~/.lgtm/workflows`.
+File checks guard against unsafe paths and accidents.
+They do not separate programs running as the same user.
+The agent sandbox described in `SECURITY.md` remains planned.
 
 ## What the prose does not enforce
 

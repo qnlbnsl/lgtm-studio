@@ -153,7 +153,7 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
     const reason = fresh ? "agent start failed" : "agent reload failed";
     const failed = (): ReadonlyArray<Event> => [{ _tag: "AgentReloadFailed", agentId, reason }];
     const token = mintAgentToken();
-    const spawn = yield* spawnInput(runtime, snapshot, agent, token.token, "reload").pipe(Effect.result);
+    const spawn = yield* spawnInput(runtime, snapshot, agent, token.token, "reload", fresh ? "start" : "load").pipe(Effect.result);
     if (spawn._tag === "Failure") {
       if (spawn.failure._tag === "LogWriteFailed") return yield* spawn.failure;
       yield* log.transact((append) => Effect.gen(function* () {
@@ -185,7 +185,7 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
     const start = agent.session === undefined;
     const token = mintAgentToken();
     const spawn = start || (agent.reloadable === true && canReload)
-      ? yield* spawnInput(runtime, snapshot, agent, token.token, "reload").pipe(Effect.result) : undefined;
+      ? yield* spawnInput(runtime, snapshot, agent, token.token, "reload", start ? "start" : "load").pipe(Effect.result) : undefined;
     if (spawn === undefined || spawn._tag === "Failure") {
       if (spawn?._tag === "Failure" && spawn.failure._tag === "LogWriteFailed") return yield* spawn.failure;
       yield* log.transact((append) => Effect.gen(function* () {

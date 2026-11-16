@@ -1,4 +1,4 @@
-import { envelope } from "../routing/envelope.ts";
+import { instructionEnvelope } from "../routing/envelope.ts";
 import { instructionEcho } from "../roles/instructionEcho.ts";
 import { randomUUID } from "node:crypto";
 import { readlinkSync, rmSync, statSync } from "node:fs";
@@ -312,7 +312,9 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
       outcome: turn.cancelled ? { _tag: "success" } : classification === "capacity" ? { _tag: "capacity", error: clean } : classification !== undefined ? { _tag: "pause", reason: classification, error: clean,
         ...(classification === "out-of-usage" && turn.error !== undefined && turn.resetAt !== undefined ? { resetAt: turn.resetAt } : {}) }
         : turn.error !== undefined ? { _tag: "error", error: clean } : { _tag: "success" } });
-    if (turn.compact && turn.error === undefined && !turn.cancelled) entry.instructionsPending = true;
+    const succeeded = turn.error === undefined && !turn.cancelled && classification === undefined;
+    if (turn.compact && succeeded) entry.instructionsPending = true;
+    else if (turn.instructionPrefix !== undefined && succeeded) entry.instructionsPending = false;
     if (entry.turn === turn) delete entry.turn;
     yield* emit({ _tag: "turnEnded", ...identity(entry), deliveryId: turn.deliveryId,
       sentSequence: turn.sentSequence,
@@ -863,14 +865,14 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
     if (entry.configuring || entry.configurationUncertain) return yield* rejected("configuration is not confirmed");
     if (entry.turn !== undefined && !entry.turn.ended) return yield* rejected("agent already has a turn");
     const callerText = compact ? yield* compactPrompt(entry.commands) : input.delivery.content._tag === "prompt" || input.delivery.content._tag === "carry-on" ? input.delivery.content.text : "";
-    const instructions = !compact && entry.instructionsPending && entry.input.instructions !== undefined
-      ? yield* redactText(entry.input.instructions, entry.covered) : undefined;
-    const instructionPrefix = instructions === undefined ? undefined
-      : `Follow these engine-supplied role instructions.\n${envelope(input.delivery.id, instructions)}\n\n`;
+    const owed = !compact && entry.instructionsPending;
+    const source = owed ? entry.input.instructions ?? (entry.input.restoreInstructions === undefined ? undefined : yield* entry.input.restoreInstructions()) : undefined;
+    const instructions = source === undefined ? undefined : yield* redactText(source, entry.covered);
+    const origin = input.delivery.sender._tag === "agent" ? yield* redactText(input.delivery.sender.agentId, entry.covered) : undefined;
+    const instructionPrefix = instructions === undefined ? undefined : instructionEnvelope(instructions, origin);
     const text = (instructionPrefix ?? "") + callerText;
     const turn: Turn = { compact, ...(instructionPrefix === undefined ? {} : { instructionPrefix }), deliveryId: input.delivery.id, sentSequence: input.sentSequence, replied: false, idle: false, ended: false, text: "" };
     entry.turn = turn;
-    if (!compact) entry.instructionsPending = false;
     entry.contextNeedsTurn = false;
     const sent = yield* Deferred.make<void, RunnerRejected>();
     entry.sent = sent;

@@ -28,7 +28,7 @@ export const resume = ({ runtime, snapshot, actor }: Input, agent: Agent, payloa
     const reloads = runtime.runner.capabilities.loadSession || runtime.runner.capabilities.resumeSession;
     if (!fresh && (agent.reloadable !== true || agent.session === undefined || !reloads)) return yield* refused("cannot reload");
     const token = mintAgentToken();
-    const spawn = yield* spawnInput(runtime, snapshot, agent, token.token, "resume");
+    const spawn = yield* spawnInput(runtime, snapshot, agent, token.token, "resume", fresh ? "start" : "load");
     const events: Array<Event> = [{ _tag: "StateChanged", agentId: agent.agentId, state: { _tag: "starting" } }];
     if (fresh) {
       const thread = snapshot.threads[agent.agentId] ?? [];

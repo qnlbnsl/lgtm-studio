@@ -12,11 +12,17 @@ const mapping = {
   reviewer: ['reviewer-base'], 'test-runner': [], evaluator: [],
 } satisfies Record<string, string[]>
 type InstructionName = keyof typeof mapping
+export const instructionKind = (name: InstructionName) => name === 'orchestrator' ? 'orchestrator'
+  : ['project-lead', 'planning-lead', 'design-lead', 'build-lead'].includes(name) ? 'lead' : 'worker'
 
 // This selects prose only. parseRole remains the sole authority parser.
 export const instructionName = (role: string): InstructionName | undefined => {
   const name = role.includes(':') ? role.slice(role.indexOf(':') + 1) : role
-  return Object.hasOwn(mapping, name) ? name as InstructionName : undefined
+  if (!Object.hasOwn(mapping, name)) return undefined
+  const selected = name as InstructionName
+  if (!role.includes(':')) return selected
+  const parsed = parseRole(role)
+  return parsed.flags.length === 0 && parsed.kind === instructionKind(selected) ? selected : undefined
 }
 export const instructionFiles = (role: string): string[] => {
   const name = instructionName(role)
@@ -29,6 +35,8 @@ export class InstructionStore {
   readonly warn: (line: string) => void
   constructor(home: string, warn: (line: string) => void = () => {}) { this.home = home; this.warn = warn }
   private async read(name: string): Promise<string> {
+    try { await fs.access('/proc/self/fd') }
+    catch { this.warn(`Role instruction override ${name} requires /proc/self/fd; using the built-in file.`); return this.builtin(name) }
     const handles: FileHandle[] = []
     try {
       // As in WorkflowStore, pin every directory to prevent pathname swaps.
@@ -47,16 +55,20 @@ export class InstructionStore {
       }
       if (length > instructionLimits.fileBytes) throw new Error('oversized')
       return bytes.toString('utf8', 0, length)
-    } catch {
+    } catch (error) {
       // name is drawn only from the fixed mapping, never from a supplied path.
-      this.warn(`Role instruction override ${name} unavailable; using the built-in file.`)
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.warn(`Role instruction override ${name} unavailable or unsafe; using the built-in file.`)
     } finally { for (const handle of handles.reverse()) await handle.close() }
+    return this.builtin(name)
+  }
+  private builtin(name: string): Promise<string> {
     // This is a Node resource, so avoid browser asset URL rewriting as well.
     return fs.readFile(new NodeURL(`./instructions/${name}.md`, import.meta.url), 'utf8')
   }
   async compose(role: string, file: RoleFile | null = null): Promise<string> {
     const names = instructionFiles(role), selected = instructionName(role), parsed = parseRole(role)
-    const adviceName = selected ?? (parsed.flags.length === 0 ? parsed.name : undefined)
+    // A recognized but mismatched role name must not regain its prose through advice.
+    const adviceName = selected ?? (parsed.flags.length === 0 && parsed.name !== undefined && !Object.hasOwn(mapping, parsed.name) ? parsed.name : undefined)
     const advice = adviceName !== undefined && file !== null && Object.hasOwn(file.roles, adviceName) ? file.roles[adviceName]!.advice : undefined
     const parts: string[] = []
     for (const name of names) {

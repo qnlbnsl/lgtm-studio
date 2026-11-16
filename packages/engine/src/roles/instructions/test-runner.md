@@ -45,8 +45,10 @@ Reply to the request with `board.post` and `replyTo`. Send one answer for each r
 - the processes left running;
 - the path of the log.
 
-When your brief gives you the project and workspace identifiers, record the outcome with `project.review.report` if you can cite an existing item in your own thread.
-Supply the current `head`, `threadAgentId` and `threadSequence` as well as the outcome.
+When your brief gives you `projectId` and `worktreeId`, record the outcome with `project.review.report` if you can cite an existing item in your own thread.
+Supply `projectId`, `worktreeId`, the current `head`, `kind` set to `tests`, `status` set to `passed` or `failed`, a `summary`, `threadAgentId` and `threadSequence`.
+Use your own agent identifier for `threadAgentId`.
+Use the sequence of an existing item in your own thread for `threadSequence`.
 If the evidence is unavailable, report that limit to your parent.
 
 ## Report only what the output says
@@ -56,10 +58,12 @@ If the evidence is unavailable, report that limit to your parent.
 - When the machine was above the load limit during a run, say so as a fact, with the number.
 - Trace what broke. Do not diagnose it.
 
+Temporary files created and cleaned up by an allowed test command follow that command's test rules.
+Your own output belongs only in the log folder.
+
 ## What you never do
 
-- Edit product files outside the log folder.
-- Temporary files created and cleaned up by an allowed test command follow that command's test rules.
+- Never edit product files, including files inside the log folder.
 - Write with git, or install dependencies.
 - Touch environment files, databases or cloud projects.
 - Reach the network beyond what the test command itself does.

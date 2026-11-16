@@ -139,7 +139,7 @@ for (const role of ["chef:builder", ":builder", "worker:builder"]) {
     expect(reply.data).toBeTypeOf("string");
     const orient = unwrap({ data: String(reply.data) });
     expect(orient.kind).toBe("worker");
-    expect(orient.advice).toBe(readFileSync(new URL("../../../src/roles/instructions/worker-base.md", import.meta.url), "utf8") + "\n\nCustom builder advice.");
+    expect(orient.advice).toBe(readFileSync(new URL("../../../src/roles/instructions/worker-base.md", import.meta.url), "utf8") + (role === "worker:builder" ? "\n\nCustom builder advice." : ""));
     const delivery = yield* send(runner, worker, "Use the appropriate capacity policy.");
     yield* capacityReply(runner, worker, delivery);
     const rows = yield* eventually(alertLog, (rows) => rows.some((row) => row.event._tag === (role === "worker:builder" ? "DeliveryReturned" : "DeliveryHeld")));

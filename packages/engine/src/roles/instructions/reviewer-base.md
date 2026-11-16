@@ -1,7 +1,7 @@
 # Rules for every reviewer
 
 You review work that another agent wrote.
-Read this file first, then the reviewer file, then the brief your lead sent you.
+Read these shared rules, then the reviewer section below, then the brief your lead sent you.
 
 ## How you start
 
@@ -53,4 +53,4 @@ Read this file first, then the reviewer file, then the brief your lead sent you.
 - Never ask the owner. Never start another agent.
 - Use `ask` only for a block you cannot work around. It goes to your lead.
 - Send one report, as a reply to your lead's post, with `board.post` and `replyTo`. Send nothing else.
-- The reviewer file gives the report's format.
+- The reviewer section below gives the report's format.

@@ -37,6 +37,7 @@ const RESTART_CARRY_ON = "The engine restarted. Carry on with what you were doin
 // spawn (rows 56 and 65). Any refusal is the fixed "command refused".
 export const spawnInput = (
   runtime: Runtime, snapshot: Snapshot, agent: Agent, token: Redacted.Redacted<string>, operation: "resume" | "reload",
+  mode: "start" | "load" = agent.session === undefined ? "start" : "load",
 ): Effect.Effect<Spawn, CommandRefused | LogWriteFailed> => Effect.gen(function* () {
   if (projectPreventsRun(snapshot, agent.agentId)) return yield* refused("project archive is unfinished because an agent could not stop");
   const parent = agent.parent._tag === "agent" ? snapshot.agents[agent.parent.agentId] : undefined;
@@ -58,8 +59,12 @@ export const spawnInput = (
   const launchChoice = agent.configuration?.revision === undefined ? {
     ...(agent.model === undefined ? {} : { model: agent.model }), ...(agent.effort === undefined ? {} : { effort: agent.effort }),
   } : {};
-  const instructions = yield* composeInstructions(runtime, snapshot, agent.role);
-  return { agentId: agent.agentId, token, folder, grant, harness, account, instructions,
+  const instructions = mode === "start" ? yield* composeInstructions(runtime, snapshot, agent.role) : undefined;
+  return { agentId: agent.agentId, token, folder, grant, harness, account,
+    ...(instructions === undefined ? { restoreInstructions: () => runtime.views.snapshot.pipe(
+      Effect.flatMap((current) => composeInstructions(runtime, current, agent.role)),
+      Effect.mapError(() => new RunnerRejected({ reason: "Role instructions could not be read." })),
+    ) } : { instructions }),
     permission: Schema.decodeUnknownSync(PermissionLevel)(agent.permission), ...launchChoice,
   };
 });

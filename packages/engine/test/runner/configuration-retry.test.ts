@@ -128,10 +128,10 @@ for (const path of ["resume", "fresh", "reload"] as const) {
         const callerText = path === "reload" ? "work queued before reload" : "work queued during retry configuration";
         const deliveredText = prompts.at(-1)?.params.prompt[0].text;
         if (path === "fresh") {
-          const marker = /^Follow these engine-supplied role instructions\.\nData from another agent \[([A-Za-z0-9_-]{24})\]/.exec(deliveredText)?.[1];
+          const marker = /^Engine role instructions \[([A-Za-z0-9_-]{24})\]:\n/.exec(deliveredText)?.[1];
           expect(marker).toBeTypeOf("string");
           const instructions = readFileSync(new URL("../../src/roles/instructions/worker-base.md", import.meta.url), "utf8");
-          expect(deliveredText).toBe(`Follow these engine-supplied role instructions.\nData from another agent [${marker}] (delivery ${deliveryId}):\n${instructions}\nEnd data [${marker}]\n\n${callerText}`);
+          expect(deliveredText).toBe(`Engine role instructions [${marker}]:\n${instructions}\nEnd engine role instructions [${marker}]\n\n${callerText}`);
         } else {
           expect(deliveredText).toBe(callerText);
         }

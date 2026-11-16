@@ -17300,6 +17300,7 @@ The adapter can echo the first prompt in arbitrarily split user-message chunks.
 The runner now removes its exact ephemeral instruction prefix from live user echoes before redaction and event publication.
 The caller's echoed prompt remains visible.
 Replay updates retain their existing behavior and write no thread items.
+Round 2 also suppresses changed echoes after recognizing the engine header, as recorded in s22-20.
 
 ## s22-8. The first instruction store used syntax the Node.js strip-only loader cannot run.
 
@@ -17346,6 +17347,7 @@ Later prompts and existing-session replays retain their exact previous expectati
 The capacity tests now compare the full composed advice for recognized instruction names, including unrecognized authority prefixes.
 Their authority and capacity-limit assertions remain unchanged.
 No assertion or wait was weakened.
+Round 2 removes the instruction block's delivery identifier and restores generic advice for unknown kinds, as recorded in s22-18 and s22-21.
 
 ## s22-13. The first regression fixtures contained incorrect helper calls and expectations.
 
@@ -17359,6 +17361,9 @@ It now requires the override marker with the secret removed.
 Two test expressions cast an Effect before yielding its result.
 Removing those unnecessary casts restored the type check.
 No production limit or wait was relaxed to accommodate these fixture errors.
+Round 2 fixtures initially used an invalid legacy role-file hash and looked for an agent identifier on a carry-on event whose delivery target supplies that identity.
+Both fixtures now follow the stored contracts.
+Two new test helpers also needed explicit type annotations for the existing restart environment and public reply.
 
 ## s22-14. Two new pure tests omitted the required rebuild-hook registration.
 
@@ -17376,5 +17381,119 @@ Three web test files reproduced role resource read failures.
 A direct browser-environment test exposed a rewritten filesystem path starting at `/packages/`.
 Importing the Node.js URL constructor under its ordinary name did not prevent the asset rewrite.
 The instruction store now imports it as `NodeURL` for its filesystem resources.
-Focused regression tests cover the browser environment and replacement of the global constructor.
+The regression test loads real instruction resources in the browser test environment.
+Round 2 removes the global-constructor stub because it did not exercise the browser asset rewrite.
+Removing the Node.js constructor alias makes the real browser test fail.
 The existing web tests and their assertions remain unchanged.
+
+## s22-16. Instruction composition could prevent a healthy session from reloading.
+
+State: fixed in s22 round 2.
+
+Existing-session loads no longer read or compose instructions.
+Legacy oversized advice and a shipped-file read failure cannot turn those loads into reload failures.
+New sessions still require a valid composition.
+Saving named role-file advice now checks each applicable composition before planning its event.
+An oversized composition returns the existing typed refusal.
+
+## s22-17. A failed first turn could lose its role instructions on retry.
+
+State: fixed in s22 round 2.
+
+The runner previously cleared the instruction obligation before the send was confirmed.
+It now keeps that obligation until a carrying turn succeeds without error or cancellation.
+Capacity outcomes, usage pauses, sign-in failures, prompt errors and cancellation retain it.
+A failed transport send also retains it.
+Fake-adapter tests cover every prompt outcome and both cancellation protocol versions.
+
+## s22-18. The engine instruction label misidentified its source and changed replay acceptance.
+
+State: fixed in s22 round 2.
+
+Engine instructions now have a separate engine label and a fresh random marker.
+A lead's brief retains its agent-data envelope and has its actual sending agent identified before that envelope.
+The engine block contains no delivery identifier.
+It therefore adds no acceptance proof to replayed owner text.
+Restart tests cover saved first-prompt history before and after acceptance.
+
+## s22-19. Missing override files produced unnecessary warnings.
+
+State: fixed in s22 round 2.
+
+A missing file or override directory is the normal default and is now silent.
+Unsafe, unreadable and oversized overrides retain a fixed diagnostic without supplied paths or content.
+
+## s22-20. A changed adapter echo could expose instruction text in the thread.
+
+State: fixed in s22 round 2.
+
+After recognizing the engine header, the filter suppresses the block through its closing marker even when its body or line endings differ.
+A malformed closing marker withholds the remaining echo.
+Chunk-boundary tests cover changed text and markers.
+A real service test checks thread privacy with normalized line endings.
+
+## s22-21. Mismatched role kinds selected inappropriate prose and owner advice.
+
+State: fixed in s22 round 2.
+
+A recognized name with a mismatched kind now receives only the parsed kind's base.
+Unknown kinds receive the generic worker base and no owner advice named for a known role.
+The role table includes `lead:builder`, `worker:build-lead`, `chef:builder` and `:builder`.
+The capacity test again checks that unknown kinds receive generic advice.
+Permission and capacity checks remain unchanged.
+
+## s22-22. Several shipped instructions omitted required fields or contradicted their delivery format.
+
+State: fixed in s22 round 2.
+
+Review reports and waits now name all required fields.
+The bases describe sections of one composed text.
+Worker posting rules allow final reports and required test or review requests.
+Test runners may not edit product files anywhere.
+Project leads receive self-contained approval rules after a fresh resume.
+Those rules keep ordinary end-result confirmation separate from the two project permissions.
+Contract checks cover all fifteen files and the required report and wait fields.
+
+## s22-23. A failed composition also withheld orientation identity and roster.
+
+State: fixed in s22 round 2.
+
+Orientation now returns its metadata and roster with a fixed unavailable-advice note when composition fails.
+It also substitutes that note when the encoded advice would exceed the reply bound.
+The existing refusal remains necessary if the roster and metadata alone exceed 256 kibibytes.
+The roster is not silently truncated.
+
+## s22-24. The global URL stub did not test the browser resource-path workaround.
+
+State: fixed in s22 round 2.
+
+The trivial stub test has been removed.
+The real browser-environment resource test fails without the Node.js URL constructor alias.
+
+## s22-25. Override loading requires the descriptor filesystem and a real home directory.
+
+State: documented limitation in s22 round 2.
+
+Overrides do not apply without `/proc/self/fd` or when the configured home path is a symbolic link.
+The engine falls back to its shipped files.
+A missing descriptor filesystem has a distinct diagnostic.
+The constraints are now stated in `docs/roles.md`.
+
+## s22-26. Agents running as the engine's user can write future role instructions.
+
+State: open, pending the planned agent sandbox.
+
+An agent with shell access or full permission can write an override as the same operating-system user.
+The next agent of that role receives the override as engine instructions.
+This is the same file-access exposure as `~/.lgtm/workflows`.
+Safe file opening does not isolate programs that run as the same user.
+The exposure is now stated in `docs/roles.md`.
+
+## s22-27. Compaction repeats instruction costs and harness compaction is not detected.
+
+State: documented limitation in s22 round 2; harness compaction detection remains open.
+
+Every successful engine-requested compaction restores the full instructions on the next ordinary prompt.
+The restored text costs roughly 10 kibibytes for a default lead and can reach the 48 kibibyte composition bound.
+A compaction started by the harness itself is not detected.
+These limits are now stated in `docs/roles.md`.

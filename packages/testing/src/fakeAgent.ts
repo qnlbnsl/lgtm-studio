@@ -25,7 +25,7 @@ type DiagnosticStep =
 type StepDiagnostic = DiagnosticStep extends infer D ? D extends { type: infer T } ? Omit<D, "type"> & { step: T } : never : never
 type Step = DiagnosticStep | StepDiagnostic
   | { step: "text"; text: string }
-  | { step: "echo_prompt"; chunkSize: number }
+  | { step: "echo_prompt"; chunkSize: number; normalizeLineEndings?: boolean }
   | { step: "report_configuration" }
   | { step: "plan"; entries: AcpSchema.PlanEntry[] }
   // Issue 556: acknowledge queued notifications before a later direct raw frame.
@@ -308,7 +308,8 @@ const program = Effect.gen(function*() {
         if ("type" in step) continue
         switch (step.step) {
           case "echo_prompt": {
-            const echoed = request.prompt.map((part) => part.type === "text" ? part.text : "").join("");
+            const original = request.prompt.map((part) => part.type === "text" ? part.text : "").join("");
+            const echoed = step.normalizeLineEndings ? original.replaceAll("\n", "\r\n") : original;
             for (let offset = 0; offset < echoed.length; offset += step.chunkSize) yield* update({ sessionUpdate: "user_message_chunk", content: { type: "text", text: echoed.slice(offset, offset + step.chunkSize) } });
             break;
           }

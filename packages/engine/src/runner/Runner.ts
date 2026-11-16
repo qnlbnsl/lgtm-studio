@@ -118,6 +118,8 @@ interface Spawn {
   // Ephemeral engine prose. Prepend on a new session's first ordinary prompt;
   // a loaded session retains its instructions. Never persist this field.
   readonly instructions?: string;
+  // An existing session needs no disk read until engine-requested compaction.
+  readonly restoreInstructions?: () => Effect.Effect<string, RunnerRejected>;
   readonly agentId: AgentId;
   readonly token: Redacted.Redacted<string>;
   readonly folder: string;
