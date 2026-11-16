@@ -4,6 +4,8 @@ import { lifecycleStateNames } from '@lgtm/contracts';
 import { Views } from '../../src/views/Views.ts';
 import { appendSetup, call, eventOf, failureOf, headSequence, logAfter, ownerCredential, seedAgent, success } from '../support/handlerRig.ts';
 import { registerRebuildCheck } from '../support/rebuildCheck.ts';
+import { decisionProject } from '../support/projectDecisionFixtures.ts';
+import { projectKey, projectView } from '../../src/project/view.ts';
 import { run, read, questionFor, snapshotFor } from './support/readRig.ts';
 
 // Each lifecycle row checks the wire lists, counts, durable question, and answer command.
@@ -32,15 +34,38 @@ for (const state of [...lifecycleStateNames, 'signed-out'] as const) it(`questio
   }
 }), registerRebuildCheck()));
 
-for (const absence of ['missing agent', 'deleted project', 'deleted team'] as const) it(`omits questions for a ${absence}`, async () => run(Effect.gen(function* () {
+for (const absence of ['missing agent', 'deleted project'] as const) it(`omits questions for a ${absence}`, async () => run(Effect.gen(function* () {
   if (absence !== 'missing agent') yield* seedAgent({ id: 'agent-a', state: absence === 'deleted project' ? 'working' : 'stopped', groups: ['team-a'] });
   yield* appendSetup([questionFor('q1')]);
   if (absence === 'deleted project') expect((yield* snapshotFor()).questions.map((r: any) => r.id)).toEqual(['q1']);
   if (absence === 'deleted project') yield* appendSetup([eventOf({ _tag: 'project.Deleted', projectId: 'project-a', agentIds: ['agent-a'], channelIds: [], postIds: [], worktreeIds: [], alertIds: [], deletedAt: 1 })]);
-  if (absence === 'deleted team') yield* appendSetup([eventOf({ _tag: 'project.TeamDeleted', projectId: 'project-a', teamId: 'team-a' })]);
   expect((yield* snapshotFor()).questions).toEqual([]);
   expect((yield* read('client.requests', { after: 0, limit: 200 })).items).toEqual([]);
   expect(failureOf(yield* call(ownerCredential, 'answer', { kind: 'question', id: 'q1', text: 'Too late.' }))?._tag).toBe('CommandRefused');
+}), registerRebuildCheck()));
+
+it('preserves the lifecycle rule through a real team deletion and later resume', async () => run(Effect.gen(function* () {
+  const f = yield* decisionProject();
+  const questionId = success(yield* call(f.workerCredential, 'ask', { text: 'Keep this question open.' })).questionId;
+  const deletion = { projectId: f.projectId, teamId: f.team.teamId };
+  expect((yield* snapshotFor()).questions.map((q: any) => q.id)).toEqual([questionId]);
+  expect(failureOf(yield* call(ownerCredential, 'project.team.delete', deletion))?.reason).toBe('Stop the team’s agents before deleting the team.');
+  expect(projectView(yield* (yield* Views).snapshot).teams[projectKey(f.projectId, f.team.teamId)]).toBeDefined();
+  success(yield* call(ownerCredential, 'stop', { agentId: f.workerId }));
+  expect((yield* snapshotFor()).questions).toEqual([]);
+  expect((yield* read('client.requests', { after: 0, limit: 200 })).items).toEqual([]);
+  const before = yield* headSequence;
+  success(yield* call(ownerCredential, 'project.team.delete', deletion));
+  const state = yield* (yield* Views).snapshot;
+  expect((yield* logAfter(before)).map(row => row.event._tag)).toContain('project.TeamDeleted');
+  expect(projectView(state).teams[projectKey(f.projectId, f.team.teamId)]).toBeUndefined();
+  expect(state.agents[f.workerId]!.groups).not.toContain(f.team.group);
+  expect(state.questions[questionId]?.status).toBe('open');
+  expect((yield* snapshotFor()).questions).toEqual([]);
+  expect((yield* read('client.requests', { after: 0, limit: 200 })).items).toEqual([]);
+  expect(failureOf(yield* call(ownerCredential, 'answer', { kind: 'question', id: questionId, text: 'Too late.' }))?._tag).toBe('CommandRefused');
+  success(yield* call(ownerCredential, 'resume', { agentId: f.workerId }));
+  expect((yield* snapshotFor()).questions.map((q: any) => q.id)).toEqual([questionId]);
 }), registerRebuildCheck()));
 
 it('offers the same still-open question again when its asker resumes', async () => run(Effect.gen(function* () {

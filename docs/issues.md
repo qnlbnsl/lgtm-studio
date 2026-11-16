@@ -1821,7 +1821,7 @@ The notification contains no stderr, exit code or signal.
 ## 113. Nothing closes the open questions of a crashed agent
 
 Found: 2026-11-01, by the unit 6c test writer.
-State: the owner’s decision on a "withdrawn" event is still open. Unit s18-smallfix keeps stored questions open and filters unavailable askers from owner reads. Their questions return when they resume.
+State: the owner’s decision on a "withdrawn" event is still open. Unit s18-smallfix keeps stored questions open and filters unavailable askers from owner reads. Their questions return when they resume. A task whose only blocker is a hidden question still shows as blocked without a visible question explaining it. The owner’s decision must cover that status as well as withdrawal.
 
 What happens: issue 74 says question closure must use an agreed contract and
 not invent an answer. No event closes a question without an answer, so the
@@ -2700,7 +2700,7 @@ created by the setup helper before the agent's prompt.
 ## 181. Foreground `lgtm serve` is not supported
 
 Found: 2026-11-01, while wiring `serve` in the command-line tool.
-State: fixed in s18-smallfix. Plain `lgtm serve` runs in the terminal with the existing redacted logs. It shuts down cleanly on Ctrl-C or SIGTERM and refuses an existing service. The detached launcher is unchanged.
+State: fixed in s18-smallfix. Plain `lgtm serve` runs in the terminal with the existing redacted logs. It handles Ctrl-C, SIGTERM, and SIGHUP and refuses an existing service. Round 2 makes the exit code follow the child’s shutdown result and ends the attached service if the launcher dies. The detached launcher is unchanged.
 
 What happens: unit 7a starts the service when its module is imported, and only
 `serve --detach` has a launcher. The command-line tool accepts `serve --detach`
@@ -5483,7 +5483,7 @@ Why it matters: A passing test command that checks nothing gives false confidenc
 ## 304. Question rows from a stopped or crashed asker stay open
 
 Found: 2026-11-03, while planning the client API plan.
-State: fixed in s18-smallfix. The snapshot, request lists, question counts, and notification reads omit questions whose asker cannot receive a reply. The answer command refuses them.
+State: fixed in s18-smallfix. The snapshot, request lists, question counts, and notification reads omit open questions whose asker cannot receive a reply. The answer command refuses them. Round 2 preserves cleared alerts and alerts of answered questions in the notification history.
 
 What happens: Engine question rows from a stopped or crashed asker stay open in the views, and answering one queues a reply to a dead agent (client API row 107).
 What should happen: Not decided. Question closure stays with issue 113.
@@ -16917,3 +16917,42 @@ Stopping a question’s asker between pages removed that row from the visible in
 The reader now compares source sequences instead of looking up the cursor row.
 Malformed cursors and cursors ahead of the current snapshot remain refused.
 Regression cases cover pagination through the next visible rows for both the owner and a project lead.
+
+## s18-11. The deleted-team availability fixture never created a team.
+
+State: fixed in s18-smallfix round 2.
+
+The old fixture seeded a stopped agent and appended a team-deletion event for a nonexistent team.
+The strengthened fixture assertion reproduced that gap.
+The replacement creates a real team through the command handler.
+It checks that deletion refuses a live member, succeeds after stopping the member, removes the team and its group, and preserves the stored question.
+The same agent’s question returns after resume.
+Team deletion remains a precondition on lifecycle states rather than a separate unavailable-agent state.
+
+## s18-12. The shared website read list omits five unused engine reads.
+
+State: open, recorded without a code change as required by s18-smallfix round 2.
+
+The website does not currently call `project.checkouts`, `project.creations`, `project.repository.discover`, `project.mocks.screen.read`, or `board.status`.
+Those engine read names are absent from `packages/studio/src/readRequests.ts`.
+A future website caller using one of them would keep the immediate request behaviour during a connection attempt.
+The type check rejects unknown names but does not prove that the list is complete.
+
+## s18-13. A request classified as a read can advance the board watermark.
+
+State: recorded without a policy change as required by s18-smallfix round 2.
+
+The shared website read list includes `board.read`.
+The engine handler in `packages/engine/src/board/commands.ts` advances the caller’s read watermark.
+Waiting for the connection is compatible with that operation, but it is not a pure read.
+The classification and the engine behaviour remain unchanged in this round.
+
+## s18-14. A hidden question can leave an unexplained blocked task.
+
+State: open, pending the owner’s question-withdrawal decision in entry 113.
+
+`packages/engine/src/project/decisions.ts` keeps a task blocked while any linked question remains stored as open.
+An unavailable asker’s question is hidden from actionable lists.
+If it is the only blocker, the task remains blocked without a visible question explaining that state until the asker resumes.
+This follows from keeping the stored question open.
+No task projection or stored event was changed for this observation.
