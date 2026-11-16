@@ -29,3 +29,23 @@ it('s19 short explicit secrets do not register partial base64 fragments', () => 
   expect(redactor.redactText('ordinary abc XYZ 123')).toBe('ordinary abc XYZ 123');
   expect(redactor.redactText(base64(base64('~')))).toBe('[REDACTED]');
 });
+
+for (const [name, encode] of Object.entries({
+  printfPipeline: (s: string) => base64(base64(s) + '\n'),
+  echoPipeline: (s: string) => base64(base64(s + '\n') + '\n'),
+  innerOffset1: (s: string) => base64('x' + base64(s) + 'tail'),
+  innerOffset2: (s: string) => base64('xy' + base64(s) + 'tail'),
+  largerDocument: (s: string) => base64(base64(JSON.stringify({ k: s }))),
+})) {
+  it(`s19 r2 double base64 hides ${name} whole and streamed`, () => {
+    const secret = 's19-fake-long-pipeline-credential-173919';
+    const redactor = makeRedactor({ secrets: () => [Redacted.make(secret)], tokenHashes: () => new Set() });
+    const encoded = encode(secret);
+    expect(redactor.redactText(encoded).includes('[REDACTED]')).toBe(true);
+    for(let split = 1; split < encoded.length; split++) {
+      const clean = redactor.redactChunk(name, encoded.slice(0,split), false) + redactor.redactChunk(name, encoded.slice(split), true);
+      expect(clean.includes('[REDACTED]')).toBe(true);
+      expect(clean === encoded).toBe(false);
+    }
+  });
+}

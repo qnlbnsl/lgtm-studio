@@ -17374,3 +17374,35 @@ Read: the Cursor source checks both the configured folder and the default-home c
 Read: an unreadable or malformed default file therefore refuses an account whose configured folder is healthy.
 Read: this is stricter than inspecting only the account's own file.
 Read: issue s19-1 records why both candidate paths are covered.
+
+## s19-12. Double-base64 pipelines need inner and outer alignment runs.
+
+Found: 2026-11-16, from independent review finding M4.
+State: fixed for bounded contiguous runs, with remaining encoding limits recorded.
+
+Ran: the printf pipeline, echo pipeline, two inner offsets, and a larger encoded document all failed before the alignment forms were added.
+Read: the redactor now attempts three inner alignments and three outer alignments.
+Read: standard and URL-safe outer spellings add at most eighteen attempted forms.
+Read: each partial form retains the eight-character minimum.
+Ran: all five cases pass as whole text and at every streamed split.
+Ran: the twenty-secret measurement has 441 matched form entries.
+Ran: its average is 22.05 entries per secret.
+Ran: its minimum is 20 entries and its maximum is 23 entries.
+Read: alphabet variants can be identical and are deduplicated.
+Read: arbitrary recursive encodings remain outside the bounded set.
+Read: line wrapping that breaks every matching run can prevent a match.
+Read: the bounded list also omits hexadecimal compositions and some mixtures of the two base64 alphabets.
+Read: base64 of a JSON-escaped value has no added partial alignment runs.
+Read: hash-only credentials have no two-step decoding probes.
+Read: rule 6 now states these limits without removing its existing requirements.
+
+## s19-13. Escaped slashes and mixed percent escapes add unmatched base64 spellings.
+
+Found: 2026-11-16, from independent review finding m7.
+State: recorded without a fix, as assigned.
+
+Read: `JSON.stringify` leaves base64's alphabet unchanged.
+Read: its identity form does not register optional backslashes before slashes.
+Read: the percent form encodes the complete base64 value with `encodeURIComponent`.
+Read: partly escaping its reserved characters can therefore produce an unmatched spelling.
+Read: rule 6 now states those spelling limits.

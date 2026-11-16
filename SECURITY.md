@@ -146,6 +146,19 @@ These rules apply to every change. A change that breaks one is a security bug.
    The bounded two-step forms are double JSON escaping, base64 of the JSON-escaped value,
    JSON escaping of base64, URL encoding of base64, and base64 of base64.
    Encodings are not composed recursively.
+   Double base64 also matches bounded partial runs at all three inner and outer byte alignments.
+   Each partial run still requires at least eight characters.
+   This covers shell-added newlines and a larger encoded document when a registered run remains contiguous.
+   Line wrapping inside every matching run can prevent a match.
+   The two-step list does not include hexadecimal combined with another encoding.
+   It does not cover every mixture of standard and URL-safe base64 alphabets.
+   Base64 of the JSON-escaped value has no additional partial-run forms.
+   JSON escaping of base64 uses the spelling produced by `JSON.stringify`.
+   Optional slash escapes in that text are not an additional matched spelling.
+   URL encoding of base64 matches its literal and fully encoded spellings.
+   An arbitrary mixture of escaped and unescaped base64 characters is not covered.
+   A token known only by its stored hash is matched raw and in the supported single encodings.
+   The two-step forms require its value to be registered too.
    A value inferred only from an inherited environment variable whose name
    matches `KEY`, `TOKEN`, `SECRET` or `PASSWORD` is registered only at eight
    or more characters when its trimmed text is nonempty, is neither `true`
