@@ -16874,3 +16874,15 @@ The notification filter hid every question alert after its asker stopped.
 It now hides an alert only while both the alert and its question remain open and the asker cannot receive an answer.
 Cleared alerts and alerts of answered questions remain in the notification history.
 Three regression cases cover these combinations after the asker stops.
+
+## s18-7. Route events cancelled waiting reads on the current screen.
+
+State: fixed in s18-smallfix round 2.
+
+A query change cancelled the screen’s waiting reads.
+A read started synchronously after navigation was cancelled again by the later route event.
+The shared lifetime now compares the route path without its query.
+An event for the current path does not replace the lifetime signal.
+The website request boundary silently drops a cancelled read before either its success or error handler runs.
+Actual connection failures and owner writes keep their existing behaviour.
+The separate cancellation checks added to the board and chat readers were removed.

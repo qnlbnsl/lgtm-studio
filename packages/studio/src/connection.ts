@@ -373,13 +373,19 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
       return cancel
     },
     async request(tag, payload, options = {}) {
-      options.signal?.throwIfAborted()
       if (isReadRequest(tag, payload)) {
         const signals = [options.signal, options.readSignal].filter((s): s is AbortSignal => s !== undefined)
         const readSignal = signals.length ? AbortSignal.any(signals) : undefined
-        await readReady(readSignal)
-        readSignal?.throwIfAborted()
-      }
+        try {
+          await readReady(readSignal)
+          readSignal?.throwIfAborted()
+        } catch (error) {
+          if (readSignal?.aborted || error instanceof DOMException && error.name === 'AbortError') {
+            throw Object.assign(new DOMException('The read was cancelled.', 'AbortError'), { cancelledRead: true })
+          }
+          throw error
+        }
+      } else options.signal?.throwIfAborted()
       const client = activeClient
       if (tag === "display.open" || tag === "display.close") {
         // Cleanup still uses the owner cookie when the WebSocket has gone away.

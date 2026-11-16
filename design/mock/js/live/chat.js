@@ -19,7 +19,7 @@ async function attempt(key, fn) {
   const epoch = generation;
   update((s) => { (s.ui.chatBusy ||= {})[key] = true; });
   try { await fn(); return epoch === generation; }
-  catch (e) { if (epoch === generation && e.name !== 'AbortError') notice(e.message || String(e)); return false; }
+  catch (e) { if (epoch === generation) notice(e.message || String(e)); return false; }
   finally { if (epoch === generation) update((s) => { delete s.ui.chatBusy[key]; }); }
 }
 export function reset() {
@@ -83,7 +83,7 @@ export function receive(item) {
       publishThread(item.agentId);
     } else engine.request('client.event', { sequence: item.sequence }).then((reply) => {
       if (epoch === generation && reply.envelope) receive(reply.envelope);
-    }).catch((e) => { if (epoch === generation && e.name !== 'AbortError') notice(e.message); });
+    }).catch((e) => { if (epoch === generation) notice(e.message); });
   }
 }
 async function source(sequence) {
@@ -124,7 +124,7 @@ async function readRequests() {
       requests.push(...S().agents.flatMap((a) => mapping.mapFailedStart(a) || []));
       engineWrite({ requests: requests.map((r) => ({ ...r, blocks: S().tasks.find((t) => t.id === r.task)?.label || null })) });
     } while (version !== requestVersion);
-  })().catch((e) => { if (epoch === generation && e.name !== 'AbortError') notice(e.message); }).finally(() => { if (epoch === generation) loadingRequests = null; });
+  })().catch((e) => { if (epoch === generation) notice(e.message); }).finally(() => { if (epoch === generation) loadingRequests = null; });
   return loadingRequests;
 }
 export function watchHome() {
@@ -169,7 +169,7 @@ async function readDetails(agentId) {
     if (epoch !== generation) return;
     details.set(agentId, mapping.mapAgentDetails({ ...configuration, ...context }));
     engineWrite(enrich({ agents: S().agents }));
-  } catch (e) { if (epoch === generation && e.name !== 'AbortError') notice(e.message); }
+  } catch (e) { if (epoch === generation) notice(e.message); }
 }
 export function watchRoster(projectId) {
   if (!live.on || !mapping) return;
@@ -201,7 +201,7 @@ export function watchRoster(projectId) {
           cursor = reply.next;
         }
       }));
-    } catch (e) { if (active && epoch === generation && e.name !== 'AbortError') notice(e.message); }
+    } catch (e) { if (active && epoch === generation) notice(e.message); }
   };
   void read(); const timer = setInterval(read, 5000);
   return () => { active = false; clearInterval(timer); };
@@ -270,7 +270,7 @@ async function readPhoneOffer() {
   try {
     const reply = await engine.request('client.alerts.settings', {});
     if (epoch === generation) engineWrite(mapping.mapPhoneOffer(reply));
-  } catch (e) { if (epoch === generation && e.name !== 'AbortError') notice(e.message); }
+  } catch (e) { if (epoch === generation) notice(e.message); }
 }
 export function declinePhoneOffer() {
   return attempt('phone-offer', async () => { await engine.request('client.alerts.prompt.dismiss', {}); await readPhoneOffer(); });
@@ -293,7 +293,7 @@ async function readAgentActions(agentId) {
     }
     const bySequence = new Map([...rows, ...actions].map((a) => [a.sequence, a]));
     actions = [...bySequence.values()]; engineWrite(enrich({ agents: S().agents }));
-  } catch (e) { if (epoch === generation && e.name !== 'AbortError') notice(e.message); }
+  } catch (e) { if (epoch === generation) notice(e.message); }
 }
 
 async function readAccountNames() {
@@ -304,7 +304,7 @@ async function readAccountNames() {
     // Retain display fields only, never account environment or secret references.
     accountNames = reply.accounts.map(({ id, harness, displayName }) => ({ id, harness, ...(displayName ? { displayName } : {}) }));
     engineWrite({ subscriptions: mapping.mapSubscriptionNames(S().subscriptions, accountNames) });
-  }).catch((e) => { if (epoch === generation && e.name !== 'AbortError') notice(e.message); }).finally(() => { if (epoch === generation) accountRead = null; });
+  }).catch((e) => { if (epoch === generation) notice(e.message); }).finally(() => { if (epoch === generation) accountRead = null; });
   return accountRead;
 }
 

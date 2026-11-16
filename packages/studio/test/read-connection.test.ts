@@ -102,6 +102,7 @@ it('attaches a page signal in the live build and refuses a stale replacement', a
   expect(() => readRequestsSource(source.replace('return current.request(tag, payload, options);', ''))).toThrow('Read lifecycle integration')
   const { readOptions } = await import('../../../design/mock/js/live/reads.js' as string)
   const first = readOptions({}).readSignal
+  window.history.replaceState({}, '', '#/settings')
   window.dispatchEvent(new HashChangeEvent('hashchange'))
   expect(first.aborted).toBe(true)
   expect(readOptions({}).readSignal.aborted).toBe(false)
