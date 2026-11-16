@@ -17385,3 +17385,13 @@ I ran a new regression test that rejects the request with the admission refusal 
 The existing error notice shows the message.
 The review stays open and the approval and Cancel controls remain enabled.
 No production change was needed for this error path.
+
+## s20-14. The email journey resolved its sample fixture from the working directory.
+
+State: fixed in round 2 on 2026-11-16.
+
+I ran the email journey at studio.spec.ts:979 alone from packages/web.
+It failed before opening the page because packages/web/design/mock does not exist.
+I read its sample-copy path and the other helpers' module-relative paths.
+The email helper now resolves design/mock relative to its own source file.
+The journey's assertions and waits remain unchanged.
