@@ -120,8 +120,7 @@ it("forgets records before logout returns and ignores an older session probe (fi
 
 for (const [error, suffix] of [
   [{ _tag: 'CommandError', requestId: 'snapshot-1', reason: 'command refused' }, ' command refused'],
-  [new ClientError({ message: 's17-private-transport-detail' }), ''],
-  [{ _tag: 'CommandError', requestId: 'snapshot-1', reason: 'x'.repeat(1000) }, '']
+    [{ _tag: 'CommandError', requestId: 'snapshot-1', reason: 'x'.repeat(1000) }, '']
 ] as const) it(`shows a bounded snapshot refusal, keeps retrying and clears it after recovery (${suffix || 'generic'})`, async () => {
   vi.useFakeTimers()
   let reads = 0
@@ -140,16 +139,38 @@ for (const [error, suffix] of [
   expect(h.state.conn).not.toHaveProperty('notice')
 })
 
+it('keeps the existing connection notice on a snapshot transport drop', async () => {
+  vi.useFakeTimers()
+  const client = { 'client.snapshot': () => Effect.fail(new ClientError({ message: 's17-private-transport-detail' })) } as unknown as Client
+  const h = harness({ open: (() => Effect.succeed(client)) as typeof connect })
+  await vi.advanceTimersByTimeAsync(35_000)
+  expect(h.state.conn).toEqual({ status: 'offline', lastHeard: 0 })
+})
+
+it('removes an earlier snapshot refusal when the next attempt loses its transport', async () => {
+  vi.useFakeTimers()
+  let reads = 0
+  const client = { 'client.snapshot': () => Effect.fail(++reads === 1
+    ? { _tag: 'CommandError', requestId: 'snapshot-1', reason: 'command refused' }
+    : new ClientError({ message: 'connection lost' })) } as unknown as Client
+  const h = harness({ open: (() => Effect.succeed(client)) as typeof connect })
+  await vi.advanceTimersByTimeAsync(0)
+  expect(h.state.conn?.notice).toBe('The service could not send its data. command refused')
+  await vi.advanceTimersByTimeAsync(250)
+  expect(h.state.conn).toEqual({ status: 'reconnecting', lastHeard: 0 })
+})
+
 it('keeps snapshot authorization failures on the existing expired-session path', async () => {
   vi.useFakeTimers()
   let probes = 0
-  const state: StorePatch = {}
+  const state: StorePatch = {}, patches: StorePatch[] = []
   const client = { 'client.snapshot': () => Effect.fail({ _tag: 'CommandError', requestId: 'snapshot-1', reason: 'command refused' }) } as unknown as Client
   const connection = engineConnection({ location: { protocol: 'http:', host: '127.0.0.1:12345' }, debug() {},
     connect: (() => Effect.succeed(client)) as typeof connect,
     fetch: (async () => new Response(null, { status: ++probes === 1 ? 204 : 401 })) as typeof fetch })
-  connections.push(connection); connection.open(patch => Object.assign(state, patch))
+  connections.push(connection); connection.open(patch => { patches.push(patch); Object.assign(state, patch) })
   await vi.advanceTimersByTimeAsync(1000)
+  expect(patches.some(patch => patch.conn?.notice !== undefined)).toBe(false)
   expect(state.session?.status).toBe('expired')
   expect(state.projects).toEqual([])
   expect(state.conn).not.toHaveProperty('notice')

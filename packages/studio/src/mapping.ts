@@ -374,9 +374,9 @@ export function mapConnection(status: ConnectionStatus, lastHeard: number): Stor
 
 // CommandError reasons arrive through the client's typed, redacted refusal contract.
 // Transport and untyped errors may carry private local details.
-export function snapshotFailureMessage(error: unknown): string {
+export function snapshotFailureMessage(error: unknown): string | undefined {
   const fixed = 'The service could not send its data.'
-  if (typeof error !== 'object' || error === null) return fixed
+  if (typeof error !== 'object' || error === null || !('_tag' in error) || error._tag !== 'CommandError') return undefined
   const refusal = error as { _tag?: unknown; requestId?: unknown; reason?: unknown }
   const reason = refusal.reason
   return refusal._tag === 'CommandError' && typeof refusal.requestId === 'string'

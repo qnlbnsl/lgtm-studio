@@ -1,4 +1,3 @@
-import { connectionSource } from './connectionSource.ts'
 import { workflowSource } from './workflowSource.ts'
 import { terminalSource, xtermSource } from './terminalSource.ts'
 import { signInSource } from "./signInSource.ts"
@@ -82,8 +81,6 @@ export async function buildStudio(dist = defaultDist): Promise<string> {
   mkdirSync(join(mock, "workflows"), { recursive: true })
   writeGenerated(join(mock, "workflows/build-loop.json"), readFileSync(join(root, "../engine/src/workflows/build-loop.json")))
   for (const part of parts) cpSync(join(mock, part), join(dist, part), { recursive: true, dereference: true })
-  const app = join(dist, 'js/app.js')
-  writeFileSync(app, connectionSource(readFileSync(app, 'utf8')))
   const workflow = join(dist, 'js/screens/workflow.js')
   writeFileSync(workflow, workflowSource(readFileSync(workflow, 'utf8')))
   for (const path of ["js/screens/mocks.js", "js/live/mocks.js"]) {

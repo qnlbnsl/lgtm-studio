@@ -139,7 +139,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
   }
   const setSession = (status: SessionStatus) => write({ session: { status, firstRun: false } })
   // Records leave the browser when the session ends, so no signed-out page keeps them.
-  const forget = () => { snapshotNotice = undefined; retryIds.clear(); accountLimits = {}; write({ conn: mapConnection(connectionStatus, lastHeard), ...emptyRecords, notifications: [], accountLimits, owner: mapOwner(undefined), channels: [], posts: [], taskDetails: {}, boardAgents: {}, projectLeadSettings: {}, setupData: null, mocks: {}, design: {}, machineDetails: null, boardUnread: {}, boardRevision: 0, boardDetails: {} }) }
+  const forget = () => { retryIds.clear(); accountLimits = {}; write({ ...emptyRecords, notifications: [], accountLimits, owner: mapOwner(undefined), channels: [], posts: [], taskDetails: {}, boardAgents: {}, projectLeadSettings: {}, setupData: null, mocks: {}, design: {}, machineDetails: null, boardUnread: {}, boardRevision: 0, boardDetails: {} }) }
 
   const post = async (path: string, body?: unknown): Promise<number | undefined> => {
     try {
@@ -151,7 +151,12 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
     } catch { return undefined }
   }
 
-  const stop = () => { activeClient = undefined; controller?.abort(); controller = undefined }
+  const clearSnapshotNotice = () => {
+    if (snapshotNotice === undefined) return
+    snapshotNotice = undefined
+    write({ conn: mapConnection(connectionStatus, lastHeard) })
+  }
+  const stop = () => { clearSnapshotNotice(); activeClient = undefined; controller?.abort(); controller = undefined }
 
   // Reads the snapshot, then follows the stream, until the session ends or the page closes.
   const follow = () => {
@@ -169,6 +174,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
     }
     const program = Effect.gen(function* () {
       while (!ended && !signal.aborted) {
+        let snapshotRefusal: string | undefined
         yield* Effect.scoped(Effect.gen(function* () {
           const client: Client = yield* open({ url })
           activeClient = client
@@ -203,21 +209,19 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
           const refresh = (minimum = 0) => Effect.gen(function* () {
             for (;;) {
               const started = clock()
-              const snapshot = yield* client["client.snapshot"]({ requestId: requestId() }).pipe(Effect.tapError(error => Effect.sync(() => {
-                if (!signal.aborted) { snapshotNotice = snapshotFailureMessage(error); setConn("reconnecting") }
-              })))
+              const snapshot = yield* client["client.snapshot"]({ requestId: requestId() })
               if (timing.snapshotMs === undefined) {
                 timing.snapshotMs = clock() - started
                 debug(`LGTM Studio: the snapshot took ${timing.snapshotMs.toFixed(1)} ms`)
               }
               if (snapshot.sequence >= minimum) { const complete = yield* hydrate(snapshot); if (complete !== undefined) {
-                if (!signal.aborted && snapshotNotice !== undefined) { snapshotNotice = undefined; write({ conn: mapConnection(connectionStatus, lastHeard) }) }
+                if (!signal.aborted) clearSnapshotNotice()
                 publish(complete); return
               } }
               // Publication may lag the log. Read again until the snapshot holds the event.
               yield* Effect.sleep(25)
             }
-          })
+          }).pipe(Effect.tapError(error => Effect.sync(() => { snapshotRefusal = snapshotFailureMessage(error) })))
           if (current === undefined) {
             yield* refresh()
             after = (current as ClientSnapshot | undefined)?.sequence ?? after
@@ -255,11 +259,16 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
         })).pipe(Effect.catch((error) => Effect.gen(function* () {
           if (signal.aborted) return
           activeClient = undefined
+          clearSnapshotNotice()
           setConn("reconnecting")
           // A browser hides an HTTP refusal of a WebSocket. Ask the session route instead.
           const status = yield* Effect.promise(() => post("/api/session"))
           if (signal.aborted) return
           if (status === 401) { ended = true; current = undefined; forget(); setSession("expired") }
+          else if (status === 204 && snapshotRefusal !== undefined) {
+            snapshotNotice = snapshotRefusal
+            setConn("reconnecting")
+          }
           // A refused cursor needs a fresh snapshot to anchor the stream again.
           if (typeof error === "object" && error !== null && "_tag" in error && error._tag === "CommandError") current = undefined
         })))
