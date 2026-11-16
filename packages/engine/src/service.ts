@@ -240,8 +240,9 @@ if (process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === imp
   process.once("SIGINT", stop);
   const launchParent = Number(process.argv[3]);
   // The private foreground entry always receives its launcher's identity.
-  // Adopting process.ppid here could accept PID 1 after an early parent death.
-  const parent = Number.isSafeInteger(launchParent) && launchParent > 1 ? launchParent : -1;
+  // Process 1 is valid when it is explicitly supplied by a container launcher.
+  // Never infer the identity from process.ppid after an early parent death.
+  const parent = Number.isSafeInteger(launchParent) && launchParent >= 1 ? launchParent : -1;
   // execve during an owner-requested restart can close the inherited channel.
   // The parent identity also covers that lifetime without keeping a timer alive.
   const parentCheck = foreground ? setInterval(() => { if (process.ppid !== parent) stop(); }, 1000).unref() : undefined;

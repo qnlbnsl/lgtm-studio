@@ -10,6 +10,9 @@ import { fileURLToPath } from 'node:url'
 import { afterEach, expect, it, vi } from 'vitest'
 
 const entry = fileURLToPath(new URL('../src/bin.ts', import.meta.url))
+const birth = (pid: number) => {
+  try { const fields = readFileSync(`/proc/${pid}/stat`, 'utf8').split(') ').at(-1)!.split(' '); return fields[0] === 'Z' ? undefined : fields[19] } catch { return undefined }
+}
 const roots: string[] = [], children: ChildProcess[] = []
 const root = () => {
   const folder = mkdtempSync('/tmp/s18-foreground-'); roots.push(folder)
@@ -32,7 +35,7 @@ const answers = (socketPath: string) => new Promise<boolean>(resolve => {
   const call = request({ socketPath, path: '/', timeout: 500 }, response => { response.resume(); resolve(response.statusCode !== 503) })
   call.once('error', () => resolve(false)); call.once('timeout', () => { call.destroy(); resolve(false) }); call.end()
 })
-async function ready(r: Root, p: ReturnType<typeof launch>) {
+async function ready(r: Root, p: { child: ChildProcess; error: () => string }) {
   const deadline = Date.now() + 30_000
   while (Date.now() < deadline) {
     expect(p.child.exitCode, p.error()).toBe(null)
@@ -133,7 +136,7 @@ for (const restarted of [false, true]) it.runIf(process.platform === 'linux')(`t
   await ready(r, p)
   const ids = readFileSync(`/proc/${p.child.pid}/task/${p.child.pid}/children`, 'utf8').trim().split(/\s+/).map(Number)
   expect(ids).toHaveLength(1)
-  const servicePid = ids[0]!
+  const servicePid = ids[0]!, serviceBirth = birth(ids[0]!)
   try {
     if (restarted) {
       await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
@@ -149,7 +152,7 @@ for (const restarted of [false, true]) it.runIf(process.platform === 'linux')(`t
     await vi.waitFor(async () => expect(await answers(r.socket)).toBe(false), { timeout: 5000 })
   } finally {
     // This is the direct service child discovered while our launcher was alive.
-    if (await answers(r.socket)) process.kill(servicePid, 'SIGTERM')
+    if (serviceBirth && birth(servicePid) === serviceBirth && await answers(r.socket)) process.kill(servicePid, 'SIGTERM')
     await p.closed
   }
   const again = launch(r)
@@ -165,9 +168,9 @@ for (const parentArgument of [false, true]) it.runIf(process.platform === 'linux
   writeFileSync(helper, `import { spawn } from 'node:child_process'; import { writeFileSync } from 'node:fs'; const c = spawn(process.execPath, [${JSON.stringify(service)}, '--foreground', ...(${parentArgument} ? [String(process.pid)] : [])], { env: process.env, stdio: ['ignore', 1, 'ignore', 'ipc'] }); writeFileSync(${JSON.stringify(record)}, String(c.pid)); setInterval(() => {}, 1000);`)
   const owner = spawn(process.execPath, [helper], { env: { ...environment(r), NODE_OPTIONS: `--import=${hook}` }, stdio: ['ignore', 'pipe', 'pipe'] }); children.push(owner)
   owner.stdout!.resume(); owner.stderr!.resume()
-  let servicePid: number | undefined
+  let servicePid: number | undefined, serviceBirth: string | undefined
   try {
-    await vi.waitFor(() => { servicePid = Number(readFileSync(record, 'utf8')); expect(servicePid).toBeGreaterThan(1) })
+    await vi.waitFor(() => { servicePid = Number(readFileSync(record, 'utf8')); expect(servicePid).toBeGreaterThan(1); serviceBirth = birth(servicePid); expect(serviceBirth).toBeDefined() })
     // The preload has to be listening before the launcher disappears.
     await new Promise(resolve => setTimeout(resolve, 100))
     const ended = new Promise(resolve => owner.once('exit', resolve)); owner.kill('SIGKILL'); await ended
@@ -179,7 +182,7 @@ for (const parentArgument of [false, true]) it.runIf(process.platform === 'linux
       expect(running).toBe(false)
     }, { timeout: 5000 })
   } finally {
-    if (servicePid) { try { process.kill(servicePid, 'SIGTERM') } catch {} }
+    if (servicePid && serviceBirth && birth(servicePid) === serviceBirth) { try { process.kill(servicePid, 'SIGTERM') } catch {} }
   }
 }, 15000)
 
@@ -194,4 +197,16 @@ it('waits for shutdown after its terminal output pipe closes', async () => {
   expect(await p.closed).toBe(0)
   expect(p.error()).not.toMatch(/EPIPE|Unhandled|service failed to start/)
   expect(await answers(r.socket)).toBe(false)
+}, 30000)
+
+
+it.runIf(process.platform === 'linux')('a foreground service accepts an explicit launcher identity of 1', async () => {
+  const r = root(), hook = join(r.folder, 'container-parent.mjs')
+  const service = fileURLToPath(new URL('../../engine/src/service.ts', import.meta.url))
+  writeFileSync(hook, "if (process.argv[1]?.endsWith('/engine/src/service.ts')) Object.defineProperty(process, 'ppid', { value: 1 });\n")
+  const child = spawn(process.execPath, [service, '--foreground', '1'], { env: { ...environment(r), NODE_OPTIONS: `--import=${hook}` }, stdio: ['ignore', 'pipe', 'pipe', 'ipc'] }); children.push(child)
+  let output = '', error = ''; child.stdout!.on('data', b => { output += b }); child.stderr!.on('data', b => { error += b })
+  const closed = new Promise<number | null>(resolve => child.once('close', resolve))
+  await ready(r, { child, error: () => error })
+  child.kill('SIGTERM'); expect(await closed).toBe(0)
 }, 30000)

@@ -17111,3 +17111,24 @@ Sent reads now also use the session’s read cancellation signal.
 That signal ends when the shared read state ends and is renewed for a later connection attempt.
 It has no navigation listener and is never attached to an owner write.
 A regression proves that the sent read settles with the mark while an admitted write still completes normally.
+
+## s18-26. A container’s process-1 foreground launcher was refused.
+
+State: fixed in s18-smallfix round 4.
+
+The foreground service required a saved parent identifier greater than one.
+A container launcher can legitimately be process one.
+The private entry now accepts an explicit positive integer, including one.
+Missing and invalid identities remain refused.
+A regression runs the real service with the process-one parent condition supplied by a startup preload.
+
+## s18-29. Process regression cleanup could signal a reused service identifier.
+
+State: fixed in s18-smallfix round 4.
+
+The early-parent-death foreground fixture signalled its service identifier after the passing assertion had already observed exit.
+The external ownership fixture also checked liveness without comparing the saved process start time.
+Both fixtures now record the start time while their child is alive.
+They signal a service only when its current start time still matches that record.
+The launcher-death fixture uses the same check for its fallback cleanup.
+
