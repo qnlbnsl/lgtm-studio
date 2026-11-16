@@ -17511,3 +17511,15 @@ The maximum stored role-file fixture placed all repeated short secrets in one ad
 Redaction of its replacement markers now exceeds the composition bound.
 The test requires that single-role refusal and spreads the same repetitions across ten roles for its admitted fixture.
 It still checks exact content, one redaction at storage, the full 64 kibibyte bound and refusal of one additional byte.
+
+## s22-29. The sign-in process-group check failed in a full run and passed alone.
+
+State: open, load-sensitive test failure recorded in s22 round 2.
+
+The final whole-suite run reported one failure in `packages/engine/test/harnesses/signin.test.ts`.
+The process-group cleanup test saw a descendant still running at its immediate check on line 67.
+The same file passed all eight tests when run alone after the suite finished.
+It also passed in the earlier whole-suite run.
+The task classifies a full-run failure that passes alone as load.
+Neither the sign-in implementation nor its test changed in this unit.
+No timeout or assertion was relaxed.
