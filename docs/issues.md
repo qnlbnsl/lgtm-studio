@@ -17303,3 +17303,85 @@ An exited or cleaned-up shell cannot resume.
 An owner shell remains meaningful when the project's agents use the Agent Client Protocol.
 The disabled Reconnect control and its existing hint remain accurate.
 This task did not build reconnect.
+
+## s20-7. A broader Service settings journey still clicked the removed standing-rules control.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the journey and its service support file.
+I ran the unchanged journey at studio.spec.ts:792.
+It timed out while clicking Standing permission rules.
+The journey now asserts that the switch is absent.
+The orchestrator approved removing its dependent standingRules expectation by name.
+Every other assertion remains.
+I read the tests and journeys found by label and selector searches for the removed controls.
+I found no other live journey that activated a removed control.
+
+## s20-8. Passing evidence for a newer head appeared current for an older review.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the status handler and the typed review mapper.
+The status handler evaluates evidence against the checkout's current head.
+The open review can still name an earlier head.
+I ran a new regression test before changing the mapper.
+It showed current passing evidence for the wrong reviewed head.
+The mapper now treats a report for a different reviewed head as stale.
+It uses the dialog's existing stale wording and approval choice.
+
+## s20-9. The reviewer defaults have storage but no execution consumer.
+
+State: open. The owner must decide whether to hide these controls.
+
+I read the Default reviewers and Reviewer from another vendor controls.
+I searched the engine source for reviewDefaults.
+I found its storage in the project settings command.
+I found no execution consumer.
+The controls remain visible because round 2 requests a record without a fix.
+
+## s20-10. Standing permission enforcement will need its website switch restored.
+
+State: open. Restore the control in the same change that builds enforcement.
+
+I read standingRulesEnabled in the stall-watch switch module.
+It treats an absent value as enabled.
+I searched the engine source and found no caller today.
+Hiding the website switch does not change permission execution today.
+A stored true value or an absent value would enable the flag when a future consumer calls it.
+The owner needs the website switch when enforcement is built.
+The roles.settings.set request can still change the stored flag.
+Round 2 does not change the default or build enforcement.
+
+## s20-11. The engine records the client's approval decision without checking evidence.
+
+State: open. Round 2 records this behavior without changing it.
+
+I read admitMainReview and the approval planner.
+The engine checks the owner, confirmation, review identity, and reviewed pair.
+The Git operation checks the actual checkout heads before merging.
+The planner stores the client's decision value.
+It does not check whether the current evidence supports that decision.
+A change of evidence alone does not cause an engine refusal.
+The website's captured decision preserves what the pressed button showed.
+
+## s20-12. The Git journey lost its passing-at-open review case.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the Git browser journey.
+Round 1 replaced its passing-at-open case with evidence arriving while the dialog was open.
+The journey now keeps the live-arrival checks and prepares another review after the reports exist.
+It checks plain approval in both cases.
+It also checks the passing evidence stored with the final merged review.
+
+## s20-13. The review tests omitted a request-level stale-pair refusal.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the existing refusal test and admitMainReview.
+The existing test returned a decided review with a refused outcome.
+It did not reject the approval request.
+I ran a new regression test that rejects the request with the admission refusal message.
+The existing error notice shows the message.
+The review stays open and the approval and Cancel controls remain enabled.
+No production change was needed for this error path.
