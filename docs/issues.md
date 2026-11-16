@@ -14504,7 +14504,7 @@ An owner who types quickly across these fields might lose one value in the same 
 
 ## 906. Agent terminal watching and takeover need engine support.
 
-State: open. Checked against the code on 2026-11-15. design/mock/js/live/terminal.js lines 127-128 still draw Watch agent session and Take over agent session disabled with Engine work needed. Kind: visible to the owner.
+State: open. Checked by s20-controls on 2026-11-16. Watch agent session and Take over agent session remain disabled with Engine work needed. Interactive terminal attachment and keyboard handoff are unbuilt. Agent Client Protocol mode has no terminal to attach. Kind: visible to the owner.
 
 The project terminal API opens private owner shells only.
 It cannot attach to an agent's terminal or transfer that terminal's keyboard.
@@ -14513,7 +14513,7 @@ Both controls show “Engine work needed” on hover.
 
 ## 907. Ended project shells cannot reconnect.
 
-State: open. Checked against the code on 2026-11-15. design/mock/js/live/terminal.js line 133 still draws the Reconnect button disabled with title Engine work needed. Kind: visible to the owner.
+State: open. Checked by s20-controls on 2026-11-16. Reconnect remains disabled with Engine work needed. The engine has no resumed terminal attachment or ownership transfer for a replacement connection. An ended shell cannot be resumed. Kind: visible to the owner.
 
 A project shell belongs to its opening connection.
 Reloading the page or losing that connection ends the shell after the grace period.
@@ -17277,3 +17277,29 @@ The button changed no engine state.
 The build now omits that button.
 The existing manual update commands remain visible.
 The browser journey checks that the button is absent.
+
+## s20-5. Watching or taking over an agent terminal has no engine attachment path.
+
+State: open. This is issue 906, checked on 2026-11-16.
+
+The project terminal opens a separate owner shell.
+Watching an interactive agent needs an association with its existing terminal and an authenticated output transport.
+Taking over also needs exclusive keyboard ownership and a handoff back to the agent.
+An Agent Client Protocol agent has no terminal.
+Its conversation remains available through the thread.
+The disabled controls and their existing hints remain accurate.
+This task did not build these features.
+
+## s20-6. A project terminal has no resumed attachment protocol.
+
+State: open. This is issue 907, checked on 2026-11-16.
+
+The session belongs to its opening owner connection.
+The output stream permits one attachment.
+Its attached flag stays set after detachment.
+The disconnect grace period does not provide a resumed attachment.
+Reconnect would need an engine protocol for a live session and explicit connection ownership.
+An exited or cleaned-up shell cannot resume.
+An owner shell remains meaningful when the project's agents use the Agent Client Protocol.
+The disabled Reconnect control and its existing hint remain accurate.
+This task did not build reconnect.
