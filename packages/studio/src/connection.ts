@@ -259,16 +259,17 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
         })).pipe(Effect.catch((error) => Effect.gen(function* () {
           if (signal.aborted) return
           activeClient = undefined
-          clearSnapshotNotice()
+          if (snapshotRefusal === undefined) clearSnapshotNotice()
           setConn("reconnecting")
           // A browser hides an HTTP refusal of a WebSocket. Ask the session route instead.
           const status = yield* Effect.promise(() => post("/api/session"))
           if (signal.aborted) return
-          if (status === 401) { ended = true; current = undefined; forget(); setSession("expired") }
+          if (status === 401) { clearSnapshotNotice(); ended = true; current = undefined; forget(); setSession("expired") }
           else if (status === 204 && snapshotRefusal !== undefined) {
             snapshotNotice = snapshotRefusal
             setConn("reconnecting")
           }
+          else clearSnapshotNotice()
           // A refused cursor needs a fresh snapshot to anchor the stream again.
           if (typeof error === "object" && error !== null && "_tag" in error && error._tag === "CommandError") current = undefined
         })))

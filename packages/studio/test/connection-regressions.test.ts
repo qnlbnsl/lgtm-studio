@@ -147,6 +147,27 @@ it('keeps the existing connection notice on a snapshot transport drop', async ()
   expect(h.state.conn).toEqual({ status: 'offline', lastHeard: 0 })
 })
 
+it('keeps a snapshot refusal visible throughout the next retry and session probe', async () => {
+  vi.useFakeTimers()
+  let probes = 0
+  let finishProbe!: (response: Response) => void
+  const state: StorePatch = {}, patches: StorePatch[] = []
+  const client = { 'client.snapshot': () => Effect.fail({ _tag: 'CommandError', requestId: 'snapshot-1', reason: 'command refused' }) } as unknown as Client
+  const connection = engineConnection({ location: { protocol: 'http:', host: '127.0.0.1:12345' }, debug() {},
+    connect: (() => Effect.succeed(client)) as typeof connect,
+    fetch: (async () => ++probes < 3 ? new Response(null, { status: 204 }) : new Promise<Response>(resolve => { finishProbe = resolve })) as typeof fetch })
+  connections.push(connection); connection.open(patch => { patches.push(patch); Object.assign(state, patch) })
+  await vi.advanceTimersByTimeAsync(0)
+  expect(state.conn?.notice).toBe('The service could not send its data. command refused')
+  patches.length = 0
+  await vi.advanceTimersByTimeAsync(250)
+  expect(probes).toBe(3)
+  expect(state.conn?.notice).toBe('The service could not send its data. command refused')
+  finishProbe(new Response(null, { status: 204 }))
+  await vi.advanceTimersByTimeAsync(0)
+  expect(patches.filter(patch => patch.conn !== undefined).every(patch => patch.conn?.notice === 'The service could not send its data. command refused')).toBe(true)
+})
+
 it('removes an earlier snapshot refusal when the next attempt loses its transport', async () => {
   vi.useFakeTimers()
   let reads = 0
