@@ -114,7 +114,7 @@ export function mapConflict(conflict: typeof GitConflict.Type) {
   return { id: conflict.path, path: conflict.path, resolved: false, selection: { path: conflict.path, head: conflict.head, fingerprint: conflict.fingerprint, choices: [...conflict.choices] },
     parts: conflict.segments.map((s) => s.kind === 'context' ? { ctx: [...s.context], start: s.line } : { id: 'hunk-' + hunk, hunk, ours: [...s.ours], base: [...s.base], theirs: [...s.theirs], choice: conflict.choices[hunk++] ?? null }) }
 }
-export function mapMainReview(review: GitMainReview, comparison: typeof GitReview.Type | undefined, lead: string) {
+export function mapMainReview(review: GitMainReview, comparison: typeof GitReview.Type | undefined, lead: string, freshEvidence = review.evidence) {
   const evidence = (slot: GitMainReview['evidence']['tests']) => ({ ok: slot.state === 'current' && slot.report?.status === 'passed',
     text: slot.report?.summary ?? '', value: slot.state === 'missing' ? 'Missing' : `${slot.state}: ${slot.report?.status ?? ''}`,
     sub: slot.report?.summary ?? '', agent: slot.report?.reportedBy._tag === 'agent' ? slot.report.reportedBy.agentId : null })
@@ -122,7 +122,7 @@ export function mapMainReview(review: GitMainReview, comparison: typeof GitRevie
     title: `Merge ${review.branch} into ${review.base}`, source: review.branch, target: review.base, head: review.head, baseHead: review.baseHead,
     status: review.outcome === 'open' ? 'open' : 'answered', outcome: review.outcome, answer: review.outcome === 'merged' ? 'Merged' : review.outcome === 'sent_back' ? 'Sent back: ' + (review.reason ?? '') : review.reason ?? '',
     answeredAt: review.decidedAt, createdAt: review.openedAt, brief: '', body: '', notice: '',
-    evidence: { tests: evidence(review.evidence.tests), review: evidence(review.evidence.review), commits: comparison?.commits.items.length ?? null,
+    evidence: { tests: evidence(freshEvidence.tests), review: evidence(freshEvidence.review), commits: comparison?.commits.items.length ?? null,
       files: comparison?.files.items.length ?? null, add: comparison?.diff.additions, del: comparison?.diff.deletions, conflicts: null },
     files: comparison ? mapCommitFiles(comparison.files.items) : [], truncated: !!(comparison?.files.truncated || comparison?.commits.truncated || comparison?.diff.truncated) }
 }

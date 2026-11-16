@@ -16251,7 +16251,7 @@ Ordinary journey runs keep the unwrapped service and install no measurement list
 ## 1041. Fresh evidence from review status never reaches an already open merge dialog.
 
 Found: 2026-11-15, by the reviewer's real-engine probe in review-a2.
-Status: open, awaiting the owner's approval for a change to what the dialog shows.
+State: fixed by s20-controls on 2026-11-16. The live status read maps the separate fresh evidence into the existing dialog. The pressed approval preserves the decision and reviewed heads that the dialog showed.
 
 The engine stores review evidence when project.review.prepare opens a review.
 A later project.review.report updates the separate evidence table.
@@ -17235,3 +17235,23 @@ The first `pnpm live-check` run passed 18 of 23 steps.
 Its "reload" step failed with "SocketReadError: An error occurred during Read".
 A second run on the same commit passed that step and gave the known result of 19 of 23.
 The cause of the single failure is not known.
+
+## s20-1. The live merge review discarded fresh status evidence.
+
+State: fixed on 2026-11-16. This is the same fault as issue 1041.
+
+The status read mapped the stored review without its separate fresh evidence.
+The live read now passes fresh evidence to the typed review mapping.
+The dialog uses its existing passing, failed, stale, and missing states.
+A matrix test covers all 25 combinations of stored and fresh evidence.
+The real-engine browser journey reports passing evidence while the dialog is open.
+
+## s20-2. A pressed merge approval could record a different decision from its rendered label.
+
+State: fixed on 2026-11-16.
+
+The approval handler read the latest store after the button had been rendered.
+A store refresh could change the decision before that button received its click.
+The button now captures its displayed decision and reviewed heads.
+The engine still checks the reviewed heads when it handles the approval.
+A regression test replaces the stored evidence before pressing the rendered button.

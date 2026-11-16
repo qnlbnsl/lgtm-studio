@@ -158,7 +158,8 @@ function MergeReview({ s, d }) {
   const [title, setTitle] = useState(first.title); const [body, setBody] = useState(first.body); const [writing, setWriting] = useState(false);
   const regen = () => { if (live.on) return refuse(); setWriting(true); setTimeout(() => { const t = act.pullRequestText(subjects.length ? subjects : [r.title], ev); setTitle(t.title); setBody(t.body); setWriting(false); }, 900); };
   const over = title.length > act.PR_TITLE_LIMIT;
-  const merge = () => { if (live.on) return liveGit.answerReview(r.id, 'merge'); if (over || !title.trim()) return; act.closeDialog(); act.answerRequest(r.id, 'merge'); };
+  const approval = { head: r.head, baseHead: r.baseHead, decision: ok ? 'approve' : 'approve_without_evidence' };
+  const merge = () => { if (live.on) return liveGit.answerReview(r.id, 'merge', undefined, approval); if (over || !title.trim()) return; act.closeDialog(); act.answerRequest(r.id, 'merge'); };
   return html`<${Dialog} title=${r.title} size="wide" onClose=${act.closeDialog}
     foot=${html`<span class="why">Only you can merge into ${r.target}.</span><button type="button" class="btn" onClick=${act.closeDialog}>Cancel</button>
       <button type="button" class=${cx('btn', ok && 'primary')} disabled=${live.on ? liveGit.busy('git') || r.status !== 'open' : over || !title.trim()} onClick=${merge}>${live.on && liveGit.busy('git') ? 'Merging…' : ok ? 'Approve and merge' : 'Approve without evidence'}</button>`}>
