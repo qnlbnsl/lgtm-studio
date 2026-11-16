@@ -59,7 +59,7 @@ const addForms = (secret: string, exact: Set<string>, hex: Set<string>, percent:
   // JSON(base64(secret)), URL(base64(secret)), and base64(base64(secret)).
   // JSON leaves base64 unchanged. Do not recursively compose forms or add
   // partial runs except for double base64, whose inner and outer alignments
-  // below cover shell newlines and surrounding documents with the same gate.
+  // below cover contiguous runs; GNU line wrapping is handled separately.
   exact.add(JSON.stringify(json).slice(1, -1));
   exact.add(Buffer.from(json, "utf8").toString("base64"));
   exact.add(JSON.stringify(base64).slice(1, -1));
@@ -83,6 +83,34 @@ const addForms = (secret: string, exact: Set<string>, hex: Set<string>, percent:
       if (run.length < minimumPartialLength) continue;
       exact.add(run);
       exact.add(toBase64url(run));
+    }
+  }
+  // GNU base64 uses 76 columns and a final LF. Full pipeline forms cover
+  // the entire value, including internal line breaks, with or without the
+  // final output LF. They add at most six forms. No recursive expansion.
+  const gnu = (value: string): string => (Buffer.from(value).toString("base64").match(/.{1,76}/g) ?? []).join("\n") + "\n";
+  for (const value of [secret, secret + "\n"]) {
+    const inner = gnu(value);
+    exact.add(inner.slice(0, -1));
+    exact.add(gnu(inner).slice(0, -1));
+    exact.add(Buffer.from(inner).toString("base64"));
+  }
+  // The first and last inner line segments at each byte alignment also
+  // contribute bounded partial runs. At most 36 additional forms; the
+  // existing eight-character gate applies to both inner and outer runs.
+  for (const alignment of [0, 1, 2]) {
+    const inner = base64Run(bytes, alignment);
+    if (inner.length <= 76) continue;
+    const firstColumn = Math.ceil(8 * alignment / 6);
+    const firstLength = 76 - firstColumn;
+    const lastStart = firstLength + 76 * Math.floor((inner.length - firstLength - 1) / 76);
+    for (const segment of new Set([inner.slice(0, firstLength), inner.slice(lastStart)])) {
+      if (segment.length < minimumPartialLength) continue;
+      for (const outer of [0, 1, 2]) {
+        const run = base64Run(Buffer.from(segment, "ascii"), outer);
+        if (run.length < minimumPartialLength) continue;
+        exact.add(run); exact.add(toBase64url(run));
+      }
     }
   }
   const url = encodeURIComponent(secret).replace(/%[0-9A-F]{2}/g, (escape) => escape.toLowerCase());

@@ -148,8 +148,20 @@ These rules apply to every change. A change that breaks one is a security bug.
    Encodings are not composed recursively.
    Double base64 also matches bounded partial runs at all three inner and outer byte alignments.
    Each partial run still requires at least eight characters.
-   This covers shell-added newlines and a larger encoded document when a registered run remains contiguous.
-   Line wrapping inside every matching run can prevent a match.
+   Contiguous registered runs can match inside a larger encoded document.
+   For a value-known secret, GNU base64 output at 76 columns with line-feed separators is also matched.
+   The full forms cover single encoding and the default double-encoding pipelines from `printf` and `echo`.
+   They allow the final output line feed to be removed.
+   They also cover an unwrapped outer encoding of that wrapped inner output.
+   These full pipeline forms add at most six entries per secret.
+   The first and last inner line segments at each byte alignment add at most 36 partial entries.
+   Both inner and outer partial runs still require eight characters.
+   The complete bounded set attempts at most 78 insertions per secret.
+   At least one insertion is always a duplicate, leaving at most 77 distinct entries.
+   This is not general decoding of line-wrapped documents.
+   Other wrap widths, carriage-return separators, and arbitrary line phases inside larger documents are not covered.
+   Middle line segments are not independently registered.
+   A wrapped document can therefore escape matching when it contains none of the registered contiguous or full pipeline forms.
    The two-step list does not include hexadecimal combined with another encoding.
    It does not cover every mixture of standard and URL-safe base64 alphabets.
    Base64 of the JSON-escaped value has no additional partial-run forms.
@@ -159,6 +171,7 @@ These rules apply to every change. A change that breaks one is a security bug.
    An arbitrary mixture of escaped and unescaped base64 characters is not covered.
    A token known only by its stored hash is matched raw and in the supported single encodings.
    The two-step forms require its value to be registered too.
+   The GNU wrapped forms also require the value to be registered.
    A streamed agent token's public prefix may be published as match context.
    Its private remainder is still withheld and redacted when the complete token is recognized.
    A value inferred only from an inherited environment variable whose name

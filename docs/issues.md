@@ -3837,7 +3837,7 @@ The issue 242 round-7 scope leaves this shared stop-state path unchanged.
 
 Found: 2026-11-02, by the security review of the issue 223 fix (commit
 b88b876, finding F1).
-State: fixed in s19-secrets with five bounded two-step forms and whole and streamed regressions.
+State: fixed in s19-secrets with five bounded two-step forms, GNU pipeline forms, and whole and streamed regressions. The precise limits are in SECURITY.md rule 6.
 
 What happens: the redactor matches a fixed list of forms of each secret,
 built by `addForms` in `packages/engine/src/identity/redactor.ts`, line 49.
@@ -17742,3 +17742,18 @@ Each of the six passed when it was run alone with one worker.
 This is the same load sensitivity that issues 966, 1014, 1044, 1066, 1079 and 1122 record.
 
 State: open. Recorded on 2026-11-16.
+
+
+## s19-3. GNU base64 wrapping escaped single and double encoding matches.
+
+Found: 2026-11-16, from round-two review findings M1 and m3.
+State: fixed for the bounded GNU forms listed in SECURITY.md rule 6.
+
+Ran: fifteen new whole and streaming cases failed before the production change.
+Ran: three independent model checks agree with the installed GNU base64 tool.
+Read: a 58-byte value already wraps inside the first encoding at column 76.
+Read: the earlier 40-character pipeline fixtures could not expose this boundary.
+Read: the full pipeline forms cover the complete registered value at lengths 58, 108, and 209.
+Read: bounded partial forms cover the first and last inner line segments at each alignment.
+Read: arbitrary wrap widths, separators, phases, and middle segments are outside this set.
+Read: the maximum is 78 attempted insertions and 77 distinct form entries per secret.
