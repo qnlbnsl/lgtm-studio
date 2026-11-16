@@ -11,7 +11,7 @@ it("the pure selector enforces the gap and the maximum pass width", () => {
   const c = createGitController()
   for (let i = 0; i < 10; i++) c.records.set(String(i), gitRefreshRecord(String(i), 0))
   expect(automaticGapMs).toBeGreaterThanOrEqual(2_000)
-  expect(Math.ceil(60_000 / automaticGapMs) * maximumAutomaticRequests).toBeLessThanOrEqual(120)
+  expect((Math.ceil(60_000 / automaticGapMs) + 1) * maximumAutomaticRequests).toBeLessThanOrEqual(120)
   let previous = -automaticGapMs
   for (let now = 0; now <= 180_000; now += 50) {
     const before = structuredClone(c), next = nextAutomaticRead(now, c)!

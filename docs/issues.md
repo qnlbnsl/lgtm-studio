@@ -15533,7 +15533,7 @@ Push does not fetch origin.
 ## 1036. A failed Git readback can hide the original mutation refusal.
 
 Found: 2026-11-15, while checking the narrowed Git readbacks against the earlier reviews.
-Status: open.
+Status: fixed in part B of unit s16-gitrefresh.
 
 Some Git actions read back their state in a finally block.
 If the mutation fails and that readback also fails, the readback error replaces the original error.
@@ -15543,6 +15543,8 @@ The same structure exists in integration, update, abort, and reopening.
 This behavior predates part A of unit s16-gitrefresh.
 Part A preserves it because the current brief changes only readback scopes and review-status reads.
 A future fix must keep the mutation error and the failure to confirm current state distinguishable.
+
+Part B adds a regression for this sequence.
 
 ## 1037. An open merge review hid decisions made from another client.
 
@@ -15634,7 +15636,7 @@ It waits for the owner's approval.
 ## 1042. A review opened elsewhere stays unseen while the known review is absent or answered.
 
 Found: 2026-11-15, in review-a2 of unit s16-gitrefresh.
-Status: open for part B.
+Status: fixed in part B of unit s16-gitrefresh.
 
 A background pass skips review status after its first successful read when the known review is absent or answered.
 A review opened or reopened by the owner's other client can therefore stay unseen during the same screen visit.
@@ -15648,10 +15650,12 @@ Opening the merge review dialog prepares fresh review state.
 A successful first pass on a new Git screen visit can discover it.
 A decision made elsewhere for a known open review remains eligible for background refresh.
 
+Part B adds a regression for this sequence.
+
 ## 1043. Reopening the Git screen can lose its first load while an old background pass is busy.
 
 Found: 2026-11-15, by reading the screen lifecycle and background-read guard in review-a2.
-Status: open.
+Status: fixed in part B of unit s16-gitrefresh.
 
 Closing the Git screen raises revision.
 An in-flight background pass keeps the git-read key busy until its current request returns.
@@ -15666,6 +15670,8 @@ This problem predates unit s16-gitrefresh.
 This finding came from reading rather than from a test.
 A later fix can retry the new visit's first load after the busy pass finishes.
 
+Part B adds a regression for this sequence.
+
 ## 1044. Two journeys of the retired page's Git screen also fail under load.
 
 **Status: open.** Found on 2026-11-15 during the full check of the Git read-back change.
@@ -15678,3 +15684,37 @@ The second failed once and passed once when it ran alone under the same load.
 Each failure was a text assertion in the merge review dialog that ran out of time.
 The change under test did not touch `packages/web/src`, which these journeys exercise.
 Issues 966 and 1014 record the other load-sensitive journeys.
+
+## s16-1. An automatic pass can cross the boundary of a measured minute.
+
+Found: 2026-11-15, while proving the automatic request bound in part B.
+Status: fixed in part B of unit s16-gitrefresh.
+
+A minimum gap between pass starts alone does not bound requests dispatched inside the same interval.
+A pass can start before the interval and send its remaining requests inside it.
+The controller uses a three-second gap and at most five requests per pass.
+Twenty starts and one carried pass therefore contribute at most 105 requests in a half-open minute.
+The pure policy test includes that carried pass in its proof.
+
+## s16-2. A binary conflict failure must leave the text conflict usable.
+
+Found: 2026-11-15, while reusing the real binary-conflict fixture in part B.
+Status: fixed in part B of unit s16-gitrefresh.
+
+A rejected file-detail request used to stop the sequential detail loader.
+A binary conflict could therefore prevent a later text conflict from loading.
+The new loader isolates each file's failure and publishes successful bodies progressively.
+The regression checks the real text conflict and the Abort control through the built module.
+The existing toast reports a detail failure.
+No new conflict or history error note was added, because the owner approved only the stale sentence.
+
+## s16-3. A failed change-list read can conceal a newer state head.
+
+Found: 2026-11-15, while checking reply publication in part B.
+Status: fixed in part B of unit s16-gitrefresh.
+
+The old reader published its state only after the change list returned.
+A failed change list could leave the displayed head older than the successful state reply.
+The new reader publishes the state immediately.
+A changed head clears mutable bodies before the next detail demand.
+The failed summary keeps the approved stale sentence visible.

@@ -1,5 +1,5 @@
 // The only policy that chooses an automatic Git read. It has no clock or I/O.
-export const automaticGapMs = 2_500
+export const automaticGapMs = 3_000
 export const fallbackMs = 60_000
 export const maximumAutomaticRequests = 5
 export type GitPhase = "idle" | "due" | "reading" | "backing off"

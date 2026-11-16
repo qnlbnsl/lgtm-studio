@@ -421,3 +421,20 @@ it("pull refreshes the upstream count of a parentless project worktree", async (
     expect(f.toasts).toEqual([]);
   } finally { close(); }
 });
+
+it('the epoch rejects an uncancellable older reply before it can request changes or replace a fresh head', async () => {
+  const old = gate(); let states = 0, changes = 0;
+  const f = fixture(async tag => {
+    if (tag === 'project.git.state') { if (++states === 1) { await old.held; return { result: { head: 'old', mergeHead: null } }; } return { result: { head: 'fresh', mergeHead: null } }; }
+    if (tag === 'project.changes') { changes++; return { result: { items: [] } }; }
+    if (tag === 'project.review.status') return { result: { review: null } };
+    throw new Error(tag);
+  });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.waitFor(() => expect(states).toBe(1));
+    await f.actions.refreshGit('project'); old.release();
+    await vi.waitFor(() => expect(f.actions.busy('git-read')).toBe(false));
+    expect(f.state.worktrees[0].head).toBe('fresh'); expect(changes).toBe(1);
+  } finally { old.release(); close(); }
+});
