@@ -72,8 +72,7 @@ export async function exerciseStudioService(page: Page, origin: string) {
     await page.locator(`#${id}`).fill(value!)
     await expect(page.locator('.svc-pane fieldset')).toHaveAttribute('aria-busy', 'false')
   }
-  await page.getByRole('switch', { name: 'Standing permission rules', exact: true }).click()
-  await expect(page.getByRole('switch', { name: 'Standing permission rules', exact: true })).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByRole('switch', { name: 'Standing permission rules', exact: true })).toHaveCount(0)
   await expect(page.locator('.svc-pane fieldset')).toHaveAttribute('aria-busy', 'false')
   await page.getByRole('switch', { name: 'Nudge a stalled agent automatically', exact: true }).click()
   await expect(page.getByRole('switch', { name: 'Nudge a stalled agent automatically', exact: true })).toHaveAttribute('aria-checked', 'false')
