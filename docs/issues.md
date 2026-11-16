@@ -3863,8 +3863,7 @@ token in a form a client can decode.
 
 Found: 2026-11-02, by the security review of the issue 223 fix (commit
 b88b876, finding F4).
-State: open, for the owner's hostile pass. It is older than the issue 223
-fix.
+State: fixed in s19-secrets with one combined streaming window, original-span mapping, and coverage for every required update and termination kind.
 
 What happens: streamed message text is held back by the chunk redactor, so
 a secret split across chunks is still matched.
@@ -17261,3 +17260,80 @@ A shared snapshot cache reads each distinct store once per batch.
 The account writer waits for the bounded inspection before publishing its change.
 A timed-out or unreadable store is retried at its next launch.
 Successful snapshots seed the existing synchronous refresh path.
+
+## s19-3. Replacement lengths cannot assign text to its original chunks.
+
+Found: 2026-11-16, while fixing issue 233.
+State: fixed with original-span mapping.
+
+A replacement may be longer or shorter than the text it hides.
+Assigning its output by the original chunk lengths can move later ordinary text before an intervening tool update.
+A trailing tool can also leave replacement text without a message to receive it.
+The redactor now reports each decided span's original length.
+The runner assigns that span to its original message metadata.
+Safe complete chunks are released immediately.
+A short chunk with an undecided suffix is retained within the same window.
+The held suffix never exceeds the longest registered form minus one character.
+The existing stop-state loss after the runner emits its tail remains tracked in issue 231.
+This change flushes the runner's carry on stop without changing that event acceptance policy.
+
+## s19-4. A new adapter message identity could still end the security carry.
+
+Found: 2026-11-16, while checking the final issue 233 implementation.
+State: fixed with one security carry across message identities.
+
+An adapter can use a new message identifier after a tool update.
+The old source-identity boundary still finalized the carry in that case.
+The named-message regression failed before the boundary was removed.
+Each pending chunk now retains its own item identifier and speaker.
+The security carry survives until turn termination.
+Original-span mapping preserves the ordinary text's source identity.
+
+## s19-5. Partial safe chunks broke complete configuration reports.
+
+Found: 2026-11-16, in the full secret-hiding gate.
+State: fixed by recognizing safe chunk endings.
+
+The first span-mapping implementation emitted a safe prefix of every large message chunk.
+Existing configuration journeys read each complete report from one text item.
+Their JavaScript Object Notation reports became incomplete when a prefix was emitted separately.
+The flow journey also needed safe ordinary text before its permission request.
+The redactor now releases a complete safe chunk when no registered form can continue at its end.
+A possible secret suffix stays within the existing maximum window.
+A short chunk with a possible suffix is kept whole within that same bound.
+Hash-only credential probes retain their maximum window while a credential-alphabet suffix remains possible.
+The configuration and end-to-end flow assertions are unchanged.
+
+## s19-6. The isolated suite home lacked the launcher test's Node installation.
+
+Found: 2026-11-16, in the full secret-hiding gate.
+State: resolved in the test environment without changing the test.
+
+The complete suite ran under a temporary home to avoid real credential files.
+One launcher test requires a Node.js 26 installation under that home's version-manager directory.
+Its prerequisite failed before it exercised the launcher.
+The final suite home links only the existing Node.js binary into that directory.
+All credential directories remain temporary.
+
+## s19-7. Repairing a credential store could expose an adjacent tool report.
+
+Found: 2026-11-16, while checking unreadable-store recovery after the carry change.
+State: fixed by retaining the message's withheld interval for following tool metadata.
+
+The new carry handling published the withheld marker before the following tool update.
+An existing recovery journey repairs the store as soon as that marker appears.
+The following tool could then be published during the interval that the journey expects to remain withheld.
+Loss of coverage now discards the undecided message carry with a fixed marker.
+Following tool metadata remains withheld until a healthy message starts a new interval.
+The existing half-written and oversized-store journeys pass without changes to their assertions or waits.
+
+## s19-8. The passing full suite emits client-test warnings.
+
+Found: 2026-11-16, in the final secret-hiding gate.
+State: observed outside the four assigned fixes.
+
+The studio harness integration build warns about a minified chunk larger than 500 kilobytes.
+The studio terminal tests report the unavailable canvas context in their browser test environment.
+Several retired web-page tests emit React state-update warnings about missing `act` wrappers.
+All affected files passed in the complete 632-file run.
+No test assertion or warning threshold was changed for this task.

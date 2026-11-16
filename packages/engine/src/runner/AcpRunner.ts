@@ -32,7 +32,7 @@ import { SecretStore } from "../commands/SecretStore.ts";
 import { folderForSpawn } from "../identity/ceiling.ts";
 import { sha256Hex } from "../identity/credential.ts";
 import { makeRedactor } from "../identity/redactor.ts";
-import { Redactor } from "../log/Redactor.ts";
+import { Redactor, type RedactionPart } from "../log/Redactor.ts";
 import { makeStderrTail, stderrTailLines } from "../recovery/crash.ts";
 import { linuxProcessReader } from "../recovery/orphans.ts";
 import { buildBaseEnvironment } from "./baseEnvironment.ts";
@@ -110,10 +110,12 @@ interface Process {
   commands: ReadonlyArray<{ name: string }>;
   message?: {
     readonly id: string;
-    readonly sourceId?: string;
-    readonly role: "user" | "agent" | undefined;
-    readonly pending: Array<{ readonly length: number; readonly event: Extract<RunnerEvent, { _tag: "deliveryUpdate" }> }>;
-    released: string;
+    sourceId?: string;
+    itemId: string;
+    boundary?: boolean;
+    coverageLost?: boolean;
+    role: "user" | "agent" | undefined;
+    readonly pending: Array<{ readonly passthrough?: boolean; length: number; text: string; readonly event: Extract<RunnerEvent, { _tag: "deliveryUpdate" }> }>;
   };
   readonly terminalOutput: ReturnType<typeof makeTerminalOutput>;
   turn?: Turn;
@@ -161,7 +163,8 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
   // Login-store leaves are not per-process: they stay registered for the
   // runner's whole life, so no release of a process's secrets can drop one
   // before that process's last output is redacted (issue 223).
-  const fallback = makeRedactor({ secrets: () => [...processes.values()].flatMap((entry) => entry.secrets).concat(credentials.secrets()), tokenHashes: () => new Set() });
+  const fallback = makeRedactor({ secrets: () => [...processes.values()].flatMap((entry) => entry.secrets).concat(credentials.secrets()),
+    tokenHashes: () => new Set([...processes.values()].map(entry => entry.incarnation)) });
   // Fix round 1, F3: while a process's login store cannot be inspected, a
   // token written there is unknown to the redactor. Every redaction for that
   // process checks the store first and, if it cannot be read, returns this
@@ -227,6 +230,10 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
   const redactChunk = (itemId: string, text: string, final: boolean, covered: () => boolean = always) => guarded(covered, Effect.gen(function* () {
     // Resolved spawn credentials are covered even before the service's
     // registry sees them. Each redactor retains its own bounded carry.
+    if (Option.isSome(suppliedRedactor) && suppliedRedactor.value.redactChunkWithSecrets !== undefined) {
+      return yield* suppliedRedactor.value.redactChunkWithSecrets(itemId, text, final,
+        [...processes.values()].flatMap((entry) => entry.secrets).concat(credentials.secrets()));
+    }
     let clean = fallback.redactChunk(itemId, text, final);
     if (Option.isSome(suppliedRedactor) && suppliedRedactor.value.redactChunk !== undefined) {
       clean = yield* suppliedRedactor.value.redactChunk(itemId, clean, final);
@@ -241,25 +248,89 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
     if (item._tag === "break" && entry.replay.at(-1)?._tag === "break") return;
     entry.replay.push(item);
   };
-  // Keep the redactor's raw carry bounded, retaining only event metadata
-  // while its window is pending. Short, unchanged chunks keep their original
-  // boundaries; replacement text may span them, but never contains raw data.
+  // One security carry survives content updates. Original span lengths assign
+  // replacements to the right chunk without moving later ordinary text before
+  // a tool or plan. Already decided text is released immediately, even when
+  // only part of its source chunk is decided.
+  const messageParts = (entry: Process, text: string, final: boolean): Effect.Effect<ReadonlyArray<RedactionPart>> => Effect.gen(function* () {
+    const buffer = entry.message;
+    if (buffer === undefined) return [];
+    const covered = entry.covered();
+    // Keep the following tool metadata in the same withheld interval, even
+    // when the owner repairs the store after seeing the message's marker.
+    // A new healthy message starts a new interval.
+    if (!final) buffer.coverageLost = !covered;
+    const end = final || !covered;
+    const parts = Option.isSome(suppliedRedactor) && suppliedRedactor.value.redactPartsWithSecrets !== undefined
+      ? yield* suppliedRedactor.value.redactPartsWithSecrets(buffer.id, text, end,
+        [...processes.values()].flatMap(process => process.secrets).concat(credentials.secrets()))
+      : yield* Effect.forEach(fallback.redactParts(buffer.id, text, end), part => redactText(part.text, entry.covered).pipe(
+        Effect.map(clean => ({ ...part, text: clean, replacement: part.replacement || clean !== part.text }))));
+    return covered || parts.length === 0 ? parts : [{length:parts.reduce((sum,part)=>sum+part.length,0),text:withheldText,replacement:true}];
+  });
+  const retainParts = (entry: Process, parts: ReadonlyArray<RedactionPart>) => {
+    const buffer = entry.message;
+    if (buffer === undefined) return;
+    for (const part of parts) {
+      let left = part.length;
+      let offset = 0;
+      for (const pending of buffer.pending) {
+        if (pending.passthrough || pending.length === 0) continue;
+        const take = Math.min(left, pending.length);
+        pending.text += part.replacement ? offset === 0 ? part.text : "" : part.text.slice(offset, offset + take);
+        pending.length -= take;
+        left -= take;
+        offset += take;
+        if (left === 0) break;
+      }
+    }
+  };
   const drainMessages = (entry: Process, final: boolean) => Effect.gen(function* () {
     const buffer = entry.message;
     if (buffer === undefined) return;
-    if (final) buffer.released += yield* redactChunk(buffer.id, "", true, entry.covered);
+    if (final) retainParts(entry, yield* messageParts(entry, "", true));
     while (buffer.pending.length > 0) {
       const first = buffer.pending[0]!;
-      if (!final && buffer.released.length < first.length && buffer.pending.length <= 1024) break;
-      buffer.pending.shift();
-      const length = final && buffer.pending.length === 0 ? buffer.released.length : Math.min(first.length, buffer.released.length);
-      const text = buffer.released.slice(0, length);
-      buffer.released = buffer.released.slice(length);
+      if (first.passthrough) {
+        buffer.pending.shift();
+        if (entry.turn !== undefined) entry.turn.text += first.event.text;
+        if (entry.loading) noteReplay(entry, { _tag: "break" });
+        yield* emit(first.event);
+        continue;
+      }
+      if (first.text.length === 0 && first.length > 0) break;
+      if (!final && first.length > 0) {
+        // Preserve a complete original chunk when its decided text plus the
+        // raw suffix fit in one window. The process token's hexadecimal form
+        // is always registered, so this budget never exceeds that window.
+        const retained = buffer.pending.reduce((sum, pending) => sum + (pending.passthrough ? 0 : pending.length + pending.text.length), 0);
+        const budget = 2 * Buffer.byteLength(Redacted.value(entry.input.token), "utf8") - 1;
+        if (retained <= budget) break;
+      }
+      const text = first.text;
+      first.text = "";
+      if (first.length === 0) buffer.pending.shift();
       if (entry.turn !== undefined) entry.turn.text += text;
       if (first.event.replay) noteReplay(entry, first.event.role === "user" ? { _tag: "user", text } : { _tag: "break" });
       yield* emit({ ...first.event, text, content: { _tag: "text", text } });
+      if (first.length > 0) break;
     }
     if (final) delete entry.message;
+  });
+  // Content remains in event order behind the undecided message tail. Only
+  // redacted content and chunk metadata are queued, never additional raw text.
+  // Permission and mode control events remain immediate so a held request can
+  // be answered while the message carry awaits its next chunk.
+  const emitContent = (entry: Process, event: Extract<RunnerEvent, { _tag: "deliveryUpdate" }>) => Effect.gen(function* () {
+    if (entry.message === undefined) {
+      if (entry.turn !== undefined) entry.turn.text += event.text;
+      if (entry.loading) noteReplay(entry, { _tag: "break" });
+      yield* emit(event);
+    } else {
+      entry.message.pending.push({ passthrough: true, length: 0, text: "", event });
+      entry.message.boundary = true;
+      yield* drainMessages(entry, false);
+    }
   });
   const publishTerminals = (entry: Process, updates: ReadonlyArray<Translated>) => Effect.gen(function* () {
     if (entry.turn === undefined && !entry.loading) return;
@@ -276,8 +347,7 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
       ) : undefined;
       const text = yield* redactText(translated.text, covered);
       const withheld = content === undefined || !covered();
-      if (entry.loading) noteReplay(entry, { _tag: "break" });
-      yield* emit({ _tag: "deliveryUpdate", agentId: entry.input.agentId, incarnation: entry.incarnation, deliveryId,
+      yield* emitContent(entry, { _tag: "deliveryUpdate", agentId: entry.input.agentId, incarnation: entry.incarnation, deliveryId,
         kind: withheld ? "message" : "tool-call", replay: entry.loading,
         ...(withheld ? { role: "agent" as const } : {}),
         text: withheld ? withheldText : text, content: withheld ? { _tag: "text", text: withheldText } : content });
@@ -577,7 +647,8 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
         // Fix round 1, F3: while the login store cannot be inspected, a
         // non-message update becomes one fixed withheld item. It is
         // translated raw only to learn its items; none of its data is used.
-        const lost = !chunk && !current.covered();
+        const covered = current.covered();
+        const lost = !chunk && (!covered || current.message?.coverageLost === true);
         const translatedUpdates = !lost && terminalDataOnly(update) ? []
           : translate(chunk || lost ? update : yield* cleanStructure(withoutTerminalData(update), current.covered), current.loading);
         if (current.turn === undefined && !current.loading) {
@@ -595,10 +666,11 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
         for (const translated of translatedUpdates) {
           const deliveryId = current.turn?.deliveryId ?? Schema.decodeUnknownSync(DeliveryId)(`replay-${randomUUID()}`);
           if (translated.kind === "message") {
-            // Issue 144: one speaker per buffer, so redacted text released
-            // across chunk boundaries never moves from one speaker to another.
-            if (current.message !== undefined && (current.message.role !== translated.role || current.message.sourceId !== translated.messageId)) yield* drainMessages(current, true);
-            if (current.message === undefined) {
+            // Keep security carry across source identities too. Each pending
+            // chunk retains its own speaker and item id; original-span mapping
+            // prevents ordinary text from moving to another speaker (issue 144).
+            const changed = current.message !== undefined && (current.message.role !== translated.role || current.message.sourceId !== translated.messageId);
+            if (current.message === undefined || current.message.boundary || changed) {
               let id: string = randomUUID();
               if (translated.messageId !== undefined && current.turn !== undefined) {
                 const ids = current.turn.messageIds ??= new Map();
@@ -606,20 +678,25 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
                 id = ids.get(source) ?? id;
                 ids.set(source, id);
               }
-              current.message = { id, ...(translated.messageId === undefined ? {} : { sourceId: translated.messageId }), role: translated.role, pending: [], released: "" };
+              if (current.message !== undefined) {
+                current.message.itemId = id;
+                current.message.boundary = false;
+                current.message.role = translated.role;
+                if (translated.messageId === undefined) delete current.message.sourceId;
+                else current.message.sourceId = translated.messageId;
+              } else current.message = { id, itemId: id, ...(translated.messageId === undefined ? {} : { sourceId: translated.messageId }), role: translated.role, pending: [] };
             }
-            current.message.pending.push({ length: translated.text.length, event: {
-              _tag: "deliveryUpdate", ...identity(current), deliveryId, kind: "message", itemId: current.message.id, replay: current.loading,
+            current.message.pending.push({ text: "", length: translated.text.length, event: {
+              _tag: "deliveryUpdate", ...identity(current), deliveryId, kind: "message", itemId: current.message.itemId, replay: current.loading,
               ...(translated.role === undefined ? {} : { role: translated.role }), text: "",
             } });
-            current.message.released += yield* redactChunk(current.message.id, translated.text, false, current.covered);
+            retainParts(current, yield* messageParts(current, translated.text, false));
             yield* drainMessages(current, false);
             continue;
           }
-          yield* drainMessages(current, true);
+          yield* drainMessages(current, lost);
           if (lost) {
-            if (current.loading) noteReplay(current, { _tag: "break" });
-            yield* emit({ _tag: "deliveryUpdate", ...identity(current), deliveryId, kind: "message", replay: current.loading,
+            yield* emitContent(current, { _tag: "deliveryUpdate", ...identity(current), deliveryId, kind: "message", replay: current.loading,
               role: "agent", text: withheldText, content: { _tag: "text", text: withheldText } });
             continue;
           }
@@ -631,9 +708,7 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
             : Effect.succeed(value);
           const content = yield* clean(translated.content).pipe(Effect.flatMap(Schema.decodeUnknownEffect(threadContent)),
             Effect.mapError(() => rejected("adapter content is malformed")));
-          if (current.turn !== undefined) current.turn.text += text;
-          if (current.loading) noteReplay(current, { _tag: "break" });
-          yield* emit({ _tag: "deliveryUpdate", ...identity(current), deliveryId,
+          yield* emitContent(current, { _tag: "deliveryUpdate", ...identity(current), deliveryId,
             kind: translated.kind, replay: current.loading, text, content });
         }
         // The pinned adapters emit terminal data before the tool report. Keep
@@ -641,7 +716,7 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
         yield* publishTerminals(current, terminalUpdates);
       }).pipe(Effect.catch(() => Effect.logWarning("adapter update dropped: malformed"))));
       yield* client.handleRequestPermission((request, context) => Effect.gen(function* () {
-        yield* drainMessages(processEntry, true);
+        yield* drainMessages(processEntry, false);
         const tool = request.toolCall;
         if ((processEntry.sessionId !== "" && request.sessionId !== processEntry.sessionId)
           || (yield* redactText(tool.toolCallId, processEntry.covered)) !== tool.toolCallId) return yield* AcpRequestError.invalidParams("Permission request refused");
@@ -906,6 +981,7 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
       const holds = [...entry.holds.values()];
       yield* entry.client.agent.cancel({ sessionId: entry.sessionId }).pipe(
         Effect.mapError(() => rejected("cancel failed")));
+      yield* drainMessages(entry, true);
       for (const hold of holds) entry.holds.delete(hold.id);
       for (const hold of holds) yield* Deferred.succeed(hold.answer, { outcome: "cancelled" });
       for (const hold of holds) yield* Deferred.await(hold.delivered);

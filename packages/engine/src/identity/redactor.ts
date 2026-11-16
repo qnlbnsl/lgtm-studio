@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
-import { Redactor } from "../log/Redactor.ts";
+import { Redactor, type RedactionPart } from "../log/Redactor.ts";
 import { eventStructure, fieldStructure, type RedactionStructure } from "../log/redactionStructure.ts";
 import { credentialLength, hasValidChecksum, sha256Hex } from "./credential.ts";
 
@@ -217,6 +217,62 @@ const render = (
   return { output, covered: Math.max(at, from) };
 };
 
+// Preserve each decided span's original length. Message chunk boundaries and
+// intervening content use these lengths rather than the shorter or longer
+// replacement text, so redaction cannot move ordinary text across an update.
+const renderParts = (text: string, intervals: ReadonlyArray<Interval>, from: number, to: number) => {
+  const parts: Array<RedactionPart> = [];
+  let at = from;
+  for (const [start, end] of intervals) {
+    if (end <= at) continue;
+    if (start >= to) break;
+    if (start > at) parts.push({ length: start - at, text: text.slice(at, start), replacement: false });
+    parts.push({ length: end - Math.max(at, start), text: start >= from ? replacement : "", replacement: true });
+    at = end;
+  }
+  if (at < to) parts.push({ length: to - at, text: text.slice(at, to), replacement: false });
+  return { parts, covered: Math.max(at, from) };
+};
+
+// Longest proper prefix of a form that is also a suffix of the current text.
+// The prefix table keeps the work linear even for a large repetitive secret.
+const prefixTail = (text: string, form: string): number => {
+  const limit = Math.min(text.length, form.length - 1);
+  if (limit <= 0) return 0;
+  const failure = new Uint32Array(limit);
+  for (let at = 1, matched = 0; at < limit; at++) {
+    while (matched > 0 && form[at] !== form[matched]) matched = failure[matched - 1]!;
+    if (form[at] === form[matched]) matched++;
+    failure[at] = matched;
+  }
+  let matched = 0;
+  for (let at = text.length - limit; at < text.length; at++) {
+    while (matched > 0 && (matched === limit || text[at] !== form[matched])) matched = failure[matched - 1]!;
+    if (text[at] === form[matched]) matched++;
+  }
+  return matched;
+};
+
+const undecidedTail = (text: string, forms: Forms, tokenHashes: ReadonlySet<string>): number => {
+  // Every supported hash-only credential form consists entirely of these
+  // characters. A final delimiter outside that alphabet ends every possible
+  // candidate. Otherwise retain its contiguous suffix, capped at the hash-probe window.
+  const credentialTail = tokenHashes.size > 0
+    ? /[A-Za-z0-9_+\/=%-]+$/.exec(text.slice(-(longestCredentialForm - 1)))?.[0].length ?? 0 : 0;
+  let held = credentialTail;
+  for (const form of forms.exact) held = Math.max(held, prefixTail(text, form));
+  if (forms.hex.length > 0) {
+    const folded = foldHex(text);
+    for (const form of forms.hex) held = Math.max(held, prefixTail(folded, form));
+  }
+  if (forms.percent.length > 0) {
+    // A chunk may end inside an escape; fold its first hexadecimal digit too.
+    const folded = foldEscapes(text).replace(/%[0-9A-Fa-f]$/, escape => escape.toLowerCase());
+    for (const form of forms.percent) held = Math.max(held, prefixTail(folded, form));
+  }
+  return held;
+};
+
 // Copy string values, preserving keys, tags and schema-typed identities.
 // An explicit secret still wins in every other string, in every encoding.
 const redactValue = (
@@ -254,13 +310,14 @@ export const makeRedactor = (registry: {
 }): {
   readonly layer: Layer.Layer<Redactor>;
   readonly redactText: (text: string) => string;
+  readonly redactParts: (itemId: string, text: string, final: boolean) => ReadonlyArray<RedactionPart>;
   readonly redactChunk: (itemId: string, text: string, final: boolean) => string;
 } => {
-  const currentForms = (): Forms => {
+  const currentForms = (additional: ReadonlyArray<Redacted.Redacted<string>> = []): Forms => {
     const exact = new Set<string>();
     const hex = new Set<string>();
     const percent = new Set<string>();
-    for (const secret of registry.secrets()) addForms(Redacted.value(secret), exact, hex, percent);
+    for (const secret of [...registry.secrets(), ...additional]) addForms(Redacted.value(secret), exact, hex, percent);
     return { exact: [...exact], hex: [...hex], percent: [...percent] };
   };
 
@@ -271,40 +328,50 @@ export const makeRedactor = (registry: {
   const redactText = (text: string): string => redactWith(currentForms(), registry.tokenHashes())(text);
 
   // Streamed text is joined per item (decision row 57). Each call releases
-  // everything before the last (window - 1) characters, where the window is
-  // the longest matched form (decision row 73), because no match can start
-  // there and still be incomplete. A decided replacement is released at once
+  // text except a suffix that could continue a registered form, bounded by
+  // (window - 1) characters. Safe delimiters release a complete ordinary
+  // chunk, preserving consumers that read a complete report from one chunk. A decided replacement is released at once
   // even when it reaches into the held-back text; the carry then records how
   // much of it is already covered. The carry never exceeds (window - 1)
   // characters, however many matches arrive (fix round 1, ruling 5).
   const carries = new Map<string, Carry>();
-  const redactChunk = (itemId: string, text: string, final: boolean): string => {
+  const redactParts = (itemId: string, text: string, final: boolean, additional: ReadonlyArray<Redacted.Redacted<string>> = []): ReadonlyArray<RedactionPart> => {
     const carry = carries.get(itemId) ?? { text: "", covered: 0 };
     const joined = carry.text + text;
-    const forms = currentForms();
-    const intervals = findMatches(joined, forms, registry.tokenHashes());
+    const forms = currentForms(additional);
+    const tokenHashes = registry.tokenHashes();
+    const intervals = findMatches(joined, forms, tokenHashes);
     if (final) {
       carries.delete(itemId);
-      return render(joined, intervals, carry.covered, joined.length).output;
+      return renderParts(joined, intervals, carry.covered, joined.length).parts;
     }
     const window = Math.max(
-      longestCredentialForm,
+      tokenHashes.size > 0 ? longestCredentialForm : 1,
       ...[...forms.exact, ...forms.hex, ...forms.percent].map((form) => form.length),
     );
-    const cut = Math.max(0, joined.length - (window - 1));
+    const held = undecidedTail(joined, forms, tokenHashes);
+    // Retain an undecided short chunk whole, so its event boundary survives.
+    // A large chunk still releases all but at most one bounded window.
+    const cut = held > 0 && joined.length < window ? 0 : Math.max(0, joined.length - held);
     const released = cut > carry.covered
-      ? render(joined, intervals, carry.covered, cut)
-      : { output: "", covered: carry.covered };
+      ? renderParts(joined, intervals, carry.covered, cut)
+      : { parts: [], covered: carry.covered };
     carries.set(itemId, { text: joined.slice(cut), covered: Math.max(0, released.covered - cut) });
-    return released.output;
+    return released.parts;
   };
 
+  const redactChunk = (itemId: string, text: string, final: boolean, additional: ReadonlyArray<Redacted.Redacted<string>> = []): string =>
+    redactParts(itemId, text, final, additional).map(part => part.text).join("");
   const layer = Layer.succeed(Redactor, {
+    redactPartsWithSecrets: (itemId: string, text: string, final: boolean, additional: ReadonlyArray<Redacted.Redacted<string>>) =>
+      Effect.sync(() => redactParts(itemId, text, final, additional)),
+    redactChunkWithSecrets: (itemId: string, text: string, final: boolean, additional: ReadonlyArray<Redacted.Redacted<string>>) =>
+      Effect.sync(() => redactChunk(itemId, text, final, additional)),
     redactChunk: (itemId: string, text: string, final: boolean) => Effect.sync(() => redactChunk(itemId, text, final)),
     redactText: (text: string) => Effect.sync(() => redactText(text)),
     redact: (event: Event) => Effect.sync(() =>
       redactValue(event, redactWith(currentForms(), registry.tokenHashes()), eventStructure) as Event),
   });
 
-  return { layer, redactText, redactChunk };
+  return { layer, redactText, redactChunk, redactParts };
 };
