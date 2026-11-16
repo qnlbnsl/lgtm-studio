@@ -98,7 +98,7 @@ const handlerServices = (configuration: Pick<Runtime, "home" | "stateFolder" | "
 export const buildServices = (configuration: Pick<Runtime, "home" | "stateFolder" | "pluginRoot" | "harnessDefaults" | "harnessPrograms" | "credentials">, lists: EngineLists = engineLists) =>
   handlerServices(configuration, lists).pipe(Layer.provideMerge(baseServices(lists)));
 
-const program = (inheritedToken: string | undefined, webPassword: Redacted.Redacted<string> | undefined, reportFailure: (cause: Cause.Cause<unknown>, redact: (text: string) => string) => void) => Effect.scoped(Effect.gen(function* () {
+const program = (inheritedToken: string | undefined, webPassword: Redacted.Redacted<string> | undefined, reportFailure: (cause: Cause.Cause<unknown>, redact: (text: string) => string) => void, foreground = false) => Effect.scoped(Effect.gen(function* () {
   const lists = withBoardEnabled(engineLists, boardEnabledAtStartup(process.env));
   const folder = yield* Effect.try({ try: () => {
     const path = stateFolder(process.env);
@@ -106,7 +106,14 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
     return path;
   }, catch: (error) => error instanceof Error ? error : new Error("state folder refused") });
   const lock = yield* takeLock(folder);
-  if (lock === undefined) { process.stdout.write("already running\n"); return; }
+  if (lock === undefined) {
+    if (foreground) {
+      process.exitCode = 1;
+      if (process.connected) process.send?.({ _tag: "LgtmAlreadyRunning" }, () => { if (process.connected) process.disconnect?.(); });
+      else process.stdout.write("already running\n");
+    } else process.stdout.write("already running\n");
+    return;
+  }
   // A detached launcher needs evidence of which child won the lock, rather
   // than inferring it from timing the losing child's exit. This is an
   // inherited parent/child channel, never a second listener.
@@ -174,7 +181,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
       const web = yield* serveWeb({ password: webPassword, lists, staticRoot: fileURLToPath(new URL("../../studio/dist", import.meta.url)),
         registerSecret: (secret) => { explicitSecrets.push(secret); } });
       yield* Effect.addFinalizer(() => web.close);
-      if (process.connected) process.disconnect?.();
+      if (process.connected && !foreground) process.disconnect?.();
       yield* (yield* Restart.Restart).recover;
       // A retained row never grants authority unless its identity is still
       // live. Remove dead or replaced identities after recovery has swept
@@ -188,6 +195,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
           if (row.boot_id !== boot || facts === undefined || facts.startTime !== row.start_time || facts.userId !== row.user_id || facts.executable !== row.executable) yield* sql`DELETE FROM processes WHERE id = ${row.id}`;
         }
       }
+      if (foreground && process.connected) process.send?.({ _tag: "LgtmServiceStarted" }, () => {});
       yield* Effect.never;
     }).pipe(
       // Close request scopes while the handler, runner and database are still
@@ -219,7 +227,8 @@ if (process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === imp
     tokenHashes: () => new Set(),
   });
   let failureReason: string | undefined;
-  const fiber = Effect.runFork(program(inheritedToken, webPassword, (cause, redact) => { failureReason = startupFailure(cause, redact); }));
+  const foreground = process.argv[2] === "--foreground";
+  const fiber = Effect.runFork(program(inheritedToken, webPassword, (cause, redact) => { failureReason = startupFailure(cause, redact); }, foreground));
   const stop = () => fiber.interruptUnsafe();
   if (typeof process.execve === "function") installRestarter(() => {
     if (restarting) return;
@@ -229,10 +238,30 @@ if (process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === imp
   });
   process.once("SIGTERM", stop);
   process.once("SIGINT", stop);
+  const launchParent = Number(process.argv[3]);
+  // The private foreground entry always receives its launcher's identity.
+  // Process 1 is valid when it is explicitly supplied by a container launcher.
+  // Never infer the identity from process.ppid after an early parent death.
+  const parent = Number.isSafeInteger(launchParent) && launchParent >= 1 ? launchParent : -1;
+  // execve during an owner-requested restart can close the inherited channel.
+  // The parent identity also covers that lifetime without keeping a timer alive.
+  const parentCheck = foreground ? setInterval(() => { if (process.ppid !== parent) stop(); }, 1000).unref() : undefined;
+  if (foreground) {
+    process.once("SIGHUP", stop);
+    process.once("disconnect", stop);
+    process.stdout.on("error", stop);
+    if (process.ppid !== parent) stop();
+  }
   const result = await Effect.runPromise(Fiber.await(fiber));
   installRestarter(undefined);
   process.removeListener("SIGTERM", stop);
   process.removeListener("SIGINT", stop);
+  if (foreground) {
+    clearInterval(parentCheck);
+    process.removeListener("SIGHUP", stop);
+    process.removeListener("disconnect", stop);
+    process.stdout.removeListener("error", stop);
+  }
   if (restarting) restartAfterShutdown(() => process.execve!(process.execPath, [process.execPath, ...process.execArgv, ...process.argv.slice(1)], launchEnvironment));
   if (!restarting && Exit.isFailure(result) && !result.cause.reasons.every((reason) => reason._tag === "Interrupt")) {
     const message = failureReason ?? startupFailure(result.cause, earlyRedactor.redactText) ?? 'service failed';

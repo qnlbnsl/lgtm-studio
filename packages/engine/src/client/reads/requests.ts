@@ -1,3 +1,4 @@
+import { canReceiveAnswer } from "../../routing/questionAvailability.ts";
 import type { ClientRequest, EventEnvelope, ProjectRequestLink } from "@lgtm/contracts";
 import * as Effect from "effect/Effect";
 import type { ReadHandler } from "../../api/reads.ts";
@@ -54,7 +55,7 @@ export const requestRows = (snapshot: Snapshot): ClientRequest[] => [
       ...(row.reason === undefined ? {} : { reason: cutUtf8(row.reason, 512) }),
       canAnswer: row.status === "open" && row.holder._tag === "owner",
     })),
-    ...Object.values(snapshot.questions).map((row): ClientRequest => ({
+    ...Object.values(snapshot.questions).filter((row) => row.status !== "open" || canReceiveAnswer(snapshot, row.agentId)).map((row): ClientRequest => ({
       ...requestLink(snapshot, row), id: row.questionId, kind: "question", agentId: row.agentId, holder: row.holder,
       status: row.status, sourceSequence: row.sourceSequence, openedAt: row.openedAt,
       ...(row.closedSequence === undefined ? {} : { closedSequence: row.closedSequence, answeredAt: row.answeredAt! }),

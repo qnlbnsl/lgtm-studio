@@ -105,3 +105,22 @@ it.live("authenticated scoped pages bound the encoded agent envelope and preserv
   expect((yield* lead["project.requests"]({ requestId: freshRequest(), projectId: f.projectId as never, after: "unknown" }).pipe(Effect.result))._tag).toBe("Failure")
   expect(yield* readLog).toEqual(before)
 })).pipe(Effect.orDie))
+
+for (const actor of ['owner', 'lead'] as const) it.live(`a hidden question cursor continues to the next visible row for ${actor}`, () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  const f = yield* decisionSetup()
+  const hidden = success(yield* call(f.workerCredential, 'ask', { text: 'First question' })).questionId
+  const visible = success(yield* call(f.leadCredential, 'ask', { text: 'Second question' })).questionId
+  const last = success(yield* call(f.leadCredential, 'ask', { text: 'Third question' })).questionId
+  const credential = actor === 'owner' ? owner : f.leadCredential
+  const page = (reply: any) => 'data' in reply ? unwrap(reply) : reply
+  const first = page(success(yield* call(credential, 'project.requests', { projectId: f.projectId, limit: 1 })))
+  expect(first.items.map((row: any) => row.id)).toEqual([hidden])
+  expect(first.next).toBe(String(first.items[0].sourceSequence))
+  success(yield* call(owner, 'stop', { agentId: f.workerId }))
+  const second = page(success(yield* call(credential, 'project.requests', { projectId: f.projectId, limit: 1, after: first.next })))
+  expect(second.items.map((row: any) => row.id)).toEqual([visible])
+  const third = page(success(yield* call(credential, 'project.requests', { projectId: f.projectId, limit: 1, after: second.next })))
+  expect(third.items.map((row: any) => row.id)).toEqual([last])
+  expect(third.next).toBeUndefined()
+})).pipe(Effect.orDie))

@@ -1,3 +1,4 @@
+import { errorText } from './reads.js';
 // The engine Files screen. The standalone sample continues to use screens/files.js.
 import { html, useState, useEffect, useMemo, useRef, Icon, cx, go, href, useMedia, plural, isMac, store } from '../lib.js';
 import { machineOf, agentOf } from '../data.js';
@@ -46,7 +47,7 @@ export function createFilesModel(context, changed, valid = () => true) {
       try {
         const listing = mapping.mapListing(result(await engine.request('project.files.list', { worktreeId: context.worktreeId, ...(folder ? { folder } : {}) })));
         if (active() && m.folders[folder] === slot) m.folders[folder] = listing;
-      } catch (e) { if (active() && m.folders[folder] === slot) m.folders[folder] = { ...slot, loading: false, error: e.message }; }
+      } catch (e) { if (active() && m.folders[folder] === slot) m.folders[folder] = { ...slot, loading: false, error: errorText(e) }; }
       finally { if (active()) changed(); }
     },
     async search(query) {
@@ -56,7 +57,7 @@ export function createFilesModel(context, changed, valid = () => true) {
       try {
         const reply = await engine.request('project.context.search', { projectId: context.projectId, worktreeId: context.worktreeId, query, scope: 'files', limit: 40 });
         if (active() && turn === searching) m.found = mapping.searchPaths(result(reply));
-      } catch (e) { if (active() && turn === searching) { m.found = { paths: [], error: e.message }; m.notice = e.message; } }
+      } catch (e) { if (active() && turn === searching) { m.found = { paths: [], error: errorText(e) }; m.notice = errorText(e); } }
       finally { if (active() && turn === searching) { m.searching = false; changed(); } }
     },
     async open(path) {
@@ -74,8 +75,8 @@ export function createFilesModel(context, changed, valid = () => true) {
       } catch (e) {
         if (active() && turn === opening) {
           const draft = m.drafts.get(path);
-          m.opened = draft ? { file: draft.file } : { error: e.message };
-          if (draft) m.currentUnavailable = e.message;
+          m.opened = draft ? { file: draft.file } : { error: errorText(e) };
+          if (draft) m.currentUnavailable = errorText(e);
         }
       }
       finally { if (active() && turn === opening) changed(); }
@@ -102,7 +103,7 @@ export function createFilesModel(context, changed, valid = () => true) {
         await m.refreshFolders(path);
       } catch (e) {
         if (!active()) return;
-        m.notice = e.message;
+        m.notice = errorText(e);
         if (e.message?.startsWith('the file changed since you opened it')) {
           try {
             const current = result(await engine.request('project.files.read', { worktreeId: context.worktreeId, path }));
@@ -110,7 +111,7 @@ export function createFilesModel(context, changed, valid = () => true) {
               m.conflict = current;
               m.notice = 'The file changed since you opened it. Your text is kept. Compare it with the current file below.';
             }
-          } catch (readError) { if (active() && m.selected === path) { m.currentUnavailable = readError.message; m.notice = readError.message; } }
+          } catch (readError) { if (active() && m.selected === path) { m.currentUnavailable = errorText(readError); m.notice = errorText(readError); } }
         }
       } finally { m.saving = false; if (active()) changed(); }
     },
@@ -153,7 +154,7 @@ export function createFilesModel(context, changed, valid = () => true) {
         if (!active()) return false;
         m.notice = `Committed ${path.split('/').pop()} as ${saved.head.slice(0, 7)}.`;
         await m.refreshFolders(path); return true;
-      } catch (e) { if (active()) m.notice = e.message; return false; }
+      } catch (e) { if (active()) m.notice = errorText(e); return false; }
       finally { m.committing = false; if (active()) changed(); }
     },
   };
@@ -257,7 +258,7 @@ function WorktreeFiles({ s, project, route, w, missing }) {
   if (offline) body = html`<div class="fx-state" data-empty><${Icon} name="monitor" size=${20} class="faint" /><strong>${machine?.name || 'The machine'} is offline</strong><span>Its files show again when it reconnects.</span></div>`;
   else if (remote) body = html`<div class="fx-state" data-empty><${Icon} name="monitor" size=${20} class="faint" /><strong>Files on this machine are awaiting machine support.</strong><span>Only worktrees on this computer can be read today.</span></div>`;
   else if (!sel) body = html`<div class="fx-state" data-empty><${Icon} name="file" size=${20} class="faint" /><strong>No file open</strong></div>`;
-  else if (model.opened?.loading || !model.opened) body = html`<div class="fx-state" role="status"><${Icon} name="loader-circle" size=${18} class="spin faint" /><span>Reading from ${machine.name}…</span></div>`;
+  else if (model.opened?.loading || !model.opened || !file && !model.opened.error) body = html`<div class="fx-state" role="status"><${Icon} name="loader-circle" size=${18} class="spin faint" /><span>Reading from ${machine.name}…</span></div>`;
   else if (model.opened.error) body = html`<div class="fx-state" role="alert"><strong>${model.opened.error}</strong><span class="mono">${sel}</span><button class="btn" onClick=${() => model.open(sel)}>Retry</button></div>`;
   else if (file.kind === 'image') body = html`<div class="fx-pic"><img src=${image} alt=${sel} /></div>`;
   else if (file.kind === 'binary' || file.kind === 'large') body = html`<div class="fx-state"><${Icon} name=${file.kind === 'binary' ? 'archive' : 'file-text'} size=${20} class="faint" /><strong>${file.kind === 'binary' ? 'Binary file' : 'Too large to show'} · ${fileSize(file.size)}</strong><span>${file.kind === 'binary' ? 'It cannot be read here.' : 'Files over 512 KB are not shown here.'}</span><span><button type="button" class="btn" disabled title="Engine work needed">Download</button></span></div>`;

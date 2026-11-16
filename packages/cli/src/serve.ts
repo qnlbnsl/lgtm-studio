@@ -57,3 +57,49 @@ export const serveDetach = (options: { readonly environment: Record<string, stri
     yield* Effect.sleep(25);
   }
 });
+
+// Keep the child attached to this terminal. Only its existing redacted logger
+// is forwarded; startup status uses the inherited service-owned channel.
+export const serveForeground = (options: { readonly environment: Record<string, string | undefined>; readonly signal?: AbortSignal }) => Effect.scoped(Effect.gen(function* () {
+  const socket = join(stateFolder(options.environment), "engine.sock");
+  const alreadyRunning = "The service is already running for this state folder.";
+  if (yield* Effect.promise(() => answers(socket))) return yield* Effect.fail(new Error(alreadyRunning));
+  const running = yield* Effect.acquireRelease(Effect.sync(() => {
+    const child = spawn(process.execPath, [fileURLToPath(new URL("../../engine/src/service.ts", import.meta.url)), "--foreground", String(process.pid)], {
+      env: options.environment, stdio: ["ignore", "pipe", "ignore", "ipc"],
+    });
+    let reason: string | undefined, started = false, refused = false, stopping = false;
+    child.on("message", (message: unknown) => {
+      if (typeof message !== "object" || message === null || !("_tag" in message)) return;
+      if (message._tag === "LgtmAlreadyRunning") refused = true;
+      if (message._tag === "LgtmServiceStarted") started = true;
+      if (message._tag === "LgtmStartupFailed" && "reason" in message && typeof message.reason === "string" && message.reason.length <= 512) reason = message.reason;
+    });
+    const ignoreOutputError = () => {};
+    process.stdout.on("error", ignoreOutputError);
+    child.stdout!.on("data", (line: Buffer) => { try { process.stdout.write(line, ignoreOutputError); } catch { /* The terminal has closed. */ } });
+    const closed = new Promise<number>((resolve) => {
+      child.once("error", () => resolve(1));
+      child.once("close", (code) => resolve(code === 0 ? 0 : 1));
+    });
+    const stop = () => {
+      if (stopping || child.exitCode !== null || child.signalCode !== null) return;
+      stopping = true;
+      child.kill("SIGTERM");
+    };
+    options.signal?.addEventListener("abort", stop, { once: true });
+    if (options.signal?.aborted) stop();
+    return { closed, stop, ignoreOutputError, reason: () => reason, started: () => started, refused: () => refused };
+  }), ({ stop, closed, ignoreOutputError }) => Effect.promise(async () => {
+    options.signal?.removeEventListener("abort", stop);
+    stop();
+    await closed;
+    process.stdout.removeListener("error", ignoreOutputError);
+  }));
+  const code = yield* Effect.promise(() => running.closed);
+  if (running.refused()) return yield* Effect.fail(new Error(alreadyRunning));
+  if (running.started() && (code !== 0 || !options.signal?.aborted)) return yield* Effect.fail(new Error("The service stopped unexpectedly."));
+  if (options.signal?.aborted && running.reason() === undefined) return code;
+  if (code !== 0 || !options.signal?.aborted) return yield* Effect.fail(new Error(running.reason() === undefined ? "service failed to start" : `service failed to start: ${running.reason()}`));
+  return 0;
+}));

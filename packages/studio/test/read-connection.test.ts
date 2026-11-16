@@ -1,0 +1,165 @@
+import { isReadRequest } from '../src/readRequests.ts'
+import { afterEach, expect, it, vi } from 'vitest'
+import * as Effect from 'effect/Effect'
+import * as Stream from 'effect/Stream'
+import { ClientError, type Client, type connect } from '@lgtm/client/browser'
+import { engineConnection, type StorePatch } from '../src/connection.ts'
+import { engineSnapshot } from './fixtures.ts'
+
+const connections: ReturnType<typeof engineConnection>[] = []
+afterEach(() => { connections.splice(0).forEach(c => c.close()); vi.useRealTimers() })
+function deferred<A>() { let resolve!: (value: A) => void; const promise = new Promise<A>(done => { resolve = done }); return { promise, resolve } }
+function rig(observe: (patch: StorePatch) => void = () => {}) {
+  const opening = deferred<Client>(), recovery = deferred<Client>(), lost = deferred<void>()
+  let attempts = 0, dispatched = 0, streams = 0, expired = false
+  const state: StorePatch = {}
+  const client = {
+    'client.snapshot': () => Effect.succeed(engineSnapshot),
+    'project.settings': () => Effect.succeed({}),
+    'client.subscribe': () => ++streams > 1 ? Stream.never : Stream.fromEffect(Effect.promise(() => lost.promise).pipe(Effect.andThen(Effect.fail(new ClientError({ message: 'lost' }))))),
+    'client.web.settings': () => Effect.sync(() => { dispatched++; return { terminalEnabled: true } }),
+  } as unknown as Client
+  const c = engineConnection({ location: { protocol: 'http:', host: '127.0.0.1:12345' }, debug() {},
+    fetch: (async () => new Response(null, { status: expired ? 401 : 204 })) as typeof fetch,
+    connect: (() => { attempts++; return Effect.promise(() => attempts === 1 ? opening.promise : recovery.promise) }) as typeof connect })
+  connections.push(c); c.open(p => { Object.assign(state, p); observe(p) })
+  return { c, state, client, opening, recovery, lost, dispatched: () => dispatched, attempts: () => attempts, expire: () => { expired = true } }
+}
+
+it('waits through the initial connection and snapshot before dispatching a read', async () => {
+  const h = rig()
+  let settled = false
+  const result = h.c.request('client.web.settings', {}).then(v => { settled = true; return v }, e => { settled = true; throw e })
+  void result.catch(() => {})
+  await vi.waitFor(() => expect(h.attempts()).toBe(1))
+  expect(settled).toBe(false)
+  expect(h.dispatched()).toBe(0)
+  h.opening.resolve(h.client)
+  expect(await result).toEqual({ terminalEnabled: true })
+  expect(h.dispatched()).toBe(1)
+})
+
+for (const cancel of ['request', 'close', 'sign out', 'expiry'] as const) it(`drops a waiting read on ${cancel}`, async () => {
+  const h = rig(), abort = new AbortController()
+  const result = h.c.request('client.web.settings', {}, { signal: abort.signal }).catch(e => e)
+  await vi.waitFor(() => expect(h.attempts()).toBe(1))
+  if (cancel === 'close') h.c.close()
+  else if (cancel === 'sign out') await h.c.signOut()
+  else if (cancel === 'expiry') { h.expire(); await h.c.reconnect() }
+  else abort.abort()
+  expect(await result).toMatchObject({ name: 'AbortError', cancelledRead: true })
+  h.opening.resolve(h.client)
+  await Promise.resolve()
+  expect(h.dispatched()).toBe(0)
+})
+
+it('keeps writes immediate while a connection is being made', async () => {
+  const h = rig()
+  await expect(h.c.request('project.settings.set', { settings: {} })).rejects.toThrow('The service is not connected.')
+  await expect(h.c.request('accounts', { operation: 'set' })).rejects.toThrow('The service is not connected.')
+  await expect(h.c.request('harnesses', { operation: 'set' })).rejects.toThrow('The service is not connected.')
+  h.opening.resolve(h.client)
+})
+
+for (const defect of [false, true]) it(`reports the existing sentence after a ${defect ? 'defect' : 'failed connection attempt'}`, async () => {
+  const state: StorePatch = {}
+  const c = engineConnection({ location: { protocol: 'http:', host: '127.0.0.1:12345' }, debug() {},
+    fetch: (async () => new Response(null, { status: 204 })) as typeof fetch,
+    connect: (() => defect ? Effect.die(new Error('unreachable')) : Effect.fail(new ClientError({ message: 'unreachable' }))) as unknown as typeof connect })
+  connections.push(c)
+  c.open(p => Object.assign(state, p))
+  const pending = c.request('client.web.settings', {}).catch(e => e)
+  expect(((await pending) as Error).message).toBe('The service is not connected.')
+  await expect(c.request('client.web.settings', {})).rejects.toThrow('The service is not connected.')
+})
+
+it('reports loss, then waits during the next connection attempt', async () => {
+  vi.useFakeTimers()
+  const h = rig()
+  h.opening.resolve(h.client)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(h.state.conn?.status).toBe('live')
+  h.lost.resolve()
+  await vi.advanceTimersByTimeAsync(0)
+  await expect(h.c.request('client.web.settings', {})).rejects.toThrow('The service is not connected.')
+  await vi.advanceTimersByTimeAsync(250)
+  expect(h.attempts()).toBe(2)
+  let settled = false
+  const result = h.c.request('client.web.settings', {}).finally(() => { settled = true })
+  void result.catch(() => {})
+  await vi.advanceTimersByTimeAsync(0)
+  expect(settled).toBe(false)
+  h.recovery.resolve(h.client)
+  await vi.advanceTimersByTimeAsync(0)
+  expect(await result).toEqual({ terminalEnabled: true })
+  expect(h.dispatched()).toBe(1)
+})
+
+it('classifies the live readers and keeps owner actions immediate', () => {
+  for (const tag of [
+    'client.web.settings', 'client.service.version', 'client.workflows.list', 'client.workflows.read',
+    'client.requests', 'client.alerts.list', 'client.harness.choices', 'project.settings', 'roles.role-file.get',
+    'board.channels', 'board.peek', 'board.read', 'project.task.history', 'project.setup.discover',
+    'project.mocks.read', 'project.mocks.reviews.read', 'project.mocks.artifact', 'project.design.read',
+    'project.files.list', 'project.files.read', 'project.context.search', 'client.agent.configuration',
+    'project.git.state', 'project.history', 'project.commit.files', 'project.conflict', 'project.conflict.resolved', 'project.review.status'
+  ]) expect(isReadRequest(tag, {}), tag).toBe(true)
+  expect(isReadRequest('accounts', { operation: 'list' })).toBe(true)
+  expect(isReadRequest('harnesses', { operation: 'list' })).toBe(true)
+  for (const tag of ['project.settings.set', 'client.service.restart', 'client.harness.install', 'client.harness.account.check',
+    'client.terminal.open', 'display.open', 'project.stage', 'project.review.prepare', 'answer', 'configure', 'unknown']) {
+    expect(isReadRequest(tag, {}), tag).toBe(false)
+  }
+})
+
+it('honours the caller signal when it aborts as the connection becomes live', async () => {
+  const request = new AbortController()
+  const h = rig(patch => { if (patch.conn?.status === 'live') request.abort() })
+  const reply = h.c.request('client.web.settings', {}, { signal: request.signal }).catch(e => e)
+  h.opening.resolve(h.client)
+  expect(await reply).toMatchObject({ name: 'AbortError', cancelledRead: true })
+  expect(h.dispatched()).toBe(0)
+})
+
+for (const cancel of ['request', 'close', 'sign out', 'expiry'] as const) it(`settles an admitted read with its cancellation mark on ${cancel}`, async () => {
+  const h = rig(), abort = new AbortController(); let sent = false
+  ;(h.client as any)['client.web.settings'] = () => { sent = true; return Effect.never }
+  h.opening.resolve(h.client)
+  await vi.waitFor(() => expect(h.state.conn?.status).toBe('live'))
+  const outcome = h.c.request('client.web.settings', {}, { signal: abort.signal }).catch(e => e)
+  await vi.waitFor(() => expect(sent).toBe(true))
+  if (cancel === 'close') h.c.close()
+  else if (cancel === 'sign out') await h.c.signOut()
+  else if (cancel === 'expiry') { h.expire(); await h.c.reconnect() }
+  else abort.abort()
+  let error: any; void outcome.then(e => { error = e })
+  await vi.waitFor(() => expect(error).toMatchObject({ name: 'AbortError', cancelledRead: true }))
+})
+
+it('ending the session cancels a sent read without changing an admitted owner write', async () => {
+  const h = rig(), written = deferred<object>()
+  ;(h.client as any)['client.web.settings'] = () => Effect.never
+  ;(h.client as any)['project.settings.set'] = () => Effect.promise(() => written.promise)
+  h.opening.resolve(h.client); await vi.waitFor(() => expect(h.state.conn?.status).toBe('live'))
+  const reading = h.c.request('client.web.settings', {}).catch(e => e)
+  let settled = false
+  const writing = h.c.request('project.settings.set', { settings: {} }).then(value => { settled = true; return value })
+  await Promise.resolve(); h.expire(); h.c.reconnect()
+  expect(await reading).toMatchObject({ cancelledRead: true }); expect(settled).toBe(false)
+  written.resolve({ accepted: true }); expect(await writing).toEqual({ accepted: true })
+})
+
+it('renews sent-read cancellation after a refused session check and a pending open resolves', async () => {
+  const h = rig()
+  await vi.waitFor(() => expect(h.attempts()).toBe(1))
+  h.expire(); h.c.reconnect()
+  await vi.waitFor(() => expect(h.state.session?.status).toBe('out'))
+  await expect(h.c.request('client.web.settings', {})).rejects.toMatchObject({ cancelledRead: true })
+  h.opening.resolve(h.client)
+  await vi.waitFor(() => expect(h.state.conn?.status).toBe('live'))
+  const delivered = deferred<object>()
+  ;(h.client as any)['client.web.settings'] = () => Effect.promise(() => delivered.promise)
+  const result = h.c.request('client.web.settings', {}).then(value => ({ value }), error => ({ error }))
+  await Promise.resolve(); delivered.resolve({ terminalEnabled: true })
+  expect(await result).toEqual({ value: { terminalEnabled: true } })
+})

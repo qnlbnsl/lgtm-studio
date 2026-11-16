@@ -1,3 +1,4 @@
+import { errorText } from './live/reads.js';
 import * as liveGit from './live/git.js';
 import * as chat from './live/chat.js';
 // Everything that changes the mock's state, and the small simulation that makes agents
@@ -13,7 +14,9 @@ import {
 const S = () => store.state;
 
 // ---- notices and dialogs -----------------------------------------------------
-export function toast(text, tone = 'ok') {
+export function toast(error, tone = 'ok', fallback) {
+  const text = errorText(error, fallback);
+  if (!text) return;
   const id = uid('toast');
   update((s) => { s.toasts.push({ id, text, tone }); });
   setTimeout(() => update((s) => { s.toasts = s.toasts.filter((t) => t.id !== id); }), 3600);

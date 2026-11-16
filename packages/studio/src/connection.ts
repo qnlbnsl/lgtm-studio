@@ -1,3 +1,4 @@
+import { isReadRequest } from "./readRequests.ts"
 // The live website's connection to the engine.
 //
 // This is the only file in the website that knows how the browser reaches the engine. It
@@ -134,8 +135,33 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
   let connectionStatus: ConnectionStatus = "reconnecting"
   let snapshotNotice: string | undefined
 
+  let readState: 'connecting' | 'live' | 'failed' | 'ended' = 'connecting'
+  // Session loss settles sent reads too. Navigation has no shared lifetime.
+  let sessionReads = new AbortController()
+  const readWaiters = new Set<() => void>()
+  const setReadState = (state: typeof readState) => {
+    readState = state
+    if (state === 'ended') sessionReads.abort()
+    else if (sessionReads.signal.aborted) sessionReads = new AbortController()
+    for (const wake of [...readWaiters]) wake()
+  }
+  const readReady = (signal?: AbortSignal): Promise<void> => new Promise((resolve, reject) => {
+    const finish = () => {
+      if (!signal?.aborted && readState === 'connecting') return
+      readWaiters.delete(finish)
+      signal?.removeEventListener('abort', finish)
+      if (signal?.aborted || readState === 'ended') reject(new DOMException('The read was cancelled.', 'AbortError'))
+      else if (readState === 'live') resolve()
+      else reject(new Error('The service is not connected.'))
+    }
+    readWaiters.add(finish)
+    signal?.addEventListener('abort', finish, { once: true })
+    finish()
+  })
+
   const setConn = (status: ConnectionStatus) => {
     if (status === "live") {
+      setReadState("live")
       clearTimeout(offlineTimer)
       offlineTimer = undefined
       lastHeard = now()
@@ -145,7 +171,10 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
     // Retries share one outage deadline, and never count as contact with the service.
     if (status === "reconnecting" && offlineTimer === undefined) offlineTimer = setTimeout(() => setConn("offline"), 30_000)
   }
-  const setSession = (status: SessionStatus) => write({ session: { status, firstRun: false } })
+  const setSession = (status: SessionStatus) => {
+    if (status !== 'in' && status !== 'checking') setReadState(status === 'unavailable' ? 'failed' : 'ended')
+    write({ session: { status, firstRun: false } })
+  }
   // Records leave the browser when the session ends, so no signed-out page keeps them.
   const forget = () => { retryIds.clear(); accountLimits = {}; write({ ...emptyRecords, notifications: [], accountLimits, owner: mapOwner(undefined), channels: [], posts: [], taskDetails: {}, boardAgents: {}, projectLeadSettings: {}, setupData: null, mocks: {}, design: {}, machineDetails: null, boardUnread: {}, boardRevision: 0, boardDetails: {} }) }
 
@@ -164,11 +193,11 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
     snapshotNotice = undefined
     write({ conn: mapConnection(connectionStatus, lastHeard) })
   }
-  const stop = () => { clearSnapshotNotice(); activeClient = undefined; controller?.abort(); controller = undefined }
+  const stop = (cancelReads = true) => { if (cancelReads) setReadState("ended"); clearSnapshotNotice(); activeClient = undefined; controller?.abort(); controller = undefined }
 
   // Reads the snapshot, then follows the stream, until the session ends or the page closes.
   const follow = () => {
-    stop()
+    stop(false)
     const signal = (controller = new AbortController()).signal
     let current: ClientSnapshot | undefined
     let after = 0 as EventSequence
@@ -182,6 +211,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
     }
     const program = Effect.gen(function* () {
       while (!ended && !signal.aborted) {
+        setReadState("connecting")
         let snapshotRefusal: string | undefined
         yield* Effect.scoped(Effect.gen(function* () {
           const client: Client = yield* open({ url })
@@ -267,12 +297,13 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
         })).pipe(Effect.catch((error) => Effect.gen(function* () {
           if (signal.aborted) return
           activeClient = undefined
+          setReadState("failed")
           if (snapshotRefusal === undefined) clearSnapshotNotice()
           setConn("reconnecting")
           // A browser hides an HTTP refusal of a WebSocket. Ask the session route instead.
           const status = yield* Effect.promise(() => post("/api/session"))
           if (signal.aborted) return
-          if (status === 401) { clearSnapshotNotice(); ended = true; current = undefined; forget(); setSession("expired") }
+          if (status === 401) { clearSnapshotNotice(); ended = true; setReadState("ended"); current = undefined; forget(); setSession("expired") }
           else if (status === 204 && snapshotRefusal !== undefined) {
             snapshotNotice = snapshotRefusal
             setConn("reconnecting")
@@ -292,7 +323,10 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
         accountLimits = { ...accountLimits, [event.accountId]: event._tag === "AccountOutOfUsage" ? event.resetAt ?? null : null }
         write({ accountLimits })
       }
-      if (event._tag === "StateChanged" && current !== undefined && item.sequence > current.sequence) {
+      if (event._tag === "StateChanged" && (['stopped', 'crashed'].includes(event.state._tag)
+        || current?.agents.some(agent => agent.agentId === event.agentId && ['stopped', 'crashed'].includes(agent.state._tag)))) {
+        yield* refresh(item.sequence)
+      } else if (event._tag === "StateChanged" && current !== undefined && item.sequence > current.sequence) {
         publish({ ...current, sequence: item.sequence, agents: current.agents.map((agent) => {
           if (agent.agentId !== event.agentId) return agent
           const updated = { ...agent, state: event.state }
@@ -300,14 +334,15 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
         }) })
       } else if (needsRefresh(event._tag)) yield* refresh(item.sequence)
     })
-    void Effect.runPromise(program, { signal }).catch(() => { if (!signal.aborted) setConn("reconnecting") })
+    void Effect.runPromise(program, { signal }).catch(() => { if (!signal.aborted) { setReadState("failed"); setConn("reconnecting") } })
   }
 
   const check = async () => {
+    if (activeClient === undefined) setReadState("connecting")
     const attempt = ++sessionAttempt
     const status = await post("/api/session")
     if (closed || attempt !== sessionAttempt) return
-    if (status === 204) { setSession("in"); follow() }
+    if (status === 204) { setReadState("connecting"); setSession("in"); follow() }
     else if (status === undefined || status >= 500) setSession("unavailable")
     else setSession("out")
   }
@@ -341,7 +376,20 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
       return cancel
     },
     async request(tag, payload, options = {}) {
-      options.signal?.throwIfAborted()
+      const reading = isReadRequest(tag, payload)
+      const callerSignal = options.signal
+      const cancelledRead = () => Object.assign(new DOMException('The read was cancelled.', 'AbortError'), { cancelledRead: true })
+      if (reading) {
+        try {
+          await readReady(callerSignal)
+          callerSignal?.throwIfAborted()
+        } catch (error) {
+          if (callerSignal?.aborted || error instanceof DOMException && error.name === 'AbortError') {
+            throw cancelledRead()
+          }
+          throw error
+        }
+      } else options.signal?.throwIfAborted()
       const client = activeClient
       if (tag === "display.open" || tag === "display.close") {
         // Cleanup still uses the owner cookie when the WebSocket has gone away.
@@ -370,7 +418,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
       const id = retryKey === undefined ? requestId() : retryIds.get(retryKey) ?? requestId()
       if (retryKey !== undefined) retryIds.set(retryKey, id)
       options.onRequestId?.(id)
-      const signal = options.signal ? AbortSignal.any([controller!.signal, options.signal]) : controller!.signal
+      const signal = AbortSignal.any([controller!.signal, ...(reading ? [sessionReads.signal] : []), ...(callerSignal ? [callerSignal] : [])])
       try {
         const result = await Effect.runPromise(invoke({ ...payload, ...(secret ? { value: secret } : {}), requestId: id }).pipe(Effect.result), { signal })
         if (result._tag === "Failure") {
@@ -381,6 +429,9 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
         }
         if (retryKey !== undefined) retryIds.delete(retryKey)
         return result.success
+      } catch (error) {
+        if (reading && signal.aborted) throw cancelledRead()
+        throw error
       } finally { if (secret) Redacted.wipeUnsafe(secret) }
     },
     open(next) {
@@ -393,7 +444,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
       const attempt = ++sessionAttempt
       const status = await post("/api/login", { password })
       if (closed || attempt !== sessionAttempt) return "unavailable"
-      if (status === 204) { setSession("in"); follow(); return "in" }
+      if (status === 204) { setReadState("connecting"); setSession("in"); follow(); return "in" }
       if (status === undefined || status >= 500) { setSession("unavailable"); return "unavailable" }
       setSession("rejected")
       return "rejected"

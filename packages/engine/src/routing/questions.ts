@@ -1,3 +1,4 @@
+import { canReceiveAnswer } from "./questionAvailability.ts";
 import { requireBuilding } from "../project/approvals.ts";
 import { projectView } from "../project/view.ts";
 import { approvalQuestion, approvalAnswer } from "../project/approvals.ts";
@@ -34,6 +35,7 @@ export const answerQuestion = (
   if (actor._tag !== "owner" && actor._tag !== "agent") return yield* refused();
   const row = snapshot.questions[payload.id];
   if (row === undefined || row.status !== "open" || !mayActForHolder(snapshot, actor, row.holder)) return yield* refused();
+  if (!canReceiveAnswer(snapshot, row.agentId)) return yield* refused("The asker cannot receive an answer.");
   const approval = yield* approvalAnswer(input, payload.id, payload.text);
   const task = linkedTask(snapshot, row);
   const mayFinishTask = task !== undefined && canChangeLinkedTask(snapshot, row.agentId, task);

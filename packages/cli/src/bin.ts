@@ -6,7 +6,7 @@ import { commandNames, helpText, matchCommand } from "./commands/registry.ts"
 import { runCommand } from "./commands/run.ts"
 import { setCarrierToken } from "./commands/carrierToken.ts"
 import { setSecret } from "./commands/setSecret.ts"
-import { serveDetach } from "./serve.ts"
+import { serveDetach, serveForeground } from "./serve.ts"
 
 const version = (): string =>
   (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version
@@ -17,12 +17,14 @@ const usage = (): string => [
   ...commandNames.map((name) => `  ${name}`),
   "  client wait --block <agent-id>...",
   "  thread export <agent-id> --out <file>",
-  "  serve --detach",
+  "  serve [--detach]",
   "  view",
   "  mcp", "",
   "Run lgtm <command> --help for a command's options.",
   "--version prints the version."
 ].join("\n") + "\n"
+
+const foregroundStop = new AbortController()
 
 const main = (argv: ReadonlyArray<string>, environment: Readonly<Record<string, string | undefined>>): Effect.Effect<number> =>
   Effect.gen(function* () {
@@ -39,8 +41,11 @@ const main = (argv: ReadonlyArray<string>, environment: Readonly<Record<string, 
       return yield* runViewer(environment)
     }
     if (first === "serve") {
-      if (argv.includes("--help")) { out("Usage: lgtm serve --detach\n\nStart the engine service in the background, or report that it is already running.\n"); return 0 }
-      if (argv.length !== 2 || argv[1] !== "--detach") { err("usage: lgtm serve --detach\n"); return 2 }
+      if (argv.includes("--help") || argv.includes("-h")) { out("Usage: lgtm serve [--detach]\n\nRun the engine service in this terminal until Ctrl-C, SIGTERM, or SIGHUP.\nUse --detach to start it in the background, or report that it is already running.\n"); return 0 }
+      if (argv.length !== 1 && (argv.length !== 2 || argv[1] !== "--detach")) { err("usage: lgtm serve [--detach]\n"); return 2 }
+      if (argv.length === 1) return yield* serveForeground({ environment: environment as Record<string, string | undefined>, signal: foregroundStop.signal }).pipe(
+        Effect.catch((error) => Effect.sync(() => { err(`lgtm: ${error.message}\n`); return 1 }))
+      )
       return yield* serveDetach({ environment: environment as Record<string, string | undefined> }).pipe(
         Effect.map((result) => {
           out(result.outcome === "started" ? `started (pid ${result.pid})\n` : "already running\n")
@@ -73,11 +78,15 @@ const exit = (code: number): void => {
   process.stdout.write("", () => process.stderr.write("", () => process.exit(code)))
 }
 
+// Foreground output can fail after a hangup, including the final flush.
+if (process.argv.length === 3 && process.argv[2] === "serve") process.stdout.on("error", () => {})
+
 const fiber = Effect.runFork(main(process.argv.slice(2), process.env))
 let signalCode: number | undefined
-for (const [signal, code] of [["SIGTERM", 143], ["SIGINT", 130]] as const) {
+for (const [signal, code] of [["SIGTERM", 143], ["SIGINT", 130], ["SIGHUP", 129]] as const) {
   process.once(signal, () => {
-    if (signalCode !== undefined) return
+    if (signalCode !== undefined || foregroundStop.signal.aborted) return
+    if (process.argv.length === 3 && process.argv[2] === "serve") { foregroundStop.abort(); return }
     signalCode = code
     // Interrupting closes the connection, which cancels a blocking wait.
     fiber.interruptUnsafe()

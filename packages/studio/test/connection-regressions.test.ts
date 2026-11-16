@@ -219,3 +219,11 @@ it('per-call cancellation interrupts only that RPC and reports its transport ide
   await expect(h.connection.request('project.git.state', {}, { signal: abort.signal })).rejects.toBeDefined()
   expect(dispatched).toBe(1)
 })
+
+for (const state of ['stopped', 'crashed', 'starting'] as const) it(`refreshes offered questions across a ${state} transition`, async () => {
+  const snapshot = { ...engineSnapshot, agents: engineSnapshot.agents.map(a => a.agentId === 'ag-lead' ? { ...a, state: { _tag: state === 'starting' ? 'stopped' : 'working' } } : a) } as ClientSnapshot
+  const next = { ...snapshot, sequence: 43, questions: [], agents: snapshot.agents.map(a => a.agentId === 'ag-lead' ? { ...a, state: { _tag: state }, openQuestionsAsked: 0 } : a) } as unknown as ClientSnapshot
+  const h = harness({ snapshot, next, items: [{ sequence: 43, occurredAt: 1, event: { _tag: 'StateChanged', agentId: 'ag-lead', state: { _tag: state } } }] })
+  await vi.waitFor(() => expect(h.reads()).toBe(2))
+  expect(h.state.requests?.some(r => r.kind === 'question')).toBe(false)
+})

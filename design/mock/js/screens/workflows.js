@@ -1,3 +1,4 @@
+import { errorText } from '../live/reads.js';
 // Workflow definitions are edited here; project execution remains the build loop.
 import { html, useState, useEffect, useRef, live, href } from '../lib.js';
 import { Dialog } from '../ui.js';
@@ -62,7 +63,7 @@ export function Workflows({ s }) {
   const open = async (item) => {
     if (item.error) { setRecord(item); setDraft(null); setError(item.error); return; }
     setPending(true); setError('');
-    try { accept((await request('read', { ...location, scope: item.scope, id: item.id })).workflow); } catch (e) { setError(e.message); } finally { setPending(false); }
+    try { accept((await request('read', { ...location, scope: item.scope, id: item.id })).workflow); } catch (e) { setError(errorText(e)); } finally { setPending(false); }
   };
   const leave = (action) => dirty ? confirm({ title: 'Discard changes?', body: 'Your unsaved workflow changes will be lost.', action: 'Discard changes', onConfirm: action }) : action();
   useEffect(() => {
@@ -72,13 +73,13 @@ export function Workflows({ s }) {
       const first = r.items.find((i) => !i.error);
       const read = first && await request('read', { ...(repoId ? { repoId } : {}), scope: first.scope, id: first.id });
       if (active) { loadedLocation.current = repoId; setItems(r.items); setFolders(r.folders || []); if (read) accept(read.workflow); }
-    }).catch((e) => active && setError(e.message)).finally(() => active && setPending(false));
+    }).catch((e) => active && setError(errorText(e))).finally(() => active && setPending(false));
     return () => { active = false; };
   }, [repoId, connected]);
   useEffect(() => {
     if (!draft || record?.readOnly) return;
     const g = ++generation.current; setChecking(true);
-    request('validate', { definition: draft }).then((r) => { if (g === generation.current) setInvalid(r.valid ? '' : r.error || 'The workflow is invalid.'); }).catch((e) => { if (g === generation.current) setInvalid(e.message); }).finally(() => { if (g === generation.current) setChecking(false); });
+    request('validate', { definition: draft }).then((r) => { if (g === generation.current) setInvalid(r.valid ? '' : r.error || 'The workflow is invalid.'); }).catch((e) => { if (g === generation.current) setInvalid(errorText(e)); }).finally(() => { if (g === generation.current) setChecking(false); });
     return () => { generation.current++; };
   }, [draft]);
   useEffect(() => { const f = (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } }; window.addEventListener('beforeunload', f); return () => window.removeEventListener('beforeunload', f); }, [dirty]);
@@ -93,15 +94,15 @@ export function Workflows({ s }) {
     if (pending || checking || invalid || !dirty || record.readOnly) return;
     setPending(true); setError('');
     try { const r = await request('save', { ...location, scope: record.scope, id: record.id, definition: draft }); accept(r.workflow); await loadList(); setStatus('Saved'); }
-    catch (e) { setError(e.message); } finally { setPending(false); }
+    catch (e) { setError(errorText(e)); } finally { setPending(false); }
   };
   const clone = async (name, target) => {
     if (pending) return; setPending(true); setCloneError('');
     try { const r = await request('clone', { ...location, scope: record.scope, id: record.id, target, name }); accept(r.workflow); await loadList(); setCloning(false); }
-    catch (e) { setCloneError(e.message); } finally { setPending(false); }
+    catch (e) { setCloneError(errorText(e)); } finally { setPending(false); }
   };
   const remove = () => confirm({ title: 'Delete workflow?', body: 'Delete this workflow file permanently.', action: 'Delete workflow', danger: true, waitForReply: true,
-    onConfirm: async () => { setPending(true); try { await request('delete', { ...location, scope: record.scope, id: record.id }); const list = await loadList(); await open(list[0]); return true; } catch (e) { setError(e.message); return false; } finally { setPending(false); } } });
+    onConfirm: async () => { setPending(true); try { await request('delete', { ...location, scope: record.scope, id: record.id }); const list = await loadList(); await open(list[0]); return true; } catch (e) { setError(errorText(e)); return false; } finally { setPending(false); } } });
   return html`<div class="wfl" data-main>
     <div class="page-head"><h1>Workflows</h1></div>
     <p>Projects still run the default workflow because choosing a workflow for a project is not built yet.</p>

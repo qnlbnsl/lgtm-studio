@@ -628,7 +628,7 @@ function ContextPicker({ s, agent, onAdd, onClose }) {
   useEffect(() => {
     if (!liveMode.on) return;
     let active = true;
-    chatLive.searchContext(agent, q).then((items) => { if (active) setFound(items); }).catch((e) => { if (active) { setFound([]); act.toast(e.message, 'error'); } });
+    chatLive.searchContext(agent, q).then((items) => { if (active) setFound(items); }).catch((e) => { if (active) { setFound([]); act.toast(e, 'error'); } });
     return () => { active = false; };
   }, [agent.id, q]);
   const tasks = s.tasks.filter((t) => t.project === agent.project).map((t) => ({ k: t.label, label: `${t.label} ${t.title}`, icon: 'list-checks' }));

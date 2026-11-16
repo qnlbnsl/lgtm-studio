@@ -1,3 +1,4 @@
+const { errorText } = await import('../../../design/mock/js/live/reads.js' as string)
 import { readFileSync } from 'node:fs'
 import { afterEach, beforeAll, expect, it, vi } from 'vitest'
 import * as mapping from '../src/files.ts'
@@ -17,7 +18,7 @@ function fixture(reply?: (tag: string, payload: any) => Promise<any>) {
   }))
   const s: any = { session: { status: 'in' }, conn: { status: 'live' }, boardRevision: 0 }
   let editor: any
-  const env = { ...kit, engine: { request }, store: { state: s }, useMedia: () => false, machineOf: () => ({ name: 'local', status: 'online' }), agentOf: () => null,
+  const env = { ...kit, errorText, engine: { request }, store: { state: s }, useMedia: () => false, machineOf: () => ({ name: 'local', status: 'online' }), agentOf: () => null,
     Icon: () => null, cx: (...values: any[]) => values.filter(Boolean).join(' '), href: (s: string) => s, go: vi.fn(), plural: (n: number) => `${n} lines`, isMac: false,
     Menu: () => null, Dialog: ({ children, foot }: any) => kit.html`<section>${children}${foot}</section>`, fileSize: (n: number) => `${n} bytes`,
     CodeEditor: (props: any) => { editor = props; return kit.html`<div class="test-editor">${props.doc}</div>` } }
@@ -188,4 +189,20 @@ it('R1.9 gives the Download menu a single hover explanation', async () => {
     const item = host.querySelector('[role="menuitem"]')!
     expect(Number(item.hasAttribute('title')) + Number(item.hasAttribute('data-tip'))).toBe(1)
   } finally { kit.render(null, host) }
+})
+it('keeps the original Reading state when a cancelled open has no file', async () => {
+  const cancelled = Object.assign(new DOMException('The read was cancelled.', 'AbortError'), { cancelledRead: true })
+  const f = fixture(async (tag, p) => {
+    if (tag === 'project.files.list') return { result: list(p.folder) }
+    throw cancelled
+  })
+  try {
+    f.render('project', 'cancelled.txt')
+    await vi.waitFor(() => expect(f.request).toHaveBeenCalledWith('project.files.read', expect.anything()))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(f.host.textContent).toContain('Reading from')
+    expect(f.host.querySelector('.fx-main')).not.toBeNull()
+    expect(f.host.querySelector('[role="alert"]')).toBeNull()
+    expect(f.host.querySelector('.test-editor')).toBeNull()
+  } finally { f.unmount() }
 })

@@ -1,3 +1,4 @@
+import { offerQuestionAlert } from "../../routing/questionAvailability.ts";
 import { carrierNames, alertKindNames, type AlertKind, type QuietHours } from "@lgtm/contracts";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
@@ -18,7 +19,7 @@ const list = ({ runtime, snapshot, actor }: Input, payload: Record<string, unkno
   if (actor._tag !== "owner") return yield* refused();
   const view = clientView(snapshot.client);
   const now = yield* Clock.currentTimeMillis;
-  const rows = Object.values(view.alerts).filter((row) => row.sequence > (payload.after as number)
+  const rows = Object.values(view.alerts).filter((row) => offerQuestionAlert(snapshot, row) && row.sequence > (payload.after as number)
     && (payload.status === undefined || row.status === payload.status)).sort((a, b) => a.sequence - b.sequence);
   const items = [];
   let bytes = 2;

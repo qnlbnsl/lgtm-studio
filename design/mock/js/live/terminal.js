@@ -1,3 +1,4 @@
+import { errorText } from './reads.js';
 // Live shells stay in this page's memory. The standalone sample never loads this module.
 import { html, useState, useEffect, useLayoutEffect, useRef, Icon, cx, notify, href, persist, remember } from '../lib.js';
 import { machineOf } from '../data.js';
@@ -47,7 +48,7 @@ function TerminalView({ session, active, sizeChanged }) {
       const dim = mapping.terminalSize(width, height, screen.clientWidth / term.cols || fontSize * 0.6, screen.clientHeight / term.rows || fontSize * 1.45);
       if (term.cols !== dim.cols || term.rows !== dim.rows) {
         term.resize(dim.cols, dim.rows); session.dim = dim; sizeChanged();
-        if (!session.ended) engine.request('client.terminal.resize', { sessionId: session.id, ...dim }).catch(e => end(session, e.message));
+        if (!session.ended) engine.request('client.terminal.resize', { sessionId: session.id, ...dim }).catch(e => end(session, errorText(e)));
       }
     };
     fit(); const observer = new ResizeObserver(fit); observer.observe(el); document.fonts?.ready.then(fit);
@@ -62,11 +63,11 @@ export function LiveTerminalTab({ s, project }) {
   const redraw = () => changed(n => n + 1);
   if (!projects.has(project.id)) projects.set(project.id, { sessions: [], active: null });
   const state = projects.get(project.id), session = state.sessions.find(x => x.id === state.active) || state.sessions[0];
-  useEffect(() => { if (s.conn.status === 'live') load().catch(e => setNotice(e.message)); }, [s.conn.status]);
+  useEffect(() => { if (s.conn.status === 'live') load().catch(e => setNotice(errorText(e))); }, [s.conn.status]);
   const worktrees = mapping.terminalWorktrees(s, project);
   const close = async item => {
     try { if (!item.ended && s.conn.status === 'live') await engine.request('client.terminal.close', { sessionId: item.id }); }
-    catch (e) { setNotice(e.message); }
+    catch (e) { setNotice(errorText(e)); }
     item.cancel?.(); item.terminal.dispose(); state.sessions = state.sessions.filter(x => x !== item);
     if (state.active === item.id) state.active = state.sessions.at(-1)?.id || null;
     redraw();
@@ -74,7 +75,7 @@ export function LiveTerminalTab({ s, project }) {
   const write = text => {
     if (!session || session.ended || s.conn.status !== 'live') return;
     if (session.ctrl && text.length === 1) { text = String.fromCharCode(text.toUpperCase().charCodeAt(0) & 31); session.ctrl = false; redraw(); }
-    engine.request('client.terminal.write', { sessionId: session.id, text }).catch(e => end(session, e.message));
+    engine.request('client.terminal.write', { sessionId: session.id, text }).catch(e => end(session, errorText(e)));
   };
   const open = async worktree => {
     const status = mapping.terminalState(enabled, s.conn.status, worktree.machine);
@@ -96,7 +97,7 @@ export function LiveTerminalTab({ s, project }) {
             part += ch; bytes += length;
           }
           if (part) await engine.request('client.terminal.write', { sessionId: item.id, text: part });
-        }).catch(e => end(item, e.message));
+        }).catch(e => end(item, errorText(e)));
       });
       state.sessions.push(item); state.active = item.id;
       item.cancel = engine.connection().terminalOutput(item.id, event => {
@@ -104,7 +105,7 @@ export function LiveTerminalTab({ s, project }) {
         else end(item, event.reason);
       }, () => end(item, 'The connection ended. Open a new session after reconnecting.'));
       redraw();
-    } catch (e) { setNotice(e.message); }
+    } catch (e) { setNotice(errorText(e)); }
     finally { setOpening(false); }
   };
   const selected = mapping.terminalSelection(worktrees, state.openIn, project.worktree);

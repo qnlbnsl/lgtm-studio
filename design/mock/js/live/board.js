@@ -17,7 +17,7 @@ export async function run(key, work, success) {
     if (success) toast(success);
     return reply;
   } catch (error) {
-    if (valid(state, connection)) toast(error.message || 'The service could not confirm the request.', 'error');
+    if (valid(state, connection)) toast(error, 'error', 'The service could not confirm the request.');
   } finally { if (S() === state) update((s) => { delete s.ui.boardBusy[key]; }); }
 }
 export async function pages(tag, payload = {}) {
@@ -74,7 +74,7 @@ export function loadTask(project, task) {
     const workspace = S().worktrees.find((w) => w.id === task.worktreeId);
     const detail = maps().mapTaskDetails(history.status === 'fulfilled' ? history.value : [], { files: changes.status === 'fulfilled' ? changes.value.result?.items || [] : [] }, workspace && { branch: workspace.branch, path: workspace.folder });
     if (valid(state, connection)) engineWrite({ taskDetails: { ...S().taskDetails, [task.id]: detail } });
-    for (const result of [history, changes]) if (result.status === 'rejected') toast(result.reason.message, 'error');
+    for (const result of [history, changes]) if (result.status === 'rejected') toast(result.reason, 'error');
     return detail;
   });
 }

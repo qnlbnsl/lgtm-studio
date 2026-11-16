@@ -1,3 +1,4 @@
+const { errorText } = await import('../../../design/mock/js/live/reads.js' as string)
 import { readFileSync } from 'node:fs'
 import { expect, it, vi } from 'vitest'
 import * as maps from '../src/files.ts'
@@ -13,7 +14,7 @@ function fixture(request = vi.fn(async (tag: string, p: any): Promise<any> => {
   throw new Error(tag)
 })) {
   const source = readFileSync('design/mock/js/live/files.js', 'utf8').replace(/^import .*;$/gm, '').replace(/export /g, '')
-  const factory = new Function('engine', source + '\nreturn { createFilesModel, setMapping };')({ request })
+  const factory = new Function('engine', 'errorText', source + '\nreturn { createFilesModel, setMapping };')({ request }, errorText)
   factory.setMapping(maps)
   const context = { worktreeId: 'work', projectId: 'project', kind: 'project', machine: 'local', online: true }
   let valid = true

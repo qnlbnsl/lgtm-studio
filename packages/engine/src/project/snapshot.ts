@@ -1,3 +1,4 @@
+import { canReceiveAnswer } from "../routing/questionAvailability.ts"
 import { projectAgentStatus, type Caller, type ProjectSnapshot, type Task } from "@lgtm/contracts"
 import type { Snapshot } from "../commands/internal.ts"
 import { projectedTask } from "./decisions.ts"
@@ -6,7 +7,7 @@ import { own, projectView } from "./view.ts"
 
 export const projectNeedsOwner = (snapshot: Snapshot, projectId: string) => {
   const view = projectView(snapshot)
-  return [...Object.values(snapshot.requests), ...Object.values(snapshot.questions)].filter((row) => row.status === "open"
+  return [...Object.values(snapshot.requests), ...Object.values(snapshot.questions).filter((row) => canReceiveAnswer(snapshot, row.agentId))].filter((row) => row.status === "open"
     && row.holder._tag === "owner" && own(view.agentProjects, row.agentId) === projectId)
 }
 export const projectAgents = (snapshot: Snapshot, projectId: string) => {

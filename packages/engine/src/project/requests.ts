@@ -12,9 +12,9 @@ export const projectRequests: ReadHandler = (input, raw) => Effect.gen(function*
   const project = own(projectView(input.snapshot).projects, raw.projectId as string)
   if (project === undefined || !canLeadProject(input.snapshot, input.actor, project)) return yield* refused("project is unavailable to this caller")
   const ordered = requestRows(input.snapshot).filter((row) => row.projectId === project.projectId)
-  const anchor = raw.after === undefined ? -1 : ordered.findIndex((row) => String(row.sourceSequence) === raw.after)
-  if (raw.after !== undefined && anchor === -1) return yield* refused("invalid cursor")
-  const rows = ordered.slice(anchor + 1).filter((row) => (raw.kind === undefined || row.kind === raw.kind)
+  const after = raw.after === undefined ? -1 : Number(raw.after)
+  if (raw.after !== undefined && (!Number.isSafeInteger(after) || after < 0 || String(after) !== raw.after || after > input.snapshot.sequence)) return yield* refused("invalid cursor")
+  const rows = ordered.filter((row) => row.sourceSequence > after && (raw.kind === undefined || row.kind === raw.kind)
     && (raw.status === undefined || row.status === raw.status))
   const items: typeof rows = []
   const wrap = (reply: Record<string, unknown>) => input.actor._tag === "agent" ? agentReadReply(raw.requestId, reply) : reply
