@@ -13339,13 +13339,13 @@ The first reviewer selector must read these defaults.
 
 ## 802. Several service controls still lack their execution paths.
 
-State: open. Checked against the code on 2026-11-15. Controls still show the not-connected notice (design/mock/js/actions.js, packages/studio/src/connection.ts) and standing permission rules remain unbuilt per AGENTS.md. Kind: visible to the owner.
+State: fixed for the website by s20-controls on 2026-11-16. The inert controls are absent from the website. Their execution paths remain unbuilt. The standalone mock retains its sample controls. Kind: visible to the owner.
 
 The need-to-know default has no team-creation privacy setting to consume it.
 Removing agent credits would need a defined commit-rewriting policy before the approved Git heads change.
 The Git message model has no service-owned message-generation request to consume it.
 The tests-first default, agent-review default, and review-round limit have no workflow executor to consume them.
-These controls retain the notice that they are not connected and change nothing.
+The website omits these controls because they change nothing.
 Standing permission rules still await the owner's harness recordings, as AGENTS.md requires.
 The existing standing-rules setting is outside this implementation and still does not enforce permission rules.
 
@@ -17255,3 +17255,25 @@ A store refresh could change the decision before that button received its click.
 The button now captures its displayed decision and reviewed heads.
 The engine still checks the reviewed heads when it handles the approval.
 A regression test replaces the stored evidence before pressing the rendered button.
+
+## s20-3. Service settings displayed controls without execution paths.
+
+State: fixed on 2026-11-16. This is the website part of issue 802.
+
+The website displayed the need-to-know default and the agent-credit removal setting.
+It also displayed the Git message model and three unbuilt workflow defaults.
+Standing permission rules stored a flag without enforcing permissions.
+The build now removes these controls with the same checked row-removal helper as Project settings.
+The empty Git messages section and Approvals heading are absent too.
+The standalone mock retains its sample controls.
+The browser journey checks their absence and reads back the retained role settings from the engine.
+
+## s20-4. The service update button only displayed a not-connected notice.
+
+State: fixed on 2026-11-16.
+
+The About section displayed an Update the service button without an execution path.
+The button changed no engine state.
+The build now omits that button.
+The existing manual update commands remain visible.
+The browser journey checks that the button is absent.

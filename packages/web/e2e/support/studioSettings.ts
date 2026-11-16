@@ -41,15 +41,30 @@ export async function exerciseStudioSettings(page: Page) {
           await page.getByRole('button', { name: 'Sign in', exact: true }).click()
           await expect(page.locator('.sidebar .tree-row.project')).toBeVisible()
           await page.goto(`${root}#/settings?section=stall-watch`)
-          for (const [id, value] of [['sd-a', '7'], ['sd-w', '17'], ['sd-l', '29'], ['sd-n', '1'], ['sd-r', '4']]) {
+          for (const [id, value] of [['sd-a', '7'], ['sd-w', '17'], ['sd-l', '29'], ['sd-n', '1'], ['sd-r', '4'], ['sd-c', '11'], ['sd-cr', '3'], ['sd-x', '0'], ['sd-i', '35']]) {
             await page.locator('#' + id).fill(value!)
             await expect(page.locator('.svc-pane fieldset')).toHaveAttribute('aria-busy', 'false')
           }
+          await expect(page.getByRole('switch', { name: 'Standing permission rules', exact: true })).toHaveCount(0)
+          await expect(page.getByRole('heading', { name: 'Approvals', exact: true })).toHaveCount(0)
+          await expect(page.getByRole('link', { name: 'Git messages', exact: true })).toHaveCount(0)
           await page.getByRole('switch', { name: 'Nudge a stalled agent automatically', exact: true }).click()
           await expect(page.getByRole('switch', { name: 'Nudge a stalled agent automatically', exact: true })).toHaveAttribute('aria-checked', 'false')
           await page.reload()
-          for (const [id, value] of [['sd-a', '7'], ['sd-w', '17'], ['sd-l', '29'], ['sd-n', '1'], ['sd-r', '4']]) await expect(page.locator('#' + id)).toHaveValue(value!)
+          for (const [id, value] of [['sd-a', '7'], ['sd-w', '17'], ['sd-l', '29'], ['sd-n', '1'], ['sd-r', '4'], ['sd-c', '11'], ['sd-cr', '3'], ['sd-x', '0'], ['sd-i', '35']]) await expect(page.locator('#' + id)).toHaveValue(value!)
+          const roles = await page.evaluate(async () => {
+            const engine = await import('/js/engine.js' as string)
+            return engine.request('roles.settings.get', {})
+          })
+          expect(roles.settings).toMatchObject({ assignedStallMinutes: 7, leadStallMinutes: 29, nudgeAttempts: 1, replaceAfter: 4, autoNudge: false,
+            limits: { stallMinutes: 17, capacityBackoffMinutes: 11, capacityRetries: 3, crashRetries: 0, teamIdleMinutes: 35 } })
+          await page.goto(`${root}#/settings?section=defaults`)
+          await expect(page.getByRole('switch', { name: 'Need-to-know messages', exact: true })).toHaveCount(0)
+          await expect(page.getByRole('switch', { name: 'Remove agent credits when merging', exact: true })).toHaveCount(0)
+          await expect(page.getByRole('radiogroup', { name: 'Permission', exact: true })).toBeVisible()
           await page.goto(`${root}#/settings?section=workflow`)
+          for (const name of ['Write tests first', 'Agent review']) await expect(page.getByRole('switch', { name, exact: true })).toHaveCount(0)
+          await expect(page.locator('#wf-r')).toHaveCount(0)
           await page.locator('#wf-reviewers').fill('4')
           await expect(page.locator('.svc-pane fieldset')).toHaveAttribute('aria-busy', 'false')
           // Hold a real background read across a blur and a switch activation.
@@ -95,8 +110,7 @@ export async function exerciseStudioSettings(page: Page) {
           await page.getByRole('button', { name: 'Check for an update', exact: true }).click()
           await expect(page.locator('.svc-pane')).toContainText('This checkout has no tracked remote branch. No update commands are available.')
           await expect(page.locator('.svc-pane')).not.toContainText('git merge --ff-only FETCH_HEAD')
-          await page.getByRole('button', { name: 'Update the service', exact: true }).click()
-          await expect(page.locator('.toasts')).toContainText('This is not connected to the service yet. Nothing was changed.')
+          await expect(page.getByRole('button', { name: 'Update the service', exact: true })).toHaveCount(0)
           await page.getByRole('button', { name: 'Restart', exact: true }).click()
           await expect(page.getByRole('dialog')).toContainText('Every signed-in page is signed out and running agents are stopped.')
           await page.getByRole('dialog').getByRole('button', { name: 'Restart', exact: true }).click()
