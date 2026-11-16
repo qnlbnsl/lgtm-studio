@@ -286,12 +286,12 @@ const waiter = (events: ReadonlyArray<RunnerEvent>) => (predicate: (event: Runne
 // The secret registry the service's redactor reads: the stored account
 // secrets and the hashes of every agent token in the database, read on each
 // call so a token minted a moment ago is already covered.
-const registryFor = (secrets: FakeSecrets, database?: string) => {
+const registryFor = (secrets: FakeSecrets, database?: string, extraHashes: ReadonlySet<string> = new Set()) => {
   let reader: DatabaseSync | undefined;
   return makeRedactor({
     secrets: () => [...secrets.stored.values()].map((value) => Redacted.make(value)),
     tokenHashes: () => {
-      if (database === undefined || !existsSync(database)) return new Set<string>();
+      if (database === undefined || !existsSync(database)) return extraHashes;
       try {
         reader ??= new DatabaseSync(database, { readOnly: true });
         return new Set((reader.prepare("SELECT token_hash FROM agent_tokens").all() as Array<{ token_hash: string }>).map((row) => row.token_hash));
@@ -301,6 +301,7 @@ const registryFor = (secrets: FakeSecrets, database?: string) => {
 };
 
 export interface RunnerOptions {
+  readonly tokenHashes?: ReadonlySet<string>;
   readonly secrets?: Readonly<Record<string, string>>;
   // Account tests exercise the persistent store through the real handler.
   // `secrets` remains the planted registry used by the service's redactor.
@@ -333,7 +334,7 @@ const fakeSecretsWith = (values: Readonly<Record<string, string>> = {}, persiste
 // built, as the service does (identity/logger.ts).
 export const withAcpRunner = <A, E>(rig: RunnerRig, options: RunnerOptions, body: (context: RunnerContext) => Effect.Effect<A, E, Scope.Scope>) => {
   const secrets = fakeSecretsWith(options.secrets, options.secretStore);
-  const redactor = registryFor(secrets);
+  const redactor = registryFor(secrets, undefined, options.tokenHashes);
   const lines: Array<string> = [];
   const events: Array<RunnerEvent> = [];
   return Effect.gen(function* () {

@@ -41,29 +41,47 @@ for(const [name,update] of Object.entries(middle)) {
     expect(text==='safe-before [REDACTED] safe-after').toBe(true);
     const contentKinds=updates.filter(e=>e.kind!=='available_commands_update').map(e=>e.kind);
     if(name==='tool call'||name==='tool update'||name==='plan') {
-      expect(contentKinds).toEqual(['message',name==='plan'?'plan':'tool-call','message']);
-      expect(updates[0]?.text).toBe('safe-before [REDACTED]');
+      expect(contentKinds).toEqual(['message','message',name==='plan'?'plan':'tool-call','message']);
+      expect(updates[0]?.text).toBe('safe-before ');
+      expect(updates[1]?.text).toBe('[REDACTED]');
+      expect(updates[0]?.itemId).toBe(updates[1]?.itemId);
       expect(updates.at(-1)?.text).toBe(' safe-after');
     }
   })),60_000);
 }
 for(const end of ['end of turn','stop','crash','cancel'] as const) {
-  it.live(`s19 ${end} flushes the carry without losing ordinary text`,()=>withAcpRunner(rig,{secrets:{'secret:s19':secret}},context=>Effect.gen(function*(){
-    const echo=echoFile(rig);
-    const update=end==='crash'?{step:'crash',exitCode:3}:end==='end of turn'?{step:'end_turn',stopReason:'end_turn'}:{step:'slow',ms:10_000};
-    const spawn=yield* spawnFor(rig,harnessFor('first',writeFakeAdapter(rig)),accountFor('first',{turns:[[{step:'text',text:'safe pending tail'},{step:'mode_change',configId:'mode',value:'read-only'},update]]},echo));
+  it.live(`s19 ${end} flushes a genuine secret prefix and its queued tool`,()=>withAcpRunner(rig,{secrets:{'secret:s19':secret}},context=>Effect.gen(function*(){
+    const gate=join(rig.root,'terminate'), idleGate=join(rig.root,'cancel-idle');
+    const prefix=secret.slice(0,14);
+    const update=end==='crash'?{step:'crash',exitCode:3}:{step:'end_turn',stopReason:'end_turn'};
+    const spawn=yield* spawnFor(rig,harnessFor('first',writeFakeAdapter(rig)),accountFor('first',{cancelIdleGate:idleGate,turns:[[
+      {step:'text',text:prefix},{step:'tool_call',toolCallId:'queued',title:'safe tool',kind:'read',status:'pending',output:'safe output'},
+      {step:'notification_barrier'},{step:'mode_change',configId:'mode',value:'read-only'},{step:'wait_for_file',path:gate},update,
+    ]]},echoFile(rig)));
     yield* context.runner.start(spawn.input);
     const delivery=deliveryFor(spawn.agentId,'go');
     yield* context.runner.prompt({agentId:spawn.agentId,incarnation:spawn.incarnation,delivery,sentSequence:1});
-    if(end==='stop'||end==='cancel') {
-      yield* context.waitFor(e=>e._tag==='modeReported');
-      if(end==='stop') yield* context.runner.stop({agentId:spawn.agentId});
-      else yield* context.runner.cancel({agentId:spawn.agentId});
-    }
+    yield* context.waitFor(e=>e._tag==='modeReported');
+    const updates=()=>context.events.filter((e):e is Extract<RunnerEvent,{_tag:'deliveryUpdate'}>=>e._tag==='deliveryUpdate'&&e.deliveryId===delivery.id);
+    expect(updates()).toEqual([]);
+    if(end==='stop') yield* context.runner.stop({agentId:spawn.agentId});
+    else if(end==='cancel') yield* context.runner.cancel({agentId:spawn.agentId});
+    else writeFileSync(gate,'go');
     if(end==='crash') yield* context.waitFor(e=>e._tag==='exited');
-    else if(end!=='stop') yield* context.waitFor(e=>e._tag==='turnEnded');
-    const text=context.events.filter(e=>e._tag==='deliveryUpdate'&&e.deliveryId===delivery.id&&e.kind==='message').map(e=>e._tag==='deliveryUpdate'?e.text:'').join('');
-    expect(text).toBe('safe pending tail');
+    else if(end==='end of turn') yield* context.waitFor(e=>e._tag==='turnEnded');
+    // No idle report can rescue a removed cancel flush.
+    if(end==='cancel') {
+      yield* context.waitFor(e=>e._tag==='deliveryUpdate'&&e.kind==='tool-call');
+      expect(context.events.some(e=>e._tag==='turnEnded')).toBe(false);
+    }
+    expect(updates().map(e=>e.kind)).toEqual(['message','tool-call']);
+    expect(updates()[0]?.text===prefix).toBe(true);
+    if(end==='cancel') {writeFileSync(idleGate,'go');yield* context.waitFor(e=>e._tag==='turnEnded');}
+    if(end==='crash'||end==='end of turn') {
+      const last=context.events.indexOf(updates().at(-1)!);
+      const ended=context.events.findIndex(e=>e._tag===(end==='crash'?'exited':'turnEnded'));
+      expect(last).toBeLessThan(ended);
+    }
   })),60_000);
 }
 it.live('s19 short replacements before a trailing tool keep all text and its event position',()=>withAcpRunner(rig,{secrets:{'secret:short':'~'}},context=>Effect.gen(function*(){

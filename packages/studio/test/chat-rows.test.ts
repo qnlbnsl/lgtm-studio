@@ -291,3 +291,16 @@ for (const status of ['open', 'answered']) it(`keeps a ${status} held question's
   const element = render(ui.RequestBlock, { s: state, request: { id: 'held-q', agent: 'ag-worker', heldBy: 'ag-worker', kind: 'question', title: 'Choose a test', body: 'Test what?', status, options: [], recommendation: 'Denial first.', createdAt: 1, answeredAt: status === 'answered' ? 2 : null } })
   expect(element.textContent).toContain('Denial first.')
 })
+
+it('s19 r2 renders two durable deltas for one message as one chat bubble after replay', () => {
+  const first = { sequence: 9001, occurredAt: 1000, event: { _tag: 'ThreadItem', agentId: 'ag-worker', itemId: 'r2-split', content: { _tag: 'text', text: 'Decided prose. ' } } } as EventEnvelope;
+  const second = { sequence: 9002, occurredAt: 2000, event: { _tag: 'ThreadItem', agentId: 'ag-worker', itemId: 'r2-split', content: { _tag: 'text', text: '[REDACTED]' } } } as EventEnvelope;
+  const state = { ...mapSnapshot(engineSnapshot, 1), pending: {}, ui: {} };
+  for (const events of [[first], [first, second], [second, first, first, second]]) {
+    const items = mapThread(events, 'ag-worker').items;
+    const s = { ...state, threads: { 'ag-worker': items } };
+    const element = render(ui.Thread, { s, agentId: 'ag-worker' });
+    expect(element.querySelectorAll('.msg .body')).toHaveLength(1);
+    expect(element.querySelector('.msg .body')?.textContent).toBe('Decided prose. ' + (events.length > 1 ? '[REDACTED]' : ''));
+  }
+});

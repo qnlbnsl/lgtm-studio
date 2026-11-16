@@ -17342,12 +17342,13 @@ No test assertion or warning threshold was changed for this task.
 ## s19-9. Abandoned preload reads occupied every logical slot forever.
 
 Found: 2026-11-16, from independent review finding m2.
-State: fixed with deadline abandonment and per-path deduplication.
+State: fixed with deadline abandonment and deduplication of source path sets.
 
 Read: the old counter fell only when the filesystem promise settled.
 Ran: a later healthy batch failed to start after two planted never-settling reads.
 Read: a timeout now releases the logical slot.
-Read: an unfinished read keeps its path marked to prevent duplicate system calls.
+Read: an unfinished read keeps its source path list marked to prevent duplicate inspections of that same list.
+Read: different source lists with an overlapping physical path are not deduplicated across batches.
 Ran: the fake-clock tests retain the original two-start assertion for duplicate abandoned paths.
 Ran: a later batch starts two other paths within its own 500 millisecond budget.
 Ran: a healthy later batch completes after the abandoned reads.
@@ -17406,3 +17407,168 @@ Read: its identity form does not register optional backslashes before slashes.
 Read: the percent form encodes the complete base64 value with `encodeURIComponent`.
 Read: partly escaping its reserved characters can therefore produce an unmatched spelling.
 Read: rule 6 now states those spelling limits.
+
+## s19-14. Ordinary words were held behind a broad token alphabet.
+
+Found: 2026-11-16, from independent review finding B1.
+State: fixed with proper-prefix matching and public token-prefix context.
+
+Ran: ordinary chunks and a sentence followed by a tool were withheld before the correction.
+Read: the old hash probe treated any trailing credential-alphabet run as undecided.
+Read: the old short-chunk rule retained the entire chunk when only its suffix was undecided.
+Read: the runner also retained decided text to preserve a complete short chunk.
+Read: those rules are removed.
+Ran: the exact five ordinary chunks now publish as they arrive.
+Ran: sentences with and without a full stop publish with their tool before the adapter's gate opens.
+Read: the owner clarified that the public token prefix may be published while retained as match context.
+Ran: every token split is checked in raw, hexadecimal, both base64 alphabets, and percent-encoded text.
+Read: a genuine prefix of a value-known secret can still delay that suffix until the next text or the turn's termination.
+Read: this remaining time delay has no wall-clock bound before termination.
+Read: its character count is bounded by one less than the longest registered form.
+Read: issue s19-16 records the queue limit that can end that delay earlier with a withheld marker.
+
+## s19-15. Permission control can precede a genuine held secret suffix.
+
+Found: 2026-11-16, from independent review finding M1.
+State: documented and covered by stored replay and service-reload tests.
+
+Read: decided text now publishes before a permission request.
+Read: a genuine secret suffix and the tool queued behind it still wait for safe resolution.
+Read: permission control must remain answerable during that wait.
+Ran: short and long message journeys store decided text before the permission request.
+Ran: they store the redacted suffix and queued tool after that request.
+Ran: replay and an actual service restart preserve that order.
+Read: the existing website renderer keeps a permission boundary between the message segments.
+Read: merging those segments across the request would move later text before its recorded action.
+
+## s19-16. The content queue behind a genuine secret prefix was unbounded.
+
+Found: 2026-11-16, from independent review finding M2.
+State: fixed with item and byte budgets.
+
+Ran: count and byte overflow tests failed with the cap disabled.
+Read: the queue now allows at most 1024 pending items before releasing them.
+Read: its conservative byte budget is one mebibyte.
+Read: the arriving item can cross a budget before it triggers release.
+Read: overflow replaces the held suffix with the existing fixed withheld marker.
+Read: covered match context remains available for a later secret remainder.
+Ran: both overflow cases publish the queued tools in their original order before the adapter gate opens.
+Ran: neither the raw held prefix nor the private continuation appears in their output.
+
+## s19-17. The termination tests did not establish that a carry existed.
+
+Found: 2026-11-16, from independent review finding M3.
+State: fixed with genuine-prefix fixtures and negative flush mutations.
+
+Read: the previous four fixtures ended in ordinary text.
+Read: the strengthened fixtures end in a genuine secret prefix with a tool queued behind it.
+Ran: they assert no content appears before termination.
+Ran: end of turn, stop, crash, and cancel each publish the expected text followed by the queued tool.
+Ran: all four tests fail when termination drains are disabled.
+Ran: a subsequent separate mutation checked each termination path independently.
+Read: end of turn has redundant idle and finish drains, so its mutation removes both.
+Read: stop has close and finalizer fallbacks, so its mutation suppresses drains only for stopped entries.
+Ran: removing only the crash watcher drain fails the crash regression.
+Ran: removing only the cancel drain fails the cancel regression.
+Ran: the mutation script restored the runner source byte for byte.
+Read: the cancel fixture holds the adapter's idle report behind another gate.
+Ran: its flush therefore cannot be rescued by a later idle report.
+Read: the existing stop diagnostic also needed a genuine registered prefix after ordinary suffixes began streaming immediately.
+Ran: that diagnostic passes with its original assertions and waits unchanged.
+
+## s19-18. Rebuilding encoding forms and prefix tables slowed every streamed chunk.
+
+Found: 2026-11-16, from independent review finding m1.
+State: fixed with bounded compiled-state caching and failure tries.
+
+Ran: one mebibyte in 200-character chunks took 4247.64 milliseconds before the round-two change.
+Ran: the same initial comparison took 1145.41 milliseconds at commit `ab05bfc`.
+Read: form generation and repeated prefix-table construction happened on every chunk.
+Read: four compiled registry states are now cached by their values.
+Read: failure tries scan each chunk for proper suffixes without rebuilding per-form prefix tables.
+Ran: an early paired measurement took 244.33 milliseconds after the change against 871.61 milliseconds at baseline.
+Ran: a later quiet repeat took 380.01 milliseconds against 1391.46 milliseconds at baseline.
+Ran: the final quiet repeat after the compatibility correction took 233.68 milliseconds against 916.76 milliseconds at baseline.
+Ran: final whole-text medians were 35.03 milliseconds after the change and 19.87 milliseconds at baseline.
+Read: this is a whole-text ratio of 1.76, so no requested forms were dropped.
+Read: registry values and token hashes are still checked on every call.
+
+## s19-19. Public encoded-prefix context also needs the preceding base64 group.
+
+Found: 2026-11-16, while implementing the owner's public-prefix clarification.
+State: fixed with already-published alignment context.
+
+Ran: standalone token split tests passed while an embedded base64 token still escaped matching.
+Read: the decoder needs up to three characters before its byte-aligned prefix probe.
+Read: those characters now remain as match context without delaying their publication.
+Ran: every split at both embedded offsets passes in standard and URL-safe base64.
+Read: no raw held suffix is released by retaining that context.
+Ran: a Unicode mutation test also caught a code-point scan mismatching the redactor's 16-bit Unicode transformation format (UTF-16) chunk spans.
+Read: the matcher now scans the same code units as those spans.
+
+## s19-20. New regression fixtures needed explicit protocol and state boundaries.
+
+Found: 2026-11-16, while writing the round-two regressions.
+State: corrected before accepting their results.
+
+Ran: a large environment script first hit the operating system's argument-size limit.
+Read: the overflow fixtures now load their large scripts from temporary files inside the fake adapter.
+Ran: the first file-backed script omitted its mode option and was refused during configuration.
+Read: the corrected fixture declares that mode before it exercises output.
+Ran: a manually emitted permission request continued without waiting for its answer.
+Read: an explicit adapter gate now orders that continuation after the owner's answer.
+Ran: the first browser-render fixture omitted its pending-state map.
+Read: the corrected fixture supplies the same empty map as the website store.
+Ran: a genuine registered prefix corrected the old stop diagnostic fixture without changing its assertions.
+Ran: the isolated live check passed 4 of 23 steps and failed the two steps that awaited model-driven team work.
+Read: this is not equivalent to the known signed-in master result of 19 of 23 steps.
+
+## s19-21. An unbounded prefix trie exhausted memory for a large credential leaf.
+
+Found: 2026-11-16, while reviewing the new compiled-state cache.
+State: fixed with a trie-size limit and compact failure-table fallback.
+
+Ran: a large planted fake credential compiled at `ab05bfc` under a 128 mebibyte old-generation heap limit.
+Ran: the first round-two trie exhausted that heap.
+Read: one Map object per form character multiplied memory use for large leaves.
+Read: a matcher now uses compact four-byte failure entries when its form characters exceed 32768.
+Read: smaller registries retain the faster trie.
+Read: the compact fallback scans each form separately, trading scan work for bounded index memory.
+Ran: the bounded-heap regression failed before this correction.
+Ran: it now checks whole-text redaction and a genuine large prefix across a streamed split within the same heap.
+Ran: all seventeen redactor tests passed after the correction.
+Ran: the in-progress whole-suite run was stopped before accepting it as final evidence.
+Ran: the complete suite was restarted against the corrected implementation.
+
+## s19-22. A candidate already containing private characters published its public prefix unnecessarily.
+
+Found: 2026-11-16, in the round-two complete suite.
+State: fixed while retaining immediate publication of public-only tails.
+
+Ran: two unchanged terminal-output assertions expected a single marker for a token split in its private portion.
+Read: the first correction published the public prefix even when that same chunk already contained private characters.
+Read: the owner's clarification permits holding a candidate once private characters are present.
+Read: that candidate now stays whole until decided, except for public characters already published by an earlier chunk.
+Read: a public-only tail still publishes immediately and stays as matching context.
+Ran: the every-split test failed before pinning this distinction in the implementation.
+Ran: all seventeen redactor tests and both unchanged terminal assertions pass after the correction.
+Read: no terminal-specific output rewriting or stored shape change was needed.
+
+## s19-23. The restart fixture relied on an ordinary sentence being unaccepted.
+
+Found: 2026-11-16, in the round-two complete suite.
+State: corrected with a genuine held-prefix fixture and the original assertions.
+
+Ran: the configuration-recovery test received a carry-on prompt instead of resending its original work.
+Read: promptly publishing its ordinary sentence correctly marked that delivery accepted.
+Read: the test's original assertions require an unaccepted delivery during restart.
+Read: its message now ends in a genuine registered private prefix.
+Ran: the first fixture edit passed values to a fake-store factory that takes no arguments.
+Read: the corrected fixture inserts the value into the factory's exposed map.
+Ran: typechecking then caught the map's read-only interface.
+Read: the type assertion used by the existing runner rig corrects that declaration without changing the fixture's execution.
+Ran: both configuration-recovery tests pass with their assertions and waits unchanged.
+Ran: the completed failing whole run contained 633 passing files, two failing files, 9703 passing tests, three failing tests, and two skips.
+Ran: the final complete suite was restarted after these corrections.
+Ran: the final complete suite passed all 635 files with 9706 passing tests and two existing skips.
+Ran: the complete typecheck passed after the type-only fixture correction.

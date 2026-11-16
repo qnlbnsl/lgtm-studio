@@ -18,6 +18,7 @@ export class Redactor extends Context.Service<
   {
     readonly redact: (event: Event) => Effect.Effect<Event>;
     readonly redactText: (text: string) => Effect.Effect<string>;
+    readonly withholdParts?: (itemId: string, marker: string) => Effect.Effect<ReadonlyArray<RedactionPart>>;
     readonly redactPartsWithSecrets?: (itemId: string, text: string, final: boolean,
       secrets: ReadonlyArray<Redacted.Redacted<string>>) => Effect.Effect<ReadonlyArray<RedactionPart>>;
     // One streaming window over both service and resolved process secrets.

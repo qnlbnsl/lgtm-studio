@@ -115,7 +115,7 @@ interface Process {
     boundary?: boolean;
     coverageLost?: boolean;
     role: "user" | "agent" | undefined;
-    readonly pending: Array<{ readonly passthrough?: boolean; length: number; text: string; readonly event: Extract<RunnerEvent, { _tag: "deliveryUpdate" }> }>;
+    readonly pending: Array<{ readonly passthrough?: boolean; readonly bytes: number; length: number; text: string; readonly event: Extract<RunnerEvent, { _tag: "deliveryUpdate" }> }>;
   };
   readonly terminalOutput: ReturnType<typeof makeTerminalOutput>;
   turn?: Turn;
@@ -289,6 +289,14 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
     const buffer = entry.message;
     if (buffer === undefined) return;
     if (final) retainParts(entry, yield* messageParts(entry, "", true));
+    else if (buffer.pending.length > 1024 || buffer.pending.reduce((sum, item) => sum + item.bytes + 3 * item.length + Buffer.byteLength(item.text), 0) > 1024 * 1024) {
+      // Never finalize an undecided raw suffix on overflow. Replace it in
+      // event order, but keep covered match context for any later remainder.
+      const parts = Option.isSome(suppliedRedactor) && suppliedRedactor.value.withholdParts !== undefined
+        ? yield* suppliedRedactor.value.withholdParts(buffer.id, withheldText)
+        : fallback.withholdParts(buffer.id, withheldText);
+      retainParts(entry, parts);
+    }
     while (buffer.pending.length > 0) {
       const first = buffer.pending[0]!;
       if (first.passthrough) {
@@ -299,14 +307,6 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
         continue;
       }
       if (first.text.length === 0 && first.length > 0) break;
-      if (!final && first.length > 0) {
-        // Preserve a complete original chunk when its decided text plus the
-        // raw suffix fit in one window. The process token's hexadecimal form
-        // is always registered, so this budget never exceeds that window.
-        const retained = buffer.pending.reduce((sum, pending) => sum + (pending.passthrough ? 0 : pending.length + pending.text.length), 0);
-        const budget = 2 * Buffer.byteLength(Redacted.value(entry.input.token), "utf8") - 1;
-        if (retained <= budget) break;
-      }
       const text = first.text;
       first.text = "";
       if (first.length === 0) buffer.pending.shift();
@@ -327,7 +327,7 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
       if (entry.loading) noteReplay(entry, { _tag: "break" });
       yield* emit(event);
     } else {
-      entry.message.pending.push({ passthrough: true, length: 0, text: "", event });
+      entry.message.pending.push({ passthrough: true, bytes: Buffer.byteLength(JSON.stringify(event)), length: 0, text: "", event });
       entry.message.boundary = true;
       yield* drainMessages(entry, false);
     }
@@ -686,10 +686,11 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
                 else current.message.sourceId = translated.messageId;
               } else current.message = { id, itemId: id, ...(translated.messageId === undefined ? {} : { sourceId: translated.messageId }), role: translated.role, pending: [] };
             }
-            current.message.pending.push({ text: "", length: translated.text.length, event: {
+            const event: Extract<RunnerEvent, { _tag: "deliveryUpdate" }> = {
               _tag: "deliveryUpdate", ...identity(current), deliveryId, kind: "message", itemId: current.message.itemId, replay: current.loading,
               ...(translated.role === undefined ? {} : { role: translated.role }), text: "",
-            } });
+            };
+            current.message.pending.push({ text: "", bytes: Buffer.byteLength(JSON.stringify(event)), length: translated.text.length, event });
             retainParts(current, yield* messageParts(current, translated.text, false));
             yield* drainMessages(current, false);
             continue;
@@ -715,6 +716,10 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
         // the retained snapshot last so an empty report cannot hide it.
         yield* publishTerminals(current, terminalUpdates);
       }).pipe(Effect.catch(() => Effect.logWarning("adapter update dropped: malformed"))));
+      // Only a genuine secret prefix may delay earlier content here. The
+      // decided message prefix is already published. Permission control must
+      // stay answerable, so its durable event can precede that held suffix
+      // and queued tool content; replay preserves this same stored order.
       yield* client.handleRequestPermission((request, context) => Effect.gen(function* () {
         yield* drainMessages(processEntry, false);
         const tool = request.toolCall;

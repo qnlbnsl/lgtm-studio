@@ -302,7 +302,7 @@ export const credentialSourceFor = (input: {
 // grows by the tokens a store has held, which is a handful per account.
 export interface CredentialRegistry {
   // At most two store inspections occupy logical slots. A timed-out system
-  // call can outlive its slot; that path is not read again until it settles.
+  // call can outlive its slot; that path set is not retried until it settles.
   // The total warm-up budget is 500 ms; failed stores retry on launch.
   readonly preload: (sources: ReadonlyArray<CredentialSource>) => Effect.Effect<void>;
   // Registers the source, then reads it. A failed read refuses the caller's
@@ -356,7 +356,7 @@ export const makeCredentialRegistry = (): CredentialRegistry => {
               inspecting.add(key);
               const reading = Promise.resolve().then(() => source.warm!(controller.signal, cache)).finally(() => inspecting.delete(key));
               // stat cannot be cancelled by Node. Abandon the logical slot at
-              // the deadline, but do not start a duplicate read of that path.
+              // the deadline, but do not repeat that source path set until it settles.
               let abandon: (() => void) | undefined;
               const abandoned = new Promise<undefined>(resolve => {
                 abandon = () => resolve(undefined);

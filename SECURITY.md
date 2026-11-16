@@ -159,6 +159,8 @@ These rules apply to every change. A change that breaks one is a security bug.
    An arbitrary mixture of escaped and unescaped base64 characters is not covered.
    A token known only by its stored hash is matched raw and in the supported single encodings.
    The two-step forms require its value to be registered too.
+   A streamed agent token's public prefix may be published as match context.
+   Its private remainder is still withheld and redacted when the complete token is recognized.
    A value inferred only from an inherited environment variable whose name
    matches `KEY`, `TOKEN`, `SECRET` or `PASSWORD` is registered only at eight
    or more characters when its trimmed text is nonempty, is neither `true`
