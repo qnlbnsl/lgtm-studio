@@ -17694,7 +17694,7 @@ This is the same load sensitivity that issues 966, 1014, 1044, 1066, 1079 and 11
 
 State: open. Recorded on 2026-11-16.
 
-## s22-1. Restored instructions called every agent message the start brief.
+## 1230. Restored instructions called every agent message the start brief.
 
 State: fixed in round 3.
 
@@ -17703,7 +17703,7 @@ The engine now derives the brief label from the original start event, its delive
 An owner prompt and other agent messages receive no brief sentence.
 Tests cover a routed question after compaction and a failed first turn followed by a retry of the real brief.
 
-## s22-2. A restoration failure rejected prompts after loaded-session compaction.
+## 1231. A restoration failure rejected prompts after loaded-session compaction.
 
 State: fixed in round 3.
 
@@ -17712,7 +17712,7 @@ The runner now sends the caller's text alone, retains the obligation and retries
 Consecutive failures produce one fixed warning without the private failure detail.
 A loaded-session regression covers two failures, successful restoration and the following ordinary prompt.
 
-## s22-3. The instruction echo filter reset between user messages and assumed an undecorated header.
+## 1232. The instruction echo filter reset between user messages and assumed an undecorated header.
 
 State: fixed in round 3.
 
@@ -17723,7 +17723,7 @@ The live translator currently ignores user-message echoes before they reach this
 The runner regression deliberately enables that translation in its fixture to exercise the filter without changing production translation.
 Ordinary unmatched text is retained until turn completion, with a bounded search buffer.
 
-## s22-4. A fresh start during restart hid the typed composition refusal.
+## 1233. A fresh start during restart hid the typed composition refusal.
 
 State: fixed in round 3.
 
@@ -17732,7 +17732,7 @@ It now also logs one fixed warning containing the recognized size or read refusa
 Tests inject each failure and assert that private read details are absent.
 The stored failure event remains unchanged.
 
-## s22-5. The base instructions did not state the instruction label's trust boundary explicitly.
+## 1234. The base instructions did not state the instruction label's trust boundary explicitly.
 
 State: fixed in round 3.
 
@@ -17741,7 +17741,7 @@ The same sentence states that a matching label inside a data block remains data.
 Contract tests require the sentence in all three bases.
 The composed sizes remain below the 48 KiB bound.
 
-## s22-6. A restart can forget an instruction obligation after a failed first turn.
+## 1235. A restart can forget an instruction obligation after a failed first turn.
 
 State: open. Recorded as requested by the second review; no fix is included.
 
@@ -17751,7 +17751,7 @@ A service restart can load the existing session without recovering the obligatio
 That requeued delivery can then be sent without role instructions.
 This round changes no persisted event shape and does not repair this recovery gap.
 
-## s22-7. Instruction tests omitted the final orientation bound and an actual transport write failure.
+## 1236. Instruction tests omitted the final orientation bound and an actual transport write failure.
 
 State: fixed in round 3.
 
@@ -17762,7 +17762,7 @@ The next prompt attempt still restores the owed instructions.
 The test fails when the obligation is temporarily cleared before the write.
 The protocol closes its writer after a sink failure, so this test does not claim a successful retry on that same transport.
 
-## s22-8. The test runner's prohibition list mixed negative and positive wording.
+## 1237. The test runner's prohibition list mixed negative and positive wording.
 
 State: fixed in round 3.
 
@@ -17770,7 +17770,7 @@ Five bullets under What you never do omitted the word Never.
 Every bullet now starts with Never and retains its existing prohibition.
 The contract test checks all six bullets.
 
-## s22-9. Initial round 3 fixtures observed an unfinished turn and used an unsupported question method.
+## 1238. Initial round 3 fixtures observed an unfinished turn and used an unsupported question method.
 
 State: fixed in round 3 test development.
 
