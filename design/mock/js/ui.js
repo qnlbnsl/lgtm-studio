@@ -342,6 +342,7 @@ function BriefCard({ s, r, openThread, who }) {
     ? html`<a class="btn ghost qc-thread" href=${href(openThread)}><${Icon} name="message-square" size=${14} />Open thread</a>`
     : html`<button type="button" class="btn ghost qc-thread" onClick=${openThread}><${Icon} name="message-square" size=${14} />Open thread</button>`);
   return html`<section aria-busy=${liveMode.on && chatLive.requestBusy(r)} class=${cx('req qc', r.kind, open && 'open', done && 'done')} id=${'req-' + r.id} tabindex="-1" aria-label=${(done ? 'Answered: ' : isQ ? 'Question: ' : 'Approval: ') + brief}>
+    ${liveMode.on && r.kind === 'approval' && r.status === 'open' && r.heldBy && html`<p class="muted">Waiting on ${agentOf(s, r.heldBy).name}</p>`}
     ${approvalEffect && html`<p class="qc-sum">${approvalEffect}</p>`}
     <div class="qc-top"><b class="qc-q">${brief}</b>${done ? html`<span class="qc-age">${clock(isQ ? r.createdAt : r.answeredAt)}</span>` : html`<span class=${cx('qc-age', waited >= HOUR && 'long')}>${ago(r.createdAt, now)}</span>`}</div>
     ${summary && html`<div class="qc-sum"><${Rich} text=${summary} pid=${r.project} /></div>`}
@@ -448,6 +449,7 @@ export function RequestBlock({ s, request: r, variant = 'card', openThread = nul
   const sub = a.failure && subOf(s, a.failure.subscription);
   const fixed = r.kind === 'failed' && sub && sub.signedIn;
   return html`<section aria-busy=${liveMode.on && chatLive.requestBusy(r)} class=${cx('req', variant, r.kind === 'failed' && 'failed', !open && 'closed')} id=${'req-' + r.id} tabindex="-1" aria-label=${KIND_LABEL[r.kind] + ': ' + r.title}>
+    ${liveMode.on && r.kind === 'approval' && r.status === 'open' && r.heldBy && html`<p class="muted">Waiting on ${agentOf(s, r.heldBy).name}</p>`}
     ${approvalEffect && html`<p class="qc-sum">${approvalEffect}</p>`}
     ${variant === 'card' && html`<div class="req-head">
       <span class=${cx('kind', open ? r.kind : 'closed')}>${KIND_LABEL[r.kind]}</span>

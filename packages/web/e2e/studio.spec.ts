@@ -197,7 +197,8 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
         const resumedToken = Redacted.value(runner.callsOf("load").at(-1)!.input.token)
         const workerQuestion = success(yield* call(agentCredential(resumedToken), "ask", { title: "Choose a worker approach", text: "Use the existing adapter?", proposedAnswer: "Keep the adapter", recommendation: "Preserve the interface" })).questionId
         success(yield* call(project.leadCredential, "pass-up", { subject: { _tag: "question", id: workerQuestion } }))
-        yield* appendSetup([eventOf({ _tag: "PermissionRequested", agentId: project.workerId, permissionRequestId: "studio-thread-permission", holder: { _tag: "agent", agentId: project.leadId }, deliveryId: "thread-permission-delivery", toolCallId: "thread-tool", description: "Check the thread options", options: Array.from({ length: 10 }, (_, i) => ({ id: `thread-option-${i}`, name: i === 9 ? "Harness persistent allow" : `Harness option ${i}`, kind: i === 9 ? "allow_always" : "reject_once", level: i === 9 ? "ask" : "read-only", persistent: i === 9 })), settingsWrite: false, toolInput: { command: "pnpm test thread" } })])
+        yield* appendSetup([eventOf({ _tag: "PermissionRequested", agentId: project.workerId, permissionRequestId: "studio-thread-permission", holder: { _tag: "owner" }, deliveryId: "thread-permission-delivery", toolCallId: "thread-tool", description: "Check the thread options", options: Array.from({ length: 10 }, (_, i) => ({ id: `thread-option-${i}`, name: i === 9 ? "Harness persistent allow" : `Harness option ${i}`, kind: i === 9 ? "allow_always" : "reject_once", level: i === 9 ? "ask" : "read-only", persistent: i === 9 })), settingsWrite: false, toolInput: { command: "pnpm test thread" } })])
+        yield* appendSetup([eventOf({ _tag: "PermissionRequested", agentId: project.workerId, permissionRequestId: "s21-held-thread", holder: { _tag: "agent", agentId: project.leadId }, deliveryId: "held-thread-delivery", toolCallId: "held-thread-tool", description: "Check the held thread options", options: Array.from({ length: 10 }, (_, i) => ({ id: `thread-option-${i}`, name: i === 9 ? "Harness persistent allow" : `Harness option ${i}`, kind: i === 9 ? "allow_always" : "reject_once", level: i === 9 ? "ask" : "read-only", persistent: i === 9 })), settingsWrite: false, toolInput: { command: "pnpm test thread" } })])
         yield* Effect.promise(async () => {
           const origin = `http://127.0.0.1:${port}`
           await page.goto(`${origin}/#/p/${project.projectId}/chat/${project.workerId}`)
@@ -211,13 +212,22 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
           await expect(permission).toContainText('pnpm test thread')
           await permission.getByRole('button', { name: 'Harness persistent allow', exact: true }).click()
           await expect.poll(() => runner.callsOf('answerPermission').filter((c) => c.input.requestId === 'studio-thread-permission').length).toBe(1)
+          const heldPermission = thread.locator('#req-s21-held-thread')
+          await expect(heldPermission).toContainText('Waiting on Project lead')
+          await heldPermission.getByRole('button', { name: 'Details', exact: true }).click()
+          await expect(heldPermission).toContainText('pnpm test thread')
+          await heldPermission.getByRole('button', { name: 'Harness persistent allow', exact: true }).click()
+          await expect.poll(() => runner.callsOf('answerPermission').filter((c) => c.input.requestId === 's21-held-thread').length).toBe(1)
         })
 
         yield* appendSetup([eventOf({ _tag: "PermissionRequested", agentId: project.workerId, permissionRequestId: "s21-held-home", holder: { _tag: "agent", agentId: project.leadId }, deliveryId: "s21-held-home-delivery", toolCallId: "s21-home-tool", description: "Answer while the lead holds it", options: [{ id: "s21-once", name: "Run once", kind: "allow_once", level: "ask", persistent: false }, { id: "s21-no", name: "Refuse this check", kind: "reject_once", level: "read-only", persistent: false }], settingsWrite: false, toolKind: "execute", toolInput: { command: "pnpm test held" } })])
         yield* Effect.promise(async () => {
           await page.goto(`http://127.0.0.1:${port}/#/home`)
+          await expect(page.getByRole('button', { name: '1 requests need you', exact: true })).toBeVisible()
+          await expect(page.locator('.sidebar .nav-item[href="#/home"]')).toContainText('1')
           await page.getByRole('button', { name: 'Show Answer while the lead holds it', exact: true }).click()
           await expect(page.locator('.rq-detail')).toContainText('pnpm test held')
+          await expect(page.locator('.rq-detail')).toContainText('Waiting on Project lead')
           await page.getByRole('button', { name: 'Run once', exact: true }).click()
           await expect(page.getByRole('button', { name: 'Show Answer while the lead holds it', exact: true })).toHaveCount(0)
           await expect.poll(() => runner.callsOf('answerPermission').filter((c) => c.input.requestId === 's21-held-home').length).toBe(1)
@@ -234,6 +244,10 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
           yield* crash(runner, { agentId: project.worker.agentId, token: Redacted.value(latest.input.token) })
           const loads = runner.callsOf('load').length, starts = runner.callsOf('start').length
           yield* Effect.promise(async () => {
+            await page.goto(`http://127.0.0.1:${port}/#/p/${project.projectId}/agents`)
+            await expect(page.getByRole('region', { name: 'Needs you', exact: true })).toContainText('name-one-worker')
+            await page.goto(`http://127.0.0.1:${port}/#/p/${project.projectId}/workflow`)
+            await expect(page.locator('.wf-group.waiting')).toContainText('name-one-worker')
             await page.goto(`http://127.0.0.1:${port}/#/p/${project.projectId}/chat/${project.workerId}`)
             const thread = page.locator('.chat-main')
             await expect(thread.locator('.composer-state')).toContainText('Crashed')

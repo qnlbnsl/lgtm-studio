@@ -3,7 +3,7 @@ import * as Effect from 'effect/Effect';
 import { expect, vi } from 'vitest';
 import { deliveryRig, send, spawn } from '../support/deliveryRig.ts';
 import { agentCredential, call, makeRig, ownerCredential, removeRig, success } from '../support/handlerRig.ts';
-import { requestPermission, snapshot } from '../support/routingRig.ts';
+import { deliveryRow, eventually, requestPermission, snapshot } from '../support/routingRig.ts';
 import { registerRebuildCheck } from '../support/rebuildCheck.ts';
 
 it.live('s21 owner answers a lead-held permission, withdraws its lead delivery and answers the worker once', () => {
@@ -28,5 +28,30 @@ it.live('s21 owner answers a lead-held permission, withdraws its lead delivery a
     // Assert presentation only after proving the engine accepts the owner's
     // answer and retires the lead's outstanding request.
     expect(indexed.canAnswer).toBe(true);
+  })).pipe(Effect.ensuring(Effect.sync(() => { vi.unstubAllEnvs(); removeRig(rig); })));
+});
+
+
+it.live('s21 an idle lead whose permission copy was sent receives no existing answered-elsewhere notice', () => {
+  const rig = makeRig();
+  vi.stubEnv('HOME', rig.home); vi.stubEnv('LGTM_HOME', rig.stateFolder);
+  return deliveryRig(rig, (runner) => Effect.gen(function* () {
+    yield* registerRebuildCheck();
+    const lead = yield* spawn(rig, runner), worker = yield* spawn(rig, runner, lead);
+    yield* send(runner, worker, 'Ask for permission.');
+    const permission = yield* requestPermission(runner, worker);
+    expect(permission.row.holder).toEqual({ _tag: 'agent', agentId: lead.agentId });
+    expect((yield* eventually(deliveryRow(permission.row.deliveryId), (row) => row?.status === 'sent'))?.status).toBe('sent');
+    const before = runner.callsOf('prompt').filter((c) => c.input.agentId === lead.agentId).length;
+    const optionId = permission.row.options[0]!.id;
+    success(yield* call(ownerCredential, 'answer', { kind: 'permission', id: permission.id, optionId }));
+    const after = yield* snapshot;
+    expect(after.requests[permission.id]?.status).toBe('answered');
+    expect(after.deliveries[permission.row.deliveryId]?.status).toBe('sent');
+    expect(Object.values(after.deliveries).filter((d) => d.target === lead.agentId)).toHaveLength(1);
+    expect(runner.callsOf('prompt').filter((c) => c.input.agentId === lead.agentId)).toHaveLength(before);
+    expect(runner.callsOf('answerPermission').map((c) => c.input)).toEqual([{ agentId: worker.agentId, requestId: permission.id, optionId }]);
+    expect((yield* call(agentCredential(lead.token), 'answer', { kind: 'permission', id: permission.id, optionId }))._tag).toBe('Failure');
+    expect(runner.callsOf('answerPermission')).toHaveLength(1);
   })).pipe(Effect.ensuring(Effect.sync(() => { vi.unstubAllEnvs(); removeRig(rig); })));
 });

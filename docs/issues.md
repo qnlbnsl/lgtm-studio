@@ -17333,6 +17333,28 @@ It checks the lifecycle state immediately before the crash.
 The same fold provides the turn boundary used by fresh replay.
 A crash carry-on now says that the agent crashed instead of saying that the engine restarted.
 
+## s21-9. Crash mapping and a shared request query changed unrelated attention views
+
+Found: 2026-11-16, while running the round 2 presentation regressions.
+State: fixed in unit s21-recover, round 2.
+
+A crash had moved from Needs you to Idle in Messages and from Waiting to Idle in Workflow.
+Those attention groups now retain the crash.
+The shared request query also changed worker status words, lead waiting counts, and sample stop dialogs.
+Those callers now retain their previous audience.
+Home and its matching owner counts use a separate answerable-request query.
+The held permission card again names the lead that holds it while offering the owner's answer buttons.
+
+## s21-10. Source guards accepted duplicated integration anchors
+
+Found: 2026-11-16, while running the round 2 build-guard regressions.
+State: fixed in unit s21-recover, round 2.
+
+The recovery, notification-login, and held-permission index replacements checked only for presence.
+They could replace the first of two anchors silently.
+Each guard now requires its exact number of anchors.
+The tests run the original source, a missing anchor, and an extra anchor separately.
+
 ## s21-11. A fresh resume can repeat steps without the previous session's memory
 
 Found: 2026-11-16, while reading the round 2 review and fresh-resume path.
@@ -17343,3 +17365,15 @@ A fresh resume opens a new session without the old session's memory.
 Replaying an unfinished delivery can repeat a step that was already performed.
 Proposed wording: "Resume tries the saved session. If it cannot reload, a new session retries unfinished deliveries and may repeat steps."
 The screen text was not changed in this unit.
+
+## s21-13. An already-delivered holder copy receives no answered-elsewhere notice
+
+Found: 2026-11-16, while running the round 2 idle-lead permission regression.
+State: open.
+
+An idle lead can receive a permission's routed copy before the owner answers it.
+The owner's answer reaches the worker once.
+The engine withdraws queued copies but leaves the already-sent copy unchanged.
+No existing delivery tells the lead that another actor answered.
+A later answer attempt receives the generic command refusal.
+This unit records that gap without inventing a notice or a stored event.

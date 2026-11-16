@@ -284,13 +284,13 @@ function StuckCard({ s, p, w }) {
 
 // The project's agents in three groups. Waiting hides when empty. Working and Idle show
 // whenever the project has agents, and one hides only when it is empty and another shows.
-function agentGroups(s, p) {
+export function agentGroups(s, p) {
   const all = s.agents.filter((a) => a.project === p.id);
   if (!all.length) return [{ id: 'all', label: 'Agents', agents: [] }];
   const g = [
-    { id: 'waiting', label: 'Waiting', agents: all.filter((a) => a.state === 'waiting' || a.state === 'failed') },
+    { id: 'waiting', label: 'Waiting', agents: all.filter((a) => a.crashed || a.state === 'waiting' || a.state === 'failed') },
     { id: 'working', label: 'Working', agents: all.filter((a) => a.state === 'working') },
-    { id: 'idle', label: 'Idle', agents: all.filter((a) => a.state === 'idle' || a.state === 'stopped') },
+    { id: 'idle', label: 'Idle', agents: all.filter((a) => !a.crashed && (a.state === 'idle' || a.state === 'stopped')) },
   ];
   const shown = (x) => x.agents.length > 0;
   return g.filter((x) => x.id === 'waiting' ? shown(x) : shown(x) || !g.some((y) => y !== x && shown(y)));
