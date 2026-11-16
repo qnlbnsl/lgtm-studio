@@ -3686,7 +3686,7 @@ reached clients that could not read the harness's home.
 ## 224. A login store is covered only after a launch has opened it in this service's life
 
 Found: 2026-11-02, while fixing issue 223.
-State: open.
+State: fixed in s19-secrets for current default and enabled-account stores at startup and before account changes publish. Tokens removed from a store before a previous service stopped cannot be reconstructed after restart.
 
 What happens: the redactor learns a login store's tokens when the runner
 launches an account that uses that store.
@@ -17247,3 +17247,17 @@ Issue 485 records the installed credential manager's Linux path.
 The source now inspects both `$XDG_CONFIG_HOME/cursor/auth.json` and `HOME/.config/cursor/auth.json`.
 The official references are https://cursor.com/docs/cli/reference/authentication and https://cursor.com/docs/cli/reference/configuration.
 No real credential file was opened.
+
+## s19-2. Slow account stores need a bounded initial read.
+
+Found: 2026-11-16, while fixing issue 224.
+State: fixed with asynchronous inspection and a total 500 millisecond budget.
+
+The existing launch reader performs synchronous filesystem operations.
+Calling it for every account during startup could block the service on a slow filesystem.
+The initial reader now uses asynchronous operations with the same file and leaf limits.
+At most two initial reads remain in flight across repeated batches.
+A shared snapshot cache reads each distinct store once per batch.
+The account writer waits for the bounded inspection before publishing its change.
+A timed-out or unreadable store is retried at its next launch.
+Successful snapshots seed the existing synchronous refresh path.

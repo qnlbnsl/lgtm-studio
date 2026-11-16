@@ -3,6 +3,7 @@
 // removes only values it was given, so every file-backed harness login store
 // is read here, and each token in it is handed to the redactor.
 import { closeSync, constants, fstatSync, openSync, readSync, statSync, type BigIntStats } from "node:fs";
+import { open, stat } from "node:fs/promises";
 import { isAbsolute, join } from "node:path";
 
 import * as Effect from "effect/Effect";
@@ -17,6 +18,7 @@ export class CredentialSourceUnreadable {
 
 export interface CredentialSource {
   readonly paths: ReadonlyArray<string>;
+  readonly warm?: (signal: AbortSignal, cache?: Map<string, Promise<Snapshot>>) => Promise<ReadonlyArray<Redacted.Redacted<string>>>;
   readonly read: Effect.Effect<ReadonlyArray<Redacted.Redacted<string>>, CredentialSourceUnreadable>;
 }
 
@@ -169,6 +171,43 @@ const readStore = (path: string, previous: Snapshot | undefined, harnessId: stri
   }
 };
 
+// Initial account inspection uses asynchronous I/O so a slow filesystem cannot
+// block the service's event loop. The same size, type, metadata and leaf limits
+// apply as on the synchronous launch/refresh path. Its snapshots seed that path,
+// so an unchanged file is parsed only once.
+const warmStore = async (path: string, previous: Snapshot | undefined, harnessId: string, signal: AbortSignal): Promise<Snapshot> => {
+  try {
+    const stats = await stat(path, { bigint: true });
+    if (signal.aborted) return missing;
+    const identity = identityOf(stats);
+    if (previous?.identity === identity) return previous;
+    if (!stats.isFile() || stats.size > BigInt(largestStore)) throw undefined;
+    const descriptor = await open(path, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOCTTY);
+    try {
+      if (signal.aborted) return missing;
+      const opened = await descriptor.stat({ bigint: true });
+      if (!opened.isFile() || opened.size > BigInt(largestStore)) throw undefined;
+      const buffer = Buffer.alloc(largestStore + 1);
+      let length = 0;
+      while (!signal.aborted) {
+        const { bytesRead } = await descriptor.read(buffer, length, buffer.length - length, null);
+        if (bytesRead === 0) break;
+        length += bytesRead;
+        if (length > largestStore) throw undefined;
+      }
+      if (signal.aborted) return missing;
+      const document: unknown = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, length)));
+      const found = secretLeaves(document);
+      if (found.length > mostLeaves) throw undefined;
+      return { identity: identityOf(opened), leaves: found.map((leaf) => Redacted.make(leaf)), failed: false,
+        hasCredential: hasCredential(harnessId, document) };
+    } finally { await descriptor.close(); }
+  } catch (error) {
+    return (error as NodeJS.ErrnoException | undefined)?.code === "ENOENT" ? missing
+      : { identity: "unreadable", leaves: [], failed: true, hasCredential: false };
+  }
+};
+
 // A source over fixed store paths. Each path keeps its last snapshot, so a
 // read costs one `stat` per store while nothing changed. `read` is
 // synchronous inside, so the redactor's registry can run it per redaction.
@@ -188,6 +227,19 @@ const fileSource = (paths: ReadonlyArray<string>, harnessId: string): LocalCrede
   });
   return {
     paths,
+    warm: async (signal, cache) => {
+      const stores: Array<Snapshot> = [];
+      for (const path of paths) {
+        if (signal.aborted || !isAbsolute(path)) throw new CredentialSourceUnreadable();
+        const pending = cache?.get(path) ?? warmStore(path, snapshots.get(path), harnessId, signal);
+        cache?.set(path, pending);
+        const snapshot = await pending;
+        if (signal.aborted || snapshot.failed) throw new CredentialSourceUnreadable();
+        snapshots.set(path, snapshot);
+        stores.push(snapshot);
+      }
+      return stores.flatMap((store) => store.leaves);
+    },
     read: read.pipe(Effect.map((stores) => stores.flatMap((store) => store.leaves))),
     hasCredential: read.pipe(Effect.map((stores) => stores.some((store) => store.hasCredential))),
   };
@@ -249,6 +301,9 @@ export const credentialSourceFor = (input: {
 // adapter's final output can arrive after its process is gone. The set only
 // grows by the tokens a store has held, which is a handful per account.
 export interface CredentialRegistry {
+  // At most two asynchronous store reads are in flight, even across timed-out
+  // batches. The total warm-up budget is 500 ms; failed stores retry on launch.
+  readonly preload: (sources: ReadonlyArray<CredentialSource>) => Effect.Effect<void>;
   // Registers the source, then reads it. A failed read refuses the caller's
   // launch; the source stays registered, so a store that becomes readable
   // later is still covered.
@@ -276,7 +331,35 @@ export const makeCredentialRegistry = (): CredentialRegistry => {
     }
     if (added) current = [...seen].map((value) => Redacted.make(value));
   };
+  let warming = 0;
   return {
+    preload: (requested) => Effect.callback<void>((resume) => {
+      const controller = new AbortController();
+      const unique = new Map(requested.map((source) => [JSON.stringify(source.paths), source]));
+      const pending = [...unique].filter(([, source]) => source.paths.length > 0);
+      const cache = new Map<string, Promise<Snapshot>>();
+      let index = 0;
+      let finished = false;
+      const finish = () => { if (finished) return; finished = true; controller.abort(); clearTimeout(timer); resume(Effect.void); };
+      const timer = setTimeout(finish, 500);
+      const work = async () => {
+        if (warming >= 2) return;
+        warming++;
+        try {
+          while (!controller.signal.aborted && index < pending.length) {
+            const [key, candidate] = pending[index++]!;
+            const source = sources.get(key) ?? candidate;
+            if (source.warm === undefined) continue;
+            try {
+              const leaves = await source.warm(controller.signal, cache);
+              if (!controller.signal.aborted) { remember(leaves); sources.set(key, source); }
+            } catch { /* Missing coverage must not prevent startup. Launch retries. */ }
+          }
+        } finally { warming--; }
+      };
+      void Promise.all([work(), work()]).then(finish, finish);
+      return Effect.sync(() => { controller.abort(); clearTimeout(timer); });
+    }),
     open: (source) => Effect.suspend(() => {
       // One source per set of paths keeps one snapshot cache per store.
       const key = JSON.stringify(source.paths);
