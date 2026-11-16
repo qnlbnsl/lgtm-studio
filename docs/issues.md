@@ -17320,3 +17320,26 @@ The website reaches agent chats through a project.
 An agent outside every project has no matching website chat route.
 The notification sender omits that unusable link.
 This unit does not add a screen or a route for an unassigned agent.
+
+## s21-8. A crash after an errored turn repeats work that was returned
+
+Found: 2026-11-16, while running the round 2 recovery regressions.
+State: fixed in unit s21-recover, round 2.
+
+An accepted delivery could outlive its turn's error without a TurnEnded event.
+Resume treated that old acceptance as unfinished work after a later crash.
+Resume now folds the thread with the views' lifecycle reducer.
+It checks the lifecycle state immediately before the crash.
+The same fold provides the turn boundary used by fresh replay.
+A crash carry-on now says that the agent crashed instead of saying that the engine restarted.
+
+## s21-11. A fresh resume can repeat steps without the previous session's memory
+
+Found: 2026-11-16, while reading the round 2 review and fresh-resume path.
+State: open for the owner's wording decision.
+
+The composer and stop confirmation say that Resume continues from its last turn.
+A fresh resume opens a new session without the old session's memory.
+Replaying an unfinished delivery can repeat a step that was already performed.
+Proposed wording: "Resume tries the saved session. If it cannot reload, a new session retries unfinished deliveries and may repeat steps."
+The screen text was not changed in this unit.

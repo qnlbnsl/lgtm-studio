@@ -1,5 +1,5 @@
 import { requireBuilding } from "../project/approvals.ts";
-import type { Event } from "@lgtm/contracts";
+import type { Event, LifecycleState } from "@lgtm/contracts";
 import * as Effect from "effect/Effect";
 import * as SqlClient from "effect/sql/SqlClient";
 
@@ -9,6 +9,7 @@ import { reload, SETUP_TIMEOUT_MILLIS, spawnInput } from "../recovery/reload.ts"
 import { dispatchQueued } from "../routing/deliveries.ts";
 import { Runner } from "../runner/Runner.ts";
 import { Views } from "../views/Views.ts";
+import { nextState } from "../views/apply.ts";
 import { refused, type Agent, type Input, type Payload, type Plan } from "./internal.ts";
 import { own, projectView } from "../project/view.ts";
 
@@ -30,9 +31,18 @@ export const resume = ({ runtime, snapshot, actor }: Input, agent: Agent, payloa
     const token = mintAgentToken();
     const spawn = yield* spawnInput(runtime, snapshot, agent, token.token, "resume");
     const events: Array<Event> = [{ _tag: "StateChanged", agentId: agent.agentId, state: { _tag: "starting" } }];
+    const thread = snapshot.threads[agent.agentId] ?? [];
+    let state: LifecycleState = { _tag: "starting" };
+    let turnEnd = 0, crashedMidTurn = false;
+    for (const row of thread) {
+      // Use the same lifecycle fold as the views. Errors and waits can end
+      // work with an idle transition without writing TurnEnded.
+      if (row.event._tag === "AgentCrashed") crashedMidTurn = state._tag === "working";
+      const before = state;
+      state = nextState(state, row.event);
+      if (row.event._tag === "TurnEnded" || row.event._tag === "AgentStopped" || before._tag === "working" && state._tag === "idle") turnEnd = row.sequence;
+    }
     if (fresh) {
-      const thread = snapshot.threads[agent.agentId] ?? [];
-      const turnEnd = thread.findLast((row) => row.event._tag === "TurnEnded")?.sequence ?? 0;
       const accepted = new Set(thread.flatMap((row) => row.sequence > turnEnd && row.event._tag === "DeliveryAccepted"
         ? [row.event.deliveryId] : []));
       for (const deliveryId of accepted) {
@@ -43,10 +53,8 @@ export const resume = ({ runtime, snapshot, actor }: Input, agent: Agent, payloa
     }
     // A failed reload keeps what the interruption recorded, so a later
     // resume still knows the agent was mid-turn.
-    const thread = snapshot.threads[agent.agentId] ?? [];
-    const lastEnd = thread.findLast((row) => row.event._tag === "TurnEnded" || row.event._tag === "AgentStopped")?.sequence ?? 0;
-    const crashedMidTurn = agent.state._tag === "crashed" && thread.some((row) => row.sequence > lastEnd && row.event._tag === "DeliveryAccepted");
-    const previous = agent.state._tag === "interrupted" ? agent.state.previous : crashedMidTurn ? "working" : "starting";
+    const previous = agent.state._tag === "interrupted" ? agent.state.previous : agent.state._tag === "crashed" && crashedMidTurn ? "working" : "starting";
+    const afterCrash = agent.state._tag === "crashed" || agent.state._tag === "interrupted" && thread.findLast((row) => row.event._tag === "AgentCrashed" || row.event._tag === "AgentInterrupted")?.event._tag === "AgentCrashed";
     return {
       events, sideRows: { revokeAgentTokens: [agent.agentId], agentTokens: [{ agentId: agent.agentId, tokenHash: token.tokenHash, revokedAt: null }] },
       // Issue 78: the failure carries the wait checks it causes. The
@@ -55,6 +63,7 @@ export const resume = ({ runtime, snapshot, actor }: Input, agent: Agent, payloa
         const opened = yield* reload({
           runtime, actor, agent, spawn, token, mode: fresh ? "start" : "load",
           midTurn: !fresh && previous === "working",
+          ...(afterCrash ? { carryText: "The agent crashed. Carry on with what you were doing." } : {}),
           timeoutMillis: SETUP_TIMEOUT_MILLIS, storeToken: false,
           still: (current) => current?.state._tag === "starting",
           failed: () => [

@@ -45,6 +45,7 @@ for (const via of ['website', 'SIGTERM'] as const) for (const [before, after, me
         expect(second.callsOf('start').length).toBe(method === 'start' ? 1 : 0);
         expect(second.callsOf('load').length).toBe(method === 'load' ? 1 : 0);
         expect(second.callsOf('prompt').length).toBe(before === 'working' ? 1 : 0);
+        if (before === 'working') expect(second.callsOf('prompt')[0]!.input.delivery.content).toMatchObject({ _tag: 'carry-on', text: expect.stringContaining('engine restarted') });
       }));
     }).pipe(Effect.ensuring(Effect.sync(() => removeRig(rig)))) as Effect.Effect<void, unknown, never>;
   });
