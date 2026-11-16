@@ -16907,3 +16907,13 @@ The foreground launcher now treats it like the termination signal.
 Its service also closes on parent-channel disconnection or a broken output pipe.
 A parent identity check covers early launcher death and service restarts that close the inherited channel.
 The detached service keeps its previous lifetime rules.
+
+## s18-10. A hidden question invalidated a project request cursor.
+
+State: fixed in s18-smallfix round 2.
+
+Project request pagination required its cursor row to remain visible.
+Stopping a question’s asker between pages removed that row from the visible index.
+The reader now compares source sequences instead of looking up the cursor row.
+Malformed cursors and cursors ahead of the current snapshot remain refused.
+Regression cases cover pagination through the next visible rows for both the owner and a project lead.
