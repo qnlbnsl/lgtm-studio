@@ -16813,7 +16813,7 @@ The task's result and ownership document now list these scalar owners as well.
 The live controller projects the module's timestamp through an accessor instead of retaining a mirror.
 The typed owner-busy property is read-only and derived from pending state.
 
-## s18-1. Question projections disagreed with prompt admission.
+## 1087. Question projections disagreed with prompt admission.
 
 State: fixed in s18-smallfix.
 
@@ -16825,7 +16825,7 @@ Notification reads apply the same rule before the alert follower catches up.
 The website refreshes its filtered records across stop, crash, and resume transitions.
 The stored question remains open.
 
-## s18-2. Page readers treated an unfinished connection as a failure.
+## 1088. Page readers treated an unfinished connection as a failure.
 
 State: fixed in s18-smallfix.
 
@@ -16838,7 +16838,7 @@ Ordinary failures and unexpected transport failures both release waiting reads w
 Owner writes keep their existing immediate behaviour.
 The automatic Git controller retains its existing admission policy.
 
-## s18-3. Plain serve had no foreground lifecycle.
+## 1089. Plain serve had no foreground lifecycle.
 
 State: fixed in s18-smallfix.
 
@@ -16850,7 +16850,7 @@ Startup errors use the existing fixed category channel.
 A second foreground service refuses the same state folder.
 The detached launcher retains its existing behaviour.
 
-## s18-4. Project attention summaries counted unavailable askers.
+## 1090. Project attention summaries counted unavailable askers.
 
 State: fixed in s18-smallfix.
 
@@ -16859,7 +16859,7 @@ That count could disagree with the filtered owner question list.
 The project summary now uses the shared question availability rule.
 The lifecycle regressions check its label alongside the lists and counts.
 
-## s18-5. Navigation could win immediately after a read was released.
+## 1091. Navigation could win immediately after a read was released.
 
 State: superseded in s18-smallfix round 4.
 
@@ -16869,7 +16869,7 @@ Round 4 removed the page lifetime rather than adding another route check.
 The caller’s own abort signal is still checked before dispatch.
 Existing reader guards handle late replies.
 
-## s18-6. Question availability hid notification history.
+## 1092. Question availability hid notification history.
 
 State: fixed in s18-smallfix round 2.
 
@@ -16878,7 +16878,7 @@ It now hides an alert only while both the alert and its question remain open and
 Cleared alerts and alerts of answered questions remain in the notification history.
 Three regression cases cover these combinations after the asker stops.
 
-## s18-7. Route events cancelled waiting reads on the current screen.
+## 1093. Route events cancelled waiting reads on the current screen.
 
 State: superseded in s18-smallfix round 4.
 
@@ -16890,7 +16890,7 @@ Shared presenters drop that mark.
 The caller’s own signal, sign-out, session expiry and connection close retain cancellation.
 Owner writes retain their existing admission behaviour.
 
-## s18-8. Foreground serve confused refusals, later stops, and failed shutdowns.
+## 1094. Foreground serve confused refusals, later stops, and failed shutdowns.
 
 State: fixed in s18-smallfix round 2.
 
@@ -16901,7 +16901,7 @@ A separate startup-complete message distinguishes an unexpected later stop from 
 A terminal signal now asks the launcher to stop its child and wait for the child’s actual result.
 Only a zero child exit produces a zero launcher exit after a signal.
 
-## s18-9. A foreground service could outlive its launcher.
+## 1095. A foreground service could outlive its launcher.
 
 State: fixed in s18-smallfix round 2.
 
@@ -16911,7 +16911,7 @@ Its service also closes on parent-channel disconnection or a broken output pipe.
 A parent identity check covers early launcher death and service restarts that close the inherited channel.
 The detached service keeps its previous lifetime rules.
 
-## s18-10. A hidden question invalidated a project request cursor.
+## 1096. A hidden question invalidated a project request cursor.
 
 State: fixed in s18-smallfix round 2.
 
@@ -16921,7 +16921,7 @@ The reader now compares source sequences instead of looking up the cursor row.
 Malformed cursors and cursors ahead of the current snapshot remain refused.
 Regression cases cover pagination through the next visible rows for both the owner and a project lead.
 
-## s18-11. The deleted-team availability fixture never created a team.
+## 1097. The deleted-team availability fixture never created a team.
 
 State: fixed in s18-smallfix round 2.
 
@@ -16932,7 +16932,7 @@ It checks that deletion refuses a live member, succeeds after stopping the membe
 The same agent’s question returns after resume.
 Team deletion remains a precondition on lifecycle states rather than a separate unavailable-agent state.
 
-## s18-12. The shared website read list omits five unused engine reads.
+## 1098. The shared website read list omits five unused engine reads.
 
 State: open, recorded without a code change as required by s18-smallfix round 2.
 
@@ -16941,7 +16941,7 @@ Those engine read names are absent from `packages/studio/src/readRequests.ts`.
 A future website caller using one of them would keep the immediate request behaviour during a connection attempt.
 The type check rejects unknown names but does not prove that the list is complete.
 
-## s18-13. A request classified as a read can advance the board watermark.
+## 1099. A request classified as a read can advance the board watermark.
 
 State: recorded without a policy change as required by s18-smallfix round 2.
 
@@ -16950,7 +16950,7 @@ The engine handler in `packages/engine/src/board/commands.ts` advances the calle
 Waiting for the connection is compatible with that operation, but it is not a pure read.
 The classification and the engine behaviour remain unchanged in this round.
 
-## s18-14. A hidden question can leave an unexplained blocked task.
+## 1100. A hidden question can leave an unexplained blocked task.
 
 State: open, pending the owner’s question-withdrawal decision in entry 113.
 
@@ -16961,7 +16961,7 @@ This follows from keeping the stored question open.
 No task projection or stored event was changed for this observation.
 
 
-## s18-15. A cancelled website read kept its caller busy forever.
+## 1101. A cancelled website read kept its caller busy forever.
 
 State: fixed in s18-smallfix round 3.
 
@@ -16974,7 +16974,7 @@ A cancelled multi-worktree Git refresh also ends its current pass before startin
 The controller’s admission policy stays unchanged.
 Cancellation regressions exercise every latched row in the round 3 caller inventory.
 
-## s18-16. An early foreground stop reported a failed start.
+## 1102. An early foreground stop reported a failed start.
 
 State: fixed in s18-smallfix round 3.
 
@@ -16983,7 +16983,7 @@ The launcher reported a startup failure even though the owner requested the stop
 An owner stop without a reported failure category now returns the child’s outcome quietly.
 A reported startup category and an unclean shutdown after startup still fail.
 
-## s18-17. A closed foreground output stream could crash the launcher.
+## 1103. A closed foreground output stream could crash the launcher.
 
 State: fixed in s18-smallfix round 3.
 
@@ -16992,7 +16992,7 @@ The forwarding path now ignores output write failures and waits for the child to
 The final command flush also tolerates the closed foreground output.
 A closed pipe stands in for a terminal hangup in the regression test.
 
-## s18-18. A test could remove its state folder while its foreground service survived.
+## 1104. A test could remove its state folder while its foreground service survived.
 
 State: fixed in s18-smallfix round 3.
 
@@ -17007,12 +17007,12 @@ The foreground entry now requires the saved launcher identity.
 A test-only ownership lease follows Node child launches through explicit environments and detached launchers.
 Each covered service ends itself when file teardown revokes its lease or its test worker dies.
 Round 4 moved lease revocation from each test to each file so that beforeAll services survive between tests.
-Issue s18-28 records launch forms that the lease does not follow.
+Issue 1114 records launch forms that the lease does not follow.
 The teardown waits for owned services before removing the lease folder.
 Regressions cover normal teardown, a killed worker, early parent death, and service restart.
 
 
-## s18-19. A same-screen address normalization cancelled Harnesses reads.
+## 1105. A same-screen address normalization cancelled Harnesses reads.
 
 State: superseded in s18-smallfix round 4.
 
@@ -17022,7 +17022,7 @@ Other persistent panels had the same problem across ordinary project tabs.
 Round 4 removed the route pattern together with the whole page lifetime.
 Both waiting and sent reads now survive address changes.
 
-## s18-20. A cancelled file open could render an absent file.
+## 1106. A cancelled file open could render an absent file.
 
 State: open after the wording restoration in s18-smallfix round 4.
 
@@ -17035,7 +17035,7 @@ The view keeps its previous wording until a later read or session transition rep
 The mounted regression verifies that it neither renders an empty pane nor accesses an absent file.
 No new wording or retry mechanism was added.
 
-## s18-21. A settled terminal settings read still looked busy.
+## 1107. A settled terminal settings read still looked busy.
 
 State: open after the wording restoration in s18-smallfix round 4.
 
@@ -17048,7 +17048,7 @@ The existing connection effect can retry when the connection becomes live.
 The regression verifies that the loading promise releases while the previous Reading wording remains.
 No replacement wording was invented.
 
-## s18-22. A blocked startup preload could hide a test ownership watcher.
+## 1108. A blocked startup preload could hide a test ownership watcher.
 
 State: fixed in s18-smallfix round 3.
 
@@ -17059,7 +17059,7 @@ A failing regression kills the worker while its service is blocked before main.
 The service now ends itself even in that startup window.
 
 
-## s18-23. Test ownership metadata crossed the runner’s environment boundary.
+## 1109. Test ownership metadata crossed the runner’s environment boundary.
 
 State: fixed in s18-smallfix round 3.
 
@@ -17074,7 +17074,7 @@ Services already own their agent children through scoped runner teardown.
 The existing environment and replay assertions remain unchanged.
 
 
-## s18-24. The ownership regression omitted the engine test registration.
+## 1110. The ownership regression omitted the engine test registration.
 
 State: fixed in s18-smallfix round 3.
 
@@ -17082,7 +17082,7 @@ The engine’s discovery guard found the new ownership test without its required
 The test now registers the existing no-log case because it launches external services rather than opening an event log in its own scope.
 The discovery assertion remains unchanged.
 
-## s18-25. Navigation discarded reads owned by persistent project panels.
+## 1111. Navigation discarded reads owned by persistent project panels.
 
 State: fixed in s18-smallfix round 4.
 
@@ -17093,7 +17093,7 @@ Waiting reads still wait for the connection, and sent reads still finish across 
 Existing Files and Git guards prevent a departed view’s late replies from updating the current view.
 The navigation tests cover waiting and sent thread reads, mocks, approval checks and Files query changes.
 
-## s18-26. A container’s process-1 foreground launcher was refused.
+## 1112. A container’s process-1 foreground launcher was refused.
 
 State: fixed in s18-smallfix round 4.
 
@@ -17103,7 +17103,7 @@ The private entry now accepts an explicit positive integer, including one.
 Missing and invalid identities remain refused.
 A regression runs the real service with the process-one parent condition supplied by a startup preload.
 
-## s18-27. Test teardown revoked a file’s shared service after its first test.
+## 1113. Test teardown revoked a file’s shared service after its first test.
 
 State: fixed in s18-smallfix round 4.
 
@@ -17113,7 +17113,7 @@ The lease now belongs to the test file and is revoked only in afterAll.
 The setup comment states that rule.
 A real-runner fixture starts through serveDetach, verifies its lease record, and uses the same service in a second test.
 
-## s18-28. The test ownership preload does not follow every launch form.
+## 1114. The test ownership preload does not follow every launch form.
 
 State: open.
 
@@ -17129,7 +17129,7 @@ Those launch forms still need explicit fixture teardown and do not gain interrup
 The new real-runner test proves that serveDetach’s direct service spawn does receive a lease record.
 No broader coverage is claimed.
 
-## s18-29. Process regression cleanup could signal a reused service identifier.
+## 1115. Process regression cleanup could signal a reused service identifier.
 
 State: fixed in s18-smallfix round 4.
 
@@ -17139,7 +17139,7 @@ Both fixtures now record the start time while their child is alive.
 They signal a service only when its current start time still matches that record.
 The launcher-death fixture uses the same check for its fallback cleanup.
 
-## s18-30. The cancellation inventory overstated several assertions.
+## 1116. The cancellation inventory overstated several assertions.
 
 State: fixed in s18-smallfix round 4.
 
@@ -17151,7 +17151,7 @@ The retryAlert case checks its receipt before write completion and after the rea
 Git owner-action rows now point to the Git test file.
 Write-only caller rows are explicitly marked as untested at those callers.
 
-## s18-31. A session check could end a session without settling a sent read.
+## 1117. A session check could end a session without settling a sent read.
 
 State: fixed in s18-smallfix round 4.
 
@@ -17162,7 +17162,7 @@ That signal ends when the shared read state ends and is renewed for a later conn
 It has no navigation listener and is never attached to an owner write.
 A regression proves that the sent read settles with the mark while an admitted write still completes normally.
 
-## s18-32. Test ownership metadata leaked into the recorder’s filtered adapter environment.
+## 1118. Test ownership metadata leaked into the recorder’s filtered adapter environment.
 
 State: fixed in s18-smallfix round 5.
 
@@ -17176,7 +17176,7 @@ Exact environment regressions cover both functions with and without LGTM_SOCKET.
 The allow-list and recorder test remain unchanged.
 The identified entry paths are derived from the preload’s module filename so that the same setup works in Node and browser test environments.
 
-## s18-33. A pending connection could resume with an aborted session read controller.
+## 1119. A pending connection could resume with an aborted session read controller.
 
 State: fixed in s18-smallfix round 5.
 
@@ -17186,7 +17186,7 @@ The session read controller stayed aborted and rejected asynchronous reads immed
 The controller now renews whenever the read state leaves ended.
 A regression refuses the session check, completes the pending open and receives a held asynchronous read.
 
-## s18-34. Two issue state lines still described navigation cancellation.
+## 1120. Two issue state lines still described navigation cancellation.
 
 State: fixed in s18-smallfix round 5.
 
@@ -17194,7 +17194,7 @@ The state lines of issues 696 and 848 still referred to the removed page lifetim
 They now name session loss, connection close and the caller’s signal as the cancellation causes.
 Their State check lines remain unchanged.
 
-## s18-35. Two regression fixtures did not cover their intended boundary.
+## 1121. Two regression fixtures did not cover their intended boundary.
 
 State: fixed in s18-smallfix round 5.
 
@@ -17202,3 +17202,26 @@ The Files late-reply test compared two independent models instead of competing r
 It now holds file A, opens and delivers B, then delivers A and verifies that the same model still shows B.
 The service lease tests were Linux-only while their beforeAll hook was not.
 The hook now checks the platform before creating a temporary folder or launching a service.
+
+## 1122. Five browser journeys failed in a full check under load and passed alone.
+
+Found: 2026-11-16, in the orchestrator's full check of the unit `s18-smallfix`.
+State: open.
+
+The full check ran while the computer's load average was between 12 and 21.
+Five of 65 browser journeys failed: `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:304`, `studio.spec.ts:990` and `studio.spec.ts:1132`.
+Each passed when run alone with one worker, and the workflows journey at `studio.spec.ts:990` passed four more times in a row.
+The workflows journey failed because the Workflow tab's status line did not appear within five seconds of sign-in.
+This is the same kind of failure as issues 966, 1014, 1044, 1066 and 1079.
+
+## 1123. The builder committed its run notes, and the first briefs listed too few test folders.
+
+Found: 2026-11-16, by the orchestrator of the unit `s18-smallfix`.
+State: fixed in this unit.
+
+The builder force-added `.foundry/result.md` to its first three commits.
+The orchestrator rewrote those commits without the file before anything was pushed.
+The orchestrator's briefs for rounds 1 to 4 listed five test folders and left out `packages/testing`.
+A test there, `recorder-scrubs.test.ts`, caught the test ownership helper adding a variable to a strictly filtered child environment.
+Round 5 fixed the helper, and its brief told the builder to run the whole suite with no folder list.
+The first brief also asked that a waiting read be dropped when the owner leaves the screen, which caused three rounds of faults before round 4 removed it.
