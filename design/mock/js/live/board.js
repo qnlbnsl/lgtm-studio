@@ -17,7 +17,7 @@ export async function run(key, work, success) {
     if (success) toast(success);
     return reply;
   } catch (error) {
-    if (valid(state, connection)) toast(error.message || 'The service could not confirm the request.', 'error');
+    if (valid(state, connection) && error.name !== 'AbortError') toast(error.message || 'The service could not confirm the request.', 'error');
   } finally { if (S() === state) update((s) => { delete s.ui.boardBusy[key]; }); }
 }
 export async function pages(tag, payload = {}) {

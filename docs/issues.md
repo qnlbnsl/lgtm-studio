@@ -12189,7 +12189,7 @@ The lifecycle test covers an opened and then refused review.
 ## 696. A service-page read can show a connection notice during reload.
 
 Found: 2026-11-13, while inspecting the live Notifications screenshot.
-State: open.
+State: fixed in s18-smallfix. The shared website connection waits for connection attempts before sending reads and cancels waiting reads when the page or session ends. Real failures still show the existing sentence.
 
 The live page can briefly show "The service is not connected" after a reload.
 The settings then load and the controls work.
@@ -13933,7 +13933,7 @@ A strip under the title names each harness with its state and jumps to its card.
 ## 848. A reload of a live page briefly says "The service is not connected."
 
 Found: 2026-11-14, while checking the new "Harnesses" layout.
-State: open.
+State: fixed in s18-smallfix. The shared website connection waits for connection attempts before sending reads and cancels waiting reads when the page or session ends. Real failures still show the existing sentence.
 
 Right after a reload of the "Harnesses" page, a notice says "The service is not connected." and the model rows say "Reading the models."
 Both clear within a few seconds, and the connection mark says "Live" throughout.
@@ -16867,3 +16867,14 @@ The shared question availability rule now follows the engine’s prompt admissio
 Notification reads apply the same rule before the alert follower catches up.
 The website refreshes its filtered records across stop, crash, and resume transitions.
 The stored question remains open.
+
+## s18-2. Page readers treated an unfinished connection as a failure.
+
+State: fixed in s18-smallfix.
+
+Service, file, board, chat, mock, and settings readers could request data before the connection became live.
+The shared connection now waits for an active attempt before dispatching named reads.
+A failed attempt still produces the existing connection notice.
+Navigation, page closure, and session loss cancel waiting reads.
+Owner writes keep their existing immediate behaviour.
+The automatic Git controller retains its existing admission policy.

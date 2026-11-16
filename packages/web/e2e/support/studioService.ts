@@ -41,8 +41,19 @@ export async function exerciseStudioService(page: Page, origin: string) {
   await page.getByRole('group', { name: 'Effort', exact: true }).getByRole('button', { name: 'high', exact: true }).click()
   await page.locator('#df-model').selectOption('other-model')
   await expect(page.getByText('Saving…', { exact: true })).toHaveCount(0)
+  await page.addInitScript(() => {
+    const observed = { notice: false }
+    ;(window as unknown as { reloadReadNotice: typeof observed }).reloadReadNotice = observed
+    const inspect = (text: string | null) => { if (text?.includes('The service is not connected.')) observed.notice = true }
+    new MutationObserver(records => { for (const record of records) {
+      inspect(record.oldValue)
+      inspect(record.target.textContent)
+      for (const node of record.addedNodes) inspect(node.textContent)
+    } }).observe(document, { subtree: true, childList: true, characterData: true, characterDataOldValue: true })
+  })
   await page.reload()
   await expect(page.locator('#df-model')).toHaveValue('other-model')
+  expect(await page.evaluate(() => (window as unknown as { reloadReadNotice: { notice: boolean } }).reloadReadNotice.notice)).toBe(false)
   await page.goto(`${root}#/settings?section=defaults`)
   await page.getByRole('radio', { name: /^Edit files without asking/ }).click()
   await expect(page.getByRole('radio', { name: /^Edit files without asking/ })).toBeChecked()
