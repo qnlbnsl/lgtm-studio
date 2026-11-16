@@ -197,7 +197,7 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
         const resumedToken = Redacted.value(runner.callsOf("load").at(-1)!.input.token)
         const workerQuestion = success(yield* call(agentCredential(resumedToken), "ask", { title: "Choose a worker approach", text: "Use the existing adapter?", proposedAnswer: "Keep the adapter", recommendation: "Preserve the interface" })).questionId
         success(yield* call(project.leadCredential, "pass-up", { subject: { _tag: "question", id: workerQuestion } }))
-        yield* appendSetup([eventOf({ _tag: "PermissionRequested", agentId: project.workerId, permissionRequestId: "studio-thread-permission", holder: { _tag: "owner" }, deliveryId: "thread-permission-delivery", toolCallId: "thread-tool", description: "Check the thread options", options: Array.from({ length: 10 }, (_, i) => ({ id: `thread-option-${i}`, name: i === 9 ? "Harness persistent allow" : `Harness option ${i}`, kind: i === 9 ? "allow_always" : "reject_once", level: i === 9 ? "ask" : "read-only", persistent: i === 9 })), settingsWrite: false, toolInput: { command: "pnpm test thread" } })])
+        yield* appendSetup([eventOf({ _tag: "PermissionRequested", agentId: project.workerId, permissionRequestId: "studio-thread-permission", holder: { _tag: "agent", agentId: project.leadId }, deliveryId: "thread-permission-delivery", toolCallId: "thread-tool", description: "Check the thread options", options: Array.from({ length: 10 }, (_, i) => ({ id: `thread-option-${i}`, name: i === 9 ? "Harness persistent allow" : `Harness option ${i}`, kind: i === 9 ? "allow_always" : "reject_once", level: i === 9 ? "ask" : "read-only", persistent: i === 9 })), settingsWrite: false, toolInput: { command: "pnpm test thread" } })])
         yield* Effect.promise(async () => {
           const origin = `http://127.0.0.1:${port}`
           await page.goto(`${origin}/#/p/${project.projectId}/chat/${project.workerId}`)
@@ -211,6 +211,16 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
           await expect(permission).toContainText('pnpm test thread')
           await permission.getByRole('button', { name: 'Harness persistent allow', exact: true }).click()
           await expect.poll(() => runner.callsOf('answerPermission').filter((c) => c.input.requestId === 'studio-thread-permission').length).toBe(1)
+        })
+
+        yield* appendSetup([eventOf({ _tag: "PermissionRequested", agentId: project.workerId, permissionRequestId: "s21-held-home", holder: { _tag: "agent", agentId: project.leadId }, deliveryId: "s21-held-home-delivery", toolCallId: "s21-home-tool", description: "Answer while the lead holds it", options: [{ id: "s21-once", name: "Run once", kind: "allow_once", level: "ask", persistent: false }, { id: "s21-no", name: "Refuse this check", kind: "reject_once", level: "read-only", persistent: false }], settingsWrite: false, toolKind: "execute", toolInput: { command: "pnpm test held" } })])
+        yield* Effect.promise(async () => {
+          await page.goto(`http://127.0.0.1:${port}/#/home`)
+          await page.getByRole('button', { name: 'Show Answer while the lead holds it', exact: true }).click()
+          await expect(page.locator('.rq-detail')).toContainText('pnpm test held')
+          await page.getByRole('button', { name: 'Run once', exact: true }).click()
+          await expect(page.getByRole('button', { name: 'Show Answer while the lead holds it', exact: true })).toHaveCount(0)
+          await expect.poll(() => runner.callsOf('answerPermission').filter((c) => c.input.requestId === 's21-held-home').length).toBe(1)
         })
 
         // Resume uses the existing control after a crash, including an

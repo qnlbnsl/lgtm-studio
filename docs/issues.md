@@ -17273,6 +17273,20 @@ A deliberate stop of one agent still records that stop.
 The existing restart confirmation says that agents are stopped during shutdown.
 That wording is kept under this unit's restriction on visible changes.
 
+## s21-4. The owner's request views hide answers while a lead holds a permission
+
+Found: 2026-11-16, while building unit s21-recover.
+State: fixed in unit s21-recover.
+
+The engine accepted the owner's answer in this state.
+The request index nevertheless reported that the owner could not answer.
+Home also excluded held requests, and the chat card omitted its answer buttons.
+Open permissions now advertise the owner's existing answer authority.
+Home includes those permissions, and both existing card presenters keep their answer controls.
+A worker receives one harness answer, and the lead's queued request is withdrawn.
+A later answer from the lead is refused because the subject is closed.
+Held questions keep their existing presentation.
+
 ## s21-5. A sign-in failure crashes the live chat composer
 
 Found: 2026-11-16, while checking the sign-in exception for unit s21-recover.

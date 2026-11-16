@@ -301,7 +301,7 @@ function BriefCard({ s, r, openThread, who }) {
   const [open, setOpen] = useState(() => s.ui.panelReq === r.id);
   const [declined, setDeclined] = useState(false);
   const [text, setText] = useState(''); const own = useRef(null);
-  const live = r.status === 'open' && !r.heldBy; const waited = now - r.createdAt;
+  const live = r.status === 'open' && (!r.heldBy || liveMode.on && r.kind === 'approval' && r.canAnswer); const waited = now - r.createdAt;
   const approvalEffect = r.projectApprovalEffect;
   const approvalOutcome = r.projectApprovalOutcome || (r.answer === 'Accepted' ? 'Approval recorded.' : 'Approval not recorded. Ask again if you still need it.');
   const opts = r.options || [];
@@ -331,7 +331,7 @@ function BriefCard({ s, r, openThread, who }) {
       ${standing.length > 0 && html`<${Menu} class="btn split-more" label=${'More ways to ' + label.toLowerCase()} trigger=${html`<${Icon} name="chevron-down" size=${14} />`}
         items=${standing.map((o) => ({ label: always, why: o.label, disabled: busy, onSelect: () => answer(o.id) }))} width=${320} />`}</span>`;
   };
-  if (liveMode.on && r.status === 'open' && r.heldBy) return html`<section class="req qc" id=${'req-' + r.id}><b>${brief}</b><${Rich} text=${r.body} pid=${r.project} />${recShort && html`<p class="qc-rec"><${Rich} text=${recShort} pid=${r.project} /></p>`}<p class="muted">Waiting on ${agentOf(s, r.heldBy).name}</p></section>`;
+  if (liveMode.on && r.status === 'open' && r.heldBy && !live) return html`<section class="req qc" id=${'req-' + r.id}><b>${brief}</b><${Rich} text=${r.body} pid=${r.project} />${recShort && html`<p class="qc-rec"><${Rich} text=${recShort} pid=${r.project} /></p>`}<p class="muted">Waiting on ${agentOf(s, r.heldBy).name}</p></section>`;
   // An answered card keeps everything it showed. The answer buttons leave, and one line says
   // what the answer was.
   const done = r.status !== 'open';
@@ -435,7 +435,7 @@ export function RequestBlock({ s, request: r, variant = 'card', openThread = nul
   const now = useNow();
   const a = agentOf(s, r.agent); const p = projectOf(s, r.project);
   const [text, setText] = useState('');
-  const open = r.status === 'open' && !r.heldBy;
+  const open = r.status === 'open' && (!r.heldBy || liveMode.on && r.kind === 'approval' && r.canAnswer);
   const waited = now - r.createdAt;
   const fill = (yes) => cx('btn', yes && primary && 'primary');
   const thread = openThread && (typeof openThread === 'string'

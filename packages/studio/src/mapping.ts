@@ -75,6 +75,7 @@ export interface StoreRequest {
   readonly folder: string; readonly tool: string | null; readonly recommendation: string | null
   readonly options: ReadonlyArray<StoreOption>; readonly createdAt: number; readonly status: "open"
   readonly heldBy: string | null
+  readonly canAnswer?: boolean
 }
 export interface StoreWorktree {
   readonly stale?: boolean
@@ -268,8 +269,7 @@ export function mapSubscriptions(accounts: ClientSnapshot["accounts"], agents: R
 
 // ---- requests ---------------------------------------------------------------------------
 // The snapshot holds every open permission request and question, each with the short display
-// the engine keeps for it. A request held by an agent, such as a lead, waits for that agent
-// and not for the owner, as on the website.
+// the engine keeps for it. The owner can also answer permissions held by a lead.
 export function mapRequest(row: EngineRow, kind: "approval" | "question", agents: ReadonlyArray<StoreAgent>): StoreRequest | undefined {
   const agent = agents.find((a) => a.id === row.agentId)
   const display = row.display
@@ -286,7 +286,8 @@ export function mapRequest(row: EngineRow, kind: "approval" | "question", agents
     sourceSequence: row.sourceSequence,
     id: row.id, kind, agent: row.agentId, project, task: display?.taskId ?? null, title, body: preview,
     command: null, folder: agent?.folder ?? "", tool: display?.toolKind ?? null, recommendation: display?.recommendation ?? null,
-    options, createdAt: row.openedAt ?? 0, status: "open", heldBy: row.holder._tag === "agent" ? row.holder.agentId : null
+    options, createdAt: row.openedAt ?? 0, status: "open", heldBy: row.holder._tag === "agent" ? row.holder.agentId : null,
+    canAnswer: kind === "approval" || row.holder._tag === "owner"
   }
 }
 

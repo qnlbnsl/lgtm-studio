@@ -427,7 +427,7 @@ export const roleLabel = (a) => (ROLES[a.role] || ROLES.builder).label;
 // Order used by Home and the bell: failed starts first, then the longest wait.
 export const byAttention = (a, b) => (a.kind === 'failed' ? 0 : 1) - (b.kind === 'failed' ? 0 : 1) || a.createdAt - b.createdAt;
 export function openRequests(s, filter = {}) {
-  return s.requests.filter((r) => r.status === 'open' && !r.heldBy
+  return s.requests.filter((r) => r.status === 'open' && (!r.heldBy || live.on && r.kind === 'approval' && r.canAnswer)
     && !(projectOf(s, r.project) || {}).archived
     && (!filter.project || r.project === filter.project)
     && (!filter.agent || r.agent === filter.agent)
