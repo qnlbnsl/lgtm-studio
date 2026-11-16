@@ -42,6 +42,7 @@ interface Forms {
   readonly hex: ReadonlyArray<string>;
   readonly percent: ReadonlyArray<string>;
   readonly publicLengths: ReadonlyMap<string, number>;
+  readonly match: (text: string, found: Array<Interval>, hexFolded: string) => void;
 }
 
 // Every form of one secret (decision rows 57 and 73, fix round 1 rulings 1
@@ -147,8 +148,128 @@ const foldHex = (text: string): string => text.replace(/[A-F]/g, (letter) => let
 const foldEscapes = (text: string): string =>
   text.replace(/%[0-9A-Fa-f]{2}/g, (escape) => escape.toLowerCase());
 
-const occurrences = (text: string, form: string, found: Array<Interval>): void => {
-  for (let at = text.indexOf(form); at !== -1; at = text.indexOf(form, at + 1)) found.push([at, at + form.length]);
+// A single compact automaton searches whole text in one pass. Folding A-F
+// shares hexadecimal paths; exact and percent matches are verified against
+// the original spelling. Output links retain overlapping and short matches.
+const wholeMatcher = (forms: Pick<Forms, "exact" | "hex" | "percent">) => {
+  const patterns = (["exact", "hex", "percent"] as const).flatMap(kind => forms[kind].map(form => ({ kind, form })));
+  // Group common heads in a bounded native expression. Full forms remain
+  // literal checks, so case folding and short heads do not change matches.
+  if (patterns.length > 256 && patterns.length <= 4096) {
+    interface HeadNode { readonly children: Map<string, HeadNode>; terminal: boolean }
+    const heads: HeadNode = { children: new Map(), terminal: false };
+    const buckets = new Map<string, typeof patterns>();
+    for (const pattern of patterns) {
+      const key = foldHex(pattern.form.slice(0, 8));
+      const bucket = buckets.get(key) ?? [];
+      bucket.push(pattern); buckets.set(key, bucket);
+      let at = heads;
+      for (const c of key) {
+        let next = at.children.get(c);
+        if (next === undefined) { next = { children: new Map(), terminal: false }; at.children.set(c, next); }
+        at = next;
+      }
+      at.terminal = true;
+    }
+    const expression = (node: HeadNode): string => {
+      if (node.terminal) return "";
+      const branches = Array.from(node.children, ([c, child]) =>
+        c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + expression(child));
+      return branches.length === 1 ? branches[0]! : `(?:${branches.join("|")})`;
+    };
+    const source = expression(heads);
+    if (source.length > 0 && source.length <= 32768) {
+      const candidates = new RegExp(source, "g");
+      return (text: string, found: Array<Interval>, hexFolded: string): void => {
+        candidates.lastIndex = 0;
+        for (let hit = candidates.exec(hexFolded); hit !== null; hit = candidates.exec(hexFolded)) {
+          const start = hit.index;
+          for (let length = hit[0].length; length <= Math.min(8, text.length - start); length++) {
+            for (const { form, kind } of buckets.get(foldHex(text.slice(start, start + length))) ?? []) {
+              const value = text.slice(start, start + form.length);
+              if ((kind === "exact" ? value : kind === "hex" ? foldHex(value) : foldEscapes(value)) === form) found.push([start, start + form.length]);
+            }
+          }
+          candidates.lastIndex = start + 1;
+        }
+      };
+    }
+  }
+  // Native searches over shared, bounded heads skip ordinary text cheaply.
+  // Verify every full form at a hit, including overlapping matches. A large
+  // form collection uses the single automaton below instead of per-form scans.
+  if (patterns.length <= 256) {
+    const groups = (["exact", "hex", "percent"] as const).map(kind => {
+      const buckets = new Map<string, Array<string>>();
+      for (const form of forms[kind]) {
+        const key = form.slice(0, 32), bucket = buckets.get(key) ?? [];
+        bucket.push(form); buckets.set(key, bucket);
+      }
+      return { kind, buckets };
+    });
+    return (text: string, found: Array<Interval>, hexFolded = foldHex(text)): void => {
+      for (const { kind, buckets } of groups) {
+        const view = kind === "exact" ? text : kind === "hex" ? hexFolded : foldEscapes(text);
+        for (const [key, bucket] of buckets) {
+          for (let start = view.indexOf(key); start !== -1; start = view.indexOf(key, start + 1)) {
+            for (const form of bucket) if (view.startsWith(form, start)) found.push([start, start + form.length]);
+          }
+        }
+      }
+    };
+  }
+  const capacity = 1 + patterns.reduce((sum, pattern) => sum + pattern.form.length, 0);
+  const head = new Uint32Array(capacity), sibling = new Uint32Array(capacity), chars = new Uint16Array(capacity);
+  const failure = new Uint32Array(capacity), terminal = new Uint32Array(capacity), output = new Uint32Array(capacity);
+  const same = new Uint32Array(patterns.length), root = new Uint32Array(128);
+  const folded = (c: number) => c >= 65 && c <= 70 ? c + 32 : c;
+  const child = (at: number, c: number): number => {
+    if (at === 0 && c < root.length) return root[c]!;
+    for (let next = head[at]!; next !== 0; next = sibling[next]!) if (chars[next] === c) return next;
+    return 0;
+  };
+  let size = 1;
+  for (let i = 0; i < patterns.length; i++) {
+    let at = 0;
+    const form = patterns[i]!.form;
+    for (let j = 0; j < form.length; j++) {
+      const c = folded(form.charCodeAt(j));
+      let next = child(at, c);
+      if (next === 0) {
+        next = size++; chars[next] = c; sibling[next] = head[at]!; head[at] = next;
+        if (at === 0 && c < root.length) root[c] = next;
+      }
+      at = next;
+    }
+    same[i] = terminal[at]!; terminal[at] = i + 1;
+  }
+  const queue = new Uint32Array(size);
+  let end = 0;
+  for (let next = head[0]!; next !== 0; next = sibling[next]!) queue[end++] = next;
+  for (let i = 0; i < end; i++) {
+    const at = queue[i]!, fail = failure[at]!;
+    output[at] = terminal[fail] !== 0 ? fail : output[fail]!;
+    for (let next = head[at]!; next !== 0; next = sibling[next]!) {
+      let fail = failure[at]!, target = child(fail, chars[next]!);
+      while (fail > 0 && target === 0) { fail = failure[fail]!; target = child(fail, chars[next]!); }
+      failure[next] = target; queue[end++] = next;
+    }
+  }
+  return (text: string, found: Array<Interval>): void => {
+    let at = 0;
+    for (let i = 0; i < text.length; i++) {
+      const c = folded(text.charCodeAt(i));
+      let next = child(at, c);
+      while (at > 0 && next === 0) { at = failure[at]!; next = child(at, c); }
+      at = next;
+      for (let node = terminal[at] !== 0 ? at : output[at]!; node !== 0; node = output[node]!) {
+        for (let id = terminal[node]!; id !== 0; id = same[id - 1]!) {
+          const { form, kind } = patterns[id - 1]!, start = i + 1 - form.length;
+          if (kind === "hex" || (kind === "exact" ? text.startsWith(form, start) : foldEscapes(text.slice(start, i + 1)) === form)) found.push([start, i + 1]);
+        }
+      }
+    }
+  };
 };
 
 // The fixed-cost gate before any credential hash (decision row 73): only a
@@ -221,13 +342,8 @@ const findCredentials = (
 // repeated secrets releases one marker per secret as it goes.
 const findMatches = (text: string, forms: Forms, tokenHashes: ReadonlySet<string>): Array<Interval> => {
   const found: Array<Interval> = [];
-  for (const form of forms.exact) occurrences(text, form, found);
   const hexFolded = forms.hex.length > 0 || tokenHashes.size > 0 ? foldHex(text) : text;
-  for (const form of forms.hex) occurrences(hexFolded, form, found);
-  if (forms.percent.length > 0) {
-    const escapesFolded = foldEscapes(text);
-    for (const form of forms.percent) occurrences(escapesFolded, form, found);
-  }
+  forms.match(text, found, hexFolded);
   if (tokenHashes.size > 0) findCredentials(text, hexFolded, tokenHashes, found);
   found.sort((a, b) => a[0] - b[0]);
   const merged: Array<[number, number]> = [];
@@ -287,76 +403,72 @@ const publicPrefixes = [...new Set([
   "shp_", hexPrefix, ...publicPercent, ...publicBase64, ...publicBase64.map(toBase64url),
   ...publicBase64.flatMap(inner => [0, 1, 2].map(alignment => base64Run(Buffer.from(inner, "ascii"), alignment))),
 ])].sort((a, b) => b.length - a.length);
+const publishedContextLength = publicPrefixes.reduce((longest, prefix) => Math.max(longest, prefix.length), 0) + 3;
 interface Tail { readonly held: number; readonly context: number }
 const noTail: Tail = { held: 0, context: 0 };
 const largerTail = (a: Tail, b: Tail): Tail => a.held > b.held || a.held === b.held && a.context >= b.context ? a : b;
 
-// A cached failure trie finds the longest undecided suffix in one pass. A
-// node is a proper prefix, never a whole matched form. Public token-prefix
-// nodes retain context without holding output; explicit secret nodes hold it.
-// Limit its Map nodes for large credential leaves. Their fallback stores one
-// four-byte failure entry per form character instead of a Map per character.
+// One compact failure automaton serves every registry size. Numeric arrays
+// replace per-character Maps and per-form fallback scans. Only the suffix
+// that can be a proper prefix needs inspection, even for a megabyte chunk.
 const prefixMatcher = (forms: ReadonlyArray<string>, publicLengths: ReadonlyMap<string, number>) => {
-  if (forms.reduce((sum, form) => sum + form.length, 0) > 32768) {
-    const patterns = forms.map(form => {
-      const failure = new Uint32Array(form.length);
-      for (let i = 1, matched = 0; i < form.length; i++) {
-        while (matched > 0 && form[i] !== form[matched]) matched = failure[matched - 1]!;
-        if (form[i] === form[matched]) matched++;
-        failure[i] = matched;
-      }
-      return { form, failure, publicLength: publicLengths.get(form) ?? 0 };
-    });
-    return (text: string): Tail => {
-      let tail = noTail;
-      for (const { form, failure, publicLength } of patterns) {
-        let matched = 0;
-        for (let i = 0; i < text.length; i++) {
-          while (matched > 0 && text[i] !== form[matched]) matched = failure[matched - 1]!;
-          if (text[i] === form[matched]) matched++;
-          if (matched === form.length) matched = failure[matched - 1]!;
-        }
-        tail = largerTail(tail, { held: matched > publicLength ? matched : 0, context: Math.min(matched, publicLength) });
-      }
-      return tail;
-    };
-  }
-  const nodes = [{ next: new Map<string, number>(), fail: 0, tail: noTail }];
+  const capacity = 1 + forms.reduce((sum, form) => sum + Math.max(0, form.length - 1), 0);
+  const head = new Uint32Array(capacity), sibling = new Uint32Array(capacity);
+  const chars = new Uint16Array(capacity), failure = new Uint32Array(capacity);
+  const held = new Uint32Array(capacity), context = new Uint8Array(capacity);
+  const root = new Uint32Array(128);
+  let size = 1, longest = 0;
+  const child = (at: number, c: number): number => {
+    if (at === 0 && c < root.length) return root[c]!;
+    for (let next = head[at]!; next !== 0; next = sibling[next]!) if (chars[next] === c) return next;
+    return 0;
+  };
   for (const form of forms) {
     let at = 0;
     const publicLength = publicLengths.get(form) ?? 0;
+    longest = Math.max(longest, form.length - 1);
     for (let length = 1; length < form.length; length++) {
-      const c = form[length - 1]!;
-      let next = nodes[at]!.next.get(c);
-      if (next === undefined) {
-        next = nodes.length;
-        nodes.push({ next: new Map(), fail: 0, tail: noTail });
-        nodes[at]!.next.set(c, next);
+      const c = form.charCodeAt(length - 1);
+      let next = child(at, c);
+      if (next === 0) {
+        next = size++;
+        chars[next] = c;
+        sibling[next] = head[at]!;
+        head[at] = next;
+        if (at === 0 && c < root.length) root[c] = next;
       }
       at = next;
-      nodes[at]!.tail = largerTail(nodes[at]!.tail, { held: length > publicLength ? length : 0, context: Math.min(length, publicLength) });
+      const candidate = length > publicLength ? length : 0;
+      if (candidate > held[at]! || candidate === held[at]! && Math.min(length, publicLength) > context[at]!) {
+        held[at] = candidate;
+        context[at] = Math.min(length, publicLength);
+      }
     }
   }
-  const queue = [...nodes[0]!.next.values()];
-  for (let head = 0; head < queue.length; head++) {
-    const at = queue[head]!;
-    const node = nodes[at]!;
-    node.tail = largerTail(node.tail, nodes[node.fail]!.tail);
-    for (const [c, next] of node.next) {
-      let fail = node.fail;
-      while (fail > 0 && !nodes[fail]!.next.has(c)) fail = nodes[fail]!.fail;
-      nodes[next]!.fail = nodes[fail]!.next.get(c) ?? 0;
-      queue.push(next);
+  const queue = new Uint32Array(size);
+  let end = 0;
+  for (let next = head[0]!; next !== 0; next = sibling[next]!) queue[end++] = next;
+  for (let i = 0; i < end; i++) {
+    const at = queue[i]!, fail = failure[at]!;
+    if (held[fail]! > held[at]! || held[fail] === held[at] && context[fail]! > context[at]!) {
+      held[at] = held[fail]!; context[at] = context[fail]!;
+    }
+    for (let next = head[at]!; next !== 0; next = sibling[next]!) {
+      let fail = failure[at]!, target = child(fail, chars[next]!);
+      while (fail > 0 && target === 0) { fail = failure[fail]!; target = child(fail, chars[next]!); }
+      failure[next] = target;
+      queue[end++] = next;
     }
   }
   return (text: string): Tail => {
     let at = 0;
-    for (let i = 0; i < text.length; i++) {
-      const c = text[i]!;
-      while (at > 0 && !nodes[at]!.next.has(c)) at = nodes[at]!.fail;
-      at = nodes[at]!.next.get(c) ?? 0;
+    for (let i = Math.max(0, text.length - longest); i < text.length; i++) {
+      const c = text.charCodeAt(i);
+      let next = child(at, c);
+      while (at > 0 && next === 0) { at = failure[at]!; next = child(at, c); }
+      at = next;
     }
-    return nodes[at]!.tail;
+    return { held: held[at]!, context: context[at]! };
   };
 };
 const hashPrefixes = [
@@ -384,7 +496,6 @@ const hashTail = (text: string): Tail => {
   const percent = foldEscapes(suffix).replace(/%[0-9A-Fa-f]$/, escape => escape.toLowerCase());
   tail = largerTail(tail, hashPublicMatcher(percent));
   for (const prefix of publicPercent) {
-    if (!prefix.includes("%")) continue;
     const start = percent.lastIndexOf(prefix);
     if (start < 0) continue;
     const rest = percent.slice(start + prefix.length);
@@ -457,9 +568,15 @@ export const makeRedactor = (registry: {
         publicLengths.set(form, Math.min(publicLengths.get(form) ?? length, length));
       }
     }
-    const forms = { exact: [...exact], hex: [...hex], percent: [...percent], publicLengths };
+    const lists = { exact: [...exact], hex: [...hex], percent: [...percent] };
+    const forms = { ...lists, publicLengths, match: wholeMatcher(lists) };
     const matchExact = prefixMatcher(forms.exact, publicLengths), matchHex = prefixMatcher(forms.hex, publicLengths), matchPercent = prefixMatcher(forms.percent, publicLengths);
-    const tail = (text: string): Tail => largerTail(matchExact(text), largerTail(matchHex(foldHex(text)), matchPercent(foldEscapes(text).replace(/%[0-9A-Fa-f]$/, escape => escape.toLowerCase()))));
+    const longest = [forms.exact, forms.hex, forms.percent].reduce((max, list) => list.reduce((max, form) => Math.max(max, form.length - 1), max), 0);
+    const tail = (text: string): Tail => {
+      if (longest === 0) return noTail;
+      const suffix = text.slice(-longest);
+      return largerTail(matchExact(suffix), largerTail(matchHex(foldHex(suffix)), matchPercent(foldEscapes(suffix).replace(/%[0-9A-Fa-f]$/, escape => escape.toLowerCase()))));
+    };
     const state = { values, forms, tail };
     compiled.unshift(state);
     if (compiled.length > 4) compiled.pop();
@@ -506,7 +623,9 @@ export const makeRedactor = (registry: {
     // A base64 decoder also needs up to three already-published characters
     // before its public-prefix probe to reconstruct a byte-aligned group.
     // This context never delays output or contributes a pending event span.
-    const contextLength = tail.context + (tokenHashes.size > 0 ? 3 : 0);
+    // Keep this independent of the selected private suffix: another secret
+    // may start inside the public prefix. Its hold must not discard context.
+    const contextLength = publishedContextLength;
     const retainedContext = joined.slice(Math.max(0, cut - contextLength), cut);
     carries.set(itemId, { text: joined.slice(cut), covered: Math.max(0, released.covered - cut), context: retainedContext });
     return released.parts;

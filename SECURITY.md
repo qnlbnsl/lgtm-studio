@@ -174,6 +174,8 @@ These rules apply to every change. A change that breaks one is a security bug.
    The GNU wrapped forms also require the value to be registered.
    A streamed agent token's public prefix may be published as match context.
    Its private remainder is still withheld and redacted when the complete token is recognized.
+   Published public characters remain match context even when a value-known secret also has a matching suffix.
+   Whole-text output may be `[REDACTED]` where streamed output is `shp_[REDACTED]`.
    A value inferred only from an inherited environment variable whose name
    matches `KEY`, `TOKEN`, `SECRET` or `PASSWORD` is registered only at eight
    or more characters when its trimmed text is nonempty, is neither `true`

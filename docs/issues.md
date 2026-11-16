@@ -3863,7 +3863,7 @@ token in a form a client can decode.
 
 Found: 2026-11-02, by the security review of the issue 223 fix (commit
 b88b876, finding F4).
-State: fixed in s19-secrets with one combined streaming window, original-span mapping, and coverage for every required update and termination kind.
+State: fixed in s19-secrets with one combined streaming window, independent public match context, original-span mapping, and coverage for every required update and termination kind. A genuine private prefix still delays following tools, as recorded in issue s19-5.
 
 What happens: streamed message text is held back by the chunk redactor, so
 a secret split across chunks is still matched.
@@ -17342,7 +17342,7 @@ No test assertion or warning threshold was changed for this task.
 ## 1208. Abandoned preload reads occupied every logical slot forever.
 
 Found: 2026-11-16, from independent review finding m2.
-State: fixed with deadline abandonment and deduplication of source path sets.
+State: logical-slot starvation is fixed with deadline abandonment and deduplication of source path sets. Uncancelled filesystem calls can still exhaust the default four-thread libuv pool.
 
 Read: the old counter fell only when the filesystem promise settled.
 Ran: a later healthy batch failed to start after two planted never-settling reads.
@@ -17354,6 +17354,9 @@ Ran: a later batch starts two other paths within its own 500 millisecond budget.
 Ran: a healthy later batch completes after the abandoned reads.
 Read: Node.js cannot cancel an already-running stat system call.
 Read: such a call can continue occupying an operating-system worker after its logical slot is released.
+Read: the default libuv thread pool has four worker threads.
+Read: abandoned filesystem calls from distinct source path lists can occupy all four threads.
+Read: releasing logical slots does not release those threads or guarantee later filesystem progress.
 
 ## 1209. Every redaction synchronously inspects preloaded account stores.
 
@@ -17744,6 +17747,28 @@ This is the same load sensitivity that issues 966, 1014, 1044, 1066, 1079 and 11
 State: open. Recorded on 2026-11-16.
 
 
+## s19-1. Mixed percent escapes after a public token prefix escaped streaming redaction.
+
+Found: 2026-11-16, from round-two review blocker B1.
+State: fixed in round three with the literal prefix included in the percent candidate probe.
+
+Read: the raw candidate rejected a percent sign in its remainder.
+Read: the percent candidate skipped a literal public prefix.
+Ran: the new differential B1 regression failed on `0ff155f9` before the production change.
+Read: diagnostics report split positions and counts without publishing token bytes.
+Ran: the guard includes fully escaped, one-escape, alternating, and literal-prefix spellings.
+
+## s19-2. A private suffix displaced already-published public match context.
+
+Found: 2026-11-16, from round-two review blocker B2.
+State: fixed in round three by retaining public context independently of private suffix selection.
+
+Read: selecting the longest held suffix discarded the context of a different candidate.
+Ran: the new differential B2 regression failed on `0ff155f9` with a planted value-known secret.
+Read: the carry now retains at most fifteen already-published characters before its held suffix.
+Read: these characters own no pending event span and add no output delay.
+Ran: the differential guard tests zero, one, three, and twenty value secrets at every two-way and three-way split.
+
 ## s19-3. GNU base64 wrapping escaped single and double encoding matches.
 
 Found: 2026-11-16, from round-two review findings M1 and m3.
@@ -17757,3 +17782,87 @@ Read: the full pipeline forms cover the complete registered value at lengths 58,
 Read: bounded partial forms cover the first and last inner line segments at each alignment.
 Read: arbitrary wrap widths, separators, phases, and middle segments are outside this set.
 Read: the maximum is 78 attempted insertions and 77 distinct form entries per secret.
+
+## s19-4. Large secret forms made the prefix fallback scan every full chunk separately.
+
+Found: 2026-11-16, from round-two review finding M2.
+State: fixed in round three with suffix-only scanning and one compact failure automaton per spelling category.
+
+Read: the previous fallback activated above 32768 form characters.
+Ran: twenty 100-byte fake values made a one-mebibyte chunk take more than three seconds before this correction.
+Read: a proper prefix can begin only within the longest form length minus one at the end of the chunk.
+Read: normalization now also examines only that suffix for prefix matching.
+Read: whole matching uses bounded shared candidate heads with full-form verification.
+Read: a collection above those index limits uses one compact whole-text automaton.
+Read: the index preserves overlapping matches and exact case outside hexadecimal escapes.
+Ran: the six requested benchmark rows are recorded in the round-three result.
+Read: earlier full-expression and candidate-index experiments missed the requested bound and were replaced.
+
+## s19-5. Genuine one-character secret prefixes delay ordinary sentence endings and tools.
+
+Found: 2026-11-16, from round-two review finding M3.
+State: waits for the owner's decision.
+
+Read: a value-known secret's first character is private even when it ends ordinary prose.
+Read: releasing it would violate the streaming privacy rule if the rest of that secret followed.
+Read: a following tool remains queued to preserve event order.
+Ran: a fixed fake-value corpus measures the following rates over 72 possible final characters.
+Ran: each row also checks six ordinary sentences and those sentences with final full stops.
+
+| Registered values | Final characters held | Ordinary sentences held | With full stops held | Maximum held characters |
+| --- | --- | --- | --- | --- |
+| 1 | 16 of 72 | 1 of 6 | 0 of 6 | 1 |
+| 3 | 26 of 72 | 3 of 6 | 0 of 6 | 1 |
+| 6 | 40 of 72 | 4 of 6 | 0 of 6 | 2 |
+| 20 | 58 of 72 | 6 of 6 | 0 of 6 | 2 |
+
+Read: these are fixture frequencies, not a probability estimate for all writing.
+Ran: a runner regression shows the final private `s` and its following tool held until the planted continuation arrives.
+Read: this task deliberately preserves that behavior.
+
+## s19-6. A supplied redactor without withholding could leave the event queue unbounded.
+
+Found: 2026-11-16, from round-two review finding m1.
+State: fixed in round three with original-span accounting after forced replacement.
+
+Read: the optional redactor method could be absent while its parts method remained present.
+Read: the fallback carry then had no corresponding spans to withhold.
+Read: overflow now replaces the queued undecided spans in event order and retains the supplied security carry.
+Read: a count tracks the original spans already replaced when the supplied redactor later returns them.
+Ran: both the count and byte limits are tested with and without the optional withholding method.
+Read: the existing 1024-event and one-mebibyte limits are unchanged.
+
+## s19-7. Streamed token replacement shapes differ from whole-text replacement shapes.
+
+Found: 2026-11-16, from round-two review finding m4.
+State: recorded as the owner's public-prefix design.
+
+Read: whole-text recognition replaces the complete token with `[REDACTED]`.
+Read: streaming can already have published fixed public characters before recognizing the token.
+Read: examples include `shp_[REDACTED]`, `sh[REDACTED]`, and `7368705[REDACTED]`.
+Read: encoded markers follow the same rule for characters containing only public bits.
+Read: the private remainder is never published merely to make the shapes equal.
+Ran: the differential guard checks original source spans rather than assuming equal rendered shapes.
+
+
+## s19-8. An intermediate whole-form expression exceeded the constrained heap test's compilation limit.
+
+Found: 2026-11-16, during the round-three performance correction.
+State: fixed before accepting the final implementation.
+
+Ran: compiling one expression over every complete form failed the existing large-value child-process check.
+Read: the final native expression contains only bounded eight-character candidate heads.
+Read: its source is limited to 32768 characters and 4096 patterns.
+Read: small collections share literal heads instead.
+Read: larger collections use a compact failure automaton.
+Read: full forms are verified at each candidate and overlapping matches are retained.
+
+## s19-9. New test callbacks passed array indexes to the redacted-value constructor.
+
+Found: 2026-11-16, by the round-three typecheck.
+State: fixed in the new differential and overlap fixtures.
+
+Ran: direct use of the constructor as an Array.map callback failed typechecking in two files.
+Read: its second parameter is an options object rather than an array index.
+Read: an explicit callback now passes only the planted value.
+Ran: the complete typecheck passes after that correction.

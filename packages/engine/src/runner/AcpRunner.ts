@@ -114,6 +114,7 @@ interface Process {
     itemId: string;
     boundary?: boolean;
     coverageLost?: boolean;
+    discarded?: number;
     role: "user" | "agent" | undefined;
     readonly pending: Array<{ readonly passthrough?: boolean; readonly bytes: number; length: number; text: string; readonly event: Extract<RunnerEvent, { _tag: "deliveryUpdate" }> }>;
   };
@@ -266,7 +267,22 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
         [...processes.values()].flatMap(process => process.secrets).concat(credentials.secrets()))
       : yield* Effect.forEach(fallback.redactParts(buffer.id, text, end), part => redactText(part.text, entry.covered).pipe(
         Effect.map(clean => ({ ...part, text: clean, replacement: part.replacement || clean !== part.text }))));
-    return covered || parts.length === 0 ? parts : [{length:parts.reduce((sum,part)=>sum+part.length,0),text:withheldText,replacement:true}];
+    const masked = covered || parts.length === 0 ? parts : [{length:parts.reduce((sum,part)=>sum+part.length,0),text:withheldText,replacement:true}];
+    // A supplied redactor may have no withholding method. Its security carry
+    // remains intact after queue overflow; skip spans already replaced here
+    // when it eventually returns them, including private match continuations.
+    let discarded = buffer.discarded ?? 0;
+    if (discarded === 0) return masked;
+    const kept: Array<RedactionPart> = [];
+    for (const part of masked) {
+      const skip = Math.min(discarded, part.length);
+      discarded -= skip;
+      if (skip < part.length) kept.push(skip === 0 ? part : {
+        length: part.length - skip, text: part.replacement ? "" : part.text.slice(skip), replacement: part.replacement,
+      });
+    }
+    buffer.discarded = discarded;
+    return kept;
   });
   const retainParts = (entry: Process, parts: ReadonlyArray<RedactionPart>) => {
     const buffer = entry.message;
@@ -292,10 +308,17 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
     else if (buffer.pending.length > 1024 || buffer.pending.reduce((sum, item) => sum + item.bytes + 3 * item.length + Buffer.byteLength(item.text), 0) > 1024 * 1024) {
       // Never finalize an undecided raw suffix on overflow. Replace it in
       // event order, but keep covered match context for any later remainder.
-      const parts = Option.isSome(suppliedRedactor) && suppliedRedactor.value.withholdParts !== undefined
-        ? yield* suppliedRedactor.value.withholdParts(buffer.id, withheldText)
-        : fallback.withholdParts(buffer.id, withheldText);
-      retainParts(entry, parts);
+      const supplied = Option.isSome(suppliedRedactor) ? suppliedRedactor.value : undefined;
+      if (supplied?.redactPartsWithSecrets !== undefined && supplied.withholdParts === undefined) {
+        const length = buffer.pending.reduce((sum, item) => sum + item.length, 0);
+        buffer.discarded = (buffer.discarded ?? 0) + length;
+        retainParts(entry, [{ length, text: withheldText, replacement: true }]);
+      } else {
+        const parts = supplied?.redactPartsWithSecrets !== undefined && supplied.withholdParts !== undefined
+          ? yield* supplied.withholdParts(buffer.id, withheldText)
+          : fallback.withholdParts(buffer.id, withheldText);
+        retainParts(entry, parts);
+      }
     }
     while (buffer.pending.length > 0) {
       const first = buffer.pending[0]!;

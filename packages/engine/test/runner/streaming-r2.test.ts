@@ -35,8 +35,8 @@ for(const sentence of ['I will run the tests','I will run the tests.']){
     }));
   },60_000);
 }
-for(const overflow of ['count','bytes'] as const){
-  it.live(`r2 ${overflow} overflow replaces the undecided tail and releases queued tools in order`,()=>withAcpRunner(rig,{secrets:{'secret:r2':secret}},context=>Effect.gen(function*(){
+for(const withoutWithholdParts of [false,true]) for(const overflow of ['count','bytes'] as const){
+  it.live(`r2 ${overflow} overflow (withoutWithholdParts=${withoutWithholdParts}) replaces the undecided tail and releases queued tools in order`,()=>withAcpRunner(rig,{withoutWithholdParts,secrets:{'secret:r2':secret}},context=>Effect.gen(function*(){
     const gate=join(rig.root,'release');
     const reports=overflow==='count'?Array.from({length:1025},(_,i)=>tool(`row ${i}.`,`r2-${i}`)):[tool('x'.repeat(1024*1024+1)+'.')];
     const script=join(rig.root,'large-script.json');
@@ -61,3 +61,19 @@ for(const overflow of ['count','bytes'] as const){
     expect(JSON.stringify(messages(context.events)).includes('planted-fake-secret-for-r2')).toBe(false);
   })),60_000);
 }
+
+it.live('s19 r3 a genuine one-character value prefix still queues its tool for the owner decision',()=>withAcpRunner(rig,{secrets:{'secret:r3':'snake-s19-planted-private-secret'}},context=>Effect.gen(function*(){
+  const gate=join(rig.root,'value-prefix');
+  const spawn=yield* spawnFor(rig,harnessFor('first',writeFakeAdapter(rig)),accountFor('first',{turns:[[
+    {step:'text',text:'I will run the tests'},tool(),{step:'notification_barrier'},
+    {step:'mode_change',configId:'mode',value:'read-only'},{step:'wait_for_file',path:gate},
+    {step:'text',text:'nake-s19-planted-private-secret.'},
+  ]]},echoFile(rig)));
+  yield* context.runner.start(spawn.input);
+  const delivery=deliveryFor(spawn.agentId,'go');
+  yield* context.runner.prompt({agentId:spawn.agentId,incarnation:spawn.incarnation,delivery,sentSequence:1});
+  yield* context.waitFor(e=>e._tag==='modeReported');
+  expect(messages(context.events).map(e=>({kind:e.kind,text:e.text}))).toEqual([{kind:'message',text:'I will run the test'}]);
+  writeFileSync(gate,'go');yield* context.waitFor(e=>e._tag==='turnEnded');
+  expect(messages(context.events).filter(e=>e.kind==='message').map(e=>e.text).join('')).toBe('I will run the test[REDACTED].');
+})),60_000);
