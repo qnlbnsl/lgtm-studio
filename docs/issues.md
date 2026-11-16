@@ -17255,7 +17255,8 @@ State: fixed with asynchronous inspection and a total 500 millisecond budget.
 The existing launch reader performs synchronous filesystem operations.
 Calling it for every account during startup could block the service on a slow filesystem.
 The initial reader now uses asynchronous operations with the same file and leaf limits.
-At most two initial reads remain in flight across repeated batches.
+At most two initial inspections occupy logical slots across repeated batches.
+Uncancelled system calls can outlive those slots, as recorded in issue s19-9.
 A shared snapshot cache reads each distinct store once per batch.
 The account writer waits for the bounded inspection before publishing its change.
 A timed-out or unreadable store is retried at its next launch.
@@ -17337,3 +17338,39 @@ The studio terminal tests report the unavailable canvas context in their browser
 Several retired web-page tests emit React state-update warnings about missing `act` wrappers.
 All affected files passed in the complete 632-file run.
 No test assertion or warning threshold was changed for this task.
+
+## s19-9. Abandoned preload reads occupied every logical slot forever.
+
+Found: 2026-11-16, from independent review finding m2.
+State: fixed with deadline abandonment and per-path deduplication.
+
+Read: the old counter fell only when the filesystem promise settled.
+Ran: a later healthy batch failed to start after two planted never-settling reads.
+Read: a timeout now releases the logical slot.
+Read: an unfinished read keeps its path marked to prevent duplicate system calls.
+Ran: the fake-clock tests retain the original two-start assertion for duplicate abandoned paths.
+Ran: a later batch starts two other paths within its own 500 millisecond budget.
+Ran: a healthy later batch completes after the abandoned reads.
+Read: Node.js cannot cancel an already-running stat system call.
+Read: such a call can continue occupying an operating-system worker after its logical slot is released.
+
+## s19-10. Every redaction synchronously inspects preloaded account stores.
+
+Found: 2026-11-16, from independent review finding m3.
+State: recorded without a fix, as assigned.
+
+Read: the credential registry refreshes every registered source during `secrets()`.
+Read: an unchanged file still requires a synchronous metadata inspection.
+Read: this now includes enabled accounts that have never launched.
+Read: a broken store for one of those accounts also makes `healthyAll()` false.
+Read: initial preloading has a deadline, but these later metadata checks do not use that asynchronous path.
+
+## s19-11. Cursor's default credential file can refuse another configuration folder.
+
+Found: 2026-11-16, from independent review finding m5.
+State: recorded without a fix, as assigned.
+
+Read: the Cursor source checks both the configured folder and the default-home candidate.
+Read: an unreadable or malformed default file therefore refuses an account whose configured folder is healthy.
+Read: this is stricter than inspecting only the account's own file.
+Read: issue s19-1 records why both candidate paths are covered.

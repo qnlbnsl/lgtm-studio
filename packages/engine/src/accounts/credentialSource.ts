@@ -301,8 +301,9 @@ export const credentialSourceFor = (input: {
 // adapter's final output can arrive after its process is gone. The set only
 // grows by the tokens a store has held, which is a handful per account.
 export interface CredentialRegistry {
-  // At most two asynchronous store reads are in flight, even across timed-out
-  // batches. The total warm-up budget is 500 ms; failed stores retry on launch.
+  // At most two store inspections occupy logical slots. A timed-out system
+  // call can outlive its slot; that path is not read again until it settles.
+  // The total warm-up budget is 500 ms; failed stores retry on launch.
   readonly preload: (sources: ReadonlyArray<CredentialSource>) => Effect.Effect<void>;
   // Registers the source, then reads it. A failed read refuses the caller's
   // launch; the source stays registered, so a store that becomes readable
@@ -332,11 +333,12 @@ export const makeCredentialRegistry = (): CredentialRegistry => {
     if (added) current = [...seen].map((value) => Redacted.make(value));
   };
   let warming = 0;
+  const inspecting = new Set<string>();
   return {
     preload: (requested) => Effect.callback<void>((resume) => {
       const controller = new AbortController();
       const unique = new Map(requested.map((source) => [JSON.stringify(source.paths), source]));
-      const pending = [...unique].filter(([, source]) => source.paths.length > 0);
+      const pending = [...unique].filter(([, source]) => source.paths.length > 0 && !inspecting.has(JSON.stringify(source.paths)));
       const cache = new Map<string, Promise<Snapshot>>();
       let index = 0;
       let finished = false;
@@ -351,8 +353,21 @@ export const makeCredentialRegistry = (): CredentialRegistry => {
             const source = sources.get(key) ?? candidate;
             if (source.warm === undefined) continue;
             try {
-              const leaves = await source.warm(controller.signal, cache);
-              if (!controller.signal.aborted) { remember(leaves); sources.set(key, source); }
+              inspecting.add(key);
+              const reading = Promise.resolve().then(() => source.warm!(controller.signal, cache)).finally(() => inspecting.delete(key));
+              // stat cannot be cancelled by Node. Abandon the logical slot at
+              // the deadline, but do not start a duplicate read of that path.
+              let abandon: (() => void) | undefined;
+              const abandoned = new Promise<undefined>(resolve => {
+                abandon = () => resolve(undefined);
+                controller.signal.addEventListener('abort', abandon, { once: true });
+              });
+              try {
+                const leaves = await Promise.race([reading, abandoned]);
+                if (leaves !== undefined && !controller.signal.aborted) { remember(leaves); sources.set(key, source); }
+              } finally {
+                if (abandon !== undefined) controller.signal.removeEventListener('abort', abandon);
+              }
             } catch { /* Missing coverage must not prevent startup. Launch retries. */ }
           }
         } finally { warming--; }
