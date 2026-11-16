@@ -17260,6 +17260,19 @@ The website's fresh fallback cannot override that refusal.
 Changing paused-state admission would change the existing lifecycle contract.
 This unit leaves that contract unchanged.
 
+## s21-3. A website restart deliberately stops every agent
+
+Found: 2026-11-16, while building unit s21-recover.
+State: fixed in unit s21-recover.
+
+The restart continuation issued the stop command for every non-stopped agent.
+Recovery correctly left those stopped agents stopped.
+A website restart now closes the service scope through the same executable callback as before.
+It preserves the recorded lifecycle states for recovery, as a termination signal does.
+A deliberate stop of one agent still records that stop.
+The existing restart confirmation says that agents are stopped during shutdown.
+That wording is kept under this unit's restriction on visible changes.
+
 ## s21-5. A sign-in failure crashes the live chat composer
 
 Found: 2026-11-16, while checking the sign-in exception for unit s21-recover.
