@@ -10,7 +10,7 @@ import { installRestarter, serviceVersion, serviceRestartPending } from '../../s
 import { engineLists } from '../../src/pieces/lists.ts'
 import { registerRebuildCheck } from '../support/rebuildCheck.ts'
 afterEach(() => installRestarter(undefined))
-test('version and confirmed restart deny agents with the exact reason; restart stops agents before acknowledgement', async () => run(Effect.gen(function* () {
+test('version and confirmed restart deny agents with the exact reason; restart preserves agents for recovery', async () => run(Effect.gen(function* () {
   expect(engineLists.planners['client.service.restart']).toBeTypeOf('function')
   expect(engineLists.access['client.service.restart']).toEqual(['owner'])
   const agent = yield* seedAgent({ id: 'restart-worker' })
@@ -26,7 +26,7 @@ test('version and confirmed restart deny agents with the exact reason; restart s
   expect(serviceRestartPending()).toBe(true)
   expect(restarts).toBe(1)
   const snapshot = (yield* (yield* CommandHandler).input({ _tag: 'owner' })).snapshot
-  expect(snapshot.agents[agent.agentId]?.state._tag).toBe('stopped')
+  expect(snapshot.agents[agent.agentId]?.state._tag).toBe('idle')
   expect(yield* call(ownerCredential, 'resume', { agentId: agent.agentId })).toMatchObject({ _tag: 'Failure', failure: { reason: 'service restarting' } })
   expect(yield* readOutcome('client.service.restart', { confirmed: true })).toMatchObject({ _tag: 'Failure', failure: { reason: 'service restarting' } })
   expect(restarts).toBe(1)
@@ -90,7 +90,7 @@ test('restart preflight refuses missing or non-file launch paths before stopping
   }
 }), registerRebuildCheck()))
 
-test('restart writes an owner-attributed receipt before stopping, refuses a second request and never repeats a replay', async () => run(Effect.gen(function* () {
+test('restart writes one owner-attributed receipt without stopping agents, refuses a second request and never repeats a replay', async () => run(Effect.gen(function* () {
   const agent = yield* seedAgent({ id: 'receipt-worker' })
   let restarts = 0
   const start = () => { restarts++ }
@@ -101,7 +101,7 @@ test('restart writes an owner-attributed receipt before stopping, refuses a seco
   const rows = yield* input.runtime.sql<{ sequence: number; caller: string; event_type: string }>`SELECT sequence, caller, event_type FROM events WHERE event_type IN ('client.ServiceRestartRequested', 'AgentStopped') ORDER BY sequence`
   expect(rows[0]).toMatchObject({ event_type: 'client.ServiceRestartRequested' })
   expect(rows[0]!.caller).toBe('owner')
-  expect(rows[1]?.event_type).toBe('AgentStopped')
+  expect(rows).toHaveLength(1)
   expect(yield* read('client.service.restart', { requestId, confirmed: true })).toMatchObject({ restarting: true })
   expect(yield* readOutcome('client.service.restart', { requestId: 'another-restart', confirmed: true })).toMatchObject({ _tag: 'Failure', failure: { reason: 'service restarting' } })
   expect(restarts).toBe(1)
@@ -110,7 +110,7 @@ test('restart writes an owner-attributed receipt before stopping, refuses a seco
   expect(yield* read('client.service.restart', { requestId, confirmed: true })).toMatchObject({ restarting: true })
   expect(restarts).toBe(1)
   expect(yield* readOutcome('client.service.restart', { requestId, confirmed: false })).toMatchObject({ _tag: 'Failure', failure: { reason: 'request id reused' } })
-  expect(input.snapshot.agents[agent.agentId]?.state._tag).toBe('stopped')
+  expect(input.snapshot.agents[agent.agentId]?.state._tag).toBe('idle')
 }), registerRebuildCheck()))
 
 test('credential-bearing HTTPS URLs are refused before a network command even when the network would succeed', async () => {

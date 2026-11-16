@@ -8,17 +8,17 @@ import { incarnationOf, type FakeRunner, type DeliveryUpdateEvent, type PromptRe
 import {
   agentCredential, agentIdOf, agentRow, appendSetup, call, eventOf, makeFakeSecrets,
   ownerCredential, provideRig, seedAccount, seedHarness, startPayload, success,
-  type Rig,
+  type Rig, type Fakes,
 } from "./handlerRig.ts";
 import { makeFakeRunner } from "./fakeRunner.ts";
 import { deliveryRow, endTurn, eventually, pause, snapshot } from "./routingRig.ts";
 
 // Real command handler, log, SQLite and views. Only the process boundary is fake.
 // The caller registers its rebuild finalizer inside this scope.
-export const deliveryRig = <A, E, R>(rig: Rig, body: (runner: FakeRunner) => Effect.Effect<A, E, R>, redactor?: Layer.Layer<Redactor.Redactor>) =>
+export const deliveryRig = <A, E, R>(rig: Rig, body: (runner: FakeRunner) => Effect.Effect<A, E, R>, redactor?: Layer.Layer<Redactor.Redactor>, options: Pick<Fakes, "capacityHoldCondition"> = {}) =>
   Effect.gen(function* () {
     const runner = yield* makeFakeRunner();
-    return yield* provideRig(rig, { runner, secrets: makeFakeSecrets(), ...(redactor === undefined ? {} : { redactor }) }, Effect.gen(function* () {
+    return yield* provideRig(rig, { runner, secrets: makeFakeSecrets(), ...options, ...(redactor === undefined ? {} : { redactor }) }, Effect.gen(function* () {
       yield* seedAccount();
       yield* seedHarness();
       yield* runner.subscribed;

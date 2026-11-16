@@ -426,14 +426,15 @@ export const roleLabel = (a) => (ROLES[a.role] || ROLES.builder).label;
 
 // Order used by Home and the bell: failed starts first, then the longest wait.
 export const byAttention = (a, b) => (a.kind === 'failed' ? 0 : 1) - (b.kind === 'failed' ? 0 : 1) || a.createdAt - b.createdAt;
-export function openRequests(s, filter = {}) {
-  return s.requests.filter((r) => r.status === 'open' && !r.heldBy
+export function openRequests(s, filter = {}, includeHeld = false) {
+  return s.requests.filter((r) => r.status === 'open' && (!r.heldBy || includeHeld && live.on && r.kind === 'approval' && r.canAnswer)
     && !(projectOf(s, r.project) || {}).archived
     && (!filter.project || r.project === filter.project)
     && (!filter.agent || r.agent === filter.agent)
     && (!filter.team || (agentOf(s, r.agent) || {}).team === filter.team)
     && (!filter.kind || r.kind === filter.kind)).sort(byAttention);
 }
+export const answerableRequests = (s, filter = {}) => openRequests(s, filter, true);
 export const requestsOfTask = (s, tid) => s.requests.filter((r) => r.task === tid && r.status === 'open');
 export const requestsOfSprint = (s, sid) => { const ids = new Set(tasksOfSprint(s, sid).map((t) => t.id)); return s.requests.filter((r) => r.status === 'open' && (r.sprint === sid || ids.has(r.task))); };
 
@@ -442,6 +443,7 @@ export function agentStatus(s, a) {
   const open = openRequests(s, { agent: a.id });
   const need = open[0];
   const needWord = need ? { question: 'Needs answer', approval: 'Needs approval', merge: 'Needs merge', failed: 'Failed start' }[need.kind] : null;
+  if (a.crashed) return { dot: 'failed', word: a.activity || 'Crashed', tone: 'error' };
   if (a.state === 'failed') return { dot: 'failed', word: 'Failed start', tone: 'error' };
   if (a.state === 'stopped') return need ? { dot: 'stopped waiting', word: 'Stopped · ' + needWord, tone: 'warn' } : { dot: 'stopped', word: 'Stopped', tone: null };
   if (need) return { dot: 'waiting', word: needWord, tone: 'warn' };
@@ -457,7 +459,7 @@ export function agentStatus(s, a) {
 export function projectStatus(s, p) {
   if (p.archived) return { word: 'Archived', tone: null };
   if (p.archiving) return { word: 'Archiving', tone: 'warn' };
-  const n = openRequests(s, { project: p.id }).length;
+  const n = answerableRequests(s, { project: p.id }).length;
   if (n) return { word: `Needs you · ${n}`, tone: 'warn', n };
   const working = agentsOfProject(s, p.id).some((a) => a.state === 'working');
   if (!working) return { word: 'Idle', tone: null };

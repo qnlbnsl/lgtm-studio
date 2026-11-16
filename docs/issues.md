@@ -2243,7 +2243,7 @@ thread, without failing on its own setup.
 ## 152. A paused agent that cannot reload after a restart has no path back except stop
 
 Found: 2026-11-01, while building unit 6d.
-State: open.
+State: open. Unit s21-recover adds the website's fresh fallback for states that accept resume, but the existing command contract refuses resume while paused.
 
 What happens: when its account returns, a paused agent with a session whose
 adapter cannot reload gets `AgentReloadFailed` with the fixed reason "agent
@@ -5756,7 +5756,7 @@ Why it matters: A long-running service uses more memory without bound.
 ## 332. Recovery leaves an interrupted agent with a session that cannot reload, and writes no event
 
 Found: 2026-11-03, while planning the message board plan.
-State: open.
+State: partly fixed in unit s21-recover. The website can request a fresh session after a refused reload. Automatic recovery still leaves that agent interrupted, and the unrelated board-disposition description below remains open.
 
 What happens: A follower of the board must apply the `waits.ts` test itself (board review round 2, R2-A3).
 What should happen: Not decided.
@@ -17236,6 +17236,306 @@ Its "reload" step failed with "SocketReadError: An error occurred during Read".
 A second run on the same commit passed that step and gave the known result of 19 of 23.
 The cause of the single failure is not known.
 
+## 1140. Chat cannot recover an unloadable session and mislabels a crash
+
+Found: 2026-11-16, while building unit s21-recover.
+State: fixed in unit s21-recover.
+
+The chat Resume control sent only a reload request.
+A refused reload therefore left the agent unavailable.
+The roster mapping also presented a crash as a failed start.
+Resume now requests a fresh session after the engine explicitly refuses a reload.
+The chat uses the existing stopped composer, the engine's existing crash label, and the existing Resume control.
+An unfinished accepted turn now receives recovery's existing carry-on before later queued work.
+The crash handler still withdraws and returns deliveries that it had not accepted.
+Those returned deliveries are not silently revived.
+
+## 1141. A paused agent still cannot request a fresh session
+
+Found: 2026-11-16, while reading the resume contract for unit s21-recover.
+State: open, as the remaining part of issue 152.
+
+The command contract refuses resume in the paused state.
+The website's fresh fallback cannot override that refusal.
+Changing paused-state admission would change the existing lifecycle contract.
+This unit leaves that contract unchanged.
+
+## 1142. A website restart deliberately stops every agent
+
+Found: 2026-11-16, while building unit s21-recover.
+State: fixed in unit s21-recover.
+
+The restart continuation issued the stop command for every non-stopped agent.
+Recovery correctly left those stopped agents stopped.
+A website restart now closes the service scope through the same executable callback as before.
+It preserves the recorded lifecycle states for recovery, as a termination signal does.
+A deliberate stop of one agent still records that stop.
+The existing restart confirmation says that agents are stopped during shutdown.
+That wording is kept under this unit's restriction on visible changes.
+
+## 1143. The owner's request views hide answers while a lead holds a permission
+
+Found: 2026-11-16, while building unit s21-recover.
+State: fixed in unit s21-recover.
+
+The engine accepted the owner's answer in this state.
+The request index nevertheless reported that the owner could not answer.
+Home also excluded held requests, and the chat card omitted its answer buttons.
+Open permissions now advertise the owner's existing answer authority.
+Home includes those permissions, and both existing card presenters keep their answer controls.
+A worker receives one harness answer, and the lead's queued request is withdrawn.
+A later answer from the lead is refused because the subject is closed.
+Held questions keep their existing presentation.
+
+## 1144. A sign-in failure crashes the live chat composer
+
+Found: 2026-11-16, while checking the sign-in exception for unit s21-recover.
+State: fixed in unit s21-recover.
+
+The failed-start composer used the mock's `studio` machine identifier as its fallback.
+The live website's machine identifier is `local`.
+Reading the missing machine's name threw an exception before the sign-in control appeared.
+The live composer now uses the agent's project machine for that existing control.
+The sample keeps its original fallback.
+
+## 1145. Phone alert links target an absent thread route
+
+Found: 2026-11-16, while building unit s21-recover.
+State: fixed in unit s21-recover.
+
+The notification transport emitted a thread route that the website does not handle.
+Agent alerts now link to the existing project chat route.
+Permission and question links use the existing request-focus parameter.
+Board alerts link to the existing Messages channel and post thread.
+Login also discarded those bookmarks by always navigating to Home.
+Login now retains the existing subject route when a phone bookmark uses one of those forms.
+The link contains identifiers instead of request text or credentials.
+
+## 1146. An agent outside a project has no reachable website chat
+
+Found: 2026-11-16, while checking notification destinations for unit s21-recover.
+State: open.
+
+The website reaches agent chats through a project.
+An agent outside every project has no matching website chat route.
+The notification sender omits that unusable link.
+This unit does not add a screen or a route for an unassigned agent.
+
+## 1147. A crash after an errored turn repeats work that was returned
+
+Found: 2026-11-16, while running the round 2 recovery regressions.
+State: fixed in unit s21-recover, round 2.
+
+An accepted delivery could outlive its turn's error without a TurnEnded event.
+Resume treated that old acceptance as unfinished work after a later crash.
+Resume now folds the thread with the views' lifecycle reducer.
+It checks the lifecycle state immediately before the crash.
+Fresh replay uses TurnEnded alone as its boundary, as corrected in round 3b.
+It also requires each replayed delivery to remain accepted.
+A crash carry-on now says that the agent crashed instead of saying that the engine restarted.
+
+## 1148. Crash mapping and a shared request query changed unrelated attention views
+
+Found: 2026-11-16, while running the round 2 presentation regressions.
+State: fixed in unit s21-recover, round 2.
+
+A crash had moved from Needs you to Idle in Messages and from Waiting to Idle in Workflow.
+Those attention groups now retain the crash.
+The shared request query also changed worker status words, lead waiting counts, and sample stop dialogs.
+Those callers now retain their previous audience.
+Home and its matching owner counts use a separate answerable-request query.
+The held permission card again names the lead that holds it while offering the owner's answer buttons.
+
+## 1149. Source guards accepted duplicated integration anchors
+
+Found: 2026-11-16, while running the round 2 build-guard regressions.
+State: fixed in unit s21-recover, round 2.
+
+The recovery, notification-login, and held-permission index replacements checked only for presence.
+They could replace the first of two anchors silently.
+Each guard now requires its exact number of anchors.
+The tests run the original source, a missing anchor, and an extra anchor separately.
+
+## 1150. A fresh resume can repeat steps without the previous session's memory
+
+Found: 2026-11-16, while reading the round 2 review and fresh-resume path.
+State: open for the owner's wording decision.
+
+The composer and stop confirmation say that Resume continues from its last turn.
+A fresh resume opens a new session without the old session's memory.
+Replaying an unfinished delivery can repeat a step that was already performed.
+Proposed wording: "Resume tries the saved session. If it cannot reload, a new session retries unfinished deliveries and may repeat steps."
+The screen text was not changed in this unit.
+
+## 1151. Restart messages still say that running agents are stopped
+
+Found: 2026-11-16, while reading the round 2 review and the restart texts.
+State: open for the owner's wording decision.
+
+The service confirmation, terminal API confirmation, and website toast still describe agents as stopped.
+A service restart preserves their recorded lifecycle for recovery.
+The affected files are serviceControl.ts, api/server.ts, and design/mock/js/live/service-settings.js.
+Proposed confirmation: "Restart LGTM Studio? Recoverable agents will reconnect after restart. Agents you stopped stay stopped."
+Proposed toast: "LGTM Studio is restarting. Reconnect to see recovered agents."
+The existing text was not changed in this unit.
+
+## 1152. An already-delivered holder copy receives no answered-elsewhere notice
+
+Found: 2026-11-16, while running the round 2 idle-lead permission regression.
+State: open.
+
+An idle lead can receive a permission's routed copy before the owner answers it.
+The owner's answer reaches the worker once.
+The engine withdraws queued copies but leaves the already-sent copy unchanged.
+No existing delivery tells the lead that another actor answered.
+A later answer attempt receives the generic command refusal.
+This unit records that gap without inventing a notice or a stored event.
+
+## 1153. A board alert uses the alert agent's project for another project's channel
+
+Found: 2026-11-16, while running the round 2 alert-route regressions.
+State: fixed in unit s21-recover, round 2.
+
+A board alert could combine one project's address with another project's channel.
+The link now follows the website's team, project-anchor, and member placement rules for channels.
+A reply to a reply already linked to its immediate parent's existing thread correctly.
+The engine and browser tests now cover both cases.
+
+## 1154. Merge and sprint alerts with an agent open that agent's chat
+
+Found: 2026-11-16, while reading the round 2 review and running the alert-kind journey.
+State: open.
+
+An alert with an agent uses that agent's chat unless its subject is a board post or a request.
+A merge or sprint alert can therefore open chat instead of its merge or sprint.
+This unit does not add destinations for those subjects.
+
+## 1155. The older phone-alert journeys expect routes for unassigned agents
+
+Found: 2026-11-16, while running the round 2 browser journeys.
+State: fixed on 2026-11-16, with website coverage added before changing the retired journeys.
+
+The board-alert and phone-flow journeys build the retired website and start agents outside every project.
+They expect notifications to contain that page's old thread address.
+The engine now emits destinations for the website served by Studio.
+That website has no chat for an unassigned agent, as issue 1146 records.
+The website's notification journey covers board subject links, including nested replies and another project's channel.
+The studio-board-alert journey now follows an actual carrier link on a 360-pixel phone viewport.
+It reads the subject, posts the owner's reply, and checks one durable wake and delivery to the real child process after two flushes.
+The studio-phone-flow journey follows a project agent's permission alert on the same viewport.
+It checks secure login, one permission answer, released output, and readback after reload without another answer.
+Both retired journeys now navigate directly to their existing thread screens.
+Only their assertions and navigation that depended on the omitted carrier link were replaced.
+Every other old assertion remains, including the explicit Read post gate that the website does not have.
+
+## 1156. The email browser fixture assumes the repository root as its working directory
+
+Found: 2026-11-16, while running the round 2 browser journeys from packages/web.
+State: open.
+
+The email notification fixture copies design/mock through a working-directory-relative path.
+Running the assigned journey from packages/web looks for packages/web/design/mock and fails before opening the page.
+The failure is in the fixture's source-path lookup.
+This unit leaves that unrelated fixture unchanged.
+
+## 1157. Crash recovery forgets accepted work during a pause, hold, or resume setup
+
+Found: 2026-11-16, while reproducing the round 3b recovery review.
+State: fixed in unit s21-recover, round 3b.
+
+A usage pause retains accepted work with its mid-turn flag.
+A capacity hold retains accepted work while the lifecycle is idle.
+Resume previously treated neither state as an unfinished turn after a crash.
+A second crash during session setup also erased the first crash's unfinished-turn evidence.
+The thread fold now retains all three cases for a reload carry-on.
+A capacity hold before acceptance still receives no carry-on after its queued work is withdrawn.
+
+## 1158. A fresh resume drops accepted work after an owner stop or capacity hold
+
+Found: 2026-11-16, while reproducing the round 3b fresh-session review.
+State: fixed in unit s21-recover, round 3b.
+
+The round 2 replay boundary included a stop and every transition from working to idle.
+Those events can cut a turn without completing its accepted delivery.
+Fresh replay now uses TurnEnded alone as its historical boundary.
+An accepted delivery after that boundary is requeued with its original identifier.
+A returned delivery from an errored turn is still excluded by its current status.
+
+## 1159. A group-only board channel loses its notification destination
+
+Found: 2026-11-16, while reproducing the round 3b channel-placement review.
+State: fixed in unit s21-recover, round 3b.
+
+The notification mapper read the channel's stored members.
+A group channel resolves its members through the board instead of storing that list.
+The website receives those resolved members through the board channels command.
+Notification placement now uses that same member resolver.
+A channel anchored by a project worker therefore reaches that project's Messages thread without a team or project-lead anchor.
+
+## 1160. The Workflow waiting count excludes a permission listed on Home
+
+Found: 2026-11-16, while reproducing the round 3b request-count review.
+State: fixed in unit s21-recover, round 3b.
+
+The Workflow overview links its waiting count to Home.
+Its query excluded a permission that the owner could answer while a lead held it.
+The overview now uses Home's answerable audience.
+The website journey follows that count to the matching Home row before answering it.
+
+## 1161. The thread's requests-below indicator excludes an answerable held card
+
+Found: 2026-11-16, while reviewing the round 3b visible-change list.
+State: open for the owner's presentation decision.
+
+The thread can display a permission held by its lead with owner answer controls.
+Its requests-below indicator still uses the earlier audience that excludes held requests.
+The indicator can therefore omit a card that the owner can answer below the current scroll position.
+This round records the difference without changing that indicator.
+
+## 1162. A collapsed team's request count differs from its expanded agent rows
+
+Found: 2026-11-16, while reviewing the round 3b visible-change list.
+State: open for the owner's presentation decision.
+
+The collapsed sidebar team count includes an answerable permission held by a lead.
+The expanded agent rows keep their earlier status audience, which excludes that held permission.
+The count can therefore show one request while the expanded rows show no matching request status.
+This round records the difference without changing the expanded status words.
+
+## 1163. A crashed Messages card replaced the earlier failure explanation
+
+Found: 2026-11-16, while reproducing the round 3b visible-change review.
+State: fixed in unit s21-recover, round 3b.
+
+The crash lane used the activity label Crashed as its explanation.
+The earlier Messages card used the stored failure reason or Failed to start.
+That earlier explanation is restored on this card.
+The card remains in Needs you, and the existing chat recovery controls remain available.
+
+## 1164. A resolved crash continuation returns after a later setup crash
+
+Found: 2026-11-16, while reproducing the round 4 recovery review.
+State: fixed in unit s21-recover, round 4.
+
+The resume fold retained its earlier unfinished-crash flag after a replacement session opened.
+It also retained that flag after the owner deliberately stopped the crashed agent.
+A later crash during setup could therefore request a carry-on after the earlier continuation had ended.
+The fold now clears that remembered interruption on SessionOpened and AgentStopped.
+A failed reload that never opens a session still retains the unfinished work through another setup crash.
+The turn table also checks a non-mid-turn pause and a released capacity turn that has finished.
+
+## 1165. A working agent receives a crash carry-on before accepting its delivery
+
+Found: 2026-11-16, while reproducing the round 4 recovery review.
+State: fixed in unit s21-recover, round 4.
+
+Sending a delivery makes the agent working before its content update accepts the work.
+The crash handler returns that unaccepted delivery to its sender as not delivered.
+The resume fold nevertheless treated working state alone as unfinished accepted work.
+The fold now tracks the current delivery and requires its status to remain accepted before carrying on working state.
+The regression keeps an older finished delivery accepted to prove that it cannot substitute for the current delivery.
+The lead can resend the returned work after resume without an extra carry-on.
+
 ## 1125. The live merge review discarded fresh status evidence.
 
 State: fixed on 2026-11-16. This is the same fault as issue 1041.
@@ -17403,5 +17703,14 @@ The journeys were `git.spec.ts:183`, `git.spec.ts:233`, `git.spec.ts:316`, `new-
 The journey at `studio.spec.ts:902` reached its six minute limit.
 Each of the six passed when it was run alone with one worker.
 This is the same load sensitivity that issues 966, 1014, 1044, 1066, 1079 and 1122 record.
+
+State: open. Recorded on 2026-11-16.
+
+## 1166. Four browser journeys failed in the full check of the recovery unit and passed alone.
+
+The journeys were `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:783` and `studio.spec.ts:1189`.
+Other builders were running their own test suites on the same computer during the full check.
+Each of the four passed when it was run alone with one worker.
+This is the load sensitivity that issue 1139 and the issues it names record.
 
 State: open. Recorded on 2026-11-16.

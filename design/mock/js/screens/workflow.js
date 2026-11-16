@@ -1,7 +1,7 @@
 // The Workflow tab: where a project is in the default build loop, its review rounds,
 // its test runs, its end-result page, and the settings of the loop.
 import { html, useState, Icon, cx, href, go, ago, clock, dayLabel, useNow, plural, update, uid, MIN, HOUR, DAY } from '../lib.js';
-import { PHASES, byId, agentOf, agentsOfTeam, sprintsOf, openRequests, teamsOf, teamName, leadOf, repoOf, routeForAgent, routeForRequest, KIND_LABEL, agentLabel } from '../data.js';
+import { PHASES, byId, agentOf, agentsOfTeam, sprintsOf, answerableRequests, teamsOf, teamName, leadOf, repoOf, routeForAgent, routeForRequest, KIND_LABEL, agentLabel } from '../data.js';
 import * as act from '../actions.js';
 import { recordedPhaseTimes } from '../live/workflow.js';
 import { Avatar, Empty } from '../ui.js';
@@ -284,13 +284,13 @@ function StuckCard({ s, p, w }) {
 
 // The project's agents in three groups. Waiting hides when empty. Working and Idle show
 // whenever the project has agents, and one hides only when it is empty and another shows.
-function agentGroups(s, p) {
+export function agentGroups(s, p) {
   const all = s.agents.filter((a) => a.project === p.id);
   if (!all.length) return [{ id: 'all', label: 'Agents', agents: [] }];
   const g = [
-    { id: 'waiting', label: 'Waiting', agents: all.filter((a) => a.state === 'waiting' || a.state === 'failed') },
+    { id: 'waiting', label: 'Waiting', agents: all.filter((a) => a.crashed || a.state === 'waiting' || a.state === 'failed') },
     { id: 'working', label: 'Working', agents: all.filter((a) => a.state === 'working') },
-    { id: 'idle', label: 'Idle', agents: all.filter((a) => a.state === 'idle' || a.state === 'stopped') },
+    { id: 'idle', label: 'Idle', agents: all.filter((a) => !a.crashed && (a.state === 'idle' || a.state === 'stopped')) },
   ];
   const shown = (x) => x.agents.length > 0;
   return g.filter((x) => x.id === 'waiting' ? shown(x) : shown(x) || !g.some((y) => y !== x && shown(y)));
@@ -311,7 +311,7 @@ function Overview({ s, p, w }) {
   const now = useNow(); const cur = Math.max(0, PHASES.findIndex((x) => x.id === p.phase));
   const [sel, setSel] = useState(null); const i = sel == null ? cur : sel; const ph = PHASES[i]; const info = INFO[ph.id];
   const times = phaseTimes(s, p, cur); const tm = times[i]; const status = i < cur ? 'done' : i === cur ? 'now' : 'next';
-  const reqs = openRequests(s, { project: p.id });
+  const reqs = answerableRequests(s, { project: p.id });
   const ran = ph.id === 'define' && p.hasMocks ? [...info.ran, 'Design lead', 'Designer'] : info.ran;
   const made = info.made(s, p, w).filter(Boolean);
   const sps = sprintsOf(s, p.id); const done = sps.filter((x) => x.column === 'Done').length; const doing = sps.filter((x) => x.column === 'In progress' || x.column === 'Review').length;

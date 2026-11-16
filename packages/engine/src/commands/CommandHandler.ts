@@ -477,10 +477,7 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
       const finish = (outcome: Effect.Success<ReturnType<typeof prepare>>, step: Step) => Effect.gen(function* () {
         if (outcome.failure !== undefined) return yield* outcome.failure;
         if (name === "client.web.settings.set") { setTerminalSwitch(log, ((yield* views.snapshot).client as { webSettings?: { terminalEnabled?: boolean } } | undefined)?.webSettings?.terminalEnabled === true); yield* webSettingsCommitted(views); }
-        if ("restartAccepted" in outcome && outcome.restartAccepted) yield* completeServiceRestart(
-          { runtime, actor: { _tag: "owner" }, snapshot: yield* views.snapshot },
-          (agentId) => executeMutation({ _tag: "owner" }, "stop", { requestId: randomUUID(), agentId }),
-        );
+        if ("restartAccepted" in outcome && outcome.restartAccepted) yield* completeServiceRestart();
         const late = outcome.afterCommit === undefined ? undefined : yield* step(outcome.afterCommit);
         return late ?? outcome.reply!;
       });

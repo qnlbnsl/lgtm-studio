@@ -34,6 +34,7 @@ it("6.6/6.7 every enabled kind reaches only AlertSender, send-time changes take 
   await withCarrier(() => Effect.gen(function* () {
     yield* registerRebuildCheck();
     yield* seedAgent({ id: "worker", state: "working", groups: ["build"] });
+    yield* append({ _tag: 'project.Created', projectId: 'sender-project', repoId: 'sender-repo', worktreeId: 'sender-worktree', name: 'Sender', goal: 'Reach the agent', machineId: 'local', leadAgentId: 'worker' });
     yield* append({ _tag: "client.WebSettingsChanged", settings: { enabled: true, port: 8787, heartbeatSeconds: 25, proxyMode: true, publicAddress: "https://lgtm.example" } });
     for (const kind of alertKindNames) {
       yield* append({ _tag: "client.AlertRaised", alertId: `sender-${kind}`, alertKey: `fixture:${kind}`, kind,
