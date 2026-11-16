@@ -12,13 +12,28 @@ export async function run(key, work) {
   if (busy(key)) return false;
   pending(key, true);
   if (key === 'git') holdGit();
-  const generation = sessionGeneration;
+  const generation = sessionGeneration, visit = key.startsWith('git') ? gitController : undefined;
   const current = () => generation === sessionGeneration;
   try { await work(); return true; }
-  catch (e) { if (current() && S().session.status === 'in') act.toast(e.message || 'The service did not complete the request.', 'error'); return false; }
+  catch (e) { if (current() && (!visit || gitController === visit && visit.enabled) && S().session.status === 'in') act.toast(e.message || 'The service did not complete the request.', 'error'); return false; }
   finally { if (current()) { pending(key, false); if (key === 'git') scheduleGit(); } }
 }
-const request = (tag, payload = {}) => engine.request(tag, payload);
+const mutatesGit = (tag) => /^project\.(stage|unstage|discard$|commit$|pull$|push$|fetch$|integrate$|update$|merge\.abort$|conflict\.(choose|resolve|reopen)$|review\.(prepare|approve|decline)$)/.test(tag);
+async function request(tag, payload = {}, options = {}) {
+  const c = gitController;
+  if (!c || !tag.startsWith('project.')) return Object.keys(options).length ? engine.request(tag, payload, options) : engine.request(tag, payload);
+  const mutation = mutatesGit(tag);
+  if (mutation) {
+    const w = wt(payload.worktreeId), headChange = /\.(commit|pull|push|fetch|integrate|update|abort|approve)$/.test(tag);
+    const ids = tag === 'project.fetch' ? [...c.records.keys()] : w ? headChange ? affectedGit(w, wt(payload.destinationId) || (tag === 'project.review.approve' ? destination(w) : undefined)) : [w.id] : [];
+    if (tag === 'project.pull' && w) ids.push(...S().worktrees.filter((x) => x.repo === w.repo && !x.parentId).map((x) => x.id));
+    for (const id of ids) { const r = c.records.get(id); if (r) { r.epoch++; mapping.dirtyGitRecord(r, 'summary', Date.now()); if (headChange || tag.includes('review.')) mapping.dirtyGitRecord(r, 'review', Date.now()); } }
+  }
+  const call = { abort: new AbortController(), id: payload.worktreeId }; c.calls.add(call);
+  const signal = options.signal ? AbortSignal.any([options.signal, call.abort.signal]) : call.abort.signal;
+  try { return await engine.request(tag, payload, { ...options, signal, onRequestId: (id) => { if (mutation) c.ownIds.add(id); options.onRequestId?.(id); } }); }
+  finally { c.calls.delete(call); }
+}
 const draftValues = () => Object.fromEntries([...settingsDrafts].map(([key, draft]) => [key, draft.value]));
 const settingsPatch = (patch) => engineWrite({ settings: { ...S().settings, ...patch, ...draftValues() } });
 let sessionGeneration = 0;
@@ -40,6 +55,7 @@ export function observe(patch) {
     for (const item of settingsQueue.items) for (const done of item.done) done(false);
     settingsQueue = { items: [], running: false }; settingsDrafts.clear();
     S().ui.gitPending = {};
+    stopGit();
     service = accounts = statuses = retryPending = undefined; subscriptionsLoaded = false; S().ui.serviceReady = false; revision++; clearTimeout(refreshTimer);
     Object.assign(patch, { notifications: [], settings: { ntfyServer: '', ntfyTopic: '', ntfyToken: '', tokenSet: false, ntfyEnabled: false, email: {}, notifyOn: {}, quiet: {} } });
   }
@@ -49,6 +65,7 @@ export function observe(patch) {
   if (screen?.name === 'git') {
     if (patch.worktrees) reconcileGit(patch.worktrees);
     if (patch.git && gitController) {
+      if (patch.git.requestId && gitController.ownIds.has(patch.git.requestId)) { return; }
       for (const [id, r] of gitController.records) if (!patch.git.worktreeIds.length || patch.git.worktreeIds.includes(id)) mapping.dirtyGitRecord(r, patch.git.group, Date.now());
       scheduleGit();
     }
@@ -67,7 +84,9 @@ export function openScreen(name, project) {
   const visit = screen;
   const refresh = () => { if (screen === visit) { if (name === 'git') dirtyAllGit(); else void refreshScreen(); } };
   addEventListener('focus', refresh);
-  return () => { if (screen !== visit) return; stopGit(); screen = undefined; revision++; clearTimeout(refreshTimer); removeEventListener('focus', refresh); };
+  const visibility = () => { if (screen !== visit || name !== 'git') return; if (typeof document !== 'undefined' && document.hidden) suspendGit(); else { if (gitController) { gitController.enabled = true; dirtyAllGit(); } } };
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', visibility);
+  return () => { if (screen !== visit) return; stopGit(); screen = undefined; revision++; clearTimeout(refreshTimer); removeEventListener('focus', refresh); if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', visibility); };
 }
 async function refreshScreen() {
   if (!mapping || !screen || S().session.status !== 'in') return;
@@ -301,6 +320,7 @@ function recordFor(w, c = gitController) {
   let r = c.records.get(w.id);
   if (!r || r.identity !== identity(w)) {
     r?.summaryAbort?.abort(); r?.detailAbort?.abort();
+    for (const call of c.calls) if (call.id === w.id) call.abort.abort();
     r = mapping.gitRefreshRecord(identity(w), Date.now(), (r?.epoch || 0) + 1); c.records.set(w.id, r);
   }
   return r;
@@ -308,29 +328,30 @@ function recordFor(w, c = gitController) {
 function reconcileGit(rows = S().worktrees) {
   const c = gitController; if (!c) return;
   const list = gitRows(c.project, rows), ids = new Set(list.map((w) => w.id));
-  for (const [id, r] of c.records) if (!ids.has(id)) { r.epoch++; r.summaryAbort?.abort(); r.detailAbort?.abort(); c.records.delete(id); }
+  for (const [id, r] of c.records) if (!ids.has(id)) { r.epoch++; r.summaryAbort?.abort(); r.detailAbort?.abort(); for (const call of c.calls) if (call.id === id) call.abort.abort(); c.records.delete(id); }
   for (const w of list) recordFor(w, c);
   scheduleGit();
 }
-function holdGit() {
+function holdGit() { if (gitController) clearTimeout(gitController.timer); }
+function suspendGit() {
   const c = gitController; if (!c) return;
-  clearTimeout(c.timer);
+  c.enabled = false; clearTimeout(c.timer);
   for (const r of c.records.values()) {
     r.epoch++; r.summaryAbort?.abort(); r.detailAbort?.abort();
     if (r.phase === 'reading') { r.phase = 'due'; r.nextAttempt = Date.now(); }
   }
+  for (const call of c.calls) call.abort.abort();
+  c.reading = null; pending('git-read', false);
 }
 function stopGit() {
   const c = gitController; if (!c) return;
-  c.enabled = false; clearTimeout(c.timer);
-  for (const r of c.records.values()) { r.epoch++; r.summaryAbort?.abort(); r.detailAbort?.abort(); }
-  gitController = undefined;
-  pending('git-read', false);
+  suspendGit(); c.ownIds.clear(); gitController = undefined;
 }
 function startGit(project) {
   if (!mapping) return;
-  const c = gitController = { ...mapping.createGitController(lastAutomaticStart), project };
+  const c = gitController = { ...mapping.createGitController(lastAutomaticStart), project, calls: new Set(), ownIds: new Set() };
   reconcileGit();
+  if (typeof document !== 'undefined' && document.hidden) { suspendGit(); return; }
   // Opening the screen is an owner demand. It must not disable its controls.
   clearTimeout(c.timer); pending('git-read', true); c.reading = 'initial';
   void loadGit(project).catch(() => {}).finally(() => { if (gitController === c) { c.reading = null; pending('git-read', false); scheduleGit(); } });
@@ -365,7 +386,7 @@ async function readGitRecord(w, project, r, c, forced, reviews = false) {
   const epoch = r.epoch, summary = r.summaryDirty, reviewCount = r.reviewDirty;
   const valid = () => r.epoch === epoch && S().session.status === 'in' && (!c || gitController === c && c.enabled && c.records.get(w.id) === r);
   r.summaryAbort?.abort(); const abort = r.summaryAbort = new AbortController();
-  const ask = async (tag, payload) => { if (!valid()) return; const reply = await engine.request(tag, payload, { signal: abort.signal }); return valid() ? read(reply) : undefined; };
+  const ask = async (tag, payload) => { if (!valid()) return; const reply = await request(tag, payload, { signal: abort.signal }); return valid() ? read(reply) : undefined; };
   r.phase = 'reading'; let failure = null;
   try {
     let state;
@@ -386,7 +407,7 @@ async function readGitRecord(w, project, r, c, forced, reviews = false) {
           return { ...cached, id: x.path, path: x.path, parts: cached?.parts || [], resolved: !!x.resolved, fingerprint: x.fingerprint || cached?.fingerprint, loaded: !!cached?.loaded };
         }) } : null;
       writeWt(w.id, { ...mapping.mapGitState(state, w.parent), files, merge, ready: !changes.truncated, truncated: changes.truncated || resolved.truncated });
-      r.summaryDirty = Math.max(0, r.summaryDirty - summary);
+      if (!failure) r.summaryDirty = Math.max(0, r.summaryDirty - summary);
     }
     if (w.kind === 'project' && (reviews || reviewCount || !wt(w.id).reviewLoaded || wt(w.id).review?.status === 'open')) {
       try {
@@ -427,7 +448,7 @@ async function loadGitDetail(id, selectedCommit, automatic = false) {
   const c = gitController, r = recordFor(w, c), epoch = r.epoch;
   r.detailAbort?.abort(); const abort = r.detailAbort = new AbortController();
   const valid = () => !abort.signal.aborted && r.epoch === epoch && wt(id) && S().session.status === 'in' && (!c || gitController === c && c.enabled && c.records.get(id) === r);
-  const ask = async (tag, payload) => { if (!valid()) return; const value = read(await engine.request(tag, payload, { signal: abort.signal })); return valid() ? value : undefined; };
+  const ask = async (tag, payload) => { if (!valid()) return; const value = read(await request(tag, payload, { signal: abort.signal })); return valid() ? value : undefined; };
   const ui = S().gitUi[id] || {}, tab = ui.tab || (w.merge ? 'conflicts' : 'changes');
   const failed = () => { if (valid()) act.toast('The file detail could not be loaded.', 'error'); };
   try {
