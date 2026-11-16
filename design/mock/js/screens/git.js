@@ -372,7 +372,7 @@ export function seedGit(state) {
       });
     }
   }
-  state.worktrees = wts;
+  state.worktrees = wts.map((w) => ({ ...w, stale: false }));
   state.gitUi = {};
 }
 
@@ -745,6 +745,7 @@ export function GitTab({ s, project }) {
       <${AheadBehind} w=${w} />
       ${live.on && html`<button type="button" class="btn sm" onClick=${() => liveGit.refreshGit(project.id)}>Refresh Git</button>${['fetch', 'pull', 'push'].map((op) => html`<button type="button" class="btn sm" onClick=${() => liveGit.syncGit(w.id, op)}>${op[0].toUpperCase() + op.slice(1)}</button>`)}${liveGit.busy('git') && html`<span role="status">Working…</span>`}`}
       ${live.on && w.truncated && html`<span role="alert">The change list is incomplete.</span>`}
+      ${w.stale && html`<span role="alert">This worktree could not be refreshed.</span>`}
       <span class="grow"></span>
       <div class="seg" role="tablist" aria-label="Git views">
         <button type="button" aria-pressed=${tab === 'changes'} onClick=${() => setTab('changes')}>Changes${w.files.length > 0 && html`<span class="count">${w.files.length}</span>`}</button>

@@ -1,3 +1,4 @@
+import * as refreshPolicy from '../src/gitRefresh.ts';
 import { readFileSync } from "node:fs";
 import { expect, it, vi } from "vitest";
 import { gitActionsSource } from "../scripts/gitActions.ts";
@@ -9,15 +10,25 @@ function fixture(request: (tag: string, payload: any) => Promise<unknown>) {
   const state: any = { session: { status: "in" }, ui: {}, projects: [project], inspecting: {}, gitUi: { workspace: { tab: "conflicts" } },
     worktrees: [{ id: "workspace", project: project.id, repo: project.repo, branch: "project", machine: "local", kind: "project", files: [], merge: null,
       review: { id: "review", project: project.id, head: "head", baseHead: "base", agent: "lead" } }] };
-  const dialogs: any[] = [], toasts: string[] = [];
+  const dialogs: any[] = [], toasts: string[] = [], listeners = new Map<string, () => void>();
+  const requests = vi.fn(request);
   const act: any = { confirm: (d: any) => dialogs.push(d), closeDialog: vi.fn(), toast: (s: string) => toasts.push(s) };
   const source = copied("js/live/git.js").replace(/^import .*;$/gm, "").replace(/export /g, "");
   const actions = new Function("store", "live", "engineWrite", "notify", "engine", "act", "update", "addEventListener", "removeEventListener",
-    `${source}\nreturn { installMappings, openScreen, refreshGit, busy, declineReview, discard, stage, integrate, selectGit, commit, syncGit, abortMerge, updateFromBase, answerReview };`)(
-    { state }, { on: true }, (p: object) => Object.assign(state, p), () => {}, { request }, act, (f: (s: any) => void) => f(state), () => {}, () => {});
-  actions.installMappings({ mapGitState: (s: any) => s, mapGitChanges: (items: any[]) => items,
+    `${source}\nreturn { installMappings, openScreen, refreshGit, observe, busy, declineReview, discard, stage, integrate, selectGit, commit, syncGit, abortMerge, updateFromBase, answerReview };`)(
+    { state }, { on: true }, (p: object) => Object.assign(state, p), () => {}, { request: requests }, act, (f: (s: any) => void) => f(state), (name: string, listener: () => void) => listeners.set(name, listener), (name: string) => listeners.delete(name));
+  actions.installMappings({ ...refreshPolicy, mapGitState: (s: any) => s, mapGitChanges: (items: any[]) => items,
     mapMainReview: (r: any) => r, mapConflict: (c: any) => ({ ...c, id: c.path, selection: c }) });
-  return { state, actions, act, dialogs, toasts };
+  return { state, actions, act, dialogs, toasts, listeners, requests };
+}
+
+async function focusRead(f: ReturnType<typeof fixture>) {
+  const before = f.requests.mock.calls.filter(([tag]) => tag === 'project.git.state').length;
+  f.listeners.get('focus')!();
+  await vi.waitFor(() => {
+    expect(f.requests.mock.calls.filter(([tag]) => tag === 'project.git.state').length).toBeGreaterThan(before);
+    expect(f.actions.busy('git-read')).toBe(false);
+  });
 }
 
 it("an explicit refresh survives a held older background read and stays busy until the conflict details arrive", async () => {
@@ -49,14 +60,16 @@ it("an explicit refresh survives a held older background read and stays busy unt
 });
 
 it("Send back keeps its dialog open until its complete readback and pending state have finished", async () => {
-  const readback = gate(); let reads = 0;
+  const readback = gate(); let reads = 0, hold = false;
   const f = fixture(async (tag) => {
     if (tag === "project.review.decline") return { result: { id: "review", outcome: "sent_back" } };
-    if (tag === "project.git.state") { reads++; await readback.held; return { result: { mergeHead: null } }; }
+    if (tag === "project.git.state") { if (hold) { reads++; await readback.held; } return { result: { mergeHead: null } }; }
     if (tag === "project.changes") return { result: { items: [], truncated: false } };
     if (tag === "project.review.status") return { result: { review: null } };
     throw new Error(tag);
   });
+  const close = f.actions.openScreen('git', 'project');
+  await vi.waitFor(() => expect(f.actions.busy('git-read')).toBe(false)); hold = true;
   const decision = f.actions.declineReview("review", "Please check it");
   try {
     await vi.waitFor(() => expect(reads).toBe(1));
@@ -66,7 +79,7 @@ it("Send back keeps its dialog open until its complete readback and pending stat
     readback.release(); await decision;
     expect(f.act.closeDialog).toHaveBeenCalledOnce();
     expect(f.toasts).toEqual([]);
-  } finally { readback.release(); await decision; }
+  } finally { readback.release(); await decision; close(); }
 });
 
 it("discard passes the existing confirmation a visible pending state through the complete readback", async () => {
@@ -165,13 +178,19 @@ it("picking another worktree refreshes its cached Git state before the owner can
   const f = fixture(async (tag, payload) => {
     if (tag === "project.git.state") { reads.push(payload.worktreeId); return { result: { head: "new-head", mergeHead: null } }; }
     if (tag === "project.changes") return { result: { items: [], truncated: false } };
+    if (tag === "project.review.status") return { result: { review: null } };
     throw new Error(tag);
   });
   f.state.worktrees.push({ ...f.state.worktrees[0], id: "other", branch: "other", kind: "team", head: "old-head" });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+  await vi.waitFor(() => expect(f.actions.busy('git-read')).toBe(false)); reads.length = 0;
+  f.state.worktrees.find((w: any) => w.id === 'other').head = 'old-head';
   await f.actions.selectGit("other");
   expect(reads).toEqual(["other"]);
   expect(f.state.worktrees.find((w: any) => w.id === "other").head).toBe("new-head");
   expect(f.toasts).toEqual([]);
+  } finally { close(); }
 });
 
 
@@ -184,9 +203,13 @@ it("an explicit project refresh still reads every worktree", async () => {
     throw new Error(tag);
   });
   f.state.worktrees.push({ ...f.state.worktrees[0], id: "other", kind: "team", branch: "other" });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+  await vi.waitFor(() => expect(f.actions.busy('git-read')).toBe(false)); reads.length = 0;
   await f.actions.refreshGit("project");
   expect(reads).toEqual(["workspace", "other"]);
   expect(f.toasts).toEqual([]);
+  } finally { close(); }
 });
 
 const narrowedActions = ["commit", "pull", "push", "update", "integrate", "abort", "approval"] as const;
@@ -270,7 +293,7 @@ it("review status is read on first load, explicit refresh, head changes and revi
   try {
     await vi.waitFor(() => expect(f.actions.busy("git-read")).toBe(false));
     expect(reviews).toBe(1);
-    await f.actions.refreshGit("project", true);
+    await focusRead(f);
     await f.actions.stage("workspace", [], true, true);
     await f.actions.discard(f.state.worktrees[0], []); await f.dialogs[0].onConfirm();
     await f.actions.selectGit("workspace");
@@ -283,16 +306,19 @@ it("review status is read on first load, explicit refresh, head changes and revi
 });
 
 it("a refused initial review read is retried rather than marked loaded", async () => {
-  let reviews = 0;
+  const held = gate(); let states = 0, reviews = 0;
   const f = fixture(async (tag) => {
-    if (tag === "project.git.state") return { result: { mergeHead: null } };
+    if (tag === "project.git.state") { if (++states === 1) await held.held; return { result: { mergeHead: null } }; }
     if (tag === "project.changes") return { result: { items: [], truncated: false } };
     if (tag === "project.review.status") { if (++reviews === 1) throw new Error("Review temporarily unavailable"); return { result: { review: null } }; }
     throw new Error(tag);
   });
-  expect(await f.actions.refreshGit("project", true)).toBe(false);
-  expect(await f.actions.refreshGit("project", true)).toBe(true);
-  expect(reviews).toBe(2);
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    expect(await f.actions.refreshGit("project")).toBe(false);
+    expect(await f.actions.refreshGit("project")).toBe(true);
+    expect(reviews).toBe(2);
+  } finally { held.release(); close(); }
 });
 
 it("a background refresh rereads status for a known open review", async () => {
@@ -316,7 +342,8 @@ it("a background refresh rereads status for a known open review", async () => {
     await vi.waitFor(() => expect(f.actions.busy("git-read")).toBe(false));
     expect(f.state.worktrees[0].review.evidence).toMatchObject({ tests: { ok: false }, review: { ok: false } });
     await request("project.review.report");
-    await f.actions.refreshGit("project", true);
+    f.actions.observe({ git: { group: 'review', worktreeIds: ['workspace'] } });
+    await vi.waitFor(() => { expect(reviews).toBe(2); expect(f.actions.busy('git-read')).toBe(false); });
     expect(f.state.worktrees[0].review.evidence).toMatchObject({ tests: { ok: true }, review: { ok: true } });
     expect(reviews).toBe(2);
     expect(f.toasts).toEqual([]);
@@ -339,7 +366,7 @@ for (const status of [null, "answered"]) it(`a background refresh skips an alrea
   try {
     await vi.waitFor(() => expect(f.actions.busy("git-read")).toBe(false));
     expect(reviews).toBe(1);
-    await f.actions.refreshGit("project", true);
+    await focusRead(f);
     expect(reviews).toBe(1);
     expect(f.toasts).toEqual([]);
   } finally { close(); }
@@ -361,7 +388,7 @@ it("opening the Git screen again reads review status once for the new visit", as
     close = f.actions.openScreen("git", "project");
     await vi.waitFor(() => expect(f.actions.busy("git-read")).toBe(false));
     expect(reviews).toBe(2);
-    await f.actions.refreshGit("project", true);
+    await focusRead(f);
     expect(reviews).toBe(2);
     expect(f.toasts).toEqual([]);
   } finally { close(); }
@@ -419,4 +446,21 @@ it("pull refreshes the upstream count of a parentless project worktree", async (
     expect(f.state.worktrees.find((w: any) => w.id === "sibling").ahead).toBe(1);
     expect(f.toasts).toEqual([]);
   } finally { close(); }
+});
+
+it('the epoch rejects an uncancellable older reply before it can request changes or replace a fresh head', async () => {
+  const old = gate(); let states = 0, changes = 0;
+  const f = fixture(async tag => {
+    if (tag === 'project.git.state') { if (++states === 1) { await old.held; return { result: { head: 'old', mergeHead: null } }; } return { result: { head: 'fresh', mergeHead: null } }; }
+    if (tag === 'project.changes') { changes++; return { result: { items: [] } }; }
+    if (tag === 'project.review.status') return { result: { review: null } };
+    throw new Error(tag);
+  });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.waitFor(() => expect(states).toBe(1));
+    await f.actions.refreshGit('project'); old.release();
+    await vi.waitFor(() => expect(f.actions.busy('git-read')).toBe(false));
+    expect(f.state.worktrees[0].head).toBe('fresh'); expect(changes).toBe(1);
+  } finally { old.release(); close(); }
 });

@@ -41,10 +41,13 @@ export function measureGitJourney(page: Page) {
   if (!directory) return {
     lists: engineLists,
     server<A, E, R>(effect: Effect.Effect<A, E, R>) { return effect },
+    beginWindow(_name: string) {},
+    endWindow() {},
     finish() {}
   }
   const started = performance.now(), initialLoad = loadavg(), requests: Sample[] = [], engines: EngineSample[] = []
   const browserIds = new Set<string>()
+  const windows: Array<{ name: string; start: number; end?: number }> = []
   const stamp = () => performance.now() - started
   const frames = (payload: string | Buffer): ReadonlyArray<Record<string, unknown>> => {
     try { const value: unknown = JSON.parse(String(payload)); return (Array.isArray(value) ? value : [value]).filter((v): v is Record<string, unknown> => typeof v === 'object' && v !== null) }
@@ -82,6 +85,8 @@ export function measureGitJourney(page: Page) {
   ])) }
   return {
     lists,
+    beginWindow(name: string) { windows.push({ name, start: stamp() }) },
+    endWindow() { const window = windows.at(-1); if (window) window.end = stamp() },
     server<A, E, R>(effect: Effect.Effect<A, E, R>) {
       return Effect.flatMap(CommandHandler, (handler) => effect.pipe(Effect.provideService(CommandHandler, { ...handler,
         execute: (credential, tag, payload) => gitTags.has(tag) ? timed(tag, payload, handler.execute(credential, tag, payload)) : handler.execute(credential, tag, payload)
@@ -95,7 +100,10 @@ export function measureGitJourney(page: Page) {
         const report = {
           elapsedMs, loadStart: initialLoad, loadEnd: loadavg(), requests: aggregate(requests), gitRequests: aggregate(gitRequests), engineGit: aggregate(gitEngine),
           browserRequestActiveMs: unionMs(requests), browserGitActiveMs: unionMs(gitRequests), engineGitActiveMs: unionMs(gitEngine),
-          beforeFirstBrowserRequestMs: requests[0]?.start ?? elapsedMs, incompleteRequests: requests.filter((s) => s.end === undefined).length
+          beforeFirstBrowserRequestMs: requests[0]?.start ?? elapsedMs, incompleteRequests: requests.filter((s) => s.end === undefined).length,
+          windows: windows.map((window) => ({ ...window, end: window.end ?? elapsedMs,
+            requests: aggregate(requests.filter((s) => s.start >= window.start && s.start < (window.end ?? elapsedMs))),
+            gitRequests: aggregate(gitRequests.filter((s) => s.start >= window.start && s.start < (window.end ?? elapsedMs))) }))
         }
         mkdirSync(directory, { recursive: true }); writeFileSync(join(directory, 'requests.json'), JSON.stringify(report, null, 2) + '\n')
         console.log('Git journey measurement:', JSON.stringify({ elapsedMs, loadStart: report.loadStart, loadEnd: report.loadEnd,

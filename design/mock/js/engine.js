@@ -39,4 +39,4 @@ export function push(kind, payload) {
 
 // The live connection owns request ids and the transport.
 // Resolves with the engine reply, or rejects with its refusal reason.
-export function request(tag, payload) { return current.request(tag, payload); }
+export function request(tag, payload, options) { return current.request(tag, payload, options); }

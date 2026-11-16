@@ -195,4 +195,27 @@ it('keeps snapshot authorization failures on the existing expired-session path',
   expect(state.session?.status).toBe('expired')
   expect(state.projects).toEqual([])
   expect(state.conn).not.toHaveProperty('notice')
+
+})
+
+it('per-call cancellation interrupts only that RPC and reports its transport identifier', async () => {
+  let interrupted = 0, dispatched = 0
+  const client = {
+    'client.snapshot': () => Effect.succeed(engineSnapshot),
+    'project.settings': () => Effect.succeed({}),
+    'client.subscribe': () => Stream.never,
+    'project.git.state': () => { dispatched++; return Effect.never.pipe(Effect.ensuring(Effect.sync(() => { interrupted++ }))) }
+  } as unknown as Client
+  const h = harness({ open: (() => Effect.succeed(client)) as typeof connect })
+  await vi.waitFor(() => expect(h.state.conn?.status).toBe('live'))
+  const abort = new AbortController(), ids: string[] = []
+  const reply = h.connection.request('project.git.state', {}, { signal: abort.signal, onRequestId: (id) => ids.push(id) }).catch(() => 'aborted')
+  await vi.waitFor(() => expect(dispatched).toBe(1))
+  expect(ids).toHaveLength(1)
+  abort.abort()
+  expect(await reply).toBe('aborted')
+  expect(interrupted).toBe(1)
+  expect(await h.connection.request('project.settings', {})).toEqual({})
+  await expect(h.connection.request('project.git.state', {}, { signal: abort.signal })).rejects.toBeDefined()
+  expect(dispatched).toBe(1)
 })
