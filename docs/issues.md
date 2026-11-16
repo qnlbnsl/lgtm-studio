@@ -8102,7 +8102,7 @@ brief in `.scratch/foundry-runs/foundation-plans-1/lgtm-tools/result.md`.
 ## 485. Cursor's native login store is missing from credential redaction
 
 Found: 2026-11-05, while reading Cursor's installed permission implementation.
-State: open. This is outside the approval change.
+State: fixed in s19-secrets, with both candidate paths covered and live refresh retained.
 
 `credentialSourceFor` currently has no Cursor file paths because its original
 scouting established only an environment key. Cursor 2026.10.14-941492e's
@@ -17235,3 +17235,15 @@ The first `pnpm live-check` run passed 18 of 23 steps.
 Its "reload" step failed with "SocketReadError: An error occurred during Read".
 A second run on the same commit passed that step and gave the known result of 19 of 23.
 The cause of the single failure is not known.
+
+## s19-1. Cursor does not publish its authentication file path.
+
+Found: 2026-11-16, during the secret hiding work.
+State: mitigated by covering both candidate paths.
+
+Cursor's current authentication documentation says credentials are stored locally.
+It does not name the authentication file.
+Issue 485 records the installed credential manager's Linux path.
+The source now inspects both `$XDG_CONFIG_HOME/cursor/auth.json` and `HOME/.config/cursor/auth.json`.
+The official references are https://cursor.com/docs/cli/reference/authentication and https://cursor.com/docs/cli/reference/configuration.
+No real credential file was opened.

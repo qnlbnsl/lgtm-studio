@@ -218,9 +218,10 @@ const directory = (configured: string | undefined, fallback: string): string =>
 //   `Storage.getOAuthCredsPath()` joins that home, `.gemini` and
 //   `oauth_creds.json` (packages/core/src/config/storage.ts); both read
 //   2026-11-02 on the main branch. A relative home fails closed, as above.
-// - Cursor, and any other harness: no file store is established in this
-//   repository (.plans/plans/lgtm-engine/scouting.md:89 names only
-//   `CURSOR_API_KEY` and `agent login`), so the source has no paths.
+// - Cursor: the installed credential manager recorded in issue 485 uses
+//   `<XDG_CONFIG_HOME or HOME/.config>/cursor/auth.json`. Current official
+//   authentication docs do not name the auth file (read 2026-11-16), so cover
+//   both documented candidates until that contract is published.
 export const credentialSourceFor = (input: {
   readonly harnessId: string;
   readonly home: string;
@@ -231,6 +232,9 @@ export const credentialSourceFor = (input: {
       return fileSource([join(directory(input.variables.CODEX_HOME, join(input.home, ".codex")), "auth.json")], input.harnessId);
     case "claude":
       return fileSource([join(directory(input.variables.CLAUDE_CONFIG_DIR, join(input.home, ".claude")), ".credentials.json")], input.harnessId);
+    case "cursor":
+      return fileSource([...new Set([join(directory(input.variables.XDG_CONFIG_HOME, join(input.home, ".config")), "cursor/auth.json"),
+        join(input.home, ".config/cursor/auth.json")])], input.harnessId);
     case "gemini":
       return fileSource([join(input.variables.GEMINI_CLI_HOME !== undefined && input.variables.GEMINI_CLI_HOME !== ""
         ? input.variables.GEMINI_CLI_HOME : input.home, ".gemini", "oauth_creds.json")], input.harnessId);
