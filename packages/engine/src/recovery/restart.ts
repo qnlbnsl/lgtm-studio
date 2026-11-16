@@ -156,6 +156,10 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
     const spawn = yield* spawnInput(runtime, snapshot, agent, token.token, "reload", fresh ? "start" : "load").pipe(Effect.result);
     if (spawn._tag === "Failure") {
       if (spawn.failure._tag === "LogWriteFailed") return yield* spawn.failure;
+      if (fresh && spawn.failure._tag === "CommandRefused" &&
+        (spawn.failure.reason === "Role instructions exceed 48 KiB." || spawn.failure.reason === "Role instructions could not be read.")) {
+        yield* Effect.logWarning(`Role instruction composition failed during restart: ${spawn.failure.reason}`);
+      }
       yield* log.transact((append) => Effect.gen(function* () {
         const current = yield* views.snapshot;
         if (current.agents[agentId]?.state._tag !== "interrupted") return;

@@ -141,14 +141,16 @@ export class Runner extends Context.Service<Runner, {
   readonly discover: (input: Spawn) => Effect.Effect<AgentChoices, RunnerRejected>;
   readonly start: (input: Spawn) => Effect.Effect<SessionInfo, RunnerRejected>;
   readonly load: (input: Spawn & { readonly session: SessionReference }) => Effect.Effect<SessionInfo, RunnerRejected>;
-  readonly prompt: (input: { readonly agentId: AgentId; readonly incarnation: string; readonly delivery: Delivery; readonly sentSequence: number }) => Effect.Effect<void, RunnerRejected>;
+  // startBrief is derived from the original AgentStarted delivery and parent.
+  // It is ephemeral transport metadata, never agent-supplied prose.
+  readonly prompt: (input: { readonly agentId: AgentId; readonly incarnation: string; readonly delivery: Delivery; readonly sentSequence: number; readonly startBrief?: boolean }) => Effect.Effect<void, RunnerRejected>;
   readonly choices: (input: { readonly agentId: AgentId; readonly incarnation: string }) => Effect.Effect<AgentChoices, RunnerRejected>;
   readonly context: (input: { readonly agentId: AgentId; readonly incarnation: string }) => Effect.Effect<ContextUsage, RunnerRejected>;
   readonly configure: (input: { readonly agentId: AgentId; readonly incarnation: string; readonly desired: AgentChoice }) => Effect.Effect<Pick<AgentConfiguration, "applied" | "status" | "reason">, RunnerRejected>;
   readonly cancel: (input: { readonly agentId: AgentId; readonly deliveryId?: DeliveryId; readonly sentSequence?: number }) => Effect.Effect<void, RunnerRejected>;
   readonly answerPermission: (input: { readonly agentId: AgentId; readonly requestId: string; readonly optionId: string }) => Effect.Effect<void, RunnerRejected>;
   readonly setMode: (input: { readonly agentId: AgentId; readonly permission: PermissionLevel }) => Effect.Effect<void, RunnerRejected>;
-  readonly compact: (input: { readonly agentId: AgentId; readonly incarnation: string; readonly delivery: Delivery; readonly sentSequence: number }) => Effect.Effect<void, RunnerRejected>;
+  readonly compact: (input: { readonly agentId: AgentId; readonly incarnation: string; readonly delivery: Delivery; readonly sentSequence: number; readonly startBrief?: boolean }) => Effect.Effect<void, RunnerRejected>;
   readonly stop: (input: { readonly agentId: AgentId }) => Effect.Effect<void, RunnerRejected>;
   readonly capabilities: RunnerCapabilities;
   readonly events: Stream.Stream<RunnerEvent>;

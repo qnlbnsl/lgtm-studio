@@ -41,8 +41,12 @@ The engine prepends the composed instructions to the caller's first ordinary pro
 It delivers both in the same turn through the adapter.
 The caller's stored prompt and its size remain unchanged.
 The thread and chat retain their existing prompt text.
-User-message echoes of the injected block are removed before they reach the thread.
-Once its engine header is recognized, a changed echo is suppressed through its closing marker.
+Live user-message echoes are currently ignored by the adapter translator.
+The runner also filters an instruction echo for the whole carrying turn, across message identifiers.
+The filter removes any opening decoration and all text through the random closing marker.
+Ordinary text without an instruction marker is retained until the turn ends.
+The search buffer is bounded by the instruction prefix size plus 4 KiB.
+A recognized block retains only enough text to find its closing marker.
 A malformed closing marker withholds the remaining echo rather than storing instructions.
 
 For a project lead, the order is the lead base, the project lead role, the engine's project opening instruction, and the goal.
@@ -59,16 +63,24 @@ An agent can call `roles.orient` to read the current composed text in `advice`.
 That read resolves current overrides again.
 A fresh session keeps its initial composition for compaction restoration.
 A loaded session resolves the current composition only when restoration is needed after compaction.
+If that restoration fails, the engine sends the caller's text alone and keeps the instructions owed.
+It logs one fixed warning for consecutive restoration failures and retries on the next ordinary prompt.
 The engine owes the instructions until a carrying turn succeeds without error or cancellation.
 Capacity, usage pauses, prompt errors and cancellation leave them owed for the retry.
 A failed send also leaves them owed.
+This obligation is kept in memory.
+A service restart after a failed first turn can load the session and send its requeued prompt without instructions.
+Issue s22-6 records this remaining recovery gap.
 Each successful engine-requested compaction re-adds the full text on the next ordinary prompt.
 That costs roughly 10 KiB for a default lead, or up to the 48 KiB composition bound for overrides.
 A compaction started by the harness itself is not detected.
 
 Engine prose is redacted and escaped on every line before delivery.
 The adapter receives it in its own `Engine role instructions` block with a fresh random marker.
-The block identifies the sending agent when a lead's brief follows it.
+The block names the sending agent as the brief's author only for the original first prompt from the agent's parent.
+The engine checks the start event, delivery identifier and recorded parent rather than the prompt's text.
+Retries of that same delivery retain the brief label.
+Other messages, including routed questions after compaction, receive no brief sentence.
 That brief keeps its separate agent-data envelope.
 The engine block contains no delivery identifier and grants no replay acceptance proof.
 An owner's unaccepted first prompt is requeued after restart even when the saved history contains the instruction block.

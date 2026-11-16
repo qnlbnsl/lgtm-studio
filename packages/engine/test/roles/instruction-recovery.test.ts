@@ -57,3 +57,35 @@ live('s22 r2: orient retains identity and roster when a shipped file cannot be r
     expect(JSON.stringify(reply)).not.toContain('private read detail')
   }), { recovering: false })
 }))
+for (const fault of ['oversized composition', 'shipped file read error'] as const) live(`s22 r3: a fresh restart logs the fixed composition reason for ${fault}`, () => Effect.gen(function* () {
+  const runner = yield* makeFakeRunner(), lines: string[] = []
+  yield* provideRestart(rig, runner.layer, Effect.gen(function* () {
+    yield* registerRebuildCheck(); yield* seedAccount(); yield* seedHarness()
+    yield* seedAgent({ id: 'starting-builder', role: 'worker:builder', folder: rig.work, state: 'starting' })
+    if (fault === 'oversized composition') yield* appendEvents({ _tag: 'roles.RoleFileSet', roleFileHash: 'a'.repeat(64), content: JSON.stringify({ name: 'Legacy', roles: { builder: { advice: 'x'.repeat(45 * 1024), limits: {} } } }) })
+  }), { recovering: false })
+  if (fault === 'shipped file read error') {
+    const read = fs.readFile.bind(fs)
+    vi.spyOn(fs, 'readFile').mockImplementation(((...args: Parameters<typeof fs.readFile>) => String(args[0]).includes('/roles/instructions/') ? Promise.reject(new Error('private restart detail')) : read(...args)) as typeof fs.readFile)
+  }
+  yield* provideRestart(rig, runner.layer, Effect.gen(function* () {
+    yield* registerRebuildCheck(); yield* runner.subscribed; yield* recover
+    expect(runner.callsOf('start')).toHaveLength(0)
+    expect((yield* readLog).filter((row) => row.event._tag === 'AgentReloadFailed')).toMatchObject([{ event: { reason: 'agent start failed' } }])
+    const reason = fault === 'oversized composition' ? 'Role instructions exceed 48 KiB.' : 'Role instructions could not be read.'
+    expect(lines.filter((line) => line.includes('Role instruction composition failed during restart: ' + reason))).toHaveLength(1)
+    expect(lines.join('\n')).not.toContain('private restart detail')
+  }), { logLines: lines })
+}))
+live('s22 r3: orientation refuses when roster and metadata alone exceed 256 KiB', () => Effect.gen(function* () {
+  const runner = yield* makeFakeRunner()
+  yield* provideRestart(rig, runner.layer, Effect.gen(function* () {
+    yield* registerRebuildCheck(); yield* seedAccount(); yield* seedHarness()
+    const lead = yield* seedAgent({ id: 'lead', role: 'lead:build-lead', folder: rig.work })
+    yield* appendEvents(...Array.from({ length: 800 }, (_, index) => ({
+      _tag: 'AgentStarted', agentId: `child-${index}`, name: 'n'.repeat(200), role: 'worker:builder', groups: [],
+      parent: { _tag: 'agent', agentId: lead.agentId }, harness: 'first', account: 'primary', permission: 'ask', folder: rig.work, runMode: 'acp',
+    })))
+    expect(failureOf(yield* call(agentCredential(lead.token), 'roles.orient', {}))).toMatchObject({ _tag: 'CommandRefused', reason: 'Role orientation exceeds 256 KiB.' })
+  }), { recovering: false })
+}))

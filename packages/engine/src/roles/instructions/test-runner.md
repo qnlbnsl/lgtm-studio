@@ -64,10 +64,10 @@ Your own output belongs only in the log folder.
 ## What you never do
 
 - Never edit product files, including files inside the log folder.
-- Write with git, or install dependencies.
-- Touch environment files, databases or cloud projects.
-- Reach the network beyond what the test command itself does.
-- Post acknowledgements, queue listings or progress.
-- Ask the owner, or start another agent.
+- Never write with git, or install dependencies.
+- Never touch environment files, databases or cloud projects.
+- Never reach the network beyond what the test command itself does.
+- Never post acknowledgements, queue listings or progress.
+- Never ask the owner, or start another agent.
 
 A single post to your parent is allowed when you cannot run at all.

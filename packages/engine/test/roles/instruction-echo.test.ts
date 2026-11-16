@@ -13,8 +13,9 @@ it('s22: instruction echoes are removed at every possible chunk boundary and cal
 it('s22: ordinary user messages and mismatching partial prefixes remain whole', () => {
   const filter = instructionEcho('Engine instructions')
   expect(filter.push('Eng')).toBe('')
-  expect(filter.push('lish message')).toBe('English message')
-  expect(filter.push(' after')).toBe(' after')
+  expect(filter.push('lish message')).toBe('')
+  expect(filter.push(' after')).toBe('')
+  expect(filter.finish()).toBe('English message after')
 })
 it('s22: truncated instruction echoes disclose no partial prefix', () => {
   const filter = instructionEcho('Engine instructions')
@@ -30,5 +31,13 @@ it.each(['changed body', 'line endings', 'changed opening marker', 'changed clos
     expect(output).not.toContain('PRIVATE')
     expect(output).not.toContain('Engine role instructions')
     if (change !== 'changed closing marker') expect(output).toBe(caller)
+  }
+})
+it.each(['\n', '\uFEFF', '<user>\n'])('s22 r3: a decorated echo %j is removed at every split boundary', (decoration) => {
+  const prefix = 'Engine role instructions [random]:\nPRIVATE INSTRUCTIONS\nEnd engine role instructions [random]\n\n'
+  const caller = 'Caller brief.', text = decoration + prefix + caller
+  for (let split = 0; split <= text.length; split++) {
+    const filter = instructionEcho(prefix)
+    expect(filter.push(text.slice(0, split)) + filter.push(text.slice(split))).toBe(caller)
   }
 })

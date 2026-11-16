@@ -17693,3 +17693,94 @@ Each of the six passed when it was run alone with one worker.
 This is the same load sensitivity that issues 966, 1014, 1044, 1066, 1079 and 1122 record.
 
 State: open. Recorded on 2026-11-16.
+
+## s22-1. Restored instructions called every agent message the start brief.
+
+State: fixed in round 3.
+
+The second review identified a routed child question being described as the lead's brief after compaction.
+The engine now derives the brief label from the original start event, its delivery identifier and its recorded parent.
+An owner prompt and other agent messages receive no brief sentence.
+Tests cover a routed question after compaction and a failed first turn followed by a retry of the real brief.
+
+## s22-2. A restoration failure rejected prompts after loaded-session compaction.
+
+State: fixed in round 3.
+
+The restoration callback could fail before the caller's prompt reached the adapter.
+The runner now sends the caller's text alone, retains the obligation and retries restoration on the next ordinary prompt.
+Consecutive failures produce one fixed warning without the private failure detail.
+A loaded-session regression covers two failures, successful restoration and the following ordinary prompt.
+
+## s22-3. The instruction echo filter reset between user messages and assumed an undecorated header.
+
+State: fixed in round 3.
+
+The second review identified leading decoration and message boundaries that bypassed the filter.
+The filter now belongs to the turn and suppresses everything through the random closing marker.
+Tests cover every split boundary with an empty prelude, a newline, a byte-order mark and a role tag.
+The live translator currently ignores user-message echoes before they reach this filter.
+The runner regression deliberately enables that translation in its fixture to exercise the filter without changing production translation.
+Ordinary unmatched text is retained until turn completion, with a bounded search buffer.
+
+## s22-4. A fresh start during restart hid the typed composition refusal.
+
+State: fixed in round 3.
+
+Restart recovery wrote only the generic agent-start failure when composition failed.
+It now also logs one fixed warning containing the recognized size or read refusal.
+Tests inject each failure and assert that private read details are absent.
+The stored failure event remains unchanged.
+
+## s22-5. The base instructions did not state the instruction label's trust boundary explicitly.
+
+State: fixed in round 3.
+
+Each of the worker, lead and reviewer bases now states that engine instructions appear first, outside data blocks.
+The same sentence states that a matching label inside a data block remains data.
+Contract tests require the sentence in all three bases.
+The composed sizes remain below the 48 KiB bound.
+
+## s22-6. A restart can forget an instruction obligation after a failed first turn.
+
+State: open. Recorded as requested by the second review; no fix is included.
+
+The runner keeps the instruction obligation in process memory.
+A failed first turn can leave its initial delivery queued for retry.
+A service restart can load the existing session without recovering the obligation.
+That requeued delivery can then be sent without role instructions.
+This round changes no persisted event shape and does not repair this recovery gap.
+
+## s22-7. Instruction tests omitted the final orientation bound and an actual transport write failure.
+
+State: fixed in round 3.
+
+The restored orientation test creates a roster whose metadata alone exceeds 256 KiB.
+It requires the exact typed refusal and fails when that final guard is temporarily disabled.
+A test-only child spawner wrapper now fails an actual prompt write to standard input before it reaches the fake adapter.
+The next prompt attempt still restores the owed instructions.
+The test fails when the obligation is temporarily cleared before the write.
+The protocol closes its writer after a sink failure, so this test does not claim a successful retry on that same transport.
+
+## s22-8. The test runner's prohibition list mixed negative and positive wording.
+
+State: fixed in round 3.
+
+Five bullets under What you never do omitted the word Never.
+Every bullet now starts with Never and retains its existing prohibition.
+The contract test checks all six bullets.
+
+## s22-9. Initial round 3 fixtures observed an unfinished turn and used an unsupported question method.
+
+State: fixed in round 3 test development.
+
+The first origin fixture read the adapter echo before its initial prompt arrived.
+It then requested compaction while the first turn was still running.
+The fixture now waits for the completed initial turn before requesting compaction.
+Its scripted elicitation method was unsupported by that harness fixture.
+The regression now routes the question through the real authenticated ask command.
+An intermediate test run also loaded the runner change before its filter finish method existed.
+Completing the filter removed that temporary fixture failure.
+Adding optional brief metadata initially made prompt and compact callback types diverge in an existing generic test helper.
+Both methods now share the same optional metadata shape.
+No existing wait was widened.

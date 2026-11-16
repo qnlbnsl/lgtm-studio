@@ -1,13 +1,51 @@
 import { it } from '@effect/vitest'
 import * as Effect from 'effect/Effect'
+import * as PlatformError from 'effect/PlatformError'
+import * as Sink from 'effect/Sink'
+import * as Stream from 'effect/Stream'
+import { makeHandle } from 'effect/process/ChildProcessSpawner'
 import { afterEach, beforeEach, expect, vi } from 'vitest'
 import { accountFor, compactFor, deliveryFor, echoFile, framesOf, harnessFor, makeRunnerRig, promptTexts, readEcho, removeRunnerRig, spawnFor, withAcpRunner, writeFakeAdapter, type RunnerRig } from '../support/acpRunnerRig.ts'
 import { registerRebuildCheck } from '../support/rebuildCheck.ts'
+import { RunnerRejected } from '../../src/runner/Runner.ts'
 let rig: RunnerRig
 beforeEach(() => { rig = makeRunnerRig(); vi.stubEnv('HOME', rig.home); vi.stubEnv('LGTM_HOME', rig.stateFolder) })
 afterEach(() => { vi.unstubAllEnvs(); removeRunnerRig(rig) })
 registerRebuildCheck({ noLog: true })
 const catalogue = { step: 'raw_frame', frame: JSON.stringify({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: '${session}', update: { sessionUpdate: 'available_commands_update', availableCommands: [{ name: 'compact', description: 'Compact' }] } } }) }
+it.live('s22 r3: an actual stdin write failure retains the instruction obligation', () => {
+  let reads = 0
+  const attempted: string[] = []
+  return withAcpRunner(rig, { wrapSpawner: (spawner) => ({ ...spawner,
+    spawn: (command) => spawner.spawn(command).pipe(Effect.map((child) => makeHandle({ ...child,
+      stdin: Sink.forEach((chunk: Uint8Array) => {
+        const frame = new TextDecoder().decode(chunk)
+        if (frame.includes('"method":"session/prompt"')) {
+          attempted.push(frame)
+          return Effect.fail(PlatformError.systemError({ _tag: 'Unknown', module: 's22 fixture', method: 'write', description: 'PRIVATE WRITE FAILURE' }))
+        }
+        return Stream.make(chunk).pipe(Stream.run(child.stdin))
+      }),
+    }))),
+  }) }, (context) => Effect.gen(function* () {
+    const echo = echoFile(rig)
+    const spawn = yield* spawnFor(rig, harnessFor('first', writeFakeAdapter(rig)), accountFor('first', { turns: [[], []] }, echo))
+    yield* context.runner.start({ ...spawn.input, restoreInstructions: () => Effect.sync(() => { reads++; return 'PRIVATE ROLE RULES' }) })
+    for (let sequence = 1; sequence <= 2; sequence++) {
+      const delivery = deliveryFor(spawn.agentId, 'Caller brief.'), before = context.events.length
+      const result = yield* context.runner.prompt({ agentId: spawn.agentId, incarnation: spawn.incarnation, delivery, sentSequence: sequence }).pipe(Effect.result)
+      expect(result).toMatchObject({ _tag: 'Failure', failure: { _tag: 'RunnerRejected' } })
+      yield* context.waitFor((e) => e._tag === 'turnEnded' && e.deliveryId === delivery.id, before)
+    }
+    // The protocol closes its writer after the first sink failure. The second
+    // attempt still restores instructions before discovering that closed writer.
+    expect(reads).toBe(2)
+    expect(attempted).toHaveLength(1)
+    expect(attempted[0]).toContain('PRIVATE ROLE RULES')
+    expect(promptTexts(yield* readEcho(echo))).toEqual([])
+    expect(context.logLines.join('\n')).not.toContain('PRIVATE WRITE FAILURE')
+  }))
+})
 export const endingRows = [
   { name: 'success', steps: [], next: false, outcome: { _tag: 'success' } },
   { name: 'capacity', steps: [{ step: 'rpc_error', message: 'capacity fixture' }], next: true, outcome: { _tag: 'capacity' } },
@@ -123,4 +161,39 @@ it.live('s22: fresh sessions receive instructions once, loaded sessions retain m
     yield* context.runner.start(input)
     yield* send('Fresh after crash.')
     expect(promptTexts(yield* readEcho(echo, (e) => promptTexts(e).length === 1))[0]).toContain(instructions)
+  })))
+it.live('s22 r3: failed restoration after loaded compaction sends callers bare, warns once and retries restoration', () =>
+  withAcpRunner(rig, {}, (context) => Effect.gen(function* () {
+    const echo = echoFile(rig), harness = harnessFor('first', writeFakeAdapter(rig))
+    const spawn = yield* spawnFor(rig, harness, accountFor(harness.id, { turns: [[catalogue], [], [], [], [], []] }, echo))
+    const opened = yield* context.runner.start(spawn.input)
+    yield* context.runner.stop({ agentId: spawn.agentId })
+    let available = false, reads = 0
+    yield* context.runner.load({ ...spawn.input, session: opened.session, restoreInstructions: () => Effect.suspend(() => {
+      reads++
+      return available ? Effect.succeed('PRIVATE RESTORED RULES') : Effect.fail(new RunnerRejected({ reason: 'private restoration detail' }))
+    }) })
+    const send = (text: string, sequence: number) => Effect.gen(function* () {
+      const delivery = deliveryFor(spawn.agentId, text)
+      const result = yield* context.runner.prompt({ agentId: spawn.agentId, incarnation: spawn.incarnation, delivery, sentSequence: sequence }).pipe(Effect.result)
+      expect(result._tag).toBe('Success')
+      yield* context.waitFor((e) => e._tag === 'turnEnded' && e.sentSequence === sequence)
+    })
+    yield* send('Loaded caller.', 1)
+    const compact = compactFor(spawn.agentId)
+    yield* context.runner.compact({ agentId: spawn.agentId, incarnation: spawn.incarnation, delivery: compact, sentSequence: 2 })
+    yield* context.waitFor((e) => e._tag === 'turnEnded' && e.sentSequence === 2)
+    yield* send('Caller after first failure.', 3)
+    yield* send('Caller after second failure.', 4)
+    available = true
+    yield* send('Caller after repair.', 5)
+    yield* send('Later caller.', 6)
+    const texts = promptTexts(yield* readEcho(echo))
+    expect(texts.slice(0, 4)).toEqual(['Loaded caller.', '/compact', 'Caller after first failure.', 'Caller after second failure.'])
+    expect(texts[4]).toContain('PRIVATE RESTORED RULES')
+    expect(texts[4]!.endsWith('\n\nCaller after repair.')).toBe(true)
+    expect(texts[5]).toBe('Later caller.')
+    expect(reads).toBe(3)
+    expect(context.logLines.filter((line) => line.includes('Role instruction restoration failed; sending the caller text without instructions.'))).toHaveLength(1)
+    expect(JSON.stringify(context.logLines)).not.toContain('private restoration detail')
   })))
