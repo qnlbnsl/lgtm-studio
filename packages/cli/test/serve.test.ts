@@ -297,16 +297,15 @@ registerHooks({ load(url, context, next) {
   return { ...environmentFor(root), NODE_OPTIONS: `--import=${new URL('file://' + loader).href}` };
 };
 
-it('prints started and exits before recovery exceeds the launcher deadline, leaving the service alive', async () => {
+it('prints started and exits before short recovery finishes, leaving the service alive', async () => {
   const root = makeRoot(), marker = join(root.root, 'recovery-finished');
   const env = serviceHook(root, 'yield* (yield* Restart.Restart).recover;',
-    `yield* Effect.sleep(31_000); (yield* Effect.promise(() => import('node:fs'))).writeFileSync(${JSON.stringify(marker)}, 'done'); yield* (yield* Restart.Restart).recover;`);
+    `yield* Effect.sleep(2_000); (yield* Effect.promise(() => import('node:fs'))).writeFileSync(${JSON.stringify(marker)}, 'done'); yield* (yield* Restart.Restart).recover;`);
   const result = await runDetach(env);
   expect(result.code).toBe(0);
   expect(result.text).toMatch(/^started \(pid \d+\)\n$/);
   expect(existsSync(marker)).toBe(false);
-  await new Promise(resolve => setTimeout(resolve, 31_000));
-  await Effect.runPromise(waitFor('recovery beyond the launch deadline', () => existsSync(marker)));
+  await Effect.runPromise(waitFor('the short recovery delay', () => existsSync(marker)));
   expect(servicesOf(root)).toHaveLength(1);
   expect(await answers(root.socket)).toBe(true);
 }, 90_000);
@@ -321,4 +320,27 @@ it('keeps serving when its launcher disconnects just before the lock-acquired se
   await Effect.runPromise(waitFor('the orphaned service socket', () => child.exitCode !== null ? true : answers(root.socket)));
   expect(child.exitCode).toBeNull();
   expect(await answers(root.socket)).toBe(true);
+});
+
+it('stops cleanly without invoking startup redaction on an interruption-only cause', async () => {
+  const root = makeRoot();
+  const env = serviceHook(root, 'failureReason = startupFailure(cause, redact);',
+    `failureReason = startupFailure(cause, () => { process.stderr.write('unexpected-shutdown-redaction'); throw new Error('shutdown redactor must not run'); });`);
+  const child = spawn(process.execPath, [servicePath], { env, stdio: ['ignore', 'ignore', 'pipe'] });
+  children.push(child);
+  let stderr = '';
+  child.stderr!.on('data', chunk => { stderr += chunk; });
+  const exit = new Promise<number | null>(resolve => child.once('close', resolve));
+  await Effect.runPromise(waitFor('the initialized service', async () => {
+    try {
+      return await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+        const client = yield* connect({ environment: env });
+        yield* client['client.snapshot']({ requestId: randomUUID() as never });
+        return true;
+      })));
+    } catch { return false; }
+  }));
+  child.kill('SIGTERM');
+  expect(await exit).toBe(0);
+  expect(stderr).not.toContain('unexpected-shutdown-redaction');
 });

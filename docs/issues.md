@@ -4773,7 +4773,7 @@ Why it matters: an agent can stay blocked on a request that no client can see.
 ## 260. A detached service discards its output and hides startup refusal details
 
 Found: 2026-11-03, in the post-build review of commit `8ff4c9b`, finding s08 F-2.
-State: fixed in s17-firstrun by the redacted startup refusal channel and readiness handshake in the service and detached launcher.
+State: partly fixed in s17-firstrun for refusals observed before the socket answers, by printing a redacted category from the startup channel. The launcher does not read a readiness handshake. A refusal after the socket answers can still report "started". The service's own output is still discarded. Issue s17-8 tracks the remaining gap.
 
 Evidence: `.scratch/foundry-runs/engine-build-1/review-post-build/results/lgtm-engine-s08.md` (not tracked), F-2, confirms the path by source
 inspection and hand reasoning.
@@ -11267,7 +11267,7 @@ The browser tests therefore ignore console errors that name status 401.
 ## 626. `lgtm serve --detach` does not say why the service failed to start
 
 Found: 2026-11-13, while starting the engine with a test state folder for the live website.
-State: fixed in s17-firstrun by the redacted startup refusal channel and readiness handshake in the service and detached launcher.
+State: partly fixed in s17-firstrun for refusals observed before the socket answers, by printing a redacted category from the startup channel. The launcher does not read a readiness handshake. A refusal after the socket answers can still report "started". The service's own output is still discarded. Issue s17-8 tracks the remaining gap.
 
 With a long `LGTM_HOME`, the engine's socket path exceeds 100 bytes, and the service exits at once.
 The service prints "socket path exceeds 100 bytes", but `serve --detach` discards the child's output.
@@ -16423,3 +16423,67 @@ The launcher could report failure before the channel delivered the refusal.
 A failed child now reaches its close event before the launcher chooses the failure text.
 Tests order the exit and reason events both ways.
 Successful starts retain their original lock and socket check.
+
+
+## s17-7. A successful child exit without a listener left the launcher waiting forever.
+
+Found: 2026-11-15, during fix round 2 of unit s17-firstrun.
+State: fixed in fix round 2.
+
+A new child can lose the service lock while the previous service is shutting down.
+That child exits zero without making the socket answer.
+The launcher's deadline had excluded every exited child.
+The deadline now includes a child that exited zero.
+The command reports "lgtm: service did not answer" and exits one at the original deadline.
+An ordered-event test verifies the deadline without signalling the exited child.
+The nonzero-exit path still waits for its final channel message, as recorded in s17-6.
+
+## s17-8. A startup refusal can follow the launcher's successful socket probe.
+
+Found: 2026-11-15, during review of unit s17-firstrun.
+State: open beyond the early redacted-category fix in issues 260 and 626.
+
+The service opens its Unix socket before all startup work has finished.
+The launcher reports success when its child holds the lock and the socket answers.
+It does not read a readiness handshake.
+A later startup refusal can therefore follow a reported "started" result.
+The service's standard output and standard error are still discarded on the detached path.
+The startup channel carries a fixed redacted category when a refusal is observed before success.
+It does not retain the service's own output.
+This unit preserves the original successful startup timing.
+
+## s17-9. A persistent snapshot refusal blinked during the session probe on each retry.
+
+Found: 2026-11-15, during fix round 2 of unit s17-firstrun.
+State: fixed in fix round 2.
+
+The retry handler cleared the notice before checking the session.
+A repeated refusal therefore replaced the sentence twice on every retry.
+The handler now retains the sentence during another refusal and its session probe.
+A successful snapshot, a transport drop, or sign-out clears it.
+A held-probe regression checks every connection patch for the retained sentence.
+
+## s17-10. The startup-reason helper redacted an interruption-only cause.
+
+Found: 2026-11-15, during fix round 2 of unit s17-firstrun.
+State: fixed in fix round 2.
+
+The helper treated an interruption-only cause as a generic startup failure.
+A throwing redactor could turn that path into a defect.
+The helper now returns no reason without invoking the redactor for that cause.
+A cause that also contains a real failure still produces a redacted category.
+A unit test supplies a throwing redactor to the interruption-only cause.
+A real service test confirms that a clean stop exits zero.
+The clean-stop test also passed before this correction.
+No shutdown failure in the real service was reproduced.
+
+## s17-11. The recovery regression waited 31 seconds after the launcher had exited.
+
+Found: 2026-11-15, during fix round 2 of unit s17-firstrun.
+State: fixed in fix round 2.
+
+The real-process test now delays recovery by two seconds.
+It still checks the command's output, exit status, and the surviving service.
+An ordered-event test injects a 100-millisecond launcher deadline.
+Its simulated recovery completes after 200 milliseconds without a kill.
+The production deadline remains 30 seconds.

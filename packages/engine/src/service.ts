@@ -174,7 +174,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
       const web = yield* serveWeb({ password: webPassword, lists, staticRoot: fileURLToPath(new URL("../../studio/dist", import.meta.url)),
         registerSecret: (secret) => { explicitSecrets.push(secret); } });
       yield* Effect.addFinalizer(() => web.close);
-      if (process.connected) process.send?.({ _tag: "LgtmReady" }, () => { if (process.connected) process.disconnect?.(); });
+      if (process.connected) process.disconnect?.();
       yield* (yield* Restart.Restart).recover;
       // A retained row never grants authority unless its identity is still
       // live. Remove dead or replaced identities after recovery has swept
@@ -235,7 +235,7 @@ if (process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === imp
   process.removeListener("SIGINT", stop);
   if (restarting) restartAfterShutdown(() => process.execve!(process.execPath, [process.execPath, ...process.execArgv, ...process.argv.slice(1)], launchEnvironment));
   if (!restarting && Exit.isFailure(result) && !result.cause.reasons.every((reason) => reason._tag === "Interrupt")) {
-    const message = failureReason ?? startupFailure(result.cause, earlyRedactor.redactText);
+    const message = failureReason ?? startupFailure(result.cause, earlyRedactor.redactText) ?? 'service failed';
     process.stderr.write(`${message}\n`);
     if (process.connected) process.send?.({ _tag: "LgtmStartupFailed", reason: message }, () => { if (process.connected) process.disconnect?.(); });
     process.exitCode = 1;
