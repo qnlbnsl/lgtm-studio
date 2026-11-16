@@ -17225,3 +17225,13 @@ The orchestrator's briefs for rounds 1 to 4 listed five test folders and left ou
 A test there, `recorder-scrubs.test.ts`, caught the test ownership helper adding a variable to a strictly filtered child environment.
 Round 5 fixed the helper, and its brief told the builder to run the whole suite with no folder list.
 The first brief also asked that a waiting read be dropped when the owner leaves the screen, which caused three rounds of faults before round 4 removed it.
+
+## 1124. The live check's "reload" step failed once with a socket read error.
+
+Found: 2026-11-16, in the orchestrator's live check of the unit `s18-smallfix`.
+State: open.
+
+The first `pnpm live-check` run passed 18 of 23 steps.
+Its "reload" step failed with "SocketReadError: An error occurred during Read".
+A second run on the same commit passed that step and gave the known result of 19 of 23.
+The cause of the single failure is not known.
