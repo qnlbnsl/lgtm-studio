@@ -106,7 +106,14 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
     return path;
   }, catch: (error) => error instanceof Error ? error : new Error("state folder refused") });
   const lock = yield* takeLock(folder);
-  if (lock === undefined) { process.stdout.write("already running\n"); if (foreground) process.exitCode = 1; return; }
+  if (lock === undefined) {
+    if (foreground) {
+      process.exitCode = 1;
+      if (process.connected) process.send?.({ _tag: "LgtmAlreadyRunning" }, () => { if (process.connected) process.disconnect?.(); });
+      else process.stdout.write("already running\n");
+    } else process.stdout.write("already running\n");
+    return;
+  }
   // A detached launcher needs evidence of which child won the lock, rather
   // than inferring it from timing the losing child's exit. This is an
   // inherited parent/child channel, never a second listener.
@@ -188,6 +195,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
           if (row.boot_id !== boot || facts === undefined || facts.startTime !== row.start_time || facts.userId !== row.user_id || facts.executable !== row.executable) yield* sql`DELETE FROM processes WHERE id = ${row.id}`;
         }
       }
+      if (foreground && process.connected) process.send?.({ _tag: "LgtmServiceStarted" }, () => {});
       yield* Effect.never;
     }).pipe(
       // Close request scopes while the handler, runner and database are still
@@ -219,7 +227,8 @@ if (process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === imp
     tokenHashes: () => new Set(),
   });
   let failureReason: string | undefined;
-  const fiber = Effect.runFork(program(inheritedToken, webPassword, (cause, redact) => { failureReason = startupFailure(cause, redact); }, process.argv[2] === "--foreground"));
+  const foreground = process.argv[2] === "--foreground";
+  const fiber = Effect.runFork(program(inheritedToken, webPassword, (cause, redact) => { failureReason = startupFailure(cause, redact); }, foreground));
   const stop = () => fiber.interruptUnsafe();
   if (typeof process.execve === "function") installRestarter(() => {
     if (restarting) return;
@@ -229,10 +238,27 @@ if (process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === imp
   });
   process.once("SIGTERM", stop);
   process.once("SIGINT", stop);
+  const launchParent = Number(process.argv[3]);
+  const parent = foreground && Number.isSafeInteger(launchParent) && launchParent > 0 ? launchParent : process.ppid;
+  // execve during an owner-requested restart can close the inherited channel.
+  // The parent identity also covers that lifetime without keeping a timer alive.
+  const parentCheck = foreground ? setInterval(() => { if (process.ppid !== parent) stop(); }, 1000).unref() : undefined;
+  if (foreground) {
+    process.once("SIGHUP", stop);
+    process.once("disconnect", stop);
+    process.stdout.on("error", stop);
+    if (process.ppid !== parent) stop();
+  }
   const result = await Effect.runPromise(Fiber.await(fiber));
   installRestarter(undefined);
   process.removeListener("SIGTERM", stop);
   process.removeListener("SIGINT", stop);
+  if (foreground) {
+    clearInterval(parentCheck);
+    process.removeListener("SIGHUP", stop);
+    process.removeListener("disconnect", stop);
+    process.stdout.removeListener("error", stop);
+  }
   if (restarting) restartAfterShutdown(() => process.execve!(process.execPath, [process.execPath, ...process.execArgv, ...process.argv.slice(1)], launchEnvironment));
   if (!restarting && Exit.isFailure(result) && !result.cause.reasons.every((reason) => reason._tag === "Interrupt")) {
     const message = failureReason ?? startupFailure(result.cause, earlyRedactor.redactText) ?? 'service failed';

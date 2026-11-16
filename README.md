@@ -95,6 +95,9 @@ Set `LGTM_HOME` on the service and command processes to use another folder.
 With `serve --detach`, the service continues running after the launching terminal closes.
 Use `./bin/lgtm serve` to keep it in the foreground and read its redacted logs in the terminal.
 Press Ctrl-C or send the termination signal, SIGTERM, to shut it down cleanly.
+The hangup signal, SIGHUP, also shuts it down.
+The command exits zero only after a clean shutdown.
+The attached service also stops if its launcher dies.
 The foreground command refuses to start if a service already uses the same state folder.
 The terminal thread viewer is available through `./bin/lgtm view`.
 

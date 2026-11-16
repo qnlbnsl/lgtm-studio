@@ -16886,3 +16886,24 @@ An event for the current path does not replace the lifetime signal.
 The website request boundary silently drops a cancelled read before either its success or error handler runs.
 Actual connection failures and owner writes keep their existing behaviour.
 The separate cancellation checks added to the board and chat readers were removed.
+
+## s18-8. Foreground serve confused refusals, later stops, and failed shutdowns.
+
+State: fixed in s18-smallfix round 2.
+
+The lock-race loser printed both a refusal and a startup failure.
+The service now reports that refusal over its inherited parent channel.
+The launcher prints the same single already-running sentence on either refusal path.
+A separate startup-complete message distinguishes an unexpected later stop from a startup failure.
+A terminal signal now asks the launcher to stop its child and wait for the child’s actual result.
+Only a zero child exit produces a zero launcher exit after a signal.
+
+## s18-9. A foreground service could outlive its launcher.
+
+State: fixed in s18-smallfix round 2.
+
+The hangup signal was not handled by the launcher.
+The foreground launcher now treats it like the termination signal.
+Its service also closes on parent-channel disconnection or a broken output pipe.
+A parent identity check covers early launcher death and service restarts that close the inherited channel.
+The detached service keeps its previous lifetime rules.
