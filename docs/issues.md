@@ -13339,13 +13339,13 @@ The first reviewer selector must read these defaults.
 
 ## 802. Several service controls still lack their execution paths.
 
-State: open. Checked against the code on 2026-11-15. Controls still show the not-connected notice (design/mock/js/actions.js, packages/studio/src/connection.ts) and standing permission rules remain unbuilt per AGENTS.md. Kind: visible to the owner.
+State: fixed for the website by s20-controls on 2026-11-16. The inert controls are absent from the website. Their execution paths remain unbuilt. The standalone mock retains its sample controls. Kind: visible to the owner.
 
 The need-to-know default has no team-creation privacy setting to consume it.
 Removing agent credits would need a defined commit-rewriting policy before the approved Git heads change.
 The Git message model has no service-owned message-generation request to consume it.
 The tests-first default, agent-review default, and review-round limit have no workflow executor to consume them.
-These controls retain the notice that they are not connected and change nothing.
+The website omits these controls because they change nothing.
 Standing permission rules still await the owner's harness recordings, as AGENTS.md requires.
 The existing standing-rules setting is outside this implementation and still does not enforce permission rules.
 
@@ -14504,7 +14504,7 @@ An owner who types quickly across these fields might lose one value in the same 
 
 ## 906. Agent terminal watching and takeover need engine support.
 
-State: open. Checked against the code on 2026-11-15. design/mock/js/live/terminal.js lines 127-128 still draw Watch agent session and Take over agent session disabled with Engine work needed. Kind: visible to the owner.
+State: open. Checked by s20-controls on 2026-11-16. Watch agent session and Take over agent session remain disabled with Engine work needed. Interactive terminal attachment and keyboard handoff are unbuilt. Agent Client Protocol mode has no terminal to attach. Kind: visible to the owner.
 
 The project terminal API opens private owner shells only.
 It cannot attach to an agent's terminal or transfer that terminal's keyboard.
@@ -14513,7 +14513,7 @@ Both controls show “Engine work needed” on hover.
 
 ## 907. Ended project shells cannot reconnect.
 
-State: open. Checked against the code on 2026-11-15. design/mock/js/live/terminal.js line 133 still draws the Reconnect button disabled with title Engine work needed. Kind: visible to the owner.
+State: open. Checked by s20-controls on 2026-11-16. Reconnect remains disabled with Engine work needed. The engine has no resumed terminal attachment or ownership transfer for a replacement connection. An ended shell cannot be resumed. Kind: visible to the owner.
 
 A project shell belongs to its opening connection.
 Reloading the page or losing that connection ends the shell after the grace period.
@@ -16251,7 +16251,7 @@ Ordinary journey runs keep the unwrapped service and install no measurement list
 ## 1041. Fresh evidence from review status never reaches an already open merge dialog.
 
 Found: 2026-11-15, by the reviewer's real-engine probe in review-a2.
-Status: open, awaiting the owner's approval for a change to what the dialog shows.
+State: fixed by s20-controls on 2026-11-16. The live status read maps the separate fresh evidence into the existing dialog. The pressed approval preserves the decision and reviewed heads that the dialog showed.
 
 The engine stores review evidence when project.review.prepare opens a review.
 A later project.review.report updates the separate evidence table.
@@ -17236,7 +17236,7 @@ Its "reload" step failed with "SocketReadError: An error occurred during Read".
 A second run on the same commit passed that step and gave the known result of 19 of 23.
 The cause of the single failure is not known.
 
-## s21-1. Chat cannot recover an unloadable session and mislabels a crash
+## 1140. Chat cannot recover an unloadable session and mislabels a crash
 
 Found: 2026-11-16, while building unit s21-recover.
 State: fixed in unit s21-recover.
@@ -17250,7 +17250,7 @@ An unfinished accepted turn now receives recovery's existing carry-on before lat
 The crash handler still withdraws and returns deliveries that it had not accepted.
 Those returned deliveries are not silently revived.
 
-## s21-2. A paused agent still cannot request a fresh session
+## 1141. A paused agent still cannot request a fresh session
 
 Found: 2026-11-16, while reading the resume contract for unit s21-recover.
 State: open, as the remaining part of issue 152.
@@ -17260,7 +17260,7 @@ The website's fresh fallback cannot override that refusal.
 Changing paused-state admission would change the existing lifecycle contract.
 This unit leaves that contract unchanged.
 
-## s21-3. A website restart deliberately stops every agent
+## 1142. A website restart deliberately stops every agent
 
 Found: 2026-11-16, while building unit s21-recover.
 State: fixed in unit s21-recover.
@@ -17273,7 +17273,7 @@ A deliberate stop of one agent still records that stop.
 The existing restart confirmation says that agents are stopped during shutdown.
 That wording is kept under this unit's restriction on visible changes.
 
-## s21-4. The owner's request views hide answers while a lead holds a permission
+## 1143. The owner's request views hide answers while a lead holds a permission
 
 Found: 2026-11-16, while building unit s21-recover.
 State: fixed in unit s21-recover.
@@ -17287,7 +17287,7 @@ A worker receives one harness answer, and the lead's queued request is withdrawn
 A later answer from the lead is refused because the subject is closed.
 Held questions keep their existing presentation.
 
-## s21-5. A sign-in failure crashes the live chat composer
+## 1144. A sign-in failure crashes the live chat composer
 
 Found: 2026-11-16, while checking the sign-in exception for unit s21-recover.
 State: fixed in unit s21-recover.
@@ -17298,7 +17298,7 @@ Reading the missing machine's name threw an exception before the sign-in control
 The live composer now uses the agent's project machine for that existing control.
 The sample keeps its original fallback.
 
-## s21-6. Phone alert links target an absent thread route
+## 1145. Phone alert links target an absent thread route
 
 Found: 2026-11-16, while building unit s21-recover.
 State: fixed in unit s21-recover.
@@ -17311,7 +17311,7 @@ Login also discarded those bookmarks by always navigating to Home.
 Login now retains the existing subject route when a phone bookmark uses one of those forms.
 The link contains identifiers instead of request text or credentials.
 
-## s21-7. An agent outside a project has no reachable website chat
+## 1146. An agent outside a project has no reachable website chat
 
 Found: 2026-11-16, while checking notification destinations for unit s21-recover.
 State: open.
@@ -17321,7 +17321,7 @@ An agent outside every project has no matching website chat route.
 The notification sender omits that unusable link.
 This unit does not add a screen or a route for an unassigned agent.
 
-## s21-8. A crash after an errored turn repeats work that was returned
+## 1147. A crash after an errored turn repeats work that was returned
 
 Found: 2026-11-16, while running the round 2 recovery regressions.
 State: fixed in unit s21-recover, round 2.
@@ -17333,7 +17333,7 @@ It checks the lifecycle state immediately before the crash.
 The same fold provides the turn boundary used by fresh replay.
 A crash carry-on now says that the agent crashed instead of saying that the engine restarted.
 
-## s21-9. Crash mapping and a shared request query changed unrelated attention views
+## 1148. Crash mapping and a shared request query changed unrelated attention views
 
 Found: 2026-11-16, while running the round 2 presentation regressions.
 State: fixed in unit s21-recover, round 2.
@@ -17345,7 +17345,7 @@ Those callers now retain their previous audience.
 Home and its matching owner counts use a separate answerable-request query.
 The held permission card again names the lead that holds it while offering the owner's answer buttons.
 
-## s21-10. Source guards accepted duplicated integration anchors
+## 1149. Source guards accepted duplicated integration anchors
 
 Found: 2026-11-16, while running the round 2 build-guard regressions.
 State: fixed in unit s21-recover, round 2.
@@ -17355,7 +17355,7 @@ They could replace the first of two anchors silently.
 Each guard now requires its exact number of anchors.
 The tests run the original source, a missing anchor, and an extra anchor separately.
 
-## s21-11. A fresh resume can repeat steps without the previous session's memory
+## 1150. A fresh resume can repeat steps without the previous session's memory
 
 Found: 2026-11-16, while reading the round 2 review and fresh-resume path.
 State: open for the owner's wording decision.
@@ -17366,7 +17366,7 @@ Replaying an unfinished delivery can repeat a step that was already performed.
 Proposed wording: "Resume tries the saved session. If it cannot reload, a new session retries unfinished deliveries and may repeat steps."
 The screen text was not changed in this unit.
 
-## s21-12. Restart messages still say that running agents are stopped
+## 1151. Restart messages still say that running agents are stopped
 
 Found: 2026-11-16, while reading the round 2 review and the restart texts.
 State: open for the owner's wording decision.
@@ -17378,7 +17378,7 @@ Proposed confirmation: "Restart LGTM Studio? Recoverable agents will reconnect a
 Proposed toast: "LGTM Studio is restarting. Reconnect to see recovered agents."
 The existing text was not changed in this unit.
 
-## s21-13. An already-delivered holder copy receives no answered-elsewhere notice
+## 1152. An already-delivered holder copy receives no answered-elsewhere notice
 
 Found: 2026-11-16, while running the round 2 idle-lead permission regression.
 State: open.
@@ -17390,7 +17390,7 @@ No existing delivery tells the lead that another actor answered.
 A later answer attempt receives the generic command refusal.
 This unit records that gap without inventing a notice or a stored event.
 
-## s21-14. A board alert uses the alert agent's project for another project's channel
+## 1153. A board alert uses the alert agent's project for another project's channel
 
 Found: 2026-11-16, while running the round 2 alert-route regressions.
 State: fixed in unit s21-recover, round 2.
@@ -17400,7 +17400,7 @@ The link now follows the website's team, project-anchor, and member placement ru
 A reply to a reply already linked to its immediate parent's existing thread correctly.
 The engine and browser tests now cover both cases.
 
-## s21-15. Merge and sprint alerts with an agent open that agent's chat
+## 1154. Merge and sprint alerts with an agent open that agent's chat
 
 Found: 2026-11-16, while reading the round 2 review and running the alert-kind journey.
 State: open.
@@ -17409,7 +17409,7 @@ An alert with an agent uses that agent's chat unless its subject is a board post
 A merge or sprint alert can therefore open chat instead of its merge or sprint.
 This unit does not add destinations for those subjects.
 
-## s21-16. The older phone-alert journeys expect routes for unassigned agents
+## 1155. The older phone-alert journeys expect routes for unassigned agents
 
 Found: 2026-11-16, while running the round 2 browser journeys.
 State: open, as test coverage that still needs migration from the retired website.
@@ -17417,12 +17417,12 @@ State: open, as test coverage that still needs migration from the retired websit
 The board-alert and phone-flow journeys build the retired website and start agents outside every project.
 They expect notifications to contain that page's old thread address.
 The engine now emits destinations for the website served by Studio.
-That website has no chat for an unassigned agent, as issue s21-7 records.
+That website has no chat for an unassigned agent, as issue 1146 records.
 Both old journeys therefore fail on their missing-link assertions.
 The current website's notification journey covers board subject links, including nested replies and another project's channel.
 The old assertions were not weakened or removed.
 
-## s21-17. The email browser fixture assumes the repository root as its working directory
+## 1156. The email browser fixture assumes the repository root as its working directory
 
 Found: 2026-11-16, while running the round 2 browser journeys from packages/web.
 State: open.
@@ -17431,3 +17431,173 @@ The email notification fixture copies design/mock through a working-directory-re
 Running the assigned journey from packages/web looks for packages/web/design/mock and fails before opening the page.
 The failure is in the fixture's source-path lookup.
 This unit leaves that unrelated fixture unchanged.
+
+## 1125. The live merge review discarded fresh status evidence.
+
+State: fixed on 2026-11-16. This is the same fault as issue 1041.
+
+The status read mapped the stored review without its separate fresh evidence.
+The live read now passes fresh evidence to the typed review mapping.
+The dialog uses its existing passing, failed, stale, and missing states.
+A matrix test covers all 25 combinations of stored and fresh evidence.
+The real-engine browser journey reports passing evidence while the dialog is open.
+
+## 1126. A pressed merge approval could record a different decision from its rendered label.
+
+State: fixed on 2026-11-16.
+
+The approval handler read the latest store after the button had been rendered.
+A store refresh could change the decision before that button received its click.
+The button now captures its displayed decision and reviewed heads.
+The engine still checks the reviewed heads when it handles the approval.
+A regression test replaces the stored evidence before pressing the rendered button.
+
+## 1127. Service settings displayed controls without execution paths.
+
+State: fixed on 2026-11-16. This is the website part of issue 802.
+
+The website displayed the need-to-know default and the agent-credit removal setting.
+It also displayed the Git message model and three unbuilt workflow defaults.
+Standing permission rules stored a flag without enforcing permissions.
+The build now removes these controls with the same checked row-removal helper as Project settings.
+The empty Git messages section and Approvals heading are absent too.
+The standalone mock retains its sample controls.
+The browser journey checks their absence and reads back the retained role settings from the engine.
+
+## 1128. The service update button only displayed a not-connected notice.
+
+State: fixed on 2026-11-16.
+
+The About section displayed an Update the service button without an execution path.
+The button changed no engine state.
+The build now omits that button.
+The existing manual update commands remain visible.
+The browser journey checks that the button is absent.
+
+## 1129. Watching or taking over an agent terminal has no engine attachment path.
+
+State: open. This is issue 906, checked on 2026-11-16.
+
+The project terminal opens a separate owner shell.
+Watching an interactive agent needs an association with its existing terminal and an authenticated output transport.
+Taking over also needs exclusive keyboard ownership and a handoff back to the agent.
+An Agent Client Protocol agent has no terminal.
+Its conversation remains available through the thread.
+The disabled controls and their existing hints remain accurate.
+This task did not build these features.
+
+## 1130. A project terminal has no resumed attachment protocol.
+
+State: open. This is issue 907, checked on 2026-11-16.
+
+The session belongs to its opening owner connection.
+The output stream permits one attachment.
+Its attached flag stays set after detachment.
+The disconnect grace period does not provide a resumed attachment.
+Reconnect would need an engine protocol for a live session and explicit connection ownership.
+An exited or cleaned-up shell cannot resume.
+An owner shell remains meaningful when the project's agents use the Agent Client Protocol.
+The disabled Reconnect control and its existing hint remain accurate.
+This task did not build reconnect.
+
+## 1131. A broader Service settings journey still clicked the removed standing-rules control.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the journey and its service support file.
+I ran the unchanged journey at studio.spec.ts:792.
+It timed out while clicking Standing permission rules.
+The journey now asserts that the switch is absent.
+The orchestrator approved removing its dependent standingRules expectation by name.
+Every other assertion remains.
+I read the tests and journeys found by label and selector searches for the removed controls.
+I found no other live journey that activated a removed control.
+
+## 1132. Passing evidence for a newer head appeared current for an older review.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the status handler and the typed review mapper.
+The status handler evaluates evidence against the checkout's current head.
+The open review can still name an earlier head.
+I ran a new regression test before changing the mapper.
+It showed current passing evidence for the wrong reviewed head.
+The mapper now treats a report for a different reviewed head as stale.
+It uses the dialog's existing stale wording and approval choice.
+
+## 1133. The reviewer defaults have storage but no execution consumer.
+
+State: open. The owner must decide whether to hide these controls.
+
+I read the Default reviewers and Reviewer from another vendor controls.
+I searched the engine source for reviewDefaults.
+I found its storage in the project settings command.
+I found no execution consumer.
+The controls remain visible because round 2 requests a record without a fix.
+
+## 1134. Standing permission enforcement will need its website switch restored.
+
+State: open. Restore the control in the same change that builds enforcement.
+
+I read standingRulesEnabled in the stall-watch switch module.
+It treats an absent value as enabled.
+I searched the engine source and found no caller today.
+Hiding the website switch does not change permission execution today.
+A stored true value or an absent value would enable the flag when a future consumer calls it.
+The owner needs the website switch when enforcement is built.
+The roles.settings.set request can still change the stored flag.
+Round 2 does not change the default or build enforcement.
+
+## 1135. The engine records the client's approval decision without checking evidence.
+
+State: open. Round 2 records this behavior without changing it.
+
+I read admitMainReview and the approval planner.
+The engine checks the owner, confirmation, review identity, and reviewed pair.
+The Git operation checks the actual checkout heads before merging.
+The planner stores the client's decision value.
+It does not check whether the current evidence supports that decision.
+A change of evidence alone does not cause an engine refusal.
+The website's captured decision preserves what the pressed button showed.
+
+## 1136. The Git journey lost its passing-at-open review case.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the Git browser journey.
+Round 1 replaced its passing-at-open case with evidence arriving while the dialog was open.
+The journey now keeps the live-arrival checks and prepares another review after the reports exist.
+It checks plain approval in both cases.
+It also checks the passing evidence stored with the final merged review.
+
+## 1137. The review tests omitted a request-level stale-pair refusal.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the existing refusal test and admitMainReview.
+The existing test returned a decided review with a refused outcome.
+It did not reject the approval request.
+I ran a new regression test that rejects the request with the admission refusal message.
+The existing error notice shows the message.
+The review stays open and the approval and Cancel controls remain enabled.
+No production change was needed for this error path.
+
+## 1138. The email journey resolved its sample fixture from the working directory.
+
+State: fixed in round 2 on 2026-11-16.
+
+I ran the email journey at studio.spec.ts:979 alone from packages/web.
+It failed before opening the page because packages/web/design/mock does not exist.
+I read its sample-copy path and the other helpers' module-relative paths.
+The email helper now resolves design/mock relative to its own source file.
+The journey's assertions and waits remain unchanged.
+
+## 1139. Six browser journeys failed in the full check of the controls unit and passed alone.
+
+The full check ran while three other builders were running their own test suites on the same computer.
+The journeys were `git.spec.ts:183`, `git.spec.ts:233`, `git.spec.ts:316`, `new-project.spec.ts:283`, `studio.spec.ts:902` and `studio.spec.ts:1132`.
+The journey at `studio.spec.ts:902` reached its six minute limit.
+Each of the six passed when it was run alone with one worker.
+This is the same load sensitivity that issues 966, 1014, 1044, 1066, 1079 and 1122 record.
+
+State: open. Recorded on 2026-11-16.

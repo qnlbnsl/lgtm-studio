@@ -15,7 +15,7 @@ export function gitActionsSource(path: string, source: string): string {
   }
   if (path === "js/live/git.js") {
     // Appended actions depend on these source helpers and their parameter order.
-    for (const signature of ["function affectedGit(w, target) {", "async function confirmGit(command, readback) {", "async function loadGit(project, ids, reviews = false) {", "async function loadGitDetail(id, selectedCommit, automatic = false, force = false, send = request) {", "mapping.nextAutomaticRead(Date.now(), c)"]) {
+    for (const signature of ["function affectedGit(w, target) {", "async function confirmGit(command, readback) {", "async function loadGit(project, ids, reviews = false) {", "async function loadGitDetail(id, selectedCommit, automatic = false, force = false, send = request) {", "mapping.nextAutomaticRead(Date.now(), c)", "mapping.mapMainReview(status.review, undefined, S().projects.find((p) => p.id === project)?.lead || '', status.evidence)"]) {
       if (!source.includes(signature)) throw new Error(`Git actions integration no longer matches ${path}: missing ${signature}`)
     }
     // Index and file-only actions read back their checkout. Head-changing
@@ -25,7 +25,7 @@ export function gitActionsSource(path: string, source: string): string {
     // start a fresh generation even when an older automatic read is pending.
     replace("lost: plan.paths, action: 'Discard', onConfirm:", "lost: plan.paths, action: 'Discard', waitForReply: true, pendingLabel: 'Discarding…', onConfirm:")
     replace("if (w.kind !== 'team') { refuse(); return; }", "if (!['team', 'agent'].includes(w.kind)) { refuse(); return; }")
-    replace("export function answerReview(id, option) {\n  if (option !== 'merge') { refuse(); return; }", "export function answerReview(id, option, reason) {\n  if (option === 'decline') return declineReview(id, reason);\n  if (option !== 'merge') { refuse(); return; }")
+    replace("export function answerReview(id, option, reason, approval) {\n  if (option !== 'merge') { refuse(); return; }", "export function answerReview(id, option, reason, approval) {\n  if (option === 'decline') return declineReview(id, reason);\n  if (option !== 'merge') { refuse(); return; }")
     replace("if (!value) { refuse(); return; }", "if (!value) return reopen(id, fid);")
     replace("await loadGit(screen?.project);\n}); }\nexport function discard", "await loadGit(screen?.project, [w.id]);\n}); }\nexport function discard")
     replace("confirmed: true }); await loadGit(screen?.project);", "confirmed: true }); await loadGit(screen?.project, [w.id]);")
@@ -70,6 +70,7 @@ export async function declineReview(id, reason) { const completed = await run('g
     replace("return liveGit.answerReview(requestId, optionId);", "return liveGit.answerReview(requestId, optionId, text);")
   }
   if (path === "js/dialogs.js") {
+    replace("const approval = { head: r.head, baseHead: r.baseHead, decision: ok ? 'approve' : 'approve_without_evidence' };", "const approval = Object.freeze({ head: r.head, baseHead: r.baseHead, decision: ok ? 'approve' : 'approve_without_evidence' });")
     // Reuse the mock's existing send-back form and field, beside the merge action.
     replace("title=${r.title} size=\"wide\" onClose=${act.closeDialog}", "title=${r.title} size=\"wide\" onClose=${() => { if (!live.on || !liveGit.busy('git')) act.closeDialog(); }}")
     replace("<span class=\"why\">Only you can merge into ${r.target}.</span><button type=\"button\" class=\"btn\" onClick=${act.closeDialog}>Cancel</button>", "<span class=\"why\">Only you can merge into ${r.target}.</span><button type=\"button\" class=\"btn\" disabled=${live.on && liveGit.busy('git')} onClick=${act.closeDialog}>Cancel</button>")
