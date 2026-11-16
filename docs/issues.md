@@ -10,7 +10,9 @@ Every numbered entry carries a line that starts with "State:" or "Status:".
 An automated pass on 2026-11-15 added a "State:" line to 292 entries that had none.
 A line that says "Read on 2026-11-15, not checked against the code" rests on the entry's own words.
 A line that says "Checked against the code on 2026-11-15" was checked by a cheaper model, and it can be wrong.
-A line that starts with "State check:" marks one of 38 entries where that pass disagreed with the entry's own state line.
+That pass disagreed with the own state line of 45 entries and marked each with a "State check:" line.
+A stronger model read the code for those 45 on 2026-11-16, and each now has a new "State:" line that ends "Verified against the code on 2026-11-16."
+The line that starts with "Earlier state:" keeps what the entry said before.
 Correct a wrong line when you find one.
 
 Each entry uses this shape:
@@ -77,10 +79,9 @@ https://github.com/pnpm/pnpm/blob/v12.15.0/pnpm/docs/settings/build.md
 
 ## 4. A transitive platform dependency drifts beyond Effect 4.0.5
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. writeFakeCli in third_party/t3code/provider-testing/src/fakeCli.ts is unchanged and no test-author rule was added to code; it remains a rule for test authors.
-
 Found: 2026-11-01, while installing the unit 1 workspace.
-State: fixed by the unit 1 workspace overrides.
+State: fixed by the unit 1 workspace overrides in `pnpm-workspace.yaml`, which still pin Effect and both platform packages to 4.0.5 on master. Verified against the code on 2026-11-16.
+Earlier state: fixed by the unit 1 workspace overrides.
 
 What happens: `@effect/platform-node` 4.0.5 accepts
 `@effect/platform-node-shared` 4.1.1, which requires Effect `^4.1.1`.
@@ -92,10 +93,9 @@ library versions before the copied packages or the socket client use them.
 
 ## 5. The original package graph omits later approved dependencies
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. third_party/t3code/effect-acp/scripts/generate.ts line 490 still runs pnpm exec vp fmt, which LGTM Studio does not install.
-
 Found: 2026-11-01, while reconciling unit 1 with the decision log.
-State: fixed by the unit 1 package manifests.
+State: fixed by the unit 1 package manifests, which on master follow decisions 59 and 71. Verified against the code on 2026-11-16.
+Earlier state: fixed by the unit 1 package manifests.
 
 What happens: decision 23 says the testing package depends on contracts
 and copied packages only. Decision 71 adds its client dependency. Decision
@@ -172,10 +172,9 @@ Why it matters: a reader who edits only the old list changes nothing.
 
 ## 10. The compiler alias and two copied cache settings are unexplained
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. packages/engine/scripts/recorder.ts line 26 still redacts every environment value of eight or more characters; issue 192 confirms the cause remains.
-
 Found: 2026-11-01, in the unit 1 review.
-State: fixed in unit 2: a comment in `pnpm-workspace.yaml` names T3 Code as
+State: fixed in unit 2 by commit 87e2d4c, and master still has the alias comment and no copied cache settings. Verified against the code on 2026-11-16.
+Earlier state: fixed in unit 2: a comment in `pnpm-workspace.yaml` names T3 Code as
 the reason for the alias, and the two cache variables are removed from
 `vitest.config.ts` because no test reads them. Commit: 87e2d4c.
 
@@ -192,10 +191,9 @@ do nothing, with no stated cause.
 
 ## 11. Herdr refused the plugin manifest: an action needs `title`
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. packages/engine/test/runner/replay.test.ts line 130 still skips the normal Cursor replay; only cursor-out-of-usage.ndjson exists in packages/testing/fixtures.
-
 Found: 2026-11-01, by the owner's step for criterion 1.4 on Herdr 0.9.3.
-State: fixed in `herdr-plugin.toml`; the owner re-runs the link.
+State: fixed, and every action in `plugins/herdr/herdr-plugin.toml` now carries a `title` field. Verified against the code on 2026-11-16.
+Earlier state: fixed in `herdr-plugin.toml`; the owner re-runs the link.
 
 What happened: `herdr plugin link` stopped with "TOML parse error at line 10,
 [[actions]]: missing field `title`". The `serve` action had `name = "Start
@@ -292,10 +290,9 @@ Why it matters: someone running `generate` gets a confusing failure.
 
 ## 17. T3 Code has no unit test for the replay helpers
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. Entry still records accepted limits: non-Linux mount check, same-user path redirect after check, and worktree registration; no later entry resolves them.
-
 Found: 2026-11-01, in unit 2.
-State: fixed; recorded in `third_party/t3code/README.md`.
+State: fixed, because `replayTranscript.test.ts` was written for LGTM Studio and is recorded in `third_party/t3code/README.md`. Verified against the code on 2026-11-16.
+Earlier state: fixed; recorded in `third_party/t3code/README.md`.
 
 What happened: criterion 2.4 needs a test named `replayTranscript.test.ts`, but
 T3 Code has none for `provider-testing`. A test was written for LGTM Studio, with
@@ -305,10 +302,9 @@ Why it matters: the copied helpers would otherwise have no test at all.
 
 ## 18. The first-party packages did not depend on the copied packages
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. grep for HarnessChanged in packages/engine/src/views finds nothing; no harness view exists and no later entry mentions issue 51.
-
 Found: 2026-11-01, in the focused review of unit 2.
-State: fixed in the commit "fix(unit-2): link the copies, harden the checker and launcher" (unit 2 fix round 1); `copied-package-edges.test.ts` covers it.
+State: fixed in unit 2 fix round 1, and `copied-package-edges.test.ts` still covers the edges on master. Verified against the code on 2026-11-16.
+Earlier state: fixed in the commit "fix(unit-2): link the copies, harden the checker and launcher" (unit 2 fix round 1); `copied-package-edges.test.ts` covers it.
 
 What happened: after a frozen install, `import.meta.resolve` failed with
 `ERR_MODULE_NOT_FOUND` from `packages/engine` and `packages/testing` for the
@@ -326,10 +322,9 @@ force an unplanned change to a frozen file.
 
 ## 19. The credit checker accepted names it had not credited
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. Recorded sandbox limitation for the fake adapter test in identity/redactor.test.ts; no later entry resolves it and it is only worked around outside the sandbox.
-
 Found: 2026-11-01, in the focused review of unit 2.
-State: fixed in the commit "fix(unit-2): link the copies, harden the checker and launcher" (unit 2 fix round 1); `credits-names.test.ts` covers it.
+State: fixed in unit 2 fix round 1, and `credits-names.test.ts` still covers the checker on master. Verified against the code on 2026-11-16.
+Earlier state: fixed in the commit "fix(unit-2): link the copies, harden the checker and launcher" (unit 2 fix round 1); `credits-names.test.ts` covers it.
 
 What happened: three inputs made `scripts/check-credits.sh` exit 0. A path with
 a newline whose fragments matched credited files was split into lines. A symbolic
@@ -540,10 +535,9 @@ The lead tells the manager this when requesting the owner-run recording.
 
 ## 31. The event log's agent column covers only events with a top-level agent id
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. EventLog.ts now writes a thread_agent_id column and apply.ts threadAgent references issue 31, so queued deliveries reach the target thread.
-
 Found: 2026-11-01, in unit 4a.
-State: open.
+State: fixed in commit `bae34db`, which adds the `thread_agent_id` column filled by `threadAgent`, so a queued delivery is indexed under its target's thread. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happened: `EventLog.append` fills `events.agent_id` and the envelope's
 `agentId` from the event's own `agentId` field. Events that name an agent
@@ -1023,10 +1017,9 @@ What should happen: latch only on failures of the write itself (the append, the 
 
 ## 60. Envelope-only receipts rebuild list replies from the current snapshot
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. The envelope-only list rebuild path is gone from packages/engine/src/commands/CommandHandler.ts, which now only decodes stored receipts with their reply.
-
 Found: 2026-11-01, in the focused review of unit 5b.
-State: open, low impact.
+State: open, low impact; on 2026-11-16 `CommandHandler.ts` still rebuilds an envelope-only receipt's list reply from the current snapshot. Verified against the code on 2026-11-16.
+Earlier state: open, low impact.
 
 What happens: a receipt in the older envelope-only format has no stored reply. For `accounts` and `harnesses` list commands the handler rebuilds the reply from the current snapshot (`CommandHandler.ts`). That reply is not the first reply, and it does not pass `redactReceipt`.
 Why it matters: today only direct callers of `append` write the older format, so no command reaches this path. If one did, a retry could return data that differs from the first reply.
@@ -1193,10 +1186,9 @@ later valid events for other agents.
 
 ## 70. A command request identifier could store a live secret unchanged
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. packages/contracts/src/ids.ts line 8 still defines RequestId as NonEmptyString with no bounded alphabet, though the engine redaction part is fixed.
-
 Found: 2026-11-01, in the verified attack pass for unit 5c.
-State: fixed in the engine by unit 5c fix round 1. A bounded identifier
+State: partly fixed; the engine refuses a secret-bearing request identifier since unit 5c fix round 1, and the bounded identifier alphabet in `packages/contracts/src/ids.ts` remains open. Verified against the code on 2026-11-16.
+Earlier state: fixed in the engine by unit 5c fix round 1. A bounded identifier
 alphabet remains open for the contracts scope.
 
 What happened: the contracts accept any nonempty string as a request
@@ -2106,11 +2098,10 @@ has gone.
 
 ## 128. Classified pauses need trustworthy error sources and reset times
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. Only fake-agent and unit tests supply resetsAt (packages/engine/test/runner/reset-time.test.ts); no recorded real adapter fixture with a reset time is evident.
-
 Found: 2026-11-01, in unit 6c's focused review, finding F-4, and the unit 6b
 review's ruling A3, relayed by engine-lead in board post 980.
-State: error-source classification is fixed in unit 6c fix round 1. The
+State: partly fixed; error-source classification and the reset-time producer are fixed, and no recorded adapter fixture yet proves the real reset-time form. Verified against the code on 2026-11-16.
+Earlier state: error-source classification is fixed in unit 6c fix round 1. The
 reset-time producer is fixed in fix round 2 after merging unit 6b. Recorded
 adapter evidence for a reset time remains open.
 
@@ -2309,10 +2300,9 @@ when recovery is most needed.
 
 ## 158. A no-timeout routing test can count a prompt sent after its snapshot
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. moving-requests.test.ts test 5.6 now carries an issue 124 comment and filters late prompt calls after the watermark, so the flaky count no longer fails.
-
 Found: 2026-11-01, by the lead, in the team test runner's check of `worker/engine-i9b` at e263a12 (run 69).
-State: open. The test is unchanged; a later test-only task fixes it.
+State: fixed in commit `39302d8`, where test 5.6 ignores late prompts for deliveries queued before its watermark. Verified against the code on 2026-11-16.
+Earlier state: open. The test is unchanged; a later test-only task fixes it.
 
 What happens: `packages/engine/test/routing/moving-requests.test.ts`, "5.6 no timeout" (line 307), seeds an idle `lead` through `family()`, whose permission and question deliveries are sent on a forked dispatch lane. The test records `fakes.runner.calls.length` straight away. Under machine load (7.7 in run 69) one of those `prompt` calls lands after the snapshot, and `expect(fakes.runner.calls).toHaveLength(callsBefore)` fails with one extra call. The branch under test changed no engine source, and five local re-runs and the re-run (run 73) passed.
 What should happen: the test waits until the seeded deliveries are sent (or reads their delivery rows as `sent`) before it records `callsBefore`, as other routing tests do with `eventually`.
@@ -2358,10 +2348,9 @@ the test-only client in `packages/engine/test/support/socketClient.ts`.
 
 ## 161. Row 64 does not say what an upgrade without an ancestor chain means
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks fixed. packages/engine/src/api/ancestry.ts lines 15 to 24 return false for missing or malformed chain or group, and server.ts line 136 refuses with 403.
-
 Found: 2026-11-01, while writing the unit 7a tests.
-State: open for the lead; the unit 7a tests take the reading below.
+State: partly fixed; since commit `2b33da2` the engine refuses the owner credential with 403 when the ancestry headers are missing or malformed, but decision row 64 still does not record that rule. Verified against the code on 2026-11-16.
+Earlier state: open for the lead; the unit 7a tests take the reading below.
 
 What happens: row 64 says the client sends its ancestor chain and process
 group on upgrade, and the engine refuses the owner credential when one of
@@ -2391,10 +2380,9 @@ deny-read mechanism.
 
 ## 163. Issue 41's bound for a stalled subscriber has no number
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. api/server.ts line 196 invalidates a subscription at 2,048 events, giving the missing bound.
-
 Found: 2026-11-01, while writing the unit 7a tests.
-State: open for unit 7a's builder; the test sets an upper limit.
+State: fixed in unit 7a (commit `2b33da2`); `api/server.ts` disconnects a subscriber whose backlog reaches 2,048 events or whose acknowledgement is 5 seconds late. Verified against the code on 2026-11-16.
+Earlier state: open for unit 7a's builder; the test sets an upper limit.
 
 What happens: issue 41 asks unit 7a for a bound or a disconnect rule, but no
 row names the size. A subscriber that stops acknowledging Effect RPC stream
@@ -2643,10 +2631,9 @@ outside this fix round's assigned rulings.
 
 ## 178. The ancestry checks do not explicitly refuse unsupported platforms
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. engine api/ancestry.ts and client ancestry.ts both take a platform argument and refuse when it is not linux.
-
 Found: 2026-11-01, while writing T-7 after engine-lead's board request 1132.
-State: open for the unit 7b builder's fix round under the Linux-only ruling.
+State: fixed in commit `06cb560`; the client and engine ancestry checks take a platform argument and refuse every platform except Linux. Verified against the code on 2026-11-16.
+Earlier state: open for the unit 7b builder's fix round under the Linux-only ruling.
 
 What happens: the client's `ancestryHeaders` and the engine's
 `outsideAdapters` have no platform argument. Tests against their intended
@@ -4689,10 +4676,9 @@ policy even after the physical connection becomes usable again.
 
 ## 257. A permission prompt omits the options its agent holder must choose
 
-State check: verified against the code on 2026-11-15, this entry is partly fixed. A project lead can read a request options through the `project.requests` tool, since commit `2616fb5`. The delivery text still has none, and a team lead holder still cannot see them.
-
 Found: 2026-11-03, in the post-build review of commit `8ff4c9b`, finding A14.
-State: open, deferred by the owner on 2026-11-03.
+State: partly fixed, because a project lead can read a request's options through the `project.requests` tool since commit `2616fb5`, while the holder's delivery text in `routing/holders.ts` still omits the options and a team lead holder still cannot read them. Verified against the code on 2026-11-16.
+Earlier state: open, deferred by the owner on 2026-11-03.
 
 Evidence: the post-build A14 adjudication is in
 `.scratch/foundry-runs/engine-build-1/review-post-build/adj/result-1.md` (not tracked).
@@ -4888,10 +4874,9 @@ and process-identifier reuse.
 
 ## 264. The orphan-sweep test for a surviving group times out before its own deadline
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. Root vitest.config.ts sets testTimeout 60000 and the F-3 case in orphans.test.ts bounds the sweep at 8 seconds, so the reported five-second timeout no longer applies.
-
 Found: 2026-11-03, by review-fix-2 while verifying the post-build A3 fix.
-State: open, recorded at the review lead's request in board post 8.
+State: open, because the F-3 case still waits for the five-second default sweep bound with no per-test timeout, and the root 60-second test timeout likely does not reach the inline Vitest projects. Verified against the code on 2026-11-16.
+Earlier state: open, recorded at the review lead's request in board post 8.
 
 Evidence: the fixer's result is in
 `.scratch/foundry-runs/engine-build-1/review-post-build/fix-round-1/result-2.md` (not tracked).
@@ -5468,10 +5453,9 @@ Why it matters: A changed reason string would silently stop an owner alert from 
 
 ## 301. Effect's `RpcGroup.merge` silently replaces a command with the same name
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. packages/contracts/test/unique.test.ts case 1.3 detects duplicate commands even though Effect merge silently replaces them.
-
 Found: 2026-11-03, while planning the client API plan.
-State: open.
+State: fixed by commit `960afcc`, whose test `packages/contracts/test/unique.test.ts` case 1.3 detects a duplicate command name before Effect's merge can hide it. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: In Effect 4.0.5, `RpcGroup.merge` replaces a command whose name is already present, and says nothing.
 What should happen: Composing several command groups needs a test that every command name is unique.
@@ -5479,10 +5463,9 @@ Why it matters: A command could vanish from the served API without any error.
 
 ## 302. A delivery's text is wrapped as data only for an agent sender
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. envelope.ts agentText now wraps for every sender except the owner, so a service or piece sender is wrapped as data.
-
 Found: 2026-11-03, while planning the client API plan.
-State: open.
+State: fixed, because `agentText` in `packages/engine/src/routing/envelope.ts` now wraps the text of every sender except the owner, including services and pieces. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: `packages/engine/src/routing/envelope.ts:23` wraps a delivery's text as data only when its sender is an agent (`sender._tag === "agent"`). A new sender kind, such as a service or a piece, would go out unwrapped.
 What should happen: The rule becomes "every sender but the owner". The client API contract's edit E15 makes that change.
@@ -5508,10 +5491,9 @@ Why it matters: The owner is shown questions nobody can receive an answer to.
 
 ## 305. Secret collection at start-up deletes the secrets a piece keeps
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. collectSecrets.ts now keeps references returned by each piece secretKeep list, so pieces can keep their own secrets.
-
 Found: 2026-11-03, while planning the client API plan.
-State: open.
+State: fixed, because `packages/engine/src/accounts/collectSecrets.ts` keeps every secret reference that a piece returns from its `secretKeep` list. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: `collectSecrets` deletes every secret that no account uses, so a piece cannot keep its own secret.
 What should happen: Client API edit E27 (row 94) lets a piece keep its secrets.
@@ -5519,10 +5501,9 @@ Why it matters: A piece that needs a stored secret would lose it at the next sta
 
 ## 306. `packages/client` imports Node modules at its root, so a browser cannot use it
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. packages/client now splits node.ts, nodeSocket.ts and browser.ts, so a browser entry exists without root Node imports.
-
 Found: 2026-11-03, while planning the client API plan.
-State: open.
+State: fixed, because the browser entry `@lgtm/client/browser` imports no Node modules and the website already uses it, while the package root stays the Node entry. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: The client package imports Node modules at its root.
 What should happen: Client API edit E26 (row 110) makes the package usable from a browser.
@@ -5530,10 +5511,9 @@ Why it matters: The web page cannot use the shared client library.
 
 ## 307. The client's stream dispatch calls `subscribe` for every streaming command
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. client core.ts dispatches each streaming command through subscribe(tag, schema) using its own tag, not a single subscribe call.
-
 Found: 2026-11-03, while planning the client API plan.
-State: open.
+State: fixed, because `packages/client/src/core.ts` now dispatches each streaming command to its own remote procedure by its own tag. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: The stream dispatch in `packages/client` calls `subscribe` for every streaming command.
 What should happen: Client API edit E24 (row 109) dispatches each streaming command to its own call.
@@ -5541,10 +5521,9 @@ Why it matters: A streaming command other than `subscribe` would read the wrong 
 
 ## 308. The client's typed decoder rejects an unknown event tag
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. client core.ts decodeEnvelope turns an unknown event tag into an UnknownEvent instead of rejecting the stream.
-
 Found: 2026-11-03, while planning the client API plan.
-State: open.
+State: fixed, because `decodeEnvelope` in `packages/client/src/core.ts` passes an unknown event tag through as an `UnknownEvent` instead of rejecting the stream. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: The client's typed Remote Procedure Call decoder rejects an unknown event tag before any handler sees it, so a newer server stops an older client's stream.
 What should happen: Client API edit E25 (row 109) lets a client pass an unknown tag through.
@@ -5552,10 +5531,9 @@ Why it matters: Adding an event kind to the server would break every client that
 
 ## 309. Engine events have no size bound
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. Oversized markers exist in client reads and server.ts, so one large event is bounded by a client.Oversized marker.
-
 Found: 2026-11-03, while planning the client API plan.
-State: open.
+State: fixed, because the server sends a `client.Oversized` marker for any event over the 256 KiB frame limit and the client then fetches that event through `client.event`. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: One large engine event can exceed a message budget (client API row 105).
 What should happen: Not decided.
@@ -5713,10 +5691,9 @@ Why it matters: A reader of the design would build a pairing that was dropped.
 
 ## 325. A board question's author looks settled to the engine
 
-State check: verified against the code on 2026-11-15, this entry is fixed. `packages/contracts/src/board/conditions.ts` keeps a board question author unsettled, since commit `42d4b1c`.
-
 Found: 2026-11-03, while planning the message board plan.
-State: open.
+State: fixed in commit 42d4b1c, because the board's hold condition keeps a question's author unsettled while the board piece is enabled. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: An agent that posts a question needing a reply, then ends its turn, counts as settled in `routing/waits.ts:settled`, so a `wait` on it ends early.
 What should happen: Not decided.
@@ -5796,10 +5773,9 @@ Why it matters: The asker waits up to two hours for an agent that has hung.
 
 ## 334. Open questions that the owner writes have no per-author cap
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. board/commands.ts line 103 caps open questions at 64 per author and sameAuthor covers the owner as well as agents.
-
 Found: 2026-11-03, while planning the message board plan.
-State: open.
+State: fixed, because `board/commands.ts` caps every author, the owner included, at 64 open questions. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: The 64-question cap applies to agents only.
 What should happen: Not decided.
@@ -5823,10 +5799,9 @@ corrected assertions.
 
 ## 336. A refused duty is retried after every later batch that touches it
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks fixed. packages/engine/src/board/reactor.ts line 131 skips CommandRefused events when marking touched targets, so refusals no longer trigger a retry loop of more refusals.
-
 Found: 2026-11-03, while planning the message board plan.
-State: open.
+State: open and awaiting the owner's decision, because the board reactor still retries a refused duty after each later batch that touches it, and only the refusal events themselves are ignored. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: With the board's reactor written as level rules, a duty the engine keeps refusing is retried after each later batch that touches it, and each retry writes one `CommandRefused`.
 What should happen: Not decided.
@@ -5834,10 +5809,9 @@ Why it matters: A defect that makes a reactor batch always fail would grow the l
 
 ## 337. The dispatcher wrote a send-time withdrawal without its wait checks
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. deliveries.ts line 340 now writes the send-time DeliveryWithdrawn through withWaitChecks.
-
 Found: 2026-11-03, while planning the message board plan.
-State: open.
+State: fixed, because the dispatcher writes its send-time withdrawal through `withWaitChecks` in `routing/deliveries.ts`. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: A parent's wait on an idle target could stay open (board review round 4, logic m7).
 What should happen: Client API v5 edit E18 requires the wait checks (lead ruling L30).
@@ -5845,10 +5819,9 @@ Why it matters: A parent waits for a target that will never answer.
 
 ## 338. Alerts for matters that exist before the alert reactor's first start are never raised
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks fixed. client/alerts/reactor.ts lines 118-123 scan lists.openMatters at first start, and board/openMatters.ts exists, so pre-existing board matters now get baseline alerts.
-
 Found: 2026-11-03, while planning the message board plan.
-State: open.
+State: fixed, because the alert reactor's first start scans each piece's open matters, so a board question that already waits gets a baseline alert. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: The alert reactor raises `baseline` alerts at its first start by a level scan over the current views, but a piece's alert source is a pure function of one envelope and offers no scan. An open board post that needs the owner's reply, if it exists before that first start, never gets an alert. This matters only if the board lands before the alert reactor (client API unit 6a).
 What should happen: Not decided.
@@ -5865,10 +5838,9 @@ Why it matters: Without this note the oversized markers look like a defect.
 
 ## 340. A piece's ids are treated as text by the redactor unless the piece adds table entries
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. log/redactionStructure.ts now has board entries such as board.ChannelArchived, and the entry records the roles persistence proof of 2026-11-04.
-
 Found: 2026-11-03, while planning the message board plan.
-State: open.
+State: partly fixed, because the board and project pieces added their redaction table entries, but no check stops a future piece from forgetting its entries. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: The engine's redactor at `9e386b0` has fixed structure tables (`log/redactionStructure.ts`) that name each id field. The client API contract v12 has no edit or table for a piece's ids.
 What should happen: The board adds its entries as B13. The roles and client API plans must do the same.
@@ -5884,10 +5856,9 @@ This closes the roles proof gap without claiming first-use execution.
 
 ## 341. A "model at capacity" error is returned to the sender as a failed delivery
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. deliveries.ts capacityHoldCount and recovery/reload.ts capacityHeld hold a delivery on a capacity error instead of waking parents each time.
-
 Found: 2026-11-03, while planning the foundry roles plan.
-State: open.
+State: fixed, because a capacity error now holds and later releases the delivery up to the role's capacity-retry limit, as decision row 11 (WS-7b) asked. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: A "model at capacity" or "529 overloaded" error is returned to the sender as a failed delivery (`packages/engine/src/runner/classify.ts:classifyError`, `routing/deliveries.ts:failed`), which wakes the parent with a prompt for each error.
 What should happen: Decision row 11, WS-7b, holds the delivery and releases it later.
@@ -5895,10 +5866,9 @@ Why it matters: A capacity outage wakes parents again and again.
 
 ## 342. No event records an agent's token or prompt-cache usage
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks fixed. TurnEnded in packages/contracts/src/events.ts line 192 carries optional usage of type TurnUsage, and AcpRunner.ts terminalUsage reads it from the harness.
-
 Found: 2026-11-03, while planning the foundry roles plan.
-State: open.
+State: fixed, because `TurnEnded` now carries optional token and prompt-cache usage that `AcpRunner.ts` reads from the harness. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: `runner/translate.ts` ignores every session update except message chunks, plan and tool calls.
 What should happen: Decision row 11, WS-7c, records usage.
@@ -5915,10 +5885,9 @@ Why it matters: Each such request costs a full agent turn.
 
 ## 344. The runner drops the tool `kind` and the permission request's own `rawInput`
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. AcpRunner.ts lines 688-692 now carry toolKind and rawInput into the permission record, so the drop described no longer occurs.
-
 Found: 2026-11-03, while planning the foundry roles plan.
-State: open.
+State: fixed, because the permission record now keeps the tool kind and the request's redacted raw input, as the roles plan's WS-7a proposed. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: `packages/engine/src/runner/translate.ts:37-41` and `packages/engine/src/runner/AcpRunner.ts:400-416` drop them, so nothing in the log says which tool asked for a permission or exactly what it will run.
 What should happen: The roles plan's WS-7a proposes optional fields (row 53).
@@ -5926,10 +5895,9 @@ Why it matters: A standing rule cannot match a request precisely.
 
 ## 345. Resuming a crashed agent queues no carry-on for an unfinished delivery
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. recovery/reload.ts now documents and queues a carry-on for an agent that was mid-turn, and resume.ts passes midTurn to reload.
-
 Found: 2026-11-03, while planning the foundry roles plan.
-State: open.
+State: fixed, because a resumed agent that was mid-turn now gets a carry-on delivery from `recovery/reload.ts`. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: A delivery the agent had accepted but not finished gets no carry-on (`packages/engine/src/commands/resume.ts:48`, `packages/engine/src/recovery/reload.ts:80-98`), so a reloaded agent sits idle.
 What should happen: The roles' crash rule sends its own carry-on prompt (row 42).
@@ -5937,10 +5905,9 @@ Why it matters: The resumed agent does nothing until someone prompts it.
 
 ## 346. The board marks a capacity-returned wake undeliverable within seconds
 
-State check: verified against the code on 2026-11-15, this entry is partly fixed. Capacity errors are held and requeued in `packages/engine/src/routing/deliveries.ts`, since commit `f46d958`. The board rule of two returns then undeliverable remains as a fallback.
-
 Found: 2026-11-03, while planning the foundry roles plan.
-State: open.
+State: partly fixed in commit f46d958, because the engine now holds capacity errors, but the board still marks a wake undeliverable after two returns once a hold is refused. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: The board retries a returned wake once at once and then marks the addressee `undeliverable`, so a model-capacity outage ends a board addressee's part of a post within seconds.
 What should happen: The engine holds capacity errors (roles WS-7b). The board's planner should consider skipping the immediate retry for a capacity return.
@@ -5993,10 +5960,9 @@ Why it matters: One slow file system stalls all agents.
 
 ## 352. One shared stream fiber carries every agent's runner events, and `answerPermission` is awaited inside it
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks fixed. Permission answers now run as afterCommit in routing/permissions.ts line 51 and CommandHandler.ts around line 170 no longer awaits answerPermission inside the shared runner-event fiber.
-
 Found: 2026-11-03, while planning the foundry roles plan.
-State: open.
+State: partly fixed, because permission answers now run outside the shared runner-event fiber, but that one sequential fiber still carries every agent's events and still awaits a mode reset. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 What happens: `packages/engine/src/commands/CommandHandler.ts:177` awaits `answerPermission` inside the shared fiber, so one slow adapter answer stalls the runner events of all agents.
 What should happen: Not decided.
@@ -8725,10 +8691,9 @@ used Herdr Synapse's team board and interactive panes instead.
 
 ## 517. Moving the mock onto data files exposed four faults in it
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. design/mock/js has no scrollIntoView for the sidebar active agent; only dialogs, board and git screens scroll, so the sidebar fault remains.
-
 Found: 2026-11-07, while moving the mock's fixtures into JSON files and stub functions.
-State: three are fixed on the branch `area/web-mock`. The sidebar fault is open in the mock.
+State: three of the four faults are fixed, and the sidebar still does not scroll to the selected agent in a long project list. Verified against the code on 2026-11-16.
+Earlier state: three are fixed on the branch `area/web-mock`. The sidebar fault is open in the mock.
 
 - A thread opened from Home started 39 pixels short of its end. The fix for this fault in
   `6133a31` restored the position before the page finished changing its layout. It is fixed.
@@ -11228,10 +11193,9 @@ The agent rows show role names, such as Builder 2, in place of the invented name
 
 ## 622. The Machines page counts capacity-held agents as agent slots
 
-State check: verified against the code on 2026-11-15, this entry is obsolete. The miscount exists only in the retired `packages/web` page. The website counts running agents in `design/mock/js/screens/service.js`.
-
 Found: 2026-11-13, while writing the checked gap table for connecting the mock.
-State: open.
+State: obsolete, because the miscount exists only in the retired `packages/web` page, and the website counts running agents instead. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 The current website's Machines page shows a number of held agent slots (`packages/web/src/admin/machines.tsx:20-21`).
 It counts the agents whose `capacityHeld` flag is true.
@@ -11254,10 +11218,9 @@ Supplied actions call the authenticated client API.
 
 ## 624. The live website's Machines page has no figures for the engine's machine
 
-State check: verified against the code on 2026-11-15, this entry is partly fixed. Harnesses, the workspace and the web port now come from the engine. The processor, memory, operating system, version and agent slot limit are still missing.
-
 Found: 2026-11-13, while connecting the mock to the engine.
-State: open.
+State: partly fixed, because the live page now shows the workspace, web port and harnesses, while processor, memory, operating system, version and the agent slot limit are still missing from the engine. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 The engine sends no processor, memory, agent slot, address, operating system or harness version for any machine.
 The live website therefore shows a dash for processor and memory, and "Scanning…" for the harnesses.
@@ -11642,10 +11605,9 @@ The agent that asked is told the answer came from an agent, when it came from th
 
 ## 658. An open live page stays on "Offline" after the service restarts
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks fixed. packages/studio/src/connection.ts:252-256 after a failure posts /api/session and on 401 calls setSession expired, which should bring up sign-in without a reload.
-
 Found: 2026-11-13, by hand on the first real project.
-State: open.
+State: fixed in `packages/studio/src/connection.ts`, which asks the session route after a lost connection and shows sign-in when the session has ended, though no browser journey covers a real restart. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 A restart of the service ends the browser's session.
 An open page of the live website then shows "Offline" and stays there.
@@ -11826,10 +11788,9 @@ The mapping now joins those records so that the Git picker includes their worktr
 
 ## 673. The settings contract does not return effective role defaults.
 
-State check: verified against the code on 2026-11-15, this entry is partly fixed. Commit `87f9d2c` added the lead and assigned stall timers. `roles.settings.get` still returns only stored overrides.
-
 Found: 2026-11-13, while connecting Service settings.
-State: open.
+State: partly fixed, because the lead and assigned stall timers now have settings since `87f9d2c`, while `roles.settings.get` still returns only stored overrides and not effective defaults. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 The role settings request returns stored overrides.
 It does not return the effective limits after the engine applies its defaults and role files.
@@ -14007,10 +13968,9 @@ The test now reads the script file that holds the pinger.
 
 ## 855. Project settings shows controls that the engine cannot serve yet
 
-State check: verified against the code on 2026-11-15, this entry is partly fixed. Commit `f0b575c` hides the unbuilt controls and makes Delete work. The engine features behind them are still missing.
-
 Found: 2026-11-14, while finishing the Project settings tab.
-State: open.
+State: partly fixed, because the website hides the unbuilt controls and project deletion works since `f0b575c` (issues 971 and 974), while the engine features behind the hidden controls remain unbuilt. Verified against the code on 2026-11-16.
+Earlier state: open.
 
 The owner asked for the mock's full Project settings page, with stubs where the engine has no support.
 Each stub is drawn disabled, and hovering it says "Engine work needed".
@@ -14525,10 +14485,9 @@ The full check remains a failed run.
 
 ## 905. A stall-watch timer field came back empty after a reload in one full run.
 
-State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks open. The entry says it stays open until several full runs pass; a likely cause was fixed under 918 but never reproduced.
-
 Found: 2026-11-14, in the full check of `area/studio-default` at `cfcc4de`.
-Status: a likely cause is fixed under issue 918; the failure was never reproduced, so it stays open until several full runs pass.
+State: open until several full runs pass, because a likely cause was fixed under issue 918 but the failure was never reproduced. Verified against the code on 2026-11-16.
+Earlier state: a likely cause is fixed under issue 918; the failure was never reproduced, so it stays open until several full runs pass.
 
 The full check ran alone on the test computer.
 It passed 591 unit test files and 60 of 61 browser journeys.
@@ -14763,10 +14722,9 @@ Its existing tests remain unchanged.
 
 ## 926. The full review check timed out on Mocks and Files save completion.
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. Entry says causes remain unproved; issue 898 line 13921 groups it with similar save-journey failures and no fix is recorded.
-
 Found in the full remote check of `38a825a` during review round 1.
-State: unresolved.
+State: partly fixed, because the Mocks save was sped up under issue 936 and passed a later full run, while the Files save timing failure remains open under issue 966. Verified against the code on 2026-11-16.
+Earlier state: unresolved.
 All 596 unit test files passed.
 The unit result was 9,038 passed and two skipped.
 The browser result was 60 passed and two failed.
@@ -14898,10 +14856,9 @@ The browser echo assertion now checks the active prompt line rather than any row
 
 ## 935. The round-2 full check found a startup timeout and an obsolete sign-in assertion.
 
-State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. Startup timeout is tied to issue 360, which in docs/issues.md is still open with the cause not established.
-
 Found in the full remote check of `e763c06` during review round 2.
-State: the assertion is fixed; the startup timeout remains unresolved under issue 360.
+State: partly fixed, because the sign-in assertion is corrected, while the concurrent startup timeout remains open under issue 360. Verified against the code on 2026-11-16.
+Earlier state: the assertion is fixed; the startup timeout remains unresolved under issue 360.
 Typechecking passed.
 The unit result was 595 passed files and two failed files.
 The test result was 9,036 passed, two failed, and two skipped.
