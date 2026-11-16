@@ -29,7 +29,7 @@ async function request(tag, payload = {}, options = {}) {
     if (tag === 'project.pull' && w) ids.push(...S().worktrees.filter((x) => x.repo === w.repo && !x.parentId).map((x) => x.id));
     // These two actions publish their own reply without changing the summary.
     const directReply = tag === 'project.review.prepare' || tag === 'project.conflict.choose';
-    for (const id of ids) { const r = c.records.get(id); if (r) { r.epoch++; if (!directReply) { mapping.dirtyGitRecord(r, 'summary', Date.now()); if (headChange || tag.includes('review.')) mapping.dirtyGitRecord(r, 'review', Date.now()); } } }
+    for (const id of ids) { const r = c.records.get(id); if (r) { r.epoch++; if (r.phase === 'reading') { r.phase = 'due'; r.nextAttempt = Date.now(); } if (!directReply) { mapping.dirtyGitRecord(r, 'summary', Date.now()); if (headChange || tag.includes('review.')) mapping.dirtyGitRecord(r, 'review', Date.now()); } } }
   }
   const call = { abort: new AbortController(), id: payload.worktreeId }; c.calls.add(call);
   const signal = options.signal ? AbortSignal.any([options.signal, call.abort.signal]) : call.abort.signal;

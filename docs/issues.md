@@ -15756,3 +15756,16 @@ A successful review read preserves that clock.
 A failed review retains its backoff while an earlier summary fallback remains eligible.
 A failing summary keeps its own retry deadline, so an overdue fallback cannot create a retry storm.
 The regression floods successful and failing review reads and still observes periodic summaries.
+
+## s16-7. Superseding a summary must retire its reading phase.
+
+Found: 2026-11-15, while checking the final epoch transitions in part B.
+Status: fixed in part B of unit s16-gitrefresh.
+
+An owner command raises the worktree's epoch before dispatch.
+A direct conflict preview has no summary readback.
+A refused index command can also finish before its readback begins.
+Either path could leave a superseded automatic record in its reading phase.
+The pure selector would then skip that record indefinitely.
+Superseding a reading record now returns it to due while preserving its dirty counters.
+The regression covers a direct preview and a refused stage command during a held automatic summary.

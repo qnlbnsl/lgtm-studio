@@ -688,3 +688,24 @@ for (const reviewFails of [false, true]) it(`review-only ${reviewFails ? 'failur
     expect(times[2]! - times[1]!).toBeLessThanOrEqual(63000);
   } finally { close(); vi.useRealTimers(); }
 });
+
+for (const command of ['preview', 'refused stage']) it(`${command} cannot strand the reading phase of a superseded automatic summary`, async () => {
+  vi.useFakeTimers(); const held = gate(); let hold = false, states = 0;
+  const f = fixture(async tag => {
+    if (tag === 'project.git.state') { states++; if (hold) await held.held; return { result: { head: 'head', mergeHead: 'merge' } }; }
+    if (tag === 'project.changes') return { result: { items: [{ id: 'file', path: 'file', conflict: true }] } };
+    if (tag === 'project.conflict' || tag === 'project.conflict.choose') return { result: { path: 'file', parts: [{ id: 'hunk', hunk: 0 }], head: 'head', fingerprint: 'fingerprint' } };
+    if (tag === 'project.stage.all') throw new Error('stage refused');
+    return emptyGitReply(tag);
+  });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(0); hold = true;
+    f.listeners.get('focus')!(); await vi.advanceTimersByTimeAsync(100); expect(states).toBe(2);
+    if (command === 'preview') await f.actions.choose('workspace', 'file', 'hunk', 'ours');
+    else expect(await f.actions.stage('workspace', [], true, true)).toBe(false);
+    hold = false; held.release(); await vi.advanceTimersByTimeAsync(3100);
+    expect(states).toBe(3);
+    await vi.advanceTimersByTimeAsync(61000); expect(states).toBeGreaterThanOrEqual(4);
+  } finally { held.release(); close(); vi.useRealTimers(); }
+});
