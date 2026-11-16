@@ -28,15 +28,21 @@ export const serveDetach = (options: { readonly environment: Record<string, stri
   let exitCode: number | null = null;
   let failed = false;
   let ownsLock = false;
+  let ready = false;
+  let reason: string | undefined;
   child.on("message", (message: unknown) => {
-    if (typeof message === "object" && message !== null && "_tag" in message && message._tag === "LgtmLockAcquired") ownsLock = true;
+    if (typeof message !== "object" || message === null || !("_tag" in message)) return;
+    if (message._tag === "LgtmLockAcquired") ownsLock = true;
+    if (message._tag === "LgtmReady") ready = true;
+    // Only this service-owned channel carries a bounded, already-redacted reason.
+    if (message._tag === "LgtmStartupFailed" && "reason" in message && typeof message.reason === "string" && message.reason.length <= 512) reason = message.reason;
   });
   child.once("error", () => { failed = true; });
   child.once("exit", (code) => { exited = true; exitCode = code; });
   const deadline = Date.now() + 30_000;
   for (;;) {
-    if (failed || (exited && exitCode !== 0)) return yield* Effect.fail(new Error("service failed to start"));
-    if ((ownsLock || exited) && (yield* Effect.promise(() => answers(socket)))) {
+    if (failed || (exited && exitCode !== 0)) return yield* Effect.fail(new Error(reason === undefined ? "service failed to start" : `service failed to start: ${reason}`));
+    if ((ready || (exited && !ownsLock)) && (yield* Effect.promise(() => answers(socket)))) {
       return ownsLock ? { outcome: "started", pid: child.pid! } as const : { outcome: "already running" } as const;
     }
     if (Date.now() >= deadline) {

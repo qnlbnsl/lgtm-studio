@@ -4773,7 +4773,7 @@ Why it matters: an agent can stay blocked on a request that no client can see.
 ## 260. A detached service discards its output and hides startup refusal details
 
 Found: 2026-11-03, in the post-build review of commit `8ff4c9b`, finding s08 F-2.
-State: open, deferred by the owner on 2026-11-03.
+State: fixed in s17-firstrun by the redacted startup refusal channel and readiness handshake in the service and detached launcher.
 
 Evidence: `.scratch/foundry-runs/engine-build-1/review-post-build/results/lgtm-engine-s08.md` (not tracked), F-2, confirms the path by source
 inspection and hand reasoning.
@@ -11267,7 +11267,7 @@ The browser tests therefore ignore console errors that name status 401.
 ## 626. `lgtm serve --detach` does not say why the service failed to start
 
 Found: 2026-11-13, while starting the engine with a test state folder for the live website.
-State: open.
+State: fixed in s17-firstrun by the redacted startup refusal channel and readiness handshake in the service and detached launcher.
 
 With a long `LGTM_HOME`, the engine's socket path exceeds 100 bytes, and the service exits at once.
 The service prints "socket path exceeds 100 bytes", but `serve --detach` discards the child's output.
@@ -16358,3 +16358,13 @@ The engine has no project stages for Verify and Keep running.
 A skipped phase has no timing record.
 The website leaves those durations blank.
 Only the latest visit to each recorded phase is shown.
+
+## s17-2. The detached launcher reported success before web startup finished.
+
+State: fixed in s17-firstrun.
+
+The Unix socket could answer during recovery before the web port was bound.
+The launcher now waits for the service's readiness message.
+An occupied initial web port fails startup with a redacted reason.
+The service releases its startup resources before the command exits.
+The web server's existing retry behavior after later settings changes remains available.

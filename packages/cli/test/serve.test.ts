@@ -6,7 +6,7 @@
 // (`packages/engine/src/service.ts`); `serveDetach` is the function behind
 // `lgtm serve --detach` (`packages/cli/src/serve.ts`).
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, writeFileSync, chmodSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { createServer, request } from "node:http";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -14,6 +14,9 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+
+import { connect } from "@lgtm/client";
+import { randomUUID } from "node:crypto";
 
 import { serveDetach } from "../src/serve.ts";
 
@@ -189,3 +192,77 @@ live("7.4 two serve --detach calls at once leave exactly one service, one report
       return pids.length === 1 && pids[0] === started.pid;
     }, 15_000);
   }));
+
+const runDetach = (environment: Record<string, string>) => new Promise<{ code: number | null; text: string }>((resolve) => {
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../src/bin.ts', import.meta.url)), 'serve', '--detach'], { env: environment, stdio: ['ignore', 'pipe', 'pipe'] });
+  children.push(child);
+  let text = '';
+  child.stdout!.on('data', chunk => { text += chunk });
+  child.stderr!.on('data', chunk => { text += chunk });
+  child.once('close', code => resolve({ code, text }));
+});
+
+it('reports refused state permissions and redacts a matching web password', async () => {
+  const root = makeRoot();
+  mkdirSync(root.state, { mode: 0o750 }); chmodSync(root.state, 0o750);
+  const first = await runDetach(environmentFor(root));
+  expect(first.code).toBe(1);
+  expect(first.text).toContain('state folder mode is not 0700');
+  const secret = 'state folder mode is not 0700';
+  const redacted = await runDetach({ ...environmentFor(root), LGTM_WEB_PASSWORD: secret, API_TOKEN: 's17-private-token' });
+  expect(redacted.code).toBe(1);
+  expect(redacted.text).toContain('[REDACTED]');
+  expect(redacted.text).not.toContain(secret);
+  expect(redacted.text).not.toContain('s17-private-token');
+  expect(redacted.text.length).toBeLessThan(1024);
+});
+
+it('reports a state folder that cannot be created without exposing paths or contents', async () => {
+  const root = makeRoot();
+  writeFileSync(root.state, 's17-private-file-content');
+  const result = await runDetach({ ...environmentFor(root), LGTM_HOME: join(root.state, 'missing') });
+  expect(result.code).toBe(1);
+  expect(result.text).toContain('state folder cannot be inspected');
+  expect(result.text).not.toContain(root.state);
+  expect(result.text).not.toContain('s17-private-file-content');
+});
+
+live('reports an occupied configured web port before claiming detached startup succeeded', () => Effect.gen(function* () {
+  const root = makeRoot(), env = environmentFor(root);
+  // Start headless to persist an ephemeral port through the authenticated API.
+  const first = yield* serveDetach({ environment: env });
+  yield* waitFor('the authenticated API to finish recovery', () => new Promise<boolean>(resolve => {
+    const probe = request({ socketPath: root.socket, path: '/' }, response => { response.resume(); resolve(response.statusCode !== 503) });
+    probe.once('error', () => resolve(false)); probe.end();
+  }));
+  const server = createServer();
+  yield* Effect.promise(() => new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve)));
+  try {
+    const port = (server.address() as import('node:net').AddressInfo).port;
+    yield* Effect.scoped(Effect.gen(function* () {
+      const client = yield* connect({ environment: env });
+      yield* client['client.web.settings.set']({ requestId: randomUUID() as never, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } });
+    }));
+    yield* Effect.promise(() => stopPid((first as { pid: number }).pid));
+    const result = yield* Effect.promise(() => runDetach({ ...env, LGTM_WEB_PASSWORD: 's17-test-password' }));
+    expect(result.code).toBe(1);
+    expect(result.text).toContain('web port unavailable');
+    expect(result.text).not.toContain('s17-test-password');
+  } finally {
+    yield* Effect.promise(() => new Promise<void>(resolve => server.close(() => resolve())));
+  }
+}));
+
+it('reports unreadable state permissions and a refused long socket address', async () => {
+  const root = makeRoot();
+  mkdirSync(root.state, { mode: 0o700 }); chmodSync(root.state, 0o000);
+  try {
+    const unreadable = await runDetach(environmentFor(root));
+    expect(unreadable.code).toBe(1);
+    expect(unreadable.text).toContain('state folder mode is not 0700');
+  } finally { chmodSync(root.state, 0o700); }
+  const tooLong = await runDetach({ ...environmentFor(root), LGTM_HOME: join(root.state, 'long-address-'.repeat(10)) });
+  expect(tooLong.code).toBe(1);
+  expect(tooLong.text).toContain('socket path exceeds 100 bytes');
+  expect(tooLong.text).not.toContain(root.state);
+});

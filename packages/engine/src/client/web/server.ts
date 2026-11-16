@@ -312,5 +312,5 @@ export const serve = (options: {
     else { needsRetry.openUnsafe(); yield* outage(true).pipe(Effect.forkScoped); }
   } else if (!usable) yield* Effect.logInfo("web server disabled: web password is unset or shorter than eight characters");
   retry = yield* supervisor.pipe(Effect.forkScoped);
-  return { close };
+  return { close, startupState: state };
 });

@@ -1,3 +1,4 @@
+import { startupFailure } from './api/startupFailure.ts';
 import { restartAfterShutdown } from './client/restartLaunch.ts';
 import { installRestarter, captureRunningVersion } from "./client/serviceControl.ts"
 import { lstatSync, readFileSync, realpathSync, unlinkSync } from "node:fs";
@@ -97,7 +98,7 @@ const handlerServices = (configuration: Pick<Runtime, "home" | "stateFolder" | "
 export const buildServices = (configuration: Pick<Runtime, "home" | "stateFolder" | "pluginRoot" | "harnessDefaults" | "harnessPrograms" | "credentials">, lists: EngineLists = engineLists) =>
   handlerServices(configuration, lists).pipe(Layer.provideMerge(baseServices(lists)));
 
-const program = (inheritedToken: string | undefined, webPassword: Redacted.Redacted<string> | undefined) => Effect.scoped(Effect.gen(function* () {
+const program = (inheritedToken: string | undefined, webPassword: Redacted.Redacted<string> | undefined, reportFailure: (cause: Cause.Cause<unknown>, redact: (text: string) => string) => void) => Effect.scoped(Effect.gen(function* () {
   const lists = withBoardEnabled(engineLists, boardEnabledAtStartup(process.env));
   const folder = yield* Effect.try({ try: () => {
     const path = stateFolder(process.env);
@@ -109,7 +110,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
   // A detached launcher needs evidence of which child won the lock, rather
   // than inferring it from timing the losing child's exit. This is an
   // inherited parent/child channel, never a second listener.
-  if (process.send !== undefined) process.send({ _tag: "LgtmLockAcquired" }, () => { if (process.connected) process.disconnect?.(); });
+  if (process.send !== undefined) process.send({ _tag: "LgtmLockAcquired" });
   const socketPath = join(folder, "engine.sock");
   yield* Effect.try({ try: () => {
     try {
@@ -173,6 +174,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
       const web = yield* serveWeb({ password: webPassword, lists, staticRoot: fileURLToPath(new URL("../../studio/dist", import.meta.url)),
         registerSecret: (secret) => { explicitSecrets.push(secret); } });
       yield* Effect.addFinalizer(() => web.close);
+      if (web.startupState === "port-taken") return yield* Effect.fail(new Error("web port unavailable"));
       yield* (yield* Restart.Restart).recover;
       // A retained row never grants authority unless its identity is still
       // live. Remove dead or replaced identities after recovery has swept
@@ -186,6 +188,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
           if (row.boot_id !== boot || facts === undefined || facts.startTime !== row.start_time || facts.userId !== row.user_id || facts.executable !== row.executable) yield* sql`DELETE FROM processes WHERE id = ${row.id}`;
         }
       }
+      if (process.connected) process.send?.({ _tag: "LgtmReady" }, () => { if (process.connected) process.disconnect?.(); });
       yield* Effect.never;
     }).pipe(
       // Close request scopes while the handler, runner and database are still
@@ -193,6 +196,8 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
       Effect.ensuring(listener.close),
       Effect.provide(services), Effect.provide(NodeServices.layer),
       Effect.provide(redactingLoggerLayer(redactor, serviceLog(protocolLog, (line) => process.stdout.write(`${line}\n`)))),
+      // Capture while the credential registry and database are still open.
+      Effect.catchCause(cause => Effect.sync(() => reportFailure(cause, redactor.redactText)).pipe(Effect.andThen(Effect.failCause(cause)))),
     );
   }).pipe(Effect.provide(SqliteClient.layer({ filename: databasePath, readerWorker: true })));
 }));
@@ -208,7 +213,14 @@ if (process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === imp
   delete process.env.LGTM_WEB_PASSWORD;
   delete process.env.LGTM_TOKEN;
   process.umask(0o077);
-  const fiber = Effect.runFork(program(inheritedToken, webPassword));
+  const earlyRedactor = makeRedactor({
+    secrets: () => [inheritedToken, ...(webPassword === undefined ? [] : [Redacted.value(webPassword)]),
+      ...Object.entries(launchEnvironment).filter(([name]) => /(?:KEY|TOKEN|SECRET|PASSWORD)/i.test(name)).map(([, value]) => value).filter(isInferredSecretValue)]
+      .filter((value): value is string => value !== undefined && value.length > 0).map(value => Redacted.make(value)),
+    tokenHashes: () => new Set(),
+  });
+  let failureReason: string | undefined;
+  const fiber = Effect.runFork(program(inheritedToken, webPassword, (cause, redact) => { failureReason = startupFailure(cause, redact); }));
   const stop = () => fiber.interruptUnsafe();
   if (typeof process.execve === "function") installRestarter(() => {
     if (restarting) return;
@@ -224,11 +236,9 @@ if (process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === imp
   process.removeListener("SIGINT", stop);
   if (restarting) restartAfterShutdown(() => process.execve!(process.execPath, [process.execPath, ...process.execArgv, ...process.argv.slice(1)], launchEnvironment));
   if (!restarting && Exit.isFailure(result) && !result.cause.reasons.every((reason) => reason._tag === "Interrupt")) {
-    // Startup failures contain fixed service-owned categories only. Never
-    // serialize a cause: the underlying database may quote stored data.
-    const allowed = ["state folder is a symbolic link", "state folder mode is not 0700", "state folder is owned by another user", "state folder is not a directory", "socket path exceeds 100 bytes"];
-    const message = result.cause.reasons.flatMap((reason) => reason._tag === "Fail" && reason.error instanceof Error ? [reason.error.message] : []).find((value) => allowed.includes(value));
-    process.stderr.write(`${message ?? "service failed"}\n`);
+    const message = failureReason ?? startupFailure(result.cause, earlyRedactor.redactText);
+    process.stderr.write(`${message}\n`);
+    if (process.connected) process.send?.({ _tag: "LgtmStartupFailed", reason: message }, () => { if (process.connected) process.disconnect?.(); });
     process.exitCode = 1;
-  }
+  } else if (process.connected) process.disconnect?.();
 }

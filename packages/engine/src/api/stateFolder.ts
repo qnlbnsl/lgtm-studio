@@ -16,8 +16,10 @@ export const prepareStateFolder = (folder: string): void => {
   let stats;
   try { stats = lstatSync(folder); } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw new Error("state folder cannot be inspected");
-    mkdirSync(folder, { recursive: true, mode: 0o700 });
-    stats = lstatSync(folder);
+    try {
+      mkdirSync(folder, { recursive: true, mode: 0o700 });
+      stats = lstatSync(folder);
+    } catch { throw new Error("state folder cannot be created"); }
   }
   if (stats.isSymbolicLink()) throw new Error("state folder is a symbolic link");
   if (!stats.isDirectory()) throw new Error("state folder is not a directory");
