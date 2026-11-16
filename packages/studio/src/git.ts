@@ -115,9 +115,12 @@ export function mapConflict(conflict: typeof GitConflict.Type) {
     parts: conflict.segments.map((s) => s.kind === 'context' ? { ctx: [...s.context], start: s.line } : { id: 'hunk-' + hunk, hunk, ours: [...s.ours], base: [...s.base], theirs: [...s.theirs], choice: conflict.choices[hunk++] ?? null }) }
 }
 export function mapMainReview(review: GitMainReview, comparison: typeof GitReview.Type | undefined, lead: string, freshEvidence = review.evidence) {
-  const evidence = (slot: GitMainReview['evidence']['tests']) => ({ ok: slot.state === 'current' && slot.report?.status === 'passed',
-    text: slot.report?.summary ?? '', value: slot.state === 'missing' ? 'Missing' : `${slot.state}: ${slot.report?.status ?? ''}`,
-    sub: slot.report?.summary ?? '', agent: slot.report?.reportedBy._tag === 'agent' ? slot.report.reportedBy.agentId : null })
+  const evidence = (slot: GitMainReview['evidence']['tests']) => {
+    const state = slot.state !== 'missing' && slot.report?.head !== review.head ? 'stale' : slot.state
+    return { ok: state === 'current' && slot.report?.status === 'passed',
+      text: slot.report?.summary ?? '', value: state === 'missing' ? 'Missing' : `${state}: ${slot.report?.status ?? ''}`,
+      sub: slot.report?.summary ?? '', agent: slot.report?.reportedBy._tag === 'agent' ? slot.report.reportedBy.agentId : null }
+  }
   return { id: review.reviewId, kind: 'merge', project: review.projectId, agent: lead, worktreeId: review.worktreeId, destinationId: review.destinationId,
     title: `Merge ${review.branch} into ${review.base}`, source: review.branch, target: review.base, head: review.head, baseHead: review.baseHead,
     status: review.outcome === 'open' ? 'open' : 'answered', outcome: review.outcome, answer: review.outcome === 'merged' ? 'Merged' : review.outcome === 'sent_back' ? 'Sent back: ' + (review.reason ?? '') : review.reason ?? '',

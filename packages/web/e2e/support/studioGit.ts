@@ -193,6 +193,14 @@ export async function exerciseStudioGit(page: Page) {
         yield* Effect.promise(async () => {
           await expect(page.getByRole('dialog')).toContainText('current: passed')
           await expect(page.getByRole('button', { name: 'Approve without evidence', exact: true })).toHaveCount(0)
+          await expect(page.getByRole('button', { name: 'Approve and merge', exact: true })).toBeEnabled()
+          // Keep the live arrival case above and the already-passing preparation case.
+          await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click()
+          await page.getByRole('button', { name: 'Refresh Git', exact: true }).click()
+          await expect(page.locator('.git')).toHaveAttribute('aria-busy', 'false')
+          await page.getByRole('button', { name: 'Open merge review', exact: true }).click()
+          await expect(page.getByRole('dialog')).toContainText('current: passed')
+          await expect(page.getByRole('button', { name: 'Approve without evidence', exact: true })).toHaveCount(0)
           await page.getByRole('button', { name: 'Approve and merge', exact: true }).click()
           await expect(page.getByRole('dialog')).toHaveCount(0)
           await expect(page.locator('.git')).toHaveAttribute('aria-busy', 'false')
@@ -201,6 +209,10 @@ export async function exerciseStudioGit(page: Page) {
         })
         const reviews = Object.values(projectView(yield* (yield* Views).snapshot).gitReviews)
         expect(reviews.find((review) => review.head === git(source.path, 'rev-parse', 'HEAD') && review.outcome === 'merged')).toMatchObject({ decision: 'approve' })
+        expect(reviews.find((review) => review.outcome === 'merged' && review.decision === 'approve')?.evidence).toMatchObject({
+          tests: { state: 'current', report: { status: 'passed', head: git(source.path, 'rev-parse', 'HEAD') } },
+          review: { state: 'current', report: { status: 'passed', head: git(source.path, 'rev-parse', 'HEAD') } }
+        })
       })).pipe(Effect.provide(buildServices(rig, engineLists).pipe(Layer.provide(dependencies))), Effect.provide(runner.layer))
     })).pipe(Effect.provide(SqliteClient.layer({ filename: rig.database, readerWorker: true })), Effect.scoped) as Effect.Effect<void, unknown>)
   } finally { if (previous === undefined) delete process.env.LGTM_HOME; else process.env.LGTM_HOME = previous; removeRig(rig); measurement.finish() }
