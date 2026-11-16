@@ -12,8 +12,8 @@ it('forwards review and evidence invalidations without changing their contents',
     expect(gitEventPatch(item(event))).toMatchObject({ group: 'review', worktreeIds: ['source'], requestId: 'caller' })
   }
 })
-it('maps attempts to dependent worktrees and unscoped completions to the visible project', () => {
-  expect(gitEventPatch(item({ _tag: 'project.GitAttempted', attempt: { worktreeId: 'source', requestId: 'operation' } }), snapshot)?.worktreeIds).toEqual(['source', 'parent', 'sibling'])
+it('ignores attempts and maps only completions to the visible project', () => {
+  expect(gitEventPatch(item({ _tag: 'project.GitAttempted', attempt: { worktreeId: 'source', requestId: 'operation' } }), snapshot)).toBeUndefined()
   expect(gitEventPatch(item({ _tag: 'project.GitFinished', operationRequestId: 'operation' }))).toEqual({ group: 'summary', worktreeIds: [], requestId: 'operation', completed: true })
 })
 it('a turn uses current placement and needs no waiting collection', () => {

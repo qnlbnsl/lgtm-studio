@@ -1,5 +1,5 @@
 import { expect, it } from "vitest"
-import { automaticGapMs, createGitController, dirtyGitRecord, fallbackMs, finishGitRecord, forceGitRecord,
+import { automaticGapMs, createGitController, dirtyGitRecord, fallbackMs, finishGitRecord,
   gitRefreshRecord, maximumAutomaticRequests, nextAutomaticRead } from "../src/gitRefresh.ts"
 
 it("new identities start due with independent summary and review dirtiness", () => {
@@ -54,14 +54,6 @@ it("a successful idle record becomes due at the sixty-second fallback", () => {
   expect(nextAutomaticRead(101, c)).toEqual({ id: "one", at: 100 + fallbackMs })
 })
 
-it("forced refresh clears backoff without changing the automatic gap", () => {
-  const c = createGitController(500), record = gitRefreshRecord("one", 0)
-  c.records.set("one", record); finishGitRecord(record, 500, "failed")
-  forceGitRecord(record, 600)
-  expect(record).toMatchObject({ phase: "due", failures: 0, nextAttempt: 600, epoch: 1, lastError: "failed" })
-  expect(nextAutomaticRead(600, c)).toEqual({ id: "one", at: 500 + automaticGapMs })
-})
-
 it("selection breaks due-time ties without starving an older worktree", () => {
   const c = createGitController(); c.selected = "selected"
   c.records.set("old", gitRefreshRecord("old", 0)); c.records.set("selected", gitRefreshRecord("selected", 0))
@@ -72,8 +64,8 @@ it("selection breaks due-time ties without starving an older worktree", () => {
 
 it("a held pass, owner action, or hidden screen has no automatic selection", () => {
   const c = createGitController(); c.records.set("one", gitRefreshRecord("one", 0))
-  c.reading = "one"; expect(nextAutomaticRead(0, c)).toBeUndefined()
-  c.reading = null; c.ownerBusy = true; expect(nextAutomaticRead(0, c)).toBeUndefined()
+  c.records.get("one")!.phase = "reading"; expect(nextAutomaticRead(0, c)).toBeUndefined()
+  c.records.get("one")!.phase = "due"; c.ownerBusy = true; expect(nextAutomaticRead(0, c)).toBeUndefined()
   c.ownerBusy = false; c.enabled = false; expect(nextAutomaticRead(0, c)).toBeUndefined()
 })
 

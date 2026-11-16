@@ -10,6 +10,7 @@ function fixture(request: (tag: string, payload: any) => Promise<unknown>) {
   const state: any = { session: { status: "in" }, ui: {}, projects: [project], inspecting: {}, gitUi: { workspace: { tab: "conflicts" } },
     worktrees: [{ id: "workspace", project: project.id, repo: project.repo, branch: "project", machine: "local", kind: "project", files: [], commits: [], merge: null,
       review: { id: "review", project: project.id, head: "head", baseHead: "base", agent: "lead" } }] };
+  const controllers: refreshPolicy.GitRefreshController[] = [];
   const calls: any[] = [], active = new Set<unknown>(); let sequence = 0;
   const send = async (tag: string, payload: any, options: any = {}) => {
     options.onRequestId?.("own-" + ++sequence);
@@ -22,12 +23,12 @@ function fixture(request: (tag: string, payload: any) => Promise<unknown>) {
   const act: any = { confirm: (d: any) => dialogs.push(d), closeDialog: vi.fn(), openDialog: vi.fn(), toast: (s: string) => toasts.push(s) };
   const source = copied("js/live/git.js").replace(/^import .*;$/gm, "").replace(/export /g, "");
   const actions = new Function("store", "live", "engineWrite", "notify", "engine", "act", "update", "addEventListener", "removeEventListener",
-    `${source}\nreturn { installMappings, openScreen, refreshGit, observe, busy, declineReview, discard, stage, integrate, selectGit, commit, abortMerge, resolve, gitDetail, openReview, choose };`)(
+    `${source}\nreturn { installMappings, openScreen, refreshGit, observe, busy, declineReview, discard, stage, integrate, selectGit, commit, abortMerge, resolve, gitDetail, openReview, choose, syncGit, run, request };`)(
     { state }, { on: true }, (p: object) => Object.assign(state, p), () => {}, { request: send }, act, (f: (s: any) => void) => f(state), (name: string, fn: () => void) => listeners.set(name, fn), (name: string) => listeners.delete(name));
-  actions.installMappings({ ...refreshPolicy, mapGitState: (s: any) => s, mapGitChanges: (items: any[]) => items,
+  actions.installMappings({ ...refreshPolicy, createGitController: (...args: Parameters<typeof refreshPolicy.createGitController>) => { const c = refreshPolicy.createGitController(...args); controllers.push(c); return c; }, mapGitState: (s: any) => s, mapGitChanges: (items: any[]) => items,
     mapGitCommit: (c: any) => c, mapCommitFiles: (items: any[]) => items, mapGitDiff: (r: any) => r,
-    mapMainReview: (r: any) => r, mapConflict: (c: any) => ({ ...c, id: c.path, selection: c }) });
-  return { state, actions, act, dialogs, toasts, listeners, calls, active };
+    mapAlertSettings: (r: any) => r, mapAlerts: () => [], mapPhoneOffer: () => ({}), mapMainReview: (r: any) => r, mapConflict: (c: any) => ({ ...c, id: c.path, selection: c }) });
+  return { state, actions, act, dialogs, toasts, listeners, calls, active, controllers };
 }
 
 async function gitTabView(f: ReturnType<typeof fixture>, panels: Record<string, any> = {}) {
@@ -537,7 +538,7 @@ for (const action of ['stage', 'commit', 'resolve', 'refresh']) it(`a held autom
   } finally { held.release(); close(); vi.useRealTimers(); }
 });
 
-it('hiding an in-flight mutation cancels its observation and revalidates on return without replay', async () => {
+it('hiding an in-flight mutation keeps the sent command alive and revalidates on return without replay', async () => {
   vi.useFakeTimers(); const held = gate(); let stages = 0;
   const f = fixture(async tag => { if (tag === 'project.stage.all') { stages++; await held.held; return {}; } return emptyGitReply(tag); });
   const close = f.actions.openScreen('git', 'project');
@@ -547,7 +548,8 @@ it('hiding an in-flight mutation cancels its observation and revalidates on retu
     expect(stages).toBe(1);
     const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true);
     document.dispatchEvent(new Event('visibilitychange')); await vi.advanceTimersByTimeAsync(0);
-    expect(await action).toBe(false); expect(f.active.size).toBe(0); expect(vi.getTimerCount()).toBe(0);
+    expect(f.active.size).toBe(1); expect(f.calls.at(-1).signal).toBeUndefined(); expect(vi.getTimerCount()).toBe(0);
+    held.release(); expect(await action).toBe(true); expect(f.active.size).toBe(0);
     const before = f.calls.filter(c => c.tag === 'project.git.state').length;
     hidden.mockReturnValue(false); document.dispatchEvent(new Event('visibilitychange'));
     await vi.advanceTimersByTimeAsync(100);
@@ -708,4 +710,200 @@ for (const command of ['preview', 'refused stage']) it(`${command} cannot strand
     expect(states).toBe(3);
     await vi.advanceTimersByTimeAsync(61000); expect(states).toBeGreaterThanOrEqual(4);
   } finally { held.release(); close(); vi.useRealTimers(); }
+});
+
+// Each ending is a separate row in .foundry/inflight-b.md.
+for (const ending of ['success', 'refusal', 'thrown error', 'hide', 'close', 'logout', 'identity replacement', 'owner action', 'removed']) it(`ending: ${ending} retires exactly its read lease`, async () => {
+  vi.useFakeTimers(); const held = gate(); let hold = false, states = 0;
+  const f = fixture(async tag => {
+    if (tag === 'project.git.state') {
+      states++;
+      if (hold) { await held.held; if (ending === 'refusal') return { refused: true }; if (ending === 'thrown error') throw new Error('read failed'); }
+    }
+    if (tag === 'project.stage.all') throw new Error('stage refused');
+    return emptyGitReply(tag);
+  });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(0); hold = true;
+    f.listeners.get('focus')!(); await vi.advanceTimersByTimeAsync(100);
+    const c = f.controllers[0]!, r = c.records.get('workspace')!, abort = r.summaryAbort!;
+    expect(r.phase).toBe('reading'); expect(c.reading).toBe('workspace');
+    expect(f.state.ui.gitPending?.['git-read']).toBeUndefined();
+    if (ending === 'hide') { vi.spyOn(document, 'hidden', 'get').mockReturnValue(true); document.dispatchEvent(new Event('visibilitychange')); }
+    if (ending === 'close') close();
+    if (ending === 'logout') { f.actions.observe({ session: { status: 'out' } }); f.state.session.status = 'out'; }
+    if (ending === 'identity replacement' || ending === 'removed') {
+      const patch = { worktrees: ending === 'removed' ? [] : [{ ...f.state.worktrees[0], folder: '/replacement' }] };
+      f.actions.observe(patch); Object.assign(f.state, patch);
+    }
+    if (ending === 'owner action') expect(await f.actions.stage('workspace', [], true, true)).toBe(false);
+    if (!['success', 'refusal', 'thrown error'].includes(ending)) {
+      expect(abort.signal.aborted).toBe(true);
+      expect(r.phase).toBe('due'); expect(r.summaryDirty).toBeGreaterThan(0);
+    }
+    held.release(); await vi.advanceTimersByTimeAsync(0);
+    expect(r.summaryAbort).toBeUndefined(); expect(r.phase).not.toBe('reading');
+    if (ending === 'success') { expect(r.phase).toBe('idle'); expect(r.summaryDirty).toBe(0); expect(f.state.worktrees[0].stale).toBe(false); }
+    if (['refusal', 'thrown error'].includes(ending)) { expect(r.phase).toBe('backing off'); expect(r.summaryDirty).toBeGreaterThan(0); expect(f.state.worktrees[0].stale).toBe(true); expect(f.toasts).toEqual(['This worktree could not be refreshed.']); }
+    else expect(f.toasts).toEqual(ending === 'owner action' ? ['stage refused'] : []);
+    if (ending === 'identity replacement') expect(c.records.get('workspace')).not.toBe(r);
+    if (ending === 'removed') expect(c.records.has('workspace')).toBe(false);
+    expect(states).toBe(2);
+  } finally { held.release(); close(); vi.restoreAllMocks(); vi.useRealTimers(); }
+});
+
+for (const demand of ['initial', 'refresh', 'readback']) it(`four worktrees recover after hide during the first ${demand} row`, async () => {
+  vi.useFakeTimers(); const held = gate(); let hold = demand === 'initial'; const reads: string[] = [];
+  const f = fixture(async (tag, payload) => {
+    if (tag === 'project.git.state') { reads.push(payload.worktreeId); if (hold) await held.held; }
+    if (tag === 'project.fetch') return {};
+    return emptyGitReply(tag);
+  });
+  for (const id of ['two', 'three', 'four']) f.state.worktrees.push({ ...f.state.worktrees[0], id, branch: id, kind: 'team' });
+  const close = f.actions.openScreen('git', 'project'); let action: Promise<unknown> | undefined;
+  try {
+    if (demand !== 'initial') { await vi.advanceTimersByTimeAsync(0); reads.length = 0; hold = true; action = demand === 'refresh' ? f.actions.refreshGit('project') : f.actions.syncGit('workspace', 'fetch'); await vi.advanceTimersByTimeAsync(0); }
+    expect(reads).toEqual(['workspace']);
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true); document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(0); held.release(); await action;
+    expect([...f.controllers[0]!.records.values()].every(r => r.phase !== 'reading')).toBe(true);
+    expect(reads).toEqual(['workspace']); expect(f.toasts).toEqual([]);
+    hold = false; reads.length = 0; hidden.mockReturnValue(false); document.dispatchEvent(new Event('visibilitychange'));
+    await vi.advanceTimersByTimeAsync(10000);
+    expect(reads).toEqual(['workspace', 'two', 'three', 'four']);
+    expect(f.state.worktrees.every((w: any) => w.ready)).toBe(true);
+  } finally { held.release(); await action; close(); vi.restoreAllMocks(); vi.useRealTimers(); }
+});
+
+for (const lifecycle of ['hide', 'close', 'leave']) it(`${lifecycle} keeps a sent Push alive and delivers its refusal`, async () => {
+  vi.useFakeTimers(); const held = gate();
+  const f = fixture(async tag => { if (tag === 'project.push') { await held.held; throw new Error('Git: push_rejected'); } if (tag === 'client.alerts.settings') return {}; if (tag === 'client.alerts.list' || tag === 'client.requests') return { items: [] }; return emptyGitReply(tag); });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(0); const action = f.actions.syncGit('workspace', 'push');
+    const push = f.calls.at(-1); expect(push.tag).toBe('project.push'); expect(push.signal).toBeUndefined();
+    if (lifecycle === 'hide') { vi.spyOn(document, 'hidden', 'get').mockReturnValue(true); document.dispatchEvent(new Event('visibilitychange')); }
+    else if (lifecycle === 'close') close(); else f.actions.openScreen('notifications');
+    await vi.advanceTimersByTimeAsync(0); expect(f.active.has(push)).toBe(true);
+    held.release(); expect(await action).toBe(false); expect(f.toasts).toEqual(['Git: push_rejected']);
+  } finally { held.release(); close(); vi.restoreAllMocks(); vi.useRealTimers(); }
+});
+
+it('the initial loop cannot supersede a newer successful Push readback', async () => {
+  vi.useFakeTimers(); const first = gate(), owner = gate(); let pushed = false;
+  const f = fixture(async (tag, payload) => {
+    if (tag === 'project.push') { pushed = true; return {}; }
+    if (tag === 'project.git.state') { if (payload.worktreeId === 'workspace') await first.held; else if (pushed) await owner.held; }
+    return emptyGitReply(tag);
+  });
+  f.state.worktrees.push({ ...f.state.worktrees[0], id: 'other', branch: 'other', kind: 'team' });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    const action = f.actions.syncGit('other', 'push'); await vi.advanceTimersByTimeAsync(0);
+    const readback = f.calls.at(-1); expect(readback.payload.worktreeId).toBe('other');
+    first.release(); await vi.advanceTimersByTimeAsync(0);
+    expect(readback.signal.aborted).toBe(false);
+    owner.release(); expect(await action).toBe(true); expect(f.toasts).toEqual([]);
+    expect(f.calls.filter(c => c.tag === 'project.git.state' && c.payload.worktreeId === 'other')).toHaveLength(1);
+  } finally { first.release(); owner.release(); close(); vi.useRealTimers(); }
+});
+
+it('Refresh Git clears the actual failure ladder and shows just one failure toast', async () => {
+  vi.useFakeTimers(); const f = fixture(async tag => { if (tag === 'project.git.state') throw new Error('read refused'); return emptyGitReply(tag); });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(70000);
+    const r = f.controllers[0]!.records.get('workspace')!; expect(r.failures).toBeGreaterThan(3);
+    f.toasts.length = 0; const now = Date.now();
+    expect(await f.actions.refreshGit('project')).toBe(false);
+    expect(r.failures).toBe(1); expect(r.nextAttempt).toBe(now + 1000); expect(f.toasts).toEqual(['read refused']);
+    const count = f.calls.length; await vi.advanceTimersByTimeAsync(3000);
+    expect(f.calls.length).toBeGreaterThan(count);
+  } finally { close(); vi.useRealTimers(); }
+});
+
+it('review bursts coalesce into one review read without a displayed diff request', async () => {
+  vi.useFakeTimers();
+  const f = fixture(async tag => { if (tag === 'project.changes') return { result: { items: [{ id: 'file', path: 'file' }] } }; if (tag === 'project.diff') return { result: { hunks: [] } }; return emptyGitReply(tag); });
+  f.state.gitUi.workspace.tab = 'changes'; const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(0); const before = f.calls.length;
+    for (let n = 0; n < 20; n++) f.actions.observe({ git: { group: 'review', worktreeIds: ['workspace'] } });
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(f.calls.slice(before).map(c => c.tag)).toEqual(['project.review.status']);
+  } finally { close(); vi.useRealTimers(); }
+});
+
+it('the widest automatic pass uses exactly the enforced request width', async () => {
+  vi.useFakeTimers();
+  const f = fixture(async tag => {
+    if (tag === 'project.git.state') return { result: { head: 'head', mergeHead: 'merge' } };
+    if (tag === 'project.changes') return { result: { items: [{ id: 'file', path: 'file', conflict: true }] } };
+    if (tag === 'project.conflict') return { result: { path: 'file', parts: [], fingerprint: 'fingerprint', head: 'head' } };
+    return emptyGitReply(tag);
+  });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(0); const before = f.calls.length;
+    for (const group of ['summary', 'review']) f.actions.observe({ git: { group, worktreeIds: ['workspace'] } });
+    await vi.advanceTimersByTimeAsync(100);
+    const pass = f.calls.slice(before).map(c => c.tag);
+    expect(pass).toEqual(['project.git.state', 'project.changes', 'project.conflict.resolved', 'project.review.status', 'project.conflict']);
+    expect(pass).toHaveLength(refreshPolicy.maximumAutomaticRequests); expect(f.toasts).toEqual([]);
+  } finally { close(); vi.useRealTimers(); }
+});
+
+for (const trigger of ['focus', 'reconnect', 'return']) it(`${trigger} refreshes the selected worktree first across four rows`, async () => {
+  vi.useFakeTimers(); const reads: string[] = [];
+  const f = fixture(async (tag, payload) => { if (tag === 'project.git.state') reads.push(payload.worktreeId); return emptyGitReply(tag); });
+  for (const id of ['two', 'three', 'four']) f.state.worktrees.push({ ...f.state.worktrees[0], id, branch: id, kind: 'team' });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(0); reads.length = 0; f.state.inspecting.project = 'four';
+    if (trigger === 'focus') f.listeners.get('focus')!();
+    if (trigger === 'reconnect') { f.state.conn = { status: 'reconnecting' }; f.actions.observe({ conn: { status: 'live' } }); }
+    if (trigger === 'return') { const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true); document.dispatchEvent(new Event('visibilitychange')); hidden.mockReturnValue(false); document.dispatchEvent(new Event('visibilitychange')); }
+    await vi.advanceTimersByTimeAsync(100); expect(reads).toEqual(['four']);
+    await vi.advanceTimersByTimeAsync(9000); expect(new Set(reads)).toEqual(new Set(['workspace', 'two', 'three', 'four'])); expect(reads).toHaveLength(4);
+  } finally { close(); vi.restoreAllMocks(); vi.useRealTimers(); }
+});
+
+it('removal while the initial loop is held cannot recreate the next record or toast', async () => {
+  vi.useFakeTimers(); const held = gate();
+  const f = fixture(async tag => { if (tag === 'project.git.state') await held.held; return emptyGitReply(tag); });
+  f.state.worktrees.push({ ...f.state.worktrees[0], id: 'removed', branch: 'removed', kind: 'team' });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    const patch = { worktrees: [f.state.worktrees[0]] }; f.actions.observe(patch); Object.assign(f.state, patch);
+    held.release(); await vi.advanceTimersByTimeAsync(0);
+    expect(f.controllers[0]!.records.has('removed')).toBe(false);
+    expect(f.calls.some(c => c.payload.worktreeId === 'removed')).toBe(false); expect(f.toasts).toEqual([]);
+  } finally { held.release(); close(); vi.useRealTimers(); }
+});
+
+for (const tag of ['project.settings', 'project.settings.set']) it(`${tag} is outside Git cancellation`, async () => {
+  vi.useFakeTimers(); const held = gate();
+  const f = fixture(async call => { if (call === tag) { await held.held; return {}; } return emptyGitReply(call); });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(0); const action = f.actions.run('settings', () => f.actions.request(tag)); const call = f.calls.at(-1);
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true); document.dispatchEvent(new Event('visibilitychange'));
+    expect(call.signal).toBeUndefined(); expect(f.active.has(call)).toBe(true);
+    held.release(); expect(await action).toBe(true); expect(f.toasts).toEqual([]);
+  } finally { held.release(); close(); vi.restoreAllMocks(); vi.useRealTimers(); }
+});
+
+it('owned request suppression stays bounded during a long visit', async () => {
+  vi.useFakeTimers();
+  const f = fixture(async tag => tag === 'project.stage.all' ? {} : emptyGitReply(tag));
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    for (let n = 0; n < 270; n++) expect(await f.actions.stage('workspace', [], true, true)).toBe(true);
+    const ids = (f.controllers[0] as any).ownIds; expect(ids.size).toBe(256);
+    const count = f.calls.length, own = 'own-' + (f.calls.findLastIndex(c => c.tag === 'project.stage.all') + 1);
+    f.actions.observe({ git: { group: 'summary', worktreeIds: [], requestId: own, completed: true } });
+    await vi.advanceTimersByTimeAsync(100); expect(f.calls).toHaveLength(count);
+  } finally { close(); vi.useRealTimers(); }
 });

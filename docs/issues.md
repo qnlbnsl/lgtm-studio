@@ -15535,16 +15535,15 @@ Push does not fetch origin.
 Found: 2026-11-15, while checking the narrowed Git readbacks against the earlier reviews.
 Status: fixed in part B of unit s16-gitrefresh.
 
-Some Git actions read back their state in a finally block.
-If the mutation fails and that readback also fails, the readback error replaces the original error.
-The owner therefore sees the failure to read current state instead of the mutation's refusal.
-A controlled probe reproduced this with a refused pull followed by a failed state read.
-The same structure exists in integration, update, abort, and reopening.
-This behavior predates part A of unit s16-gitrefresh.
-Part A preserves it because the current brief changes only readback scopes and review-status reads.
-A future fix must keep the mutation error and the failure to confirm current state distinguishable.
-
-Part B adds a regression for this sequence.
+Some Git actions read back their state after a refused mutation.
+If that readback also failed, its error replaced the original refusal.
+The owner therefore saw a confirmation failure instead of the command's refusal.
+A controlled probe reproduced a refused pull followed by a failed state read.
+The same structure existed in integration, update, abort, and reopening.
+This behavior predated part A of unit s16-gitrefresh.
+Part B introduced `confirmGit`, which retains the first command failure while attempting the readback.
+The regression checks that the original integration refusal survives a failed confirmation.
+Fix round 1 also prevents a forced readback from adding a second fixed toast.
 
 ## 1037. An open merge review hid decisions made from another client.
 
@@ -15638,39 +15637,26 @@ It waits for the owner's approval.
 Found: 2026-11-15, in review-a2 of unit s16-gitrefresh.
 Status: fixed in part B of unit s16-gitrefresh.
 
-A background pass skips review status after its first successful read when the known review is absent or answered.
-A review opened or reopened by the owner's other client can therefore stay unseen during the same screen visit.
-Focus, reconnect, and project events do not refresh that review status.
-Selecting another worktree row does not refresh that review status.
-Master was fresh on those paths.
-This is a regression from part A's request reduction.
-Refresh Git can discover the changed review.
-A head-changing action can discover it.
-Opening the merge review dialog prepares fresh review state.
-A successful first pass on a new Git screen visit can discover it.
-A decision made elsewhere for a known open review remains eligible for background refresh.
-
-Part B adds a regression for this sequence.
+Part A skipped review status after the first successful read when the known review was absent or answered.
+A review opened by another client therefore stayed unseen during the same screen visit.
+Part B forwards review and evidence events as typed patches that increment the worktree's review dirty counter.
+The automatic timer reads that group even when the previous review was absent or answered.
+The regression covers both prior states.
+Fix round 1 coalesces review bursts without rereading an unchanged displayed diff.
 
 ## 1043. Reopening the Git screen can lose its first load while an old background pass is busy.
 
 Found: 2026-11-15, by reading the screen lifecycle and background-read guard in review-a2.
 Status: fixed in part B of unit s16-gitrefresh.
 
-Closing the Git screen raises revision.
-An in-flight background pass keeps the git-read key busy until its current request returns.
-Reopening the screen asks for another background pass.
-The busy guard returns false for that attempt.
-The new visit's first load is dropped.
-Its project rows can remain unloaded until a later focus or project event.
-The old pass exits at its revision check when its reply returns.
-It cannot restore the cleared review-loaded mark.
-Master has the same sequence.
-This problem predates unit s16-gitrefresh.
-This finding came from reading rather than from a test.
-A later fix can retry the new visit's first load after the busy pass finishes.
-
-Part B adds a regression for this sequence.
+An old background pass kept the shared git-read pending key busy after the screen closed.
+Reopening the screen asked for a first pass while that key was still busy.
+The busy guard dropped the new visit's first load.
+This behavior predated unit s16-gitrefresh.
+Part B gives each screen visit an independent controller and cancels the previous visit's reads.
+Fix round 1 derives read activity from each controller's record phases instead of a shared pending key.
+An old completion cannot retire a newer read's lease.
+The regression holds both visits' first reads and releases the old one first.
 
 ## 1044. Two journeys of the retired page's Git screen also fail under load.
 
@@ -15760,8 +15746,9 @@ The regression floods successful and failing review reads and still observes per
 ## s16-7. Superseding a summary must retire its reading phase.
 
 Found: 2026-11-15, while checking the final epoch transitions in part B.
-Status: fixed in part B of unit s16-gitrefresh.
+Status: fixed in fix round 1 of part B of unit s16-gitrefresh.
 
+The first part B fix covered owner supersession but missed lifecycle cancellation in a multi-row loop.
 An owner command raises the worktree's epoch before dispatch.
 A direct conflict preview has no summary readback.
 A refused index command can also finish before its readback begins.
@@ -15769,3 +15756,172 @@ Either path could leave a superseded automatic record in its reading phase.
 The pure selector would then skip that record indefinitely.
 Superseding a reading record now returns it to due while preserving its dirty counters.
 The regression covers a direct preview and a refused stage command during a held automatic summary.
+
+## s16-8. A hidden multi-row load could strand its remaining worktrees.
+
+Found: 2026-11-15, in review-b, finding 1.
+Status: fixed in fix round 1 of part B.
+
+The load loop continued after the visit was suspended.
+It claimed later rows without a valid controller and left their phases reading.
+The loop now stops on suspension and checks current identity before claiming a row.
+Every read ending uses one retirement function.
+The regressions hide during the first of four rows for initial load, forced refresh, and a fetch readback.
+
+## s16-9. Screen lifecycle cancellation could cancel a sent owner mutation.
+
+Found: 2026-11-15, in review-b, finding 2.
+Status: fixed in fix round 1 of part B.
+
+Mutations shared the visit's abortable call set with reads.
+Hiding or closing the screen could cancel a queued command and suppress its refusal.
+Only reads now receive visit-owned abort signals.
+Sent mutations retain the connection's session lifetime.
+Their refusals still reach the owner after hide, close, or navigation.
+Logout retains the connection's cancellation behavior.
+
+## s16-10. The initial load could cancel a newer owner readback.
+
+Found: 2026-11-15, in review-b, finding 3.
+Status: fixed in fix round 1 of part B.
+
+The initial loop could reach a row after a successful Push had started its readback.
+The older initial demand then superseded the newer readback and reported false failure.
+Each loop now captures identities and epochs before starting.
+It skips a row whose epoch changed before that row's turn.
+The regression releases the first initial row while a later row's Push readback remains held.
+
+## s16-11. Duplicated read and cancellation state could disagree.
+
+Found: 2026-11-15, in review-b, finding 4.
+Status: fixed in fix round 1 of part B.
+
+The record phase, controller reading field, and pending key separately stored read activity.
+A call set and per-record abort controllers separately owned cancellation.
+The phase is now the single activity source.
+The reading value and busy query derive from phases.
+The call set is removed.
+The typed record declares each remaining abort controller and its owner.
+
+## s16-12. Refresh failures added unapproved or duplicate toasts.
+
+Found: 2026-11-15, in review-b, finding 5.
+Status: fixed in fix round 1 of part B.
+
+A failed forced refresh emitted both a fixed toast and an engine-reason toast.
+Detail and cancellation failures also introduced two unapproved sentences.
+Forced failures now use one existing error toast.
+Lifecycle aborts emit no toast.
+Detail failures use the engine's reason or the pre-existing service-failure sentence.
+
+## s16-13. Review-only passes reread unchanged displayed details.
+
+Found: 2026-11-15, in review-b, finding 6.
+Status: fixed in fix round 1 of part B.
+
+Every review-only pass also fetched the displayed mutable body.
+The summary had not changed, so those detail requests were redundant.
+Only a pass that successfully reads the summary now revalidates the displayed body.
+A regression coalesces twenty review invalidations into one status read and no diff read.
+
+## s16-14. The automatic pass-width constant was not connected to production.
+
+Found: 2026-11-15, in review-b, finding 7.
+Status: fixed in fix round 1 of part B.
+
+The bound test multiplied a width constant that production did not read.
+The automatic request builder now enforces that constant for the summary and displayed body together.
+A runtime regression requires the widest pass's five request tags and its exact declared width.
+Changing the constant therefore fails a test.
+
+## s16-15. Forced backoff reset and new build contracts lacked effective regressions.
+
+Found: 2026-11-15, in review-b, finding 8.
+Status: fixed in fix round 1 of part B.
+
+The forced-refresh test exercised an unused helper instead of the public path.
+Several build signatures were checked without a missing-signature regression.
+The public Refresh Git regression now checks the actual retry ladder after repeated failures.
+Every live-helper build signature has a removal test.
+The unused force helper is removed.
+
+## s16-16. Service settings calls were subject to Git-screen cancellation.
+
+Found: 2026-11-15, in review-b, finding 9.
+Status: fixed in fix round 1 of part B.
+
+The Git transport wrapper matched every project request tag.
+A pending project settings write could therefore be aborted when the Git tab was hidden.
+The wrapper now matches only Git, review, and conflict tags.
+The owning readers supply their cancellation signals.
+Regressions hold both settings reads and settings writes across a hidden-tab transition.
+
+## s16-17. Recovery order did not consistently prioritize the selected worktree.
+
+Found: 2026-11-15, in review-b, finding 10.
+Status: fixed in fix round 1 of part B.
+
+Slightly different deadlines could put another worktree before the selected row on focus or reconnect.
+Healthy records now receive the same recovery deadline.
+The selector's existing selection tie-breaker reads the selected row first.
+Four healthy rows start three seconds apart and the last starts nine seconds after the first.
+The report now states this timing and preserves failed records' backoff.
+
+## s16-18. Foreign attempt events invalidated state before completion.
+
+Found: 2026-11-15, in review-b, finding 11.
+Status: fixed in fix round 1 of part B.
+
+A foreign GitAttempted event dirtied dependent summaries before the command finished.
+The completion dirtied them again.
+The event mapper now ignores attempts and invalidates on completion.
+A regression distinguishes the two events.
+
+## s16-19. Git bookkeeping retained obsolete invalidations and unbounded request identifiers.
+
+Found: 2026-11-15, in review-b, finding 12.
+Status: fixed in fix round 1 of part B.
+
+Git actions still raised a revision that guarded only service reads.
+Owned request identifiers also grew for the entire visit.
+The unrelated Git revision increments are removed from the source and build patches.
+Owned identifiers are bounded to the latest 256 entries.
+The long-visit regression checks the bound and recent completion suppression.
+The old background parameter name is removed.
+The pre-existing quiet-demand call shape remains for the Part A regressions.
+
+## s16-20. A removed row could be recreated by a stale load loop.
+
+Found: 2026-11-15, in review-b, finding 14.
+Status: fixed in fix round 1 of part B.
+
+The loop retained rows from its starting snapshot after removal.
+It recreated a record for the removed row and reported an observation failure.
+The loop now resolves the current row and checks its identity and captured epoch before claiming it.
+A regression removes the next row while the first is held.
+The removed row receives no request and no toast.
+
+## s16-21. The Part B report omitted abort owners and issue entries described fixed faults as current.
+
+Found: 2026-11-15, in review-b, findings 13 and 15.
+Status: fixed in fix round 1 of part B.
+
+The collection count excluded per-record controllers and mirrored flags.
+The original issue bodies also retained future-fix language after being marked fixed.
+The fix-round report counts the remaining owners and explains derived values.
+Issues 1036, 1042, and 1043 now describe their prior faults and implemented fixes.
+Issue s16-7 now records its incomplete first fix and its completed lifecycle correction.
+
+## s16-22. The unchanged engine concurrency tests missed their startup markers under load.
+
+Found: 2026-11-15, during the full fix-round test command.
+Status: open, with isolated rechecks passing.
+
+The issue 579 and issue 579/583 tests did not observe their controlled Git subprocess's startup marker within five seconds.
+The concurrent browser journey recorded a starting one-minute load average of 44.60.
+The full run passed 1,455 tests and failed those two startup assertions.
+Both tests passed when rerun together without the full suite.
+A later one-worker run also missed the issue 579/583 marker.
+The cause of the missed marker has not been established.
+No engine code or test deadline was changed.
+The same startup-marker sensitivity was previously observed in issue s11-12.

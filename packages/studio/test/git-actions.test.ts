@@ -15,11 +15,11 @@ it("keeps unrelated copied pages unchanged", () => {
   expect(gitActionsSource("js/screens/service.js", "source")).toBe("source");
 });
 
-for (const signature of ["function affectedGit(w, target) {", "async function loadGit(project, ids, reviews = false) {"]) {
+for (const signature of ["function affectedGit(w, target) {", "async function loadGit(project, ids, reviews = false) {", "async function confirmGit(command, readback) {", "async function loadGitDetail(id, selectedCommit, automatic = false, force = false, send = request) {", "mapping.nextAutomaticRead(Date.now(), c)"]) {
   it(`rejects the appended Git actions when their source contract changes: ${signature}`, () => {
     const original = readFileSync(`${process.cwd()}/design/mock/js/live/git.js`, "utf8");
     expect(original).toContain(signature);
-    expect(() => gitActionsSource("js/live/git.js", original.replace(signature, signature.replace("(", "Changed("))))
+    expect(() => gitActionsSource("js/live/git.js", original.replaceAll(signature, signature.replace("(", "Changed("))))
       .toThrow("Git actions integration no longer matches");
   });
 }

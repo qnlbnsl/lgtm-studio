@@ -14,17 +14,22 @@ export interface GitRefreshRecord {
   lastSuccess: number | null
   lastError: string | null
   lastToast: number | null
+  // The live reader owns these controllers. They never decide admission.
+  summaryAbort?: AbortController | undefined
+  detailAbort?: AbortController | undefined
 }
 export interface GitRefreshController {
   records: Map<string, GitRefreshRecord>
   selected?: string
   lastStart: number | null
-  reading: string | null
+  readonly reading: string | null
   enabled: boolean
   ownerBusy: boolean
 }
 export function createGitController(lastStart: number | null = null): GitRefreshController {
-  return { records: new Map(), lastStart, reading: null, enabled: true, ownerBusy: false }
+  return { records: new Map(), lastStart,
+    get reading() { return [...this.records].find(([, record]) => record.phase === "reading")?.[0] ?? null },
+    enabled: true, ownerBusy: false }
 }
 export function gitRefreshRecord(identity: string, now: number, epoch = 0): GitRefreshRecord {
   return { identity, phase: "due", summaryDirty: 1, reviewDirty: 1, epoch, failures: 0,
@@ -34,14 +39,6 @@ export function dirtyGitRecord(record: GitRefreshRecord, group: "summary" | "rev
   if (group === "summary") record.summaryDirty++
   else record.reviewDirty++
   if (record.phase === "idle") { record.phase = "due"; record.nextAttempt = Math.min(record.nextAttempt, now + 100) }
-}
-export function forceGitRecord(record: GitRefreshRecord, now: number): void {
-  record.epoch++
-  record.summaryDirty++
-  record.reviewDirty++
-  record.failures = 0
-  record.nextAttempt = now
-  record.phase = "due"
 }
 export function finishGitRecord(record: GitRefreshRecord, now: number, error: string | null, summarySucceeded = error === null): void {
   if (summarySucceeded) record.lastSuccess = now

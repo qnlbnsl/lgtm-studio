@@ -15,16 +15,15 @@ export function gitActionsSource(path: string, source: string): string {
   }
   if (path === "js/live/git.js") {
     // Appended actions depend on these source helpers and their parameter order.
-    for (const signature of ["function affectedGit(w, target) {", "async function confirmGit(command, readback) {", "async function loadGit(project, ids, reviews = false) {", "async function loadGitDetail(id, selectedCommit, automatic = false, force = false) {", "mapping.nextAutomaticRead(Date.now(), c)"]) {
+    for (const signature of ["function affectedGit(w, target) {", "async function confirmGit(command, readback) {", "async function loadGit(project, ids, reviews = false) {", "async function loadGitDetail(id, selectedCommit, automatic = false, force = false, send = request) {", "mapping.nextAutomaticRead(Date.now(), c)"]) {
       if (!source.includes(signature)) throw new Error(`Git actions integration no longer matches ${path}: missing ${signature}`)
     }
     // Index and file-only actions read back their checkout. Head-changing
     // actions use the source helper to include only affected dependencies.
-    replace("return gitDetail(id, commit);", "if (!tab) return run('git', () => { revision++; return loadGit(wt(id)?.project || screen?.project, [id]); });\n  return gitDetail(id, commit);")
+    replace("return gitDetail(id, commit);", "if (!tab) return run('git', () => { return loadGit(wt(id)?.project || screen?.project, [id]); });\n  return gitDetail(id, commit);")
     // Automatic reads never disable an owner action. An explicit refresh must
     // start a fresh generation even when an older automatic read is pending.
     replace("lost: plan.paths, action: 'Discard', onConfirm:", "lost: plan.paths, action: 'Discard', waitForReply: true, pendingLabel: 'Discarding…', onConfirm:")
-    replace("const conflict = read(await request('project.conflict.choose'", "revision++;\n    const conflict = read(await request('project.conflict.choose'")
     replace("if (w.kind !== 'team') { refuse(); return; }", "if (!['team', 'agent'].includes(w.kind)) { refuse(); return; }")
     replace("export function answerReview(id, option) {\n  if (option !== 'merge') { refuse(); return; }", "export function answerReview(id, option, reason) {\n  if (option === 'decline') return declineReview(id, reason);\n  if (option !== 'merge') { refuse(); return; }")
     replace("if (!value) { refuse(); return; }", "if (!value) return reopen(id, fid);")
@@ -39,7 +38,6 @@ export function abortMerge(id) {
   const expectedHead = w.head, expectedMergeHead = w.mergeHead;
   act.confirm({ title: 'Abort this merge?', body: w.branch + ' goes back to how it was before ' + w.merge.from + ' was merged in. Your conflict choices are lost. Files added during the merge are removed.', action: 'Abort merge', waitForReply: true, pendingLabel: 'Aborting…',
     onConfirm: () => run('git', async () => {
-      revision++;
       await confirmGit(() => request('project.merge.abort', { ...scope(w), expectedHead, expectedMergeHead, confirmed: true }), () => loadGit(screen?.project, affectedGit(w), true));
     }) });
 }
@@ -50,16 +48,15 @@ function reopen(id, fid) {
   const observed = { ...scope(w), path: file.path, expectedHead: w.head, expectedMergeHead: w.mergeHead, fingerprint: file.fingerprint, confirmed: true };
   act.confirm({ title: 'Reopen this conflict?', body: 'The current contents of ' + file.path + ' are replaced by the original conflict. Edits made after the file was last read are refused.', action: 'Reopen file', waitForReply: true, pendingLabel: 'Reopening…',
     onConfirm: () => run('git', async () => {
-      revision++;
       await confirmGit(() => request('project.conflict.reopen', observed), () => loadGit(screen?.project, [w.id]));
     }) });
 }
 export function updateFromBase(id) { return run('git', async () => {
-  const w = wt(id); local(w); const parent = destination(w); local(parent); revision++;
+  const w = wt(id); local(w); const parent = destination(w); local(parent);
   await confirmGit(() => request('project.update', { ...scope(w), destinationId: parent.id, expectedHead: parent.head }), () => loadGit(screen?.project, affectedGit(w, parent), true));
 }); }
 export async function declineReview(id, reason) { const completed = await run('git', async () => {
-  const w = S().worktrees.find((w) => w.review?.id === id); local(w); const r = w.review; revision++;
+  const w = S().worktrees.find((w) => w.review?.id === id); local(w); const r = w.review;
   if (!reason?.trim()) throw new Error('Give a reason for sending the review back.');
   const review = read(await request('project.review.decline', { ...scope(w), projectId: r.project, reviewId: r.id, expectedHead: r.head, expectedBaseHead: r.baseHead, reason: reason.trim() }));
   writeWt(w.id, { review: mapping.mapMainReview(review, undefined, r.agent) });
