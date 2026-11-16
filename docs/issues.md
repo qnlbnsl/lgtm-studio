@@ -11600,7 +11600,7 @@ The test is case 3.1a in `packages/engine/test/client/snapshot.test.ts`.
 ## 655. The live website stays on "Reconnecting" when the snapshot fails, and says nothing
 
 Found: 2026-11-13, in the same check as issue 654.
-State: open.
+State: fixed in s17-firstrun by the snapshot refusal notice in the website connection menu, with retries and successful-snapshot clearing.
 
 When `client.snapshot` fails for a reason other than a lost connection, the live website retries without end.
 It shows "Reconnecting" and gives the owner no reason.
@@ -16368,3 +16368,27 @@ The launcher now waits for the service's readiness message.
 An occupied initial web port fails startup with a redacted reason.
 The service releases its startup resources before the command exits.
 The web server's existing retry behavior after later settings changes remains available.
+
+## s17-3. Snapshot failures lost their explanation during connection retries.
+
+State: fixed in s17-firstrun.
+
+The snapshot request now puts its fixed failure sentence in the existing connection menu.
+A short typed refusal reason may follow the sentence.
+Other error details are omitted.
+Retries keep their existing backoff.
+The next successful snapshot clears the sentence.
+An unauthorized session keeps the sign-in behavior.
+
+## s17-4. Existing Git synchronization tests can miss their helper markers.
+
+State: open, reproduced before the s17 changes.
+
+The required s17 test run failed three cases in `packages/engine/test/project/main-review.test.ts`.
+The case with recorded evidence missed its overlap marker.
+The independent writer case for issue 579 missed its Git startup marker.
+The queued registration case for issues 579 and 583 missed the same marker.
+The last two failures also reproduced with one worker on the pre-s17 baseline.
+The baseline run passed both overlap variants.
+The s17 unit does not change Git execution or these tests.
+The assertions and waits remain unchanged.

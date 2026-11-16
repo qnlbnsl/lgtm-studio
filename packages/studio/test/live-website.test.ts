@@ -220,6 +220,21 @@ describe("the live website", () => {
     expect(() => { (store.state as Record<string, unknown>)["repos"] = [] }).toThrow()
   })
 
+  it("shows snapshot failures in the existing connection menu and removes them after recovery", async () => {
+    fake.write({ conn: { status: "reconnecting", lastHeard: 0, notice: "The service could not send its data. command refused" } })
+    await settle()
+    const button = element.querySelector('[aria-label="Connection: Reconnecting"]') as HTMLButtonElement
+    expect(button).not.toBeNull()
+    button.click()
+    await settle()
+    expect(document.body.textContent).toContain("The service could not send its data. command refused")
+    expect(document.body.textContent).not.toContain("The service has not answered yet.")
+    fake.write({ conn: { status: "live", lastHeard: Date.now() } })
+    await settle()
+    expect(document.body.textContent).not.toContain("The service could not send its data.")
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+  })
+
   it("renders the Login page when the connection supplies an ended session", async () => {
     fake.write({ session: { status: "out", firstRun: false }, repos: [], projects: [], agents: [] })
     location.hash = "#/home"

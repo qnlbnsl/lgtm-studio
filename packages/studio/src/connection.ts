@@ -19,7 +19,7 @@ import * as Redacted from "effect/Redacted"
 import * as mocks from "./mocks.ts"
 import * as Schema from "effect/Schema"
 import { DisplayFrame } from "@lgtm/contracts/project/display"
-import { mapConnection, mapOwner, mapSnapshot, type ConnectionStatus, type EngineRecords, type StoreConn, type StoreOwner } from "./mapping.ts"
+import { snapshotFailureMessage, mapConnection, mapOwner, mapSnapshot, type ConnectionStatus, type EngineRecords, type StoreConn, type StoreOwner } from "./mapping.ts"
 
 export type SessionStatus = "checking" | "in" | "out" | "rejected" | "expired" | "unavailable" | "logout-unconfirmed"
 export interface StorePatch extends Partial<EngineRecords> {
@@ -124,6 +124,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
   let accountLimits: Record<string, number | null> = {}
   let lastHeard = 0
   let connectionStatus: ConnectionStatus = "reconnecting"
+  let snapshotNotice: string | undefined
 
   const setConn = (status: ConnectionStatus) => {
     if (status === "live") {
@@ -132,13 +133,13 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
       lastHeard = now()
     } else if (connectionStatus === "offline") status = "offline"
     connectionStatus = status
-    write({ conn: mapConnection(status, lastHeard) })
+    write({ conn: { ...mapConnection(status, lastHeard), ...(snapshotNotice === undefined ? {} : { notice: snapshotNotice }) } })
     // Retries share one outage deadline, and never count as contact with the service.
     if (status === "reconnecting" && offlineTimer === undefined) offlineTimer = setTimeout(() => setConn("offline"), 30_000)
   }
   const setSession = (status: SessionStatus) => write({ session: { status, firstRun: false } })
   // Records leave the browser when the session ends, so no signed-out page keeps them.
-  const forget = () => { retryIds.clear(); accountLimits = {}; write({ ...emptyRecords, notifications: [], accountLimits, owner: mapOwner(undefined), channels: [], posts: [], taskDetails: {}, boardAgents: {}, projectLeadSettings: {}, setupData: null, mocks: {}, design: {}, machineDetails: null, boardUnread: {}, boardRevision: 0, boardDetails: {} }) }
+  const forget = () => { snapshotNotice = undefined; retryIds.clear(); accountLimits = {}; write({ conn: mapConnection(connectionStatus, lastHeard), ...emptyRecords, notifications: [], accountLimits, owner: mapOwner(undefined), channels: [], posts: [], taskDetails: {}, boardAgents: {}, projectLeadSettings: {}, setupData: null, mocks: {}, design: {}, machineDetails: null, boardUnread: {}, boardRevision: 0, boardDetails: {} }) }
 
   const post = async (path: string, body?: unknown): Promise<number | undefined> => {
     try {
@@ -202,12 +203,17 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
           const refresh = (minimum = 0) => Effect.gen(function* () {
             for (;;) {
               const started = clock()
-              const snapshot = yield* client["client.snapshot"]({ requestId: requestId() })
+              const snapshot = yield* client["client.snapshot"]({ requestId: requestId() }).pipe(Effect.tapError(error => Effect.sync(() => {
+                if (!signal.aborted) { snapshotNotice = snapshotFailureMessage(error); setConn("reconnecting") }
+              })))
               if (timing.snapshotMs === undefined) {
                 timing.snapshotMs = clock() - started
                 debug(`LGTM Studio: the snapshot took ${timing.snapshotMs.toFixed(1)} ms`)
               }
-              if (snapshot.sequence >= minimum) { const complete = yield* hydrate(snapshot); if (complete !== undefined) { publish(complete); return } }
+              if (snapshot.sequence >= minimum) { const complete = yield* hydrate(snapshot); if (complete !== undefined) {
+                if (!signal.aborted && snapshotNotice !== undefined) { snapshotNotice = undefined; write({ conn: mapConnection(connectionStatus, lastHeard) }) }
+                publish(complete); return
+              } }
               // Publication may lag the log. Read again until the snapshot holds the event.
               yield* Effect.sleep(25)
             }

@@ -94,7 +94,7 @@ export interface StoreTask {
   readonly files: ReadonlyArray<never>; readonly history: ReadonlyArray<never>
 }
 export type ConnectionStatus = "live" | "reconnecting" | "offline"
-export interface StoreConn { readonly status: ConnectionStatus; readonly lastHeard: number }
+export interface StoreConn { readonly status: ConnectionStatus; readonly lastHeard: number; readonly notice?: string }
 
 // What one snapshot gives the store. Every key replaces the store's key of the same name.
 export interface EngineRecords {
@@ -370,4 +370,16 @@ export function mapSnapshot(snapshot: Pick<ClientSnapshot, "agents" | "requests"
 
 export function mapConnection(status: ConnectionStatus, lastHeard: number): StoreConn {
   return { status, lastHeard }
+}
+
+// CommandError reasons arrive through the client's typed, redacted refusal contract.
+// Transport and untyped errors may carry private local details.
+export function snapshotFailureMessage(error: unknown): string {
+  const fixed = 'The service could not send its data.'
+  if (typeof error !== 'object' || error === null) return fixed
+  const refusal = error as { _tag?: unknown; requestId?: unknown; reason?: unknown }
+  const reason = refusal.reason
+  return refusal._tag === 'CommandError' && typeof refusal.requestId === 'string'
+    && typeof reason === 'string' && reason.length > 0 && reason.length <= 256 && !/[\x00-\x1f\x7f]/.test(reason)
+    ? `${fixed} ${reason}` : fixed
 }
