@@ -84,14 +84,20 @@ for (const mode of ['waiting', 'sent'] as const) {
   })
 }
 
-it('the Files model ignores a late reply after its view closes', async () => {
-  const h = await setup('sent', 'project.files.read', { result: { kind: 'text', text: 'Old screen' } })
-  const old = f.model, work = old.open('old'); await flush(); old.close()
-  const next = f.load('live/files.js', 'createFilesModel, setMapping'); next.setMapping(await import('../src/files.ts'))
-  const current = next.createFilesModel({ worktreeId: 'new', machine: 'local', online: true }, () => {})
-  current.opened = { file: { text: 'New screen' } }
-  await h.change(); await work
-  expect(old.opened.file).toBeUndefined(); expect(current.opened.file.text).toBe('New screen'); current.close()
+it('the Files model keeps B when A replies after B in the same model', async () => {
+  f = await fixture()
+  const first = deferred<any>(), second = deferred<any>(), model = f.model
+  const request = f.engine.request
+  f.engine.request = (tag: string, payload: any, options: any) => tag === 'project.files.read'
+    ? (payload.path === 'A' ? first.promise : second.promise) : request(tag, payload, options)
+  const openingA = model.open('A'); await flush()
+  expect(model.selected).toBe('A'); expect(model.opened.loading).toBe(true)
+  const openingB = model.open('B'); await flush()
+  expect(model.selected).toBe('B'); expect(model.opened.loading).toBe(true)
+  second.resolve({ result: { kind: 'text', path: 'B', text: 'File B', version: 'b', editable: true } }); await openingB
+  expect(model.opened.file).toMatchObject({ path: 'B', text: 'File B' })
+  first.resolve({ result: { kind: 'text', path: 'A', text: 'Late file A', version: 'a', editable: true } }); await openingA
+  expect(model.selected).toBe('B'); expect(model.opened.file).toMatchObject({ path: 'B', text: 'File B' })
 })
 
 it('the Git reader ignores a late summary after its visit ends', async () => {

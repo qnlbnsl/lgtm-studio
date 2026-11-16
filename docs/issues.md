@@ -17194,3 +17194,11 @@ The state lines of issues 696 and 848 still referred to the removed page lifetim
 They now name session loss, connection close and the caller’s signal as the cancellation causes.
 Their State check lines remain unchanged.
 
+## s18-35. Two regression fixtures did not cover their intended boundary.
+
+State: fixed in s18-smallfix round 5.
+
+The Files late-reply test compared two independent models instead of competing reads in one model.
+It now holds file A, opens and delivers B, then delivers A and verifies that the same model still shows B.
+The service lease tests were Linux-only while their beforeAll hook was not.
+The hook now checks the platform before creating a temporary folder or launching a service.
