@@ -15743,3 +15743,16 @@ A reply for the older row must not mark the new row as loaded.
 The detail publisher now checks the current file identity after its reply arrives.
 A regression changes the status while the second body is held.
 It checks that the old body is discarded and an explicit demand loads the fresh body.
+
+## s16-6. Review-only success must not postpone the summary fallback.
+
+Found: 2026-11-15, while checking part B's idle measurement trace.
+Status: fixed in part B of unit s16-gitrefresh.
+
+The first controller wiring advanced last-success time after every successful group.
+A steady stream of evidence events could therefore postpone a terminal-change summary indefinitely.
+The single last-success field now records successful summary reads.
+A successful review read preserves that clock.
+A failed review retains its backoff while an earlier summary fallback remains eligible.
+A failing summary keeps its own retry deadline, so an overdue fallback cannot create a retry storm.
+The regression floods successful and failing review reads and still observes periodic summaries.

@@ -671,3 +671,20 @@ it('a progressive reply cannot repopulate a file whose identity changed in an au
     expect(f.state.worktrees[0].files[1]).toMatchObject({ status: 'A', loaded: true, hunks: ['fresh'] });
   } finally { held.release(); close(); vi.useRealTimers(); }
 });
+
+for (const reviewFails of [false, true]) it(`review-only ${reviewFails ? 'failures' : 'successes'} cannot postpone the sixty-second summary fallback`, async () => {
+  vi.useFakeTimers(); vi.setSystemTime(100000); let initial = true; const times: number[] = [];
+  const f = fixture(async tag => {
+    if (tag === 'project.git.state') times.push(Date.now());
+    if (tag === 'project.review.status' && !initial && reviewFails) throw new Error('review');
+    return emptyGitReply(tag);
+  });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.advanceTimersByTimeAsync(0); initial = false;
+    for (let n = 0; n < 44; n++) { f.actions.observe({ git: { group: 'review', worktreeIds: ['workspace'] } }); await vi.advanceTimersByTimeAsync(3000); }
+    expect(times.length).toBeGreaterThanOrEqual(3);
+    expect(times[1]! - times[0]!).toBeLessThanOrEqual(63000);
+    expect(times[2]! - times[1]!).toBeLessThanOrEqual(63000);
+  } finally { close(); vi.useRealTimers(); }
+});

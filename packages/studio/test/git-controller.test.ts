@@ -76,3 +76,14 @@ it("a held pass, owner action, or hidden screen has no automatic selection", () 
   c.reading = null; c.ownerBusy = true; expect(nextAutomaticRead(0, c)).toBeUndefined()
   c.ownerBusy = false; c.enabled = false; expect(nextAutomaticRead(0, c)).toBeUndefined()
 })
+
+it('review-only results preserve the summary clock and admit its earlier fallback without resetting summary backoff', () => {
+  const c = createGitController(), r = gitRefreshRecord('one', 0); c.records.set('one', r);
+  r.summaryDirty = r.reviewDirty = 0; finishGitRecord(r, 100, null);
+  finishGitRecord(r, 50000, null, false); expect(r.lastSuccess).toBe(100);
+  expect(nextAutomaticRead(50000, c)).toEqual({ id: 'one', at: 60100 });
+  for (let n = 0; n < 8; n++) finishGitRecord(r, 50000, 'review', false);
+  expect(nextAutomaticRead(50000, c)).toEqual({ id: 'one', at: 60100 });
+  r.summaryDirty = 1; finishGitRecord(r, 100000, 'summary', false);
+  expect(nextAutomaticRead(100000, c)).toEqual({ id: 'one', at: 160000 });
+});

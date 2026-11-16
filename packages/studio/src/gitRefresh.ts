@@ -43,7 +43,8 @@ export function forceGitRecord(record: GitRefreshRecord, now: number): void {
   record.nextAttempt = now
   record.phase = "due"
 }
-export function finishGitRecord(record: GitRefreshRecord, now: number, error: string | null): void {
+export function finishGitRecord(record: GitRefreshRecord, now: number, error: string | null, summarySucceeded = error === null): void {
+  if (summarySucceeded) record.lastSuccess = now
   record.lastError = error
   if (error !== null) {
     record.failures++
@@ -51,7 +52,6 @@ export function finishGitRecord(record: GitRefreshRecord, now: number, error: st
     record.nextAttempt = now + Math.min(1_000 * 2 ** Math.min(record.failures - 1, 6), fallbackMs)
   } else {
     record.failures = 0
-    record.lastSuccess = now
     record.phase = record.summaryDirty || record.reviewDirty ? "due" : "idle"
     record.nextAttempt = now + (record.phase === "idle" ? fallbackMs : 100)
   }
@@ -61,7 +61,8 @@ export function nextAutomaticRead(now: number, controller: GitRefreshController)
   let choice: { id: string; due: number } | undefined
   for (const [id, record] of controller.records) {
     if (record.phase === "reading") continue
-    const due = record.phase === "idle" ? (record.lastSuccess ?? record.nextAttempt) + fallbackMs : record.nextAttempt
+    const fallback = record.lastSuccess === null ? record.nextAttempt : record.lastSuccess + fallbackMs
+    const due = record.phase === "idle" ? fallback : record.summaryDirty === 0 ? Math.min(record.nextAttempt, fallback) : record.nextAttempt
     if (!choice || due < choice.due || due === choice.due && id === controller.selected) choice = { id, due }
   }
   if (!choice) return undefined

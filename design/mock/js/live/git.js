@@ -376,7 +376,7 @@ function scheduleGit() {
     if (!admitted || admitted.at > Date.now()) { scheduleGit(); return; }
     const r = c.records.get(admitted.id), w = wt(admitted.id);
     if (!r || !w) { reconcileGit(); return; }
-    if (r.phase === 'idle') mapping.dirtyGitRecord(r, 'summary', Date.now());
+    if (r.phase === 'idle' || r.summaryDirty === 0 && r.lastSuccess !== null && Date.now() >= r.lastSuccess + mapping.fallbackMs) mapping.dirtyGitRecord(r, 'summary', Date.now());
     c.lastStart = lastAutomaticStart = Date.now(); c.reading = w.id;
     pending('git-read', true);
     const epoch = r.epoch;
@@ -392,10 +392,10 @@ async function readGitRecord(w, project, r, c, forced, reviews = false) {
   const valid = () => r.epoch === epoch && S().session.status === 'in' && (!c || gitController === c && c.enabled && c.records.get(w.id) === r);
   r.summaryAbort?.abort(); const abort = r.summaryAbort = new AbortController();
   const ask = async (tag, payload) => { if (!valid()) return; const reply = await request(tag, payload, { signal: abort.signal }); return valid() ? read(reply) : undefined; };
-  r.phase = 'reading'; let failure = null;
+  r.phase = 'reading'; let failure = null, summarySucceeded = false;
   try {
     let state;
-    if (forced || summary || !r.lastSuccess) {
+    if (forced || summary || r.lastSuccess === null) {
       state = await ask('project.git.state', { ...scope(w), ...(w.parent ? { target: w.parent } : {}) }); if (!state) return;
       const old = wt(w.id), headChanged = old.head !== state.head || old.mergeHead !== state.mergeHead;
       if (headChanged) r.detailAbort?.abort();
@@ -417,6 +417,7 @@ async function readGitRecord(w, project, r, c, forced, reviews = false) {
           return { ...cached, id: x.path, path: x.path, parts: cached?.parts || [], resolved: !!x.resolved, fingerprint: x.fingerprint || cached?.fingerprint, loaded: !!cached?.loaded };
         }) } : null;
       writeWt(w.id, { ...mapping.mapGitState(state, w.parent), files, merge, gitError: null, ready: !changes.truncated, truncated: changes.truncated || resolved.truncated });
+      summarySucceeded = true;
       if (!failure) r.summaryDirty = Math.max(0, r.summaryDirty - summary);
     }
     if (w.kind === 'project' && (reviews || reviewCount || !wt(w.id).reviewLoaded || wt(w.id).review?.status === 'open')) {
@@ -435,7 +436,7 @@ async function readGitRecord(w, project, r, c, forced, reviews = false) {
   } catch (e) { failure = e; }
   finally {
     if (valid()) {
-      mapping.finishGitRecord(r, Date.now(), failure ? failure.message || 'The worktree could not be refreshed.' : null);
+      mapping.finishGitRecord(r, Date.now(), failure ? failure.message || 'The worktree could not be refreshed.' : null, summarySucceeded);
       writeWt(w.id, { stale: !!failure });
       if (failure && (r.lastToast === null || Date.now() - r.lastToast >= 60000)) { r.lastToast = Date.now(); act.toast('This worktree could not be refreshed.', 'error'); }
     }
