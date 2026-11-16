@@ -17705,3 +17705,12 @@ Each of the six passed when it was run alone with one worker.
 This is the same load sensitivity that issues 966, 1014, 1044, 1066, 1079 and 1122 record.
 
 State: open. Recorded on 2026-11-16.
+
+## 1166. Four browser journeys failed in the full check of the recovery unit and passed alone.
+
+The journeys were `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:783` and `studio.spec.ts:1189`.
+Other builders were running their own test suites on the same computer during the full check.
+Each of the four passed when it was run alone with one worker.
+This is the load sensitivity that issue 1139 and the issues it names record.
+
+State: open. Recorded on 2026-11-16.
