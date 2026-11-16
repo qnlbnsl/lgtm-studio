@@ -98,7 +98,7 @@ const handlerServices = (configuration: Pick<Runtime, "home" | "stateFolder" | "
 export const buildServices = (configuration: Pick<Runtime, "home" | "stateFolder" | "pluginRoot" | "harnessDefaults" | "harnessPrograms" | "credentials">, lists: EngineLists = engineLists) =>
   handlerServices(configuration, lists).pipe(Layer.provideMerge(baseServices(lists)));
 
-const program = (inheritedToken: string | undefined, webPassword: Redacted.Redacted<string> | undefined, reportFailure: (cause: Cause.Cause<unknown>, redact: (text: string) => string) => void) => Effect.scoped(Effect.gen(function* () {
+const program = (inheritedToken: string | undefined, webPassword: Redacted.Redacted<string> | undefined, reportFailure: (cause: Cause.Cause<unknown>, redact: (text: string) => string) => void, foreground = false) => Effect.scoped(Effect.gen(function* () {
   const lists = withBoardEnabled(engineLists, boardEnabledAtStartup(process.env));
   const folder = yield* Effect.try({ try: () => {
     const path = stateFolder(process.env);
@@ -106,7 +106,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
     return path;
   }, catch: (error) => error instanceof Error ? error : new Error("state folder refused") });
   const lock = yield* takeLock(folder);
-  if (lock === undefined) { process.stdout.write("already running\n"); return; }
+  if (lock === undefined) { process.stdout.write("already running\n"); if (foreground) process.exitCode = 1; return; }
   // A detached launcher needs evidence of which child won the lock, rather
   // than inferring it from timing the losing child's exit. This is an
   // inherited parent/child channel, never a second listener.
@@ -174,7 +174,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
       const web = yield* serveWeb({ password: webPassword, lists, staticRoot: fileURLToPath(new URL("../../studio/dist", import.meta.url)),
         registerSecret: (secret) => { explicitSecrets.push(secret); } });
       yield* Effect.addFinalizer(() => web.close);
-      if (process.connected) process.disconnect?.();
+      if (process.connected && !foreground) process.disconnect?.();
       yield* (yield* Restart.Restart).recover;
       // A retained row never grants authority unless its identity is still
       // live. Remove dead or replaced identities after recovery has swept
@@ -219,7 +219,7 @@ if (process.argv[1] !== undefined && pathToFileURL(process.argv[1]).href === imp
     tokenHashes: () => new Set(),
   });
   let failureReason: string | undefined;
-  const fiber = Effect.runFork(program(inheritedToken, webPassword, (cause, redact) => { failureReason = startupFailure(cause, redact); }));
+  const fiber = Effect.runFork(program(inheritedToken, webPassword, (cause, redact) => { failureReason = startupFailure(cause, redact); }, process.argv[2] === "--foreground"));
   const stop = () => fiber.interruptUnsafe();
   if (typeof process.execve === "function") installRestarter(() => {
     if (restarting) return;

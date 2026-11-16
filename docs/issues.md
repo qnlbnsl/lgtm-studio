@@ -2713,7 +2713,7 @@ created by the setup helper before the agent's prompt.
 ## 181. Foreground `lgtm serve` is not supported
 
 Found: 2026-11-01, while wiring `serve` in the command-line tool.
-State: open.
+State: fixed in s18-smallfix. Plain `lgtm serve` runs in the terminal with the existing redacted logs. It shuts down cleanly on Ctrl-C or SIGTERM and refuses an existing service. The detached launcher is unchanged.
 
 What happens: unit 7a starts the service when its module is imported, and only
 `serve --detach` has a launcher. The command-line tool accepts `serve --detach`
@@ -16876,5 +16876,35 @@ Service, file, board, chat, mock, and settings readers could request data before
 The shared connection now waits for an active attempt before dispatching named reads.
 A failed attempt still produces the existing connection notice.
 Navigation, page closure, and session loss cancel waiting reads.
+Ordinary failures and unexpected transport failures both release waiting reads with the existing sentence.
 Owner writes keep their existing immediate behaviour.
 The automatic Git controller retains its existing admission policy.
+
+## s18-3. Plain serve had no foreground lifecycle.
+
+State: fixed in s18-smallfix.
+
+The command parser accepted only `serve --detach`.
+The foreground launcher now keeps its service attached to the terminal.
+Its shutdown waits for the service’s scopes to close and release its lock.
+Service output uses the existing redacted logger.
+Startup errors use the existing fixed category channel.
+A second foreground service refuses the same state folder.
+The detached launcher retains its existing behaviour.
+
+## s18-4. Project attention summaries counted unavailable askers.
+
+State: fixed in s18-smallfix.
+
+The project snapshot computed its Needs you label from every open question.
+That count could disagree with the filtered owner question list.
+The project summary now uses the shared question availability rule.
+The lifecycle regressions check its label alongside the lists and counts.
+
+## s18-5. Navigation could win immediately after a read was released.
+
+State: fixed in s18-smallfix.
+
+The connection could become live and resolve a waiting read just before navigation cancelled its page.
+The request continuation now checks cancellation again before dispatch.
+A regression test changes the page during the live notification and verifies that no read is sent.

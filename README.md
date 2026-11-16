@@ -92,7 +92,10 @@ Open `http://127.0.0.1:8787` and log in with that password.
 The web password must contain at least eight characters.
 The engine's default state folder is `~/.local/state/lgtm`.
 Set `LGTM_HOME` on the service and command processes to use another folder.
-The service continues running after the launching terminal closes.
+With `serve --detach`, the service continues running after the launching terminal closes.
+Use `./bin/lgtm serve` to keep it in the foreground and read its redacted logs in the terminal.
+Press Ctrl-C or send the termination signal, SIGTERM, to shut it down cleanly.
+The foreground command refuses to start if a service already uses the same state folder.
 The terminal thread viewer is available through `./bin/lgtm view`.
 
 The website is built from the mock in `design/mock/` by the package `packages/studio`.

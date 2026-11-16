@@ -57,3 +57,35 @@ export const serveDetach = (options: { readonly environment: Record<string, stri
     yield* Effect.sleep(25);
   }
 });
+
+// Keep the child attached to this terminal. Its existing logger is the only
+// source of service output, including its fixed, redacted startup categories.
+export const serveForeground = (options: { readonly environment: Record<string, string | undefined> }) => Effect.scoped(Effect.gen(function* () {
+  const socket = join(stateFolder(options.environment), "engine.sock");
+  if (yield* Effect.promise(() => answers(socket))) return yield* Effect.fail(new Error("The service is already running for this state folder."));
+  const running = yield* Effect.acquireRelease(Effect.sync(() => {
+    const child = spawn(process.execPath, [fileURLToPath(new URL("../../engine/src/service.ts", import.meta.url)), "--foreground"], {
+      env: options.environment, stdio: ["ignore", "pipe", "ignore", "ipc"],
+    });
+    let reason: string | undefined;
+    child.on("message", (message: unknown) => {
+      if (typeof message === "object" && message !== null && "_tag" in message && message._tag === "LgtmStartupFailed"
+        && "reason" in message && typeof message.reason === "string" && message.reason.length <= 512) reason = message.reason;
+    });
+    // stdout contains the existing redacted logger's lines. stderr is never
+    // forwarded: startup refusals use the service-owned category channel.
+    child.stdout!.on("data", (line: Buffer) => process.stdout.write(line));
+    const closed = new Promise<number>((resolve) => {
+      child.once("error", () => resolve(1));
+      child.once("close", (code) => resolve(code === 0 ? 0 : 1));
+    });
+    return { child, closed, reason: () => reason };
+  }), ({ child, closed }) => Effect.promise(async () => {
+    // Interrupting the CLI waits for the service's scoped shutdown and lock release.
+    if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+    await closed;
+  }));
+  const code = yield* Effect.promise(() => running.closed);
+  if (code !== 0) return yield* Effect.fail(new Error(running.reason() === undefined ? "service failed to start" : `service failed to start: ${running.reason()}`));
+  return code;
+}));
