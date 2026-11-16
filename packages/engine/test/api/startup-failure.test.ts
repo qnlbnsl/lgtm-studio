@@ -1,8 +1,11 @@
+import { registerRebuildCheck } from '../support/rebuildCheck.ts'
 import { expect, it } from 'vitest'
 import * as Cause from 'effect/Cause'
 import * as Redacted from 'effect/Redacted'
-import { startupFailure } from '../../engine/src/api/startupFailure.ts'
-import { makeRedactor } from '../../engine/src/identity/redactor.ts'
+import { startupFailure } from '../../src/api/startupFailure.ts'
+import { makeRedactor } from '../../src/identity/redactor.ts'
+
+registerRebuildCheck({ noLog: true })
 
 it('uses fixed categories and the normal redactor without copying underlying causes or paths', () => {
   const secret = 'web port unavailable'

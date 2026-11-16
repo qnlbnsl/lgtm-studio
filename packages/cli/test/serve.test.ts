@@ -227,7 +227,7 @@ it('reports a state folder that cannot be created without exposing paths or cont
   expect(result.text).not.toContain('s17-private-file-content');
 });
 
-live('reports an occupied configured web port before claiming detached startup succeeded', () => Effect.gen(function* () {
+live('keeps the engine and its outage alert running when the configured web port is occupied', () => Effect.gen(function* () {
   const root = makeRoot(), env = environmentFor(root);
   // Start headless to persist an ephemeral port through the authenticated API.
   const first = yield* serveDetach({ environment: env });
@@ -245,8 +245,21 @@ live('reports an occupied configured web port before claiming detached startup s
     }));
     yield* Effect.promise(() => stopPid((first as { pid: number }).pid));
     const result = yield* Effect.promise(() => runDetach({ ...env, LGTM_WEB_PASSWORD: 's17-test-password' }));
-    expect(result.code).toBe(1);
-    expect(result.text).toContain('web port unavailable');
+    expect(result.code).toBe(0);
+    expect(result.text).toMatch(/^started \(pid \d+\)\n$/);
+    yield* waitFor('the API and web outage alert', async () => {
+      try {
+        return await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
+          const client = yield* connect({ environment: env });
+          const state = yield* client['client.web.settings']({ requestId: randomUUID() as never });
+          const alerts = yield* client['client.alerts.list']({ requestId: randomUUID() as never, after: 0 as never, limit: 200 });
+          return state.serverState === 'port-taken' && alerts.items.some(alert => alert.kind === 'client.web-down');
+        })));
+      } catch { return false; }
+    });
+    const db = new DatabaseSync(join(root.state, 'events.sqlite'), { readOnly: true });
+    try { expect(db.prepare("SELECT COUNT(*) AS count FROM events WHERE event_type = 'client.WebServerDown'").get()!.count).toBe(1); }
+    finally { db.close(); }
     expect(result.text).not.toContain('s17-test-password');
   } finally {
     yield* Effect.promise(() => new Promise<void>(resolve => server.close(() => resolve())));
@@ -265,4 +278,47 @@ it('reports unreadable state permissions and a refused long socket address', asy
   expect(tooLong.code).toBe(1);
   expect(tooLong.text).toContain('socket path exceeds 100 bytes');
   expect(tooLong.text).not.toContain(root.state);
+});
+
+// Loader hooks affect only this test's own child. No production test switch is added.
+const serviceHook = (root: Root, from: string, to: string) => {
+  const loader = join(root.root, 'service-hook.mjs');
+  writeFileSync(loader, `import { registerHooks } from 'node:module';
+registerHooks({ load(url, context, next) {
+ const loaded = next(url, context);
+ if (url === ${JSON.stringify(new URL('../../engine/src/service.ts', import.meta.url).href)}) {
+  const source = String(loaded.source);
+  if (!source.includes(${JSON.stringify(from)})) throw new Error('Service test hook did not match');
+  return { ...loaded, source: source.replace(${JSON.stringify(from)}, ${JSON.stringify(to)}) };
+ }
+ return loaded;
+} });
+`);
+  return { ...environmentFor(root), NODE_OPTIONS: `--import=${new URL('file://' + loader).href}` };
+};
+
+it('prints started and exits before recovery exceeds the launcher deadline, leaving the service alive', async () => {
+  const root = makeRoot(), marker = join(root.root, 'recovery-finished');
+  const env = serviceHook(root, 'yield* (yield* Restart.Restart).recover;',
+    `yield* Effect.sleep(31_000); (yield* Effect.promise(() => import('node:fs'))).writeFileSync(${JSON.stringify(marker)}, 'done'); yield* (yield* Restart.Restart).recover;`);
+  const result = await runDetach(env);
+  expect(result.code).toBe(0);
+  expect(result.text).toMatch(/^started \(pid \d+\)\n$/);
+  expect(existsSync(marker)).toBe(false);
+  await new Promise(resolve => setTimeout(resolve, 31_000));
+  await Effect.runPromise(waitFor('recovery beyond the launch deadline', () => existsSync(marker)));
+  expect(servicesOf(root)).toHaveLength(1);
+  expect(await answers(root.socket)).toBe(true);
+}, 90_000);
+
+it('keeps serving when its launcher disconnects just before the lock-acquired send', async () => {
+  const root = makeRoot();
+  const env = serviceHook(root, 'if (process.connected) process.send?.({ _tag: "LgtmLockAcquired" }, () => {});',
+    `yield* Effect.promise(() => new Promise(resolve => { process.send?.({ _tag: 'TestBeforeLockSend' }, () => {}); process.once('disconnect', resolve); })); if (process.connected) process.send?.({ _tag: "LgtmLockAcquired" }, () => {});`);
+  const child = spawn(process.execPath, [servicePath], { env, stdio: ['ignore', 'ignore', 'ignore', 'ipc'] });
+  children.push(child);
+  await new Promise<void>(resolve => child.on('message', message => { if ((message as { _tag?: string })._tag === 'TestBeforeLockSend') { child.disconnect(); resolve(); } }));
+  await Effect.runPromise(waitFor('the orphaned service socket', () => child.exitCode !== null ? true : answers(root.socket)));
+  expect(child.exitCode).toBeNull();
+  expect(await answers(root.socket)).toBe(true);
 });

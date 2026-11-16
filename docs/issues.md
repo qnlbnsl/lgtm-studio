@@ -16350,6 +16350,7 @@ Issues 966 and 1014 record the other load-sensitive journeys.
 
 ## s17-1. The engine does not record every phase shown by the Workflow tab.
 
+Found: 2026-11-15, during unit s17-firstrun.
 State: open for the missing phase records.
 
 The event envelopes retain project creation and stage change times.
@@ -16359,36 +16360,66 @@ A skipped phase has no timing record.
 The website leaves those durations blank.
 Only the latest visit to each recorded phase is shown.
 
-## s17-2. The detached launcher reported success before web startup finished.
+## s17-2. The first s17 draft changed successful startup and refused a web outage.
 
-State: fixed in s17-firstrun.
+Found: 2026-11-15, during review of unit s17-firstrun.
+State: corrected in fix round 1.
 
-The Unix socket could answer during recovery before the web port was bound.
-The launcher now waits for the service's readiness message.
-An occupied initial web port fails startup with a redacted reason.
-The service releases its startup resources before the command exits.
-The web server's existing retry behavior after later settings changes remains available.
+The first draft waited for recovery before reporting a successful detached start.
+Its deadline could kill the recovering service.
+The first draft also stopped the engine when the optional web port was occupied.
+Both changes went beyond the assignment.
+The launcher again reports success when its child holds the lock and its socket answers.
+The service disconnects its startup channel before recovery.
+An occupied web port leaves the engine running.
+The existing outage event, alert, and retry supervisor remain active.
+The successful command keeps its original output and exit status.
 
 ## s17-3. Snapshot failures lost their explanation during connection retries.
 
-State: fixed in s17-firstrun.
+Found: 2026-11-15, during unit s17-firstrun.
+State: fixed in s17-firstrun and corrected in fix round 1.
 
-The snapshot request now puts its fixed failure sentence in the existing connection menu.
+A typed snapshot refusal puts its fixed failure sentence in the existing connection menu.
 A short typed refusal reason may follow the sentence.
 Other error details are omitted.
+Transport failures keep the existing connection text.
+The session probe runs before the refusal notice is published.
+A 401 goes to sign-in without publishing the notice first.
 Retries keep their existing backoff.
 The next successful snapshot clears the sentence.
-An unauthorized session keeps the sign-in behavior.
 
-## s17-4. Existing Git synchronization tests can miss their helper markers.
+## s17-4. Git synchronization tests can miss their helper markers under heavy load.
 
-State: open, reproduced before the s17 changes.
+Found: 2026-11-15, during the required s17 test run.
+State: open for timing investigation, as in issues 966 and 1014.
 
 The required s17 test run failed three cases in `packages/engine/test/project/main-review.test.ts`.
-The case with recorded evidence missed its overlap marker.
-The independent writer case for issue 579 missed its Git startup marker.
-The queued registration case for issues 579 and 583 missed the same marker.
-The last two failures also reproduced with one worker on the pre-s17 baseline.
-The baseline run passed both overlap variants.
+The issue 579 cases use a five-second wall-clock wait for a Git startup marker.
+The failed runs happened under heavy load.
+The reviewer ran the file alone and passed all 45 tests.
+The earlier claim that these failures were reproduced on the baseline is withdrawn.
+A baseline regression has not been established.
+Issues 966 and 1014 record other fixed waits that fail under heavy load and pass alone.
 The s17 unit does not change Git execution or these tests.
 The assertions and waits remain unchanged.
+
+## s17-5. Closing the startup channel could crash the service before its lock message.
+
+Found: 2026-11-15, during review of unit s17-firstrun.
+State: fixed in fix round 1.
+
+The lock-acquired send had lost its callback.
+A launcher that disconnected could leave an unhandled channel error in the service.
+The send now checks the channel and supplies a callback.
+A real child-process test disconnects the launcher before that send and verifies continued service.
+
+## s17-6. An exit event could hide the final redacted startup reason.
+
+Found: 2026-11-15, during review of unit s17-firstrun.
+State: fixed in fix round 1.
+
+The launcher could report failure before the channel delivered the refusal.
+A failed child now reaches its close event before the launcher chooses the failure text.
+Tests order the exit and reason events both ways.
+Successful starts retain their original lock and socket check.

@@ -110,7 +110,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
   // A detached launcher needs evidence of which child won the lock, rather
   // than inferring it from timing the losing child's exit. This is an
   // inherited parent/child channel, never a second listener.
-  if (process.send !== undefined) process.send({ _tag: "LgtmLockAcquired" });
+  if (process.connected) process.send?.({ _tag: "LgtmLockAcquired" }, () => {});
   const socketPath = join(folder, "engine.sock");
   yield* Effect.try({ try: () => {
     try {
@@ -174,7 +174,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
       const web = yield* serveWeb({ password: webPassword, lists, staticRoot: fileURLToPath(new URL("../../studio/dist", import.meta.url)),
         registerSecret: (secret) => { explicitSecrets.push(secret); } });
       yield* Effect.addFinalizer(() => web.close);
-      if (web.startupState === "port-taken") return yield* Effect.fail(new Error("web port unavailable"));
+      if (process.connected) process.send?.({ _tag: "LgtmReady" }, () => { if (process.connected) process.disconnect?.(); });
       yield* (yield* Restart.Restart).recover;
       // A retained row never grants authority unless its identity is still
       // live. Remove dead or replaced identities after recovery has swept
@@ -188,7 +188,6 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
           if (row.boot_id !== boot || facts === undefined || facts.startTime !== row.start_time || facts.userId !== row.user_id || facts.executable !== row.executable) yield* sql`DELETE FROM processes WHERE id = ${row.id}`;
         }
       }
-      if (process.connected) process.send?.({ _tag: "LgtmReady" }, () => { if (process.connected) process.disconnect?.(); });
       yield* Effect.never;
     }).pipe(
       // Close request scopes while the handler, runner and database are still
