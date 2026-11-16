@@ -1,3 +1,5 @@
+import { removeSettingsRow } from './settingsControls.ts'
+
 export function assertProjectSettingsSource(path: string, source: string): string {
   if (path === 'js/screens/service.js' && !source.includes('projectSettings.loadLead')) throw new Error('Project settings integration: output is missing projectSettings.loadLead')
   return source
@@ -97,15 +99,9 @@ export function projectSettingsSource(path: string, source: string): string {
   replace("onConfirm: async () => { if (live.on) return; if (!p.archived) return false;", "onConfirm: async () => { if (live.on) { const reply = await projectSettings.deleteProject(p.id); if (reply) go('/r/' + r.id); return reply; } if (!p.archived) return false;")
   // Unsupported controls are absent from the built website. Each source anchor
   // is checked above and each complete section is checked again before removal.
-  const removeRow = (label: string) => {
-    const anchor = '<${Row} label="' + label + '"'
-    const start = screen.indexOf(anchor), end = screen.indexOf('<//>', start)
-    if (start < 0 || end < start || screen.indexOf(anchor, start + 1) >= 0) throw new Error(`Project settings integration: ${label} row moved`)
-    screen = screen.slice(0, start) + screen.slice(end + 5)
-  }
   // The inserted prefix is a whole expression; remove its wrapper too.
   replace('${live.on && html`<${Row} label="Task label prefix" id="ps-prefix"><input id="ps-prefix" class="input mono" disabled title="Engine work needed" placeholder="Not set" /><//>`}', '')
-  removeRow('Base branch')
+  screen = removeSettingsRow(screen, 'Base branch', 'Project settings integration')
   const removeSection = (title: string, next: string) => {
     const anchor = '<${Section} title="' + title + '"', after = '<${Section} title="' + next + '"'
     const start = screen.indexOf(anchor), end = screen.indexOf(after, start)

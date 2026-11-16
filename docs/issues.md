@@ -13339,13 +13339,13 @@ The first reviewer selector must read these defaults.
 
 ## 802. Several service controls still lack their execution paths.
 
-State: open. Checked against the code on 2026-11-15. Controls still show the not-connected notice (design/mock/js/actions.js, packages/studio/src/connection.ts) and standing permission rules remain unbuilt per AGENTS.md. Kind: visible to the owner.
+State: fixed for the website by s20-controls on 2026-11-16. The inert controls are absent from the website. Their execution paths remain unbuilt. The standalone mock retains its sample controls. Kind: visible to the owner.
 
 The need-to-know default has no team-creation privacy setting to consume it.
 Removing agent credits would need a defined commit-rewriting policy before the approved Git heads change.
 The Git message model has no service-owned message-generation request to consume it.
 The tests-first default, agent-review default, and review-round limit have no workflow executor to consume them.
-These controls retain the notice that they are not connected and change nothing.
+The website omits these controls because they change nothing.
 Standing permission rules still await the owner's harness recordings, as AGENTS.md requires.
 The existing standing-rules setting is outside this implementation and still does not enforce permission rules.
 
@@ -14504,7 +14504,7 @@ An owner who types quickly across these fields might lose one value in the same 
 
 ## 906. Agent terminal watching and takeover need engine support.
 
-State: open. Checked against the code on 2026-11-15. design/mock/js/live/terminal.js lines 127-128 still draw Watch agent session and Take over agent session disabled with Engine work needed. Kind: visible to the owner.
+State: open. Checked by s20-controls on 2026-11-16. Watch agent session and Take over agent session remain disabled with Engine work needed. Interactive terminal attachment and keyboard handoff are unbuilt. Agent Client Protocol mode has no terminal to attach. Kind: visible to the owner.
 
 The project terminal API opens private owner shells only.
 It cannot attach to an agent's terminal or transfer that terminal's keyboard.
@@ -14513,7 +14513,7 @@ Both controls show “Engine work needed” on hover.
 
 ## 907. Ended project shells cannot reconnect.
 
-State: open. Checked against the code on 2026-11-15. design/mock/js/live/terminal.js line 133 still draws the Reconnect button disabled with title Engine work needed. Kind: visible to the owner.
+State: open. Checked by s20-controls on 2026-11-16. Reconnect remains disabled with Engine work needed. The engine has no resumed terminal attachment or ownership transfer for a replacement connection. An ended shell cannot be resumed. Kind: visible to the owner.
 
 A project shell belongs to its opening connection.
 Reloading the page or losing that connection ends the shell after the grace period.
@@ -16251,7 +16251,7 @@ Ordinary journey runs keep the unwrapped service and install no measurement list
 ## 1041. Fresh evidence from review status never reaches an already open merge dialog.
 
 Found: 2026-11-15, by the reviewer's real-engine probe in review-a2.
-Status: open, awaiting the owner's approval for a change to what the dialog shows.
+State: fixed by s20-controls on 2026-11-16. The live status read maps the separate fresh evidence into the existing dialog. The pressed approval preserves the decision and reviewed heads that the dialog showed.
 
 The engine stores review evidence when project.review.prepare opens a review.
 A later project.review.report updates the separate evidence table.
@@ -17236,7 +17236,7 @@ Its "reload" step failed with "SocketReadError: An error occurred during Read".
 A second run on the same commit passed that step and gave the known result of 19 of 23.
 The cause of the single failure is not known.
 
-## s22-1. Agents did not receive the default workflow instructions on launch.
+## 1170. Agents did not receive the default workflow instructions on launch.
 
 State: fixed in s22.
 
@@ -17246,7 +17246,7 @@ The engine now composes shipped role files and their bases before the adapter's 
 The same composition is available through `roles.orient`.
 Stored prompt events retain their existing text and shape.
 
-## s22-2. Repository role overrides need an owner decision about trust.
+## 1171. Repository role overrides need an owner decision about trust.
 
 State: open.
 
@@ -17254,7 +17254,7 @@ A repository could carry instructions written by a stranger.
 This unit loads role overrides only from the configured home's `.lgtm/roles` folder.
 The owner must decide whether repository files may instruct agents before repository overrides are built.
 
-## s22-3. Role instruction files have no editor or file-management API.
+## 1172. Role instruction files have no editor or file-management API.
 
 State: open.
 
@@ -17263,7 +17263,7 @@ The existing authenticated role-file command can replace named advice.
 There are no commands to list, read or save individual Markdown instruction files.
 An editor and those application programming interface (API) actions remain future work.
 
-## s22-4. Done reports and product-only commits remain prose rules.
+## 1173. Done reports and product-only commits remain prose rules.
 
 State: open.
 
@@ -17272,7 +17272,7 @@ It does not reject a merge that includes run notes or scratch files.
 The shipped instructions require these checks from agents and leads.
 Mechanical enforcement remains future work.
 
-## s22-5. Two existing documents contain details that need the owner's publication decision.
+## 1174. Two existing documents contain details that need the owner's publication decision.
 
 State: open.
 
@@ -17280,7 +17280,7 @@ The review identified private project references and dated owner quotations in `
 It also identified a private source commit reference in `docs/foundry.md`.
 This unit leaves those passages unchanged and does not repeat their contents here.
 
-## s22-6. Several drafted role rules assumed capabilities the engine does not provide.
+## 1175. Several drafted role rules assumed capabilities the engine does not provide.
 
 State: corrected in the shipped prose in s22.
 
@@ -17292,7 +17292,7 @@ The engine does not enforce frozen tests, hide review authorship or store execut
 The default instructions now route restricted work to the project lead and mark unavailable evidence as unknown.
 These capabilities were not added in this unit.
 
-## s22-7. Adapter user-message echoes could expose injected instructions in the thread.
+## 1176. Adapter user-message echoes could expose injected instructions in the thread.
 
 State: fixed in s22.
 
@@ -17300,9 +17300,9 @@ The adapter can echo the first prompt in arbitrarily split user-message chunks.
 The runner now removes its exact ephemeral instruction prefix from live user echoes before redaction and event publication.
 The caller's echoed prompt remains visible.
 Replay updates retain their existing behavior and write no thread items.
-Round 2 also suppresses changed echoes after recognizing the engine header, as recorded in s22-20.
+Round 2 also suppresses changed echoes after recognizing the engine header, as recorded in 1189.
 
-## s22-8. The first instruction store used syntax the Node.js strip-only loader cannot run.
+## 1177. The first instruction store used syntax the Node.js strip-only loader cannot run.
 
 State: fixed in s22.
 
@@ -17310,7 +17310,7 @@ A constructor parameter property passed through the test transpiler but failed i
 The store now uses explicit fields and constructor assignments.
 The package test executes the module with Node.js and loads its adjacent Markdown resources from a path containing spaces.
 
-## s22-9. The existing foundry guide still suggests owner-only reads to agents.
+## 1178. The existing foundry guide still suggests owner-only reads to agents.
 
 State: open.
 
@@ -17319,7 +17319,7 @@ Those commands are restricted to the owner.
 The new default instructions do not send agents to these commands.
 Rewriting the older foundry workflow guidance is outside this unit.
 
-## s22-10. The first default lead base omitted an existing lead-advice requirement.
+## 1179. The first default lead base omitted an existing lead-advice requirement.
 
 State: fixed in s22.
 
@@ -17328,7 +17328,7 @@ The first copied lead base did not say this explicitly.
 The shipped base now preserves that instruction and the existing post-acknowledgement requirement.
 The assertions remain unchanged.
 
-## s22-11. The API initially hid the new fixed instruction-limit errors.
+## 1180. The API initially hid the new fixed instruction-limit errors.
 
 State: fixed in s22.
 
@@ -17337,7 +17337,7 @@ The authenticated transport reduced it to its generic refusal because the new re
 The transport now preserves the three fixed instruction read and size errors.
 It still rejects arbitrary failure text.
 
-## s22-12. Existing prompt tests expected the old instruction-free first turn.
+## 1181. Existing prompt tests expected the old instruction-free first turn.
 
 State: corrected in s22.
 
@@ -17347,9 +17347,9 @@ Later prompts and existing-session replays retain their exact previous expectati
 The capacity tests now compare the full composed advice for recognized instruction names, including unrecognized authority prefixes.
 Their authority and capacity-limit assertions remain unchanged.
 No assertion or wait was weakened.
-Round 2 removes the instruction block's delivery identifier and restores generic advice for unknown kinds, as recorded in s22-18 and s22-21.
+Round 2 removes the instruction block's delivery identifier and restores generic advice for unknown kinds, as recorded in 1187 and 1190.
 
-## s22-13. The first regression fixtures contained incorrect helper calls and expectations.
+## 1182. The first regression fixtures contained incorrect helper calls and expectations.
 
 State: corrected in s22.
 
@@ -17365,7 +17365,7 @@ Round 2 fixtures initially used an invalid legacy role-file hash and looked for 
 Both fixtures now follow the stored contracts.
 Two new test helpers also needed explicit type annotations for the existing restart environment and public reply.
 
-## s22-14. Two new pure tests omitted the required rebuild-hook registration.
+## 1183. Two new pure tests omitted the required rebuild-hook registration.
 
 State: fixed in s22.
 
@@ -17373,7 +17373,7 @@ The whole-suite registration guard found the instruction store and echo tests wi
 Both now register the existing hook with `noLog: true` because they create no event log.
 The discovery guard remains unchanged.
 
-## s22-15. Browser asset rewriting broke Node resource paths in web tests.
+## 1184. Browser asset rewriting broke Node resource paths in web tests.
 
 State: fixed in s22.
 
@@ -17386,7 +17386,7 @@ Round 2 removes the global-constructor stub because it did not exercise the brow
 Removing the Node.js constructor alias makes the real browser test fail.
 The existing web tests and their assertions remain unchanged.
 
-## s22-16. Instruction composition could prevent a healthy session from reloading.
+## 1185. Instruction composition could prevent a healthy session from reloading.
 
 State: fixed in s22 round 2.
 
@@ -17396,7 +17396,7 @@ New sessions still require a valid composition.
 Saving named role-file advice now checks each applicable composition before planning its event.
 An oversized composition returns the existing typed refusal.
 
-## s22-17. A failed first turn could lose its role instructions on retry.
+## 1186. A failed first turn could lose its role instructions on retry.
 
 State: fixed in s22 round 2.
 
@@ -17406,7 +17406,7 @@ Capacity outcomes, usage pauses, sign-in failures, prompt errors and cancellatio
 A failed transport send also retains it.
 Fake-adapter tests cover every prompt outcome and both cancellation protocol versions.
 
-## s22-18. The engine instruction label misidentified its source and changed replay acceptance.
+## 1187. The engine instruction label misidentified its source and changed replay acceptance.
 
 State: fixed in s22 round 2.
 
@@ -17416,14 +17416,14 @@ The engine block contains no delivery identifier.
 It therefore adds no acceptance proof to replayed owner text.
 Restart tests cover saved first-prompt history before and after acceptance.
 
-## s22-19. Missing override files produced unnecessary warnings.
+## 1188. Missing override files produced unnecessary warnings.
 
 State: fixed in s22 round 2.
 
 A missing file or override directory is the normal default and is now silent.
 Unsafe, unreadable and oversized overrides retain a fixed diagnostic without supplied paths or content.
 
-## s22-20. A changed adapter echo could expose instruction text in the thread.
+## 1189. A changed adapter echo could expose instruction text in the thread.
 
 State: fixed in s22 round 2.
 
@@ -17432,7 +17432,7 @@ A malformed closing marker withholds the remaining echo.
 Chunk-boundary tests cover changed text and markers.
 A real service test checks thread privacy with normalized line endings.
 
-## s22-21. Mismatched role kinds selected inappropriate prose and owner advice.
+## 1190. Mismatched role kinds selected inappropriate prose and owner advice.
 
 State: fixed in s22 round 2.
 
@@ -17442,7 +17442,7 @@ The role table includes `lead:builder`, `worker:build-lead`, `chef:builder` and 
 The capacity test again checks that unknown kinds receive generic advice.
 Permission and capacity checks remain unchanged.
 
-## s22-22. Several shipped instructions omitted required fields or contradicted their delivery format.
+## 1191. Several shipped instructions omitted required fields or contradicted their delivery format.
 
 State: fixed in s22 round 2.
 
@@ -17454,7 +17454,7 @@ Project leads receive self-contained approval rules after a fresh resume.
 Those rules keep ordinary end-result confirmation separate from the two project permissions.
 Contract checks cover all fifteen files and the required report and wait fields.
 
-## s22-23. A failed composition also withheld orientation identity and roster.
+## 1192. A failed composition also withheld orientation identity and roster.
 
 State: fixed in s22 round 2.
 
@@ -17463,14 +17463,14 @@ It also substitutes that note when the encoded advice would exceed the reply bou
 The existing refusal remains necessary if the roster and metadata alone exceed 256 kibibytes.
 The roster is not silently truncated.
 
-## s22-24. The global URL stub did not test the browser resource-path workaround.
+## 1193. The global URL stub did not test the browser resource-path workaround.
 
 State: fixed in s22 round 2.
 
 The trivial stub test has been removed.
 The real browser-environment resource test fails without the Node.js URL constructor alias.
 
-## s22-25. Override loading requires the descriptor filesystem and a real home directory.
+## 1194. Override loading requires the descriptor filesystem and a real home directory.
 
 State: documented limitation in s22 round 2.
 
@@ -17479,7 +17479,7 @@ The engine falls back to its shipped files.
 A missing descriptor filesystem has a distinct diagnostic.
 The constraints are now stated in `docs/roles.md`.
 
-## s22-26. Agents running as the engine's user can write future role instructions.
+## 1195. Agents running as the engine's user can write future role instructions.
 
 State: open, pending the planned agent sandbox.
 
@@ -17489,7 +17489,7 @@ This is the same file-access exposure as `~/.lgtm/workflows`.
 Safe file opening does not isolate programs that run as the same user.
 The exposure is now stated in `docs/roles.md`.
 
-## s22-27. Compaction repeats instruction costs and harness compaction is not detected.
+## 1196. Compaction repeats instruction costs and harness compaction is not detected.
 
 State: documented limitation in s22 round 2; harness compaction detection remains open.
 
@@ -17498,7 +17498,7 @@ The restored text costs roughly 10 kibibytes for a default lead and can reach th
 A compaction started by the harness itself is not detected.
 These limits are now stated in `docs/roles.md`.
 
-## s22-28. Older integration fixtures expected behavior changed by the second review.
+## 1197. Older integration fixtures expected behavior changed by the second review.
 
 State: corrected in s22 round 2.
 
@@ -17512,7 +17512,7 @@ Redaction of its replacement markers now exceeds the composition bound.
 The test requires that single-role refusal and spreads the same repetitions across ten roles for its admitted fixture.
 It still checks exact content, one redaction at storage, the full 64 kibibyte bound and refusal of one additional byte.
 
-## s22-29. The sign-in process-group check failed in a full run and passed alone.
+## 1198. The sign-in process-group check failed in a full run and passed alone.
 
 State: open, load-sensitive test failure recorded in s22 round 2.
 
@@ -17523,3 +17523,173 @@ It also passed in the earlier whole-suite run.
 The task classifies a full-run failure that passes alone as load.
 Neither the sign-in implementation nor its test changed in this unit.
 No timeout or assertion was relaxed.
+
+## 1125. The live merge review discarded fresh status evidence.
+
+State: fixed on 2026-11-16. This is the same fault as issue 1041.
+
+The status read mapped the stored review without its separate fresh evidence.
+The live read now passes fresh evidence to the typed review mapping.
+The dialog uses its existing passing, failed, stale, and missing states.
+A matrix test covers all 25 combinations of stored and fresh evidence.
+The real-engine browser journey reports passing evidence while the dialog is open.
+
+## 1126. A pressed merge approval could record a different decision from its rendered label.
+
+State: fixed on 2026-11-16.
+
+The approval handler read the latest store after the button had been rendered.
+A store refresh could change the decision before that button received its click.
+The button now captures its displayed decision and reviewed heads.
+The engine still checks the reviewed heads when it handles the approval.
+A regression test replaces the stored evidence before pressing the rendered button.
+
+## 1127. Service settings displayed controls without execution paths.
+
+State: fixed on 2026-11-16. This is the website part of issue 802.
+
+The website displayed the need-to-know default and the agent-credit removal setting.
+It also displayed the Git message model and three unbuilt workflow defaults.
+Standing permission rules stored a flag without enforcing permissions.
+The build now removes these controls with the same checked row-removal helper as Project settings.
+The empty Git messages section and Approvals heading are absent too.
+The standalone mock retains its sample controls.
+The browser journey checks their absence and reads back the retained role settings from the engine.
+
+## 1128. The service update button only displayed a not-connected notice.
+
+State: fixed on 2026-11-16.
+
+The About section displayed an Update the service button without an execution path.
+The button changed no engine state.
+The build now omits that button.
+The existing manual update commands remain visible.
+The browser journey checks that the button is absent.
+
+## 1129. Watching or taking over an agent terminal has no engine attachment path.
+
+State: open. This is issue 906, checked on 2026-11-16.
+
+The project terminal opens a separate owner shell.
+Watching an interactive agent needs an association with its existing terminal and an authenticated output transport.
+Taking over also needs exclusive keyboard ownership and a handoff back to the agent.
+An Agent Client Protocol agent has no terminal.
+Its conversation remains available through the thread.
+The disabled controls and their existing hints remain accurate.
+This task did not build these features.
+
+## 1130. A project terminal has no resumed attachment protocol.
+
+State: open. This is issue 907, checked on 2026-11-16.
+
+The session belongs to its opening owner connection.
+The output stream permits one attachment.
+Its attached flag stays set after detachment.
+The disconnect grace period does not provide a resumed attachment.
+Reconnect would need an engine protocol for a live session and explicit connection ownership.
+An exited or cleaned-up shell cannot resume.
+An owner shell remains meaningful when the project's agents use the Agent Client Protocol.
+The disabled Reconnect control and its existing hint remain accurate.
+This task did not build reconnect.
+
+## 1131. A broader Service settings journey still clicked the removed standing-rules control.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the journey and its service support file.
+I ran the unchanged journey at studio.spec.ts:792.
+It timed out while clicking Standing permission rules.
+The journey now asserts that the switch is absent.
+The orchestrator approved removing its dependent standingRules expectation by name.
+Every other assertion remains.
+I read the tests and journeys found by label and selector searches for the removed controls.
+I found no other live journey that activated a removed control.
+
+## 1132. Passing evidence for a newer head appeared current for an older review.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the status handler and the typed review mapper.
+The status handler evaluates evidence against the checkout's current head.
+The open review can still name an earlier head.
+I ran a new regression test before changing the mapper.
+It showed current passing evidence for the wrong reviewed head.
+The mapper now treats a report for a different reviewed head as stale.
+It uses the dialog's existing stale wording and approval choice.
+
+## 1133. The reviewer defaults have storage but no execution consumer.
+
+State: open. The owner must decide whether to hide these controls.
+
+I read the Default reviewers and Reviewer from another vendor controls.
+I searched the engine source for reviewDefaults.
+I found its storage in the project settings command.
+I found no execution consumer.
+The controls remain visible because round 2 requests a record without a fix.
+
+## 1134. Standing permission enforcement will need its website switch restored.
+
+State: open. Restore the control in the same change that builds enforcement.
+
+I read standingRulesEnabled in the stall-watch switch module.
+It treats an absent value as enabled.
+I searched the engine source and found no caller today.
+Hiding the website switch does not change permission execution today.
+A stored true value or an absent value would enable the flag when a future consumer calls it.
+The owner needs the website switch when enforcement is built.
+The roles.settings.set request can still change the stored flag.
+Round 2 does not change the default or build enforcement.
+
+## 1135. The engine records the client's approval decision without checking evidence.
+
+State: open. Round 2 records this behavior without changing it.
+
+I read admitMainReview and the approval planner.
+The engine checks the owner, confirmation, review identity, and reviewed pair.
+The Git operation checks the actual checkout heads before merging.
+The planner stores the client's decision value.
+It does not check whether the current evidence supports that decision.
+A change of evidence alone does not cause an engine refusal.
+The website's captured decision preserves what the pressed button showed.
+
+## 1136. The Git journey lost its passing-at-open review case.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the Git browser journey.
+Round 1 replaced its passing-at-open case with evidence arriving while the dialog was open.
+The journey now keeps the live-arrival checks and prepares another review after the reports exist.
+It checks plain approval in both cases.
+It also checks the passing evidence stored with the final merged review.
+
+## 1137. The review tests omitted a request-level stale-pair refusal.
+
+State: fixed in round 2 on 2026-11-16.
+
+I read the existing refusal test and admitMainReview.
+The existing test returned a decided review with a refused outcome.
+It did not reject the approval request.
+I ran a new regression test that rejects the request with the admission refusal message.
+The existing error notice shows the message.
+The review stays open and the approval and Cancel controls remain enabled.
+No production change was needed for this error path.
+
+## 1138. The email journey resolved its sample fixture from the working directory.
+
+State: fixed in round 2 on 2026-11-16.
+
+I ran the email journey at studio.spec.ts:979 alone from packages/web.
+It failed before opening the page because packages/web/design/mock does not exist.
+I read its sample-copy path and the other helpers' module-relative paths.
+The email helper now resolves design/mock relative to its own source file.
+The journey's assertions and waits remain unchanged.
+
+## 1139. Six browser journeys failed in the full check of the controls unit and passed alone.
+
+The full check ran while three other builders were running their own test suites on the same computer.
+The journeys were `git.spec.ts:183`, `git.spec.ts:233`, `git.spec.ts:316`, `new-project.spec.ts:283`, `studio.spec.ts:902` and `studio.spec.ts:1132`.
+The journey at `studio.spec.ts:902` reached its six minute limit.
+Each of the six passed when it was run alone with one worker.
+This is the same load sensitivity that issues 966, 1014, 1044, 1066, 1079 and 1122 record.
+
+State: open. Recorded on 2026-11-16.
