@@ -244,8 +244,8 @@ async function writeSettings(patch, current) {
     if (patch.publicAddress) settings.publicAddress = patch.publicAddress; else delete settings.publicAddress;
     await request('client.web.settings.set', { settings });
   } else { refuse(); return; }
-  // Navigation can invalidate a read already in flight. Finish a current
-  // readback before the next queued write spreads these service records.
+  // Finish a current readback before the next queued write spreads these
+  // service records. Session loss can still invalidate a read in flight.
   while (current() && !await loadService('settings')) {}
 }
 export const saveCarrier = (form) => run('notifications', async () => {

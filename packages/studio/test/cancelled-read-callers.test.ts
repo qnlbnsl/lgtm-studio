@@ -48,14 +48,14 @@ it('B: accountRead releases and admits a fresh account read', async () => {
   f = await fixture(); await settled(f.chat.readAccountNames()); expect(f.chat.status().accountRead).toBeNull()
   await settled(f.chat.readAccountNames()); expect(f.calls.filter(c => c.tag === 'accounts')).toHaveLength(2)
 })
-it('B: a thread releases its busy key and reopens after leaving during reconnect', async () => {
+it('B: a thread releases its busy key on connection close and reopens', async () => {
   f = await fixture(); const stop = f.chat.watchThread('a'); expect(f.chat.busy('thread:a')).toBe(true)
   stop(); await f.cancel(); expect(f.chat.busy('thread:a')).toBe(false)
   const stopAgain = f.chat.watchThread('a'); await f.cancel(); stopAgain()
   expect(f.calls.filter(c => c.tag === 'client.thread')).toHaveLength(2); expect(f.toasts).toEqual([])
 })
-it('watchRoster releases its polling timer after cancellation and cleanup', async () => {
-  vi.useFakeTimers(); f = await fixture(); const stop = f.chat.watchRoster('p'); await f.cancel(); stop()
+it('watchRoster polling belongs to unwatch, independently of read cancellation', async () => {
+  vi.useFakeTimers(); f = await fixture(); const baseline = vi.getTimerCount(); const stop = f.chat.watchRoster('p'); expect(vi.getTimerCount()).toBe(baseline + 1); await f.cancel(); expect(vi.getTimerCount()).toBe(baseline + 1); stop(); expect(vi.getTimerCount()).toBe(baseline)
   const n = f.calls.length; await vi.advanceTimersByTimeAsync(10000); expect(f.calls).toHaveLength(n); expect(f.toasts).toEqual([])
 })
 for (const [name, key, start] of [
@@ -94,10 +94,13 @@ const serviceCases: [string, string, (f: any) => Promise<unknown>][] = [
   ['dismissOffer', 'notifications', f => f.git.dismissOffer()],
 ]
 for (const [name, key, start] of serviceCases) it(`service ${name} releases ${key} after a cancelled waiting read`, async () => {
-  f = await fixture(); const work = start(f); await flush(); expect(f.git.busy(key)).toBe(true)
+  f = await fixture(); const work = start(f)
+  if (name === 'retryAlert') expect(f.git.status().retryPending).toMatchObject({ alertId: 'alert' })
+  await flush(); expect(f.git.busy(key)).toBe(true)
+  if (name === 'retryAlert') expect(f.git.status().retryPending).toBeUndefined()
   await settled(work); expect(f.git.busy(key)).toBe(false); expect(f.git.status().settingsQueue.running).toBe(false); expect(f.toasts).toEqual([])
 })
-it('A: leaving Settings clears read-service and its retry timer, then Notifications loads', async () => {
+it('A: Settings cleanup stops retries; connection close releases read-service, then Notifications loads', async () => {
   vi.useFakeTimers(); f = await fixture(); const timer = vi.spyOn(globalThis, 'setTimeout'); const stop = f.git.openScreen('settings')
   void f.git.refreshScreen(); expect(f.git.busy('read-service')).toBe(true)
   stop(); await f.cancel(); expect(f.git.busy('read-service')).toBe(false)
@@ -110,7 +113,27 @@ for (const name of ['folder', 'search', 'open', 'save', 'commit', 'refresh']) it
   f = await fixture(); const m = f.model
   if (name === 'save' || name === 'commit') { f.online(); await m.open('file'); if (name === 'save') m.edit('new'); f.waiting() }
   const work = name === 'folder' ? m.folder('') : name === 'search' ? m.search('query') : name === 'open' ? m.open('file') : name === 'save' ? m.save() : name === 'commit' ? m.commit('message') : m.refresh()
-  await flush(); await settled(work)
+  await flush()
+  if (name === 'folder') expect(m.folders[''].loading).toBe(true)
+  else if (name === 'search') expect(m.searching).toBe(true)
+  else if (name === 'open') expect(m.opened.loading).toBe(true)
+  else if (name === 'save') expect(m.saving).toBe(true)
+  else if (name === 'commit') expect(m.committing).toBe(true)
+  else { expect(m.refreshState().refreshing).toBe(work); expect(m.refreshState().requested).toBe(false) }
+  await settled(work)
+  if (name === 'refresh') expect(m.refreshState().refreshing).toBeNull()
   expect(m.searching || m.saving || m.committing || m.opened?.loading || Object.values(m.folders).some((s: any) => s.loading)).toBeFalsy()
   f.online(); await m.refresh(); expect(f.toasts).toEqual([]); expect(m.notice).not.toContain('cancelled')
+})
+
+it('files refresh coalesces requested work, then close clears its throttle timer and wakes it', async () => {
+  vi.useFakeTimers(); f = await fixture(); const m = f.model, baseline = vi.getTimerCount()
+  const work = m.refresh(); await flush()
+  expect(m.refreshState().refreshing).toBe(work); expect(m.refreshState().requested).toBe(false)
+  expect(m.refresh()).toBe(work); expect(m.refreshState().requested).toBe(true)
+  await f.cancel()
+  expect(m.refreshState().timer).toBeDefined(); expect(m.refreshState().requested).toBe(false)
+  expect(vi.getTimerCount()).toBe(baseline + 1)
+  m.close(); await work
+  expect(vi.getTimerCount()).toBe(baseline); expect(m.refreshState().refreshing).toBeNull()
 })

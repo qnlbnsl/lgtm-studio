@@ -16832,7 +16832,8 @@ State: fixed in s18-smallfix.
 Service, file, board, chat, mock, and settings readers could request data before the connection became live.
 The shared connection now waits for an active attempt before dispatching named reads.
 A failed attempt still produces the existing connection notice.
-Navigation, page closure, and session loss cancel waiting reads.
+Round 4 removed navigation and page closure from read cancellation because persistent panels survive route changes.
+Waiting reads now end on caller cancellation, session loss, connection closure, or the connection attempt’s result.
 Ordinary failures and unexpected transport failures both release waiting reads with the existing sentence.
 Owner writes keep their existing immediate behaviour.
 The automatic Git controller retains its existing admission policy.
@@ -16860,11 +16861,13 @@ The lifecycle regressions check its label alongside the lists and counts.
 
 ## s18-5. Navigation could win immediately after a read was released.
 
-State: fixed in s18-smallfix.
+State: superseded in s18-smallfix round 4.
 
-The connection could become live and resolve a waiting read just before navigation cancelled its page.
-The request continuation now checks cancellation again before dispatch.
-A regression test changes the page during the live notification and verifies that no read is sent.
+The earlier design cancelled reads when their route changed.
+That design also dropped reads owned by panels that survived navigation.
+Round 4 removed the page lifetime rather than adding another route check.
+The caller’s own abort signal is still checked before dispatch.
+Existing reader guards handle late replies.
 
 ## s18-6. Question availability hid notification history.
 
@@ -16877,16 +16880,15 @@ Three regression cases cover these combinations after the asker stops.
 
 ## s18-7. Route events cancelled waiting reads on the current screen.
 
-State: fixed in s18-smallfix round 2.
+State: superseded in s18-smallfix round 4.
 
-A query change cancelled the screen’s waiting reads.
-A read started synchronously after navigation was cancelled again by the later route event.
-The shared lifetime now compares the route path without its query.
-An event for the current path does not replace the lifetime signal.
-Round 3 corrected the cancellation boundary to reject with a mark, so each caller can release its state.
-Shared error presenters suppress that mark.
-Actual connection failures and owner writes keep their existing behaviour.
-The separate cancellation checks added to the board and chat readers were removed.
+Round 2 compared route paths without their queries to limit accidental cancellation.
+Round 4 removed that route lifetime entirely because persistent panels must keep their reads across navigation.
+The shared connection still waits for an active connection attempt.
+Every cancelled read still rejects with its mark so that finalizers release state.
+Shared presenters drop that mark.
+The caller’s own signal, sign-out, session expiry and connection close retain cancellation.
+Owner writes retain their existing admission behaviour.
 
 ## s18-8. Foreground serve confused refusals, later stops, and failed shutdowns.
 
@@ -17010,35 +17012,39 @@ Regressions cover normal teardown, a killed worker, early parent death, and serv
 
 ## s18-19. A same-screen address normalization cancelled Harnesses reads.
 
-State: fixed in s18-smallfix round 3.
+State: superseded in s18-smallfix round 4.
 
 The application normalizes the legacy Subscriptions address to the Harnesses address.
-Both addresses render the same screen.
-Extending page cancellation through dispatch exposed a read that began before normalization and was then cancelled.
-The screen did not remount to start a replacement read.
-The shared lifetime now gives both addresses the same screen identity.
-A failing lifecycle test and the real service browser journey reproduce the gap.
+Round 3 added a route pattern to stop that change from cancelling the screen’s reads.
+Other persistent panels had the same problem across ordinary project tabs.
+Round 4 removed the route pattern together with the whole page lifetime.
+Both waiting and sent reads now survive address changes.
 
 ## s18-20. A cancelled file open could render an absent file.
 
-State: fixed in s18-smallfix round 3.
+State: open after the wording restoration in s18-smallfix round 4.
 
-Suppressing cancellation text left a settled file open without a file or a visible error.
-The renderer then tried to read the absent file’s kind.
-The file body now stays empty when there is no file to render after settlement.
-A mounted regression proves that Reading ends without an error, editor or exception.
-
+Round 3 avoided an absent-file exception by showing an empty pane after a cancelled open.
+That empty pane changed the existing website state without approval.
+Round 4 restores the original Reading state when there is neither a file nor a visible error.
+Navigation no longer causes this state because it no longer cancels reads.
+A remaining session cancellation can settle a read while its view still says Reading.
+The view keeps its previous wording until a later read or session transition replaces it.
+The mounted regression verifies that it neither renders an empty pane nor accesses an absent file.
+No new wording or retry mechanism was added.
 
 ## s18-21. A settled terminal settings read still looked busy.
 
-State: fixed in s18-smallfix round 3.
+State: open after the wording restoration in s18-smallfix round 4.
 
-The terminal settings promise was released after cancellation.
-The empty-session renderer still chose Reading from the absent settings value alone.
-It now also checks whether the read has settled.
-The read finalizer notifies the renderer after clearing its loading promise.
-A regression renders the actual terminal view before and after a cancelled read.
-
+Round 3 changed unknown terminal settings to show No sessions are open after a read settled.
+That changed the existing website wording without approval.
+Round 4 restores Reading terminal settings whenever the setting is unknown.
+Navigation no longer cancels the settings read.
+A genuine failure or session cancellation can still leave the setting unknown after its promise settles.
+The existing connection effect can retry when the connection becomes live.
+The regression verifies that the loading promise releases while the previous Reading wording remains.
+No replacement wording was invented.
 
 ## s18-22. A blocked startup preload could hide a test ownership watcher.
 
@@ -17071,3 +17077,37 @@ State: fixed in s18-smallfix round 3.
 The engine’s discovery guard found the new ownership test without its required rebuild registration.
 The test now registers the existing no-log case because it launches external services rather than opening an event log in its own scope.
 The discovery assertion remains unchanged.
+
+## s18-25. Navigation discarded reads owned by persistent project panels.
+
+State: fixed in s18-smallfix round 4.
+
+The shared page signal cancelled the docked thread, mocks and approval checks when the project tab changed.
+Those readers did not remount, so their cancelled data was never replaced.
+The page signal and its build-time injection were removed.
+Waiting reads still wait for the connection, and sent reads still finish across navigation.
+Existing Files and Git guards prevent a departed view’s late replies from updating the current view.
+The navigation tests cover waiting and sent thread reads, mocks, approval checks and Files query changes.
+
+## s18-30. The cancellation inventory overstated several assertions.
+
+State: fixed in s18-smallfix round 4.
+
+The roster polling timer belongs to unwatch rather than read cancellation.
+Its table row and test now state and prove that distinction.
+The Files cases assert their busy state before cancellation.
+The refresh cases also inspect coalescing, the refresh promise, the requested flag and the throttle timer’s cleanup.
+The retryAlert case checks its receipt before write completion and after the readback begins.
+Git owner-action rows now point to the Git test file.
+Write-only caller rows are explicitly marked as untested at those callers.
+
+## s18-31. A session check could end a session without settling a sent read.
+
+State: fixed in s18-smallfix round 4.
+
+A rejected session check ended waiting reads but left an independently pending sent read alive.
+The admitted-read expiry regression exposed this while adapting the cancellation causes.
+Sent reads now also use the session’s read cancellation signal.
+That signal ends when the shared read state ends and is renewed for a later connection attempt.
+It has no navigation listener and is never attached to an owner write.
+A regression proves that the sent read settles with the mark while an admitted write still completes normally.

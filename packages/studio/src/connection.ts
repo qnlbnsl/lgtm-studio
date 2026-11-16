@@ -50,7 +50,6 @@ export type Write = (patch: StorePatch) => void
 
 export interface RequestOptions {
   readonly signal?: AbortSignal
-  readonly readSignal?: AbortSignal
   readonly onRequestId?: (id: string) => void
 }
 
@@ -137,9 +136,13 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
   let snapshotNotice: string | undefined
 
   let readState: 'connecting' | 'live' | 'failed' | 'ended' = 'connecting'
+  // Session loss settles sent reads too. Navigation has no shared lifetime.
+  let sessionReads = new AbortController()
   const readWaiters = new Set<() => void>()
   const setReadState = (state: typeof readState) => {
     readState = state
+    if (state === 'ended') sessionReads.abort()
+    else if (state === 'connecting' && sessionReads.signal.aborted) sessionReads = new AbortController()
     for (const wake of [...readWaiters]) wake()
   }
   const readReady = (signal?: AbortSignal): Promise<void> => new Promise((resolve, reject) => {
@@ -374,15 +377,14 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
     },
     async request(tag, payload, options = {}) {
       const reading = isReadRequest(tag, payload)
-      const signals = [options.signal, ...(reading ? [options.readSignal] : [])].filter((s): s is AbortSignal => s !== undefined)
-      const readSignal = signals.length ? AbortSignal.any(signals) : undefined
+      const callerSignal = options.signal
       const cancelledRead = () => Object.assign(new DOMException('The read was cancelled.', 'AbortError'), { cancelledRead: true })
       if (reading) {
         try {
-          await readReady(readSignal)
-          readSignal?.throwIfAborted()
+          await readReady(callerSignal)
+          callerSignal?.throwIfAborted()
         } catch (error) {
-          if (readSignal?.aborted || error instanceof DOMException && error.name === 'AbortError') {
+          if (callerSignal?.aborted || error instanceof DOMException && error.name === 'AbortError') {
             throw cancelledRead()
           }
           throw error
@@ -416,7 +418,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
       const id = retryKey === undefined ? requestId() : retryIds.get(retryKey) ?? requestId()
       if (retryKey !== undefined) retryIds.set(retryKey, id)
       options.onRequestId?.(id)
-      const signal = readSignal ? AbortSignal.any([controller!.signal, readSignal]) : controller!.signal
+      const signal = AbortSignal.any([controller!.signal, ...(reading ? [sessionReads.signal] : []), ...(callerSignal ? [callerSignal] : [])])
       try {
         const result = await Effect.runPromise(invoke({ ...payload, ...(secret ? { value: secret } : {}), requestId: id }).pipe(Effect.result), { signal })
         if (result._tag === "Failure") {

@@ -1,5 +1,3 @@
-import { readFileSync } from 'node:fs'
-import { readRequestsSource } from '../scripts/readRequestsSource.ts'
 import { isReadRequest } from '../src/readRequests.ts'
 import { afterEach, expect, it, vi } from 'vitest'
 import * as Effect from 'effect/Effect'
@@ -13,7 +11,7 @@ afterEach(() => { connections.splice(0).forEach(c => c.close()); vi.useRealTimer
 function deferred<A>() { let resolve!: (value: A) => void; const promise = new Promise<A>(done => { resolve = done }); return { promise, resolve } }
 function rig(observe: (patch: StorePatch) => void = () => {}) {
   const opening = deferred<Client>(), recovery = deferred<Client>(), lost = deferred<void>()
-  let attempts = 0, dispatched = 0, streams = 0
+  let attempts = 0, dispatched = 0, streams = 0, expired = false
   const state: StorePatch = {}
   const client = {
     'client.snapshot': () => Effect.succeed(engineSnapshot),
@@ -22,10 +20,10 @@ function rig(observe: (patch: StorePatch) => void = () => {}) {
     'client.web.settings': () => Effect.sync(() => { dispatched++; return { terminalEnabled: true } }),
   } as unknown as Client
   const c = engineConnection({ location: { protocol: 'http:', host: '127.0.0.1:12345' }, debug() {},
-    fetch: (async () => new Response(null, { status: 204 })) as typeof fetch,
+    fetch: (async () => new Response(null, { status: expired ? 401 : 204 })) as typeof fetch,
     connect: (() => { attempts++; return Effect.promise(() => attempts === 1 ? opening.promise : recovery.promise) }) as typeof connect })
   connections.push(c); c.open(p => { Object.assign(state, p); observe(p) })
-  return { c, state, client, opening, recovery, lost, dispatched: () => dispatched, attempts: () => attempts }
+  return { c, state, client, opening, recovery, lost, dispatched: () => dispatched, attempts: () => attempts, expire: () => { expired = true } }
 }
 
 it('waits through the initial connection and snapshot before dispatching a read', async () => {
@@ -41,12 +39,13 @@ it('waits through the initial connection and snapshot before dispatching a read'
   expect(h.dispatched()).toBe(1)
 })
 
-for (const cancel of ['page', 'request', 'close', 'sign out'] as const) it(`drops a waiting read on ${cancel}`, async () => {
+for (const cancel of ['request', 'close', 'sign out', 'expiry'] as const) it(`drops a waiting read on ${cancel}`, async () => {
   const h = rig(), abort = new AbortController()
-  const result = h.c.request('client.web.settings', {}, cancel === 'page' ? { readSignal: abort.signal } : { signal: abort.signal }).catch(e => e)
+  const result = h.c.request('client.web.settings', {}, { signal: abort.signal }).catch(e => e)
   await vi.waitFor(() => expect(h.attempts()).toBe(1))
   if (cancel === 'close') h.c.close()
   else if (cancel === 'sign out') await h.c.signOut()
+  else if (cancel === 'expiry') { h.expire(); await h.c.reconnect() }
   else abort.abort()
   expect(await result).toMatchObject({ name: 'AbortError', cancelledRead: true })
   h.opening.resolve(h.client)
@@ -96,18 +95,6 @@ it('reports loss, then waits during the next connection attempt', async () => {
   expect(h.dispatched()).toBe(1)
 })
 
-it('attaches a page signal in the live build and refuses a stale replacement', async () => {
-  const source = readFileSync('design/mock/js/engine.js', 'utf8')
-  expect(readRequestsSource(source)).toContain('readOptions(options)')
-  expect(() => readRequestsSource(source.replace('return current.request(tag, payload, options);', ''))).toThrow('Read lifecycle integration')
-  const { readOptions } = await import('../../../design/mock/js/live/reads.js' as string)
-  const first = readOptions({}).readSignal
-  window.history.replaceState({}, '', '#/settings')
-  window.dispatchEvent(new HashChangeEvent('hashchange'))
-  expect(first.aborted).toBe(true)
-  expect(readOptions({}).readSignal.aborted).toBe(false)
-})
-
 it('classifies the live readers and keeps owner actions immediate', () => {
   for (const tag of [
     'client.web.settings', 'client.service.version', 'client.workflows.list', 'client.workflows.read',
@@ -125,25 +112,39 @@ it('classifies the live readers and keeps owner actions immediate', () => {
   }
 })
 
-it('drops a queued read if navigation wins just as the connection becomes live', async () => {
-  const page = new AbortController()
-  const h = rig(patch => { if (patch.conn?.status === 'live') page.abort() })
-  const reply = h.c.request('client.web.settings', {}, { readSignal: page.signal }).catch(e => e)
+it('honours the caller signal when it aborts as the connection becomes live', async () => {
+  const request = new AbortController()
+  const h = rig(patch => { if (patch.conn?.status === 'live') request.abort() })
+  const reply = h.c.request('client.web.settings', {}, { signal: request.signal }).catch(e => e)
   h.opening.resolve(h.client)
-  expect(((await reply) as Error).name).toBe('AbortError')
+  expect(await reply).toMatchObject({ name: 'AbortError', cancelledRead: true })
   expect(h.dispatched()).toBe(0)
 })
 
-for (const cancel of ['page', 'request', 'close', 'sign out'] as const) it(`settles an admitted read with its cancellation mark on ${cancel}`, async () => {
+for (const cancel of ['request', 'close', 'sign out', 'expiry'] as const) it(`settles an admitted read with its cancellation mark on ${cancel}`, async () => {
   const h = rig(), abort = new AbortController(); let sent = false
   ;(h.client as any)['client.web.settings'] = () => { sent = true; return Effect.never }
   h.opening.resolve(h.client)
   await vi.waitFor(() => expect(h.state.conn?.status).toBe('live'))
-  const outcome = h.c.request('client.web.settings', {}, cancel === 'page' ? { readSignal: abort.signal } : { signal: abort.signal }).catch(e => e)
+  const outcome = h.c.request('client.web.settings', {}, { signal: abort.signal }).catch(e => e)
   await vi.waitFor(() => expect(sent).toBe(true))
   if (cancel === 'close') h.c.close()
   else if (cancel === 'sign out') await h.c.signOut()
+  else if (cancel === 'expiry') { h.expire(); await h.c.reconnect() }
   else abort.abort()
   let error: any; void outcome.then(e => { error = e })
   await vi.waitFor(() => expect(error).toMatchObject({ name: 'AbortError', cancelledRead: true }))
+})
+
+it('ending the session cancels a sent read without changing an admitted owner write', async () => {
+  const h = rig(), written = deferred<object>()
+  ;(h.client as any)['client.web.settings'] = () => Effect.never
+  ;(h.client as any)['project.settings.set'] = () => Effect.promise(() => written.promise)
+  h.opening.resolve(h.client); await vi.waitFor(() => expect(h.state.conn?.status).toBe('live'))
+  const reading = h.c.request('client.web.settings', {}).catch(e => e)
+  let settled = false
+  const writing = h.c.request('project.settings.set', { settings: {} }).then(value => { settled = true; return value })
+  await Promise.resolve(); h.expire(); h.c.reconnect()
+  expect(await reading).toMatchObject({ cancelledRead: true }); expect(settled).toBe(false)
+  written.resolve({ accepted: true }); expect(await writing).toEqual({ accepted: true })
 })

@@ -1,38 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { expect, it } from 'vitest'
 import * as Effect from 'effect/Effect'
-import { readRequestsSource } from '../scripts/readRequestsSource.ts'
 import { engineConnection } from '../src/connection.ts'
 
-const readers = () => import('../../../design/mock/js/live/reads.js' as string)
-const navigate = (hash: string) => window.history.replaceState({}, '', hash)
 async function builtEngine() {
-  const { readOptions } = await readers()
-  const source = readRequestsSource(readFileSync('design/mock/js/engine.js', 'utf8'))
-  return Function('readOptions', source.replace(/^import[^\n]*\n/, '').replaceAll('export ', '') + '\nreturn { request, setConnection };')(readOptions)
+  const source = readFileSync('design/mock/js/engine.js', 'utf8')
+  return Function(source.replaceAll('export ', '') + '\nreturn { request, setConnection };')()
 }
-
-it('retains a waiting read across a query change on the same screen', async () => {
-  const { readOptions } = await readers()
-  navigate('#/p/project-a/files?f=one')
-  const first = readOptions({}).readSignal
-  navigate('#/p/project-a/files?f=two')
-  window.dispatchEvent(new HashChangeEvent('hashchange'))
-  expect(first.aborted).toBe(false)
-  expect(readOptions({}).readSignal).toBe(first)
-})
-
-it('does not cancel a new screen read when its navigation event arrives later', async () => {
-  const { readOptions } = await readers()
-  navigate('#/p/project-a/files')
-  const first = readOptions({}).readSignal
-  navigate('#/p/project-a/git')
-  const next = readOptions({}).readSignal
-  expect(first.aborted).toBe(true)
-  window.dispatchEvent(new HashChangeEvent('hashchange'))
-  expect(next.aborted).toBe(false)
-  expect(readOptions({}).readSignal).toBe(next)
-})
 
 it('settles a cancelled read at the shared website request boundary', async () => {
   const engine = await builtEngine()
@@ -56,20 +30,4 @@ it('preserves actual failures and cancelled writes at the shared boundary', asyn
   const cancelledWrite = new DOMException('The owner action was cancelled.', 'AbortError')
   engine.setConnection({ request: () => Promise.reject(cancelledWrite) })
   await expect(engine.request('project.settings.set', {})).rejects.toBe(cancelledWrite)
-})
-
-it('cancels the screen lifetime when the page closes', async () => {
-  const { readOptions } = await readers()
-  const first = readOptions({}).readSignal
-  window.dispatchEvent(new Event('pagehide'))
-  expect(first.aborted).toBe(true)
-})
-
-it('keeps a Harnesses read alive while its legacy Subscriptions address is normalized', async () => {
-  const { readOptions } = await readers()
-  navigate('#/subscriptions')
-  const first = readOptions({}).readSignal
-  navigate('#/harnesses'); window.dispatchEvent(new HashChangeEvent('hashchange'))
-  expect(first.aborted).toBe(false)
-  expect(readOptions({}).readSignal).toBe(first)
 })

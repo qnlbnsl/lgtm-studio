@@ -190,7 +190,7 @@ it('R1.9 gives the Download menu a single hover explanation', async () => {
     expect(Number(item.hasAttribute('title')) + Number(item.hasAttribute('data-tip'))).toBe(1)
   } finally { kit.render(null, host) }
 })
-it('clears Reading without rendering a missing file after a cancelled open', async () => {
+it('keeps the original Reading state when a cancelled open has no file', async () => {
   const cancelled = Object.assign(new DOMException('The read was cancelled.', 'AbortError'), { cancelledRead: true })
   const f = fixture(async (tag, p) => {
     if (tag === 'project.files.list') return { result: list(p.folder) }
@@ -198,7 +198,9 @@ it('clears Reading without rendering a missing file after a cancelled open', asy
   })
   try {
     f.render('project', 'cancelled.txt')
-    await vi.waitFor(() => expect(f.host.textContent).not.toContain('Reading from'))
+    await vi.waitFor(() => expect(f.request).toHaveBeenCalledWith('project.files.read', expect.anything()))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(f.host.textContent).toContain('Reading from')
     expect(f.host.querySelector('.fx-main')).not.toBeNull()
     expect(f.host.querySelector('[role="alert"]')).toBeNull()
     expect(f.host.querySelector('.test-editor')).toBeNull()

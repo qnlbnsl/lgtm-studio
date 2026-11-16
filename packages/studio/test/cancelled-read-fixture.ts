@@ -2,19 +2,18 @@ import { readFileSync } from 'node:fs'
 import * as Effect from 'effect/Effect'
 import { engineConnection } from '../src/connection.ts'
 import { isReadRequest } from '../src/readRequests.ts'
-import { readRequestsSource } from '../scripts/readRequestsSource.ts'
 import { gitActionsSource } from '../scripts/gitActions.ts'
 import * as policy from '../src/gitRefresh.ts'
 import * as files from '../src/files.ts'
 
 export const flush = async () => { for (let i = 0; i < 80; i++) await Promise.resolve() }
 export async function fixture() {
-  const { readOptions, errorText } = await import('../../../design/mock/js/live/reads.js' as string)
-  const pending = engineConnection({ location: { protocol: 'http:', host: '127.0.0.1:12345' }, debug() {},
+  const { errorText } = await import('../../../design/mock/js/live/reads.js' as string)
+  const waitingConnection = () => engineConnection({ location: { protocol: 'http:', host: '127.0.0.1:12345' }, debug() {},
     fetch: (async () => new Response(null, { status: 204 })) as typeof fetch, connect: (() => Effect.never) as never })
-  pending.open(() => {})
-  const source = readRequestsSource(readFileSync('design/mock/js/engine.js', 'utf8'))
-  const boundary = Function('readOptions', source.replace(/^import[^\n]*\n/, '').replaceAll('export ', '') + '\nreturn { request, setConnection };')(readOptions)
+  let pending = waitingConnection(); pending.open(() => {})
+  const source = readFileSync('design/mock/js/engine.js', 'utf8')
+  const boundary = Function(source.replaceAll('export ', '') + '\nreturn { request, setConnection };')()
   let waiting = true
   const calls: { tag: string; payload: any }[] = []
   const reply = (tag: string, p: any): any => {
@@ -53,7 +52,8 @@ export async function fixture() {
     registerDialog() {}, persist: (_k: string, fallback: any) => fallback, addEventListener: window.addEventListener.bind(window), removeEventListener: window.removeEventListener.bind(window) }
   env.act = { toast, confirm: env.confirm, closeDialog: env.closeDialog, openDialog: env.openDialog }
   const load = (file: string, exports: string, extra = '') => {
-    const source = gitActionsSource('js/' + file, readFileSync('design/mock/js/' + file, 'utf8')).replace(/^import .*;$/gm, '').replace(/^export \{[^\n]*$/gm, '').replaceAll('export ', '')
+    let source = gitActionsSource('js/' + file, readFileSync('design/mock/js/' + file, 'utf8')).replace(/^import .*;$/gm, '').replace(/^export \{[^\n]*$/gm, '').replaceAll('export ', '')
+    if (file === 'live/files.js') source = source.replace('  return m;', '  return Object.assign(m, { refreshState: () => ({ refreshing, requested, timer, wake }) });');
     const names = Object.keys(env).filter(name => !new RegExp('^(?:const|let|function|async function) ' + name + '\\b', 'm').test(source))
     return Function(...names, source + '\n' + extra + '\nreturn {' + exports + '};')(...names.map(name => env[name]))
   }
@@ -61,7 +61,7 @@ export async function fixture() {
   env.run = board.run; env.busy = board.busy
   const chat = load('live/chat.js', 'setMapping, busy, loadRequest, readRequests, readAccountNames, watchThread, watchRoster, setAgentConfig, answerRequest, loadLarge, declinePhoneOffer, reset, status: () => ({ loadingRequests, accountRead })')
   chat.setMapping({ mapSubscriptionNames: () => [], mapAgentDetails: () => ({}), mapThread: () => ({ items: [] }), mapRosterDetails: () => ({}), mapFailedStart: () => null, mapHomeRequest: () => null, mapPhoneOffer: () => ({}) })
-  const git = load('live/git.js', 'installMappings, busy, openScreen, refreshScreen, checkHarnesses, accountAction, addAccount, harnessSetting, makeDefault, accountModel, markAvailable, saveSettings, saveCarrier, clearToken, notifyKind, saveEmail, removeEmail, carrierEnabled, clearEmailSecret, saveQuiet, retryAlert, dismissAlerts, dismissOffer, installHarness, refreshGit, gitDetail, selectGit, stage, discard, commit, syncGit, integrate, answerReview, resolve, continueMerge, readGitRecord, loadGitDetail, status: () => ({ gitController, refreshTimer, settingsQueue })', `service = { project: { lead: { harness: 'h' } }, harnesses: [{ id: 'h' }], roles: {}, web: {} }; accounts = [{ id: 'account', harness: 'h' }];`)
+  const git = load('live/git.js', 'installMappings, busy, openScreen, refreshScreen, checkHarnesses, accountAction, addAccount, harnessSetting, makeDefault, accountModel, markAvailable, saveSettings, saveCarrier, clearToken, notifyKind, saveEmail, removeEmail, carrierEnabled, clearEmailSecret, saveQuiet, retryAlert, dismissAlerts, dismissOffer, installHarness, refreshGit, gitDetail, selectGit, stage, discard, commit, syncGit, integrate, answerReview, resolve, continueMerge, readGitRecord, loadGitDetail, status: () => ({ gitController, refreshTimer, settingsQueue, retryPending })', `service = { project: { lead: { harness: 'h' } }, harnesses: [{ id: 'h' }], roles: {}, web: {} }; accounts = [{ id: 'account', harness: 'h' }];`)
   git.installMappings({ ...policy, mapGitState: (r: any) => r, mapGitChanges: (r: any) => r, mapGitCommit: (r: any) => r, mapGitDiff: (r: any) => r, mapMainReview: (r: any) => r, mapAlertSettings: () => ({}), mapAlerts: () => [], mapPhoneOffer: () => ({}),
     mapHarnesses: () => ({}), mapInstalledHarnesses: () => ({}), mapServiceSettings: () => ({}), mapAccounts: () => [] })
   const mocks = load('live/mocks.js', 'loadMocks, approveMocks, loadDesign, loadMachines')
@@ -70,6 +70,6 @@ export async function fixture() {
   const fileModule = load('live/files.js', 'createFilesModel, setMapping'); fileModule.setMapping(files)
   const model = fileModule.createFilesModel({ worktreeId: 'w', projectId: 'p', kind: 'project', machine: 'local', online: true }, () => {})
   const workflowRecord = { scope: 'user', id: 'flow', definition: { phases: [{ id: 'phase', blocks: [] }] } }
-  return { state, calls, toasts, dialogs, board, chat, git, mocks, project, service, model, env, load, engine, errorText, workflowRecord,
-    online: () => { waiting = false }, waiting: () => { waiting = true }, cancel: async () => { window.dispatchEvent(new Event('pagehide')); await flush() }, close: () => { model.close(); chat.reset(); pending.close() } }
+  return { reply, connection, state, calls, toasts, dialogs, board, chat, git, mocks, project, service, model, env, load, engine, errorText, workflowRecord,
+    online: () => { waiting = false }, waiting: () => { waiting = true }, cancel: async () => { pending.close(); pending = waitingConnection(); pending.open(() => {}); await flush() }, close: () => { model.close(); chat.reset(); pending.close() } }
 }
