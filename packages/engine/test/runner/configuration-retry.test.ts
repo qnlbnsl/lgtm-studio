@@ -1,4 +1,4 @@
-import { existsSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { it } from "@effect/vitest";
 import * as NodeServices from "@effect/platform-node/NodeServices";
@@ -125,7 +125,16 @@ for (const path of ["resume", "fresh", "reload"] as const) {
           expect(prompts[0]?.params.prompt[0].text).toBe("work interrupted by reload");
           expect((yield* (yield* Views).snapshot).deliveries[started.activeDelivery!]?.status).toBe("accepted");
         }
-        expect(prompts.at(-1)?.params.prompt[0].text).toBe(path === "reload" ? "work queued before reload" : "work queued during retry configuration");
+        const callerText = path === "reload" ? "work queued before reload" : "work queued during retry configuration";
+        const deliveredText = prompts.at(-1)?.params.prompt[0].text;
+        if (path === "fresh") {
+          const marker = /^Follow these engine-supplied role instructions\.\nData from another agent \[([A-Za-z0-9_-]{24})\]/.exec(deliveredText)?.[1];
+          expect(marker).toBeTypeOf("string");
+          const instructions = readFileSync(new URL("../../src/roles/instructions/worker-base.md", import.meta.url), "utf8");
+          expect(deliveredText).toBe(`Follow these engine-supplied role instructions.\nData from another agent [${marker}] (delivery ${deliveryId}):\n${instructions}\nEnd data [${marker}]\n\n${callerText}`);
+        } else {
+          expect(deliveredText).toBe(callerText);
+        }
         expect((yield* (yield* Views).snapshot).deliveries[deliveryId]?.status).toBe("accepted");
         const final = yield* eventually(configuration(agentId), (value) => value.configuration.status === "applied");
         expect(final.configuration).toMatchObject({ desired: lost ? initial : desired, applied: lost ? initial : desired });

@@ -115,6 +115,9 @@ export const RunnerEvent = Schema.Union([
 export type RunnerEvent = typeof RunnerEvent.Type;
 
 interface Spawn {
+  // Ephemeral engine prose. Prepend on a new session's first ordinary prompt;
+  // a loaded session retains its instructions. Never persist this field.
+  readonly instructions?: string;
   readonly agentId: AgentId;
   readonly token: Redacted.Redacted<string>;
   readonly folder: string;

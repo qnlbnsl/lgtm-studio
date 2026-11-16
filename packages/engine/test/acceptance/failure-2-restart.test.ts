@@ -17,6 +17,7 @@ import {
   type Client, type World,
 } from "../support/acceptance.ts";
 import { registerRebuildCheck } from "../support/rebuildCheck.ts";
+import { withWorkerInstructions } from "../support/instructionPrompt.ts";
 
 registerRebuildCheck({ noLog: true });
 afterEach(async () => { await stopAllServices(); });
@@ -63,7 +64,7 @@ scenario("2 restart: a message that was sent but not accepted when the service w
   const idA = (sentA.at(-1)!.event as unknown as { deliveryId: string }).deliveryId;
   const before = yield* w.token(agent);
   const reply = (yield* w.owner.prompt({ requestId: requestId(), agentId: agent.agentId, text: "Message B." } as never)) as { deliveryId: string };
-  expect(promptsOf(before.echo)).toEqual(["Work A."]);
+  expect(promptsOf(before.echo)).toEqual([withWorkerInstructions(promptsOf(before.echo)[0]!, idA, "Work A.")]);
 
   yield* crashService(w);
   yield* w.token(agent, before.pid);

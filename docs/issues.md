@@ -17235,3 +17235,135 @@ The first `pnpm live-check` run passed 18 of 23 steps.
 Its "reload" step failed with "SocketReadError: An error occurred during Read".
 A second run on the same commit passed that step and gave the known result of 19 of 23.
 The cause of the single failure is not known.
+
+## s22-1. Agents did not receive the default workflow instructions on launch.
+
+State: fixed in s22.
+
+A start sent only the caller's prompt.
+The orientation read supplied named owner advice or one generic line.
+The engine now composes shipped role files and their bases before the adapter's first ordinary prompt in a fresh session.
+The same composition is available through `roles.orient`.
+Stored prompt events retain their existing text and shape.
+
+## s22-2. Repository role overrides need an owner decision about trust.
+
+State: open.
+
+A repository could carry instructions written by a stranger.
+This unit loads role overrides only from the configured home's `.lgtm/roles` folder.
+The owner must decide whether repository files may instruct agents before repository overrides are built.
+
+## s22-3. Role instruction files have no editor or file-management API.
+
+State: open.
+
+The owner can replace instruction files on disk.
+The existing authenticated role-file command can replace named advice.
+There are no commands to list, read or save individual Markdown instruction files.
+An editor and those application programming interface (API) actions remain future work.
+
+## s22-4. Done reports and product-only commits remain prose rules.
+
+State: open.
+
+The engine does not require a completion report to name an existing branch head with finished checks.
+It does not reject a merge that includes run notes or scratch files.
+The shipped instructions require these checks from agents and leads.
+Mechanical enforcement remains future work.
+
+## s22-5. Two existing documents contain details that need the owner's publication decision.
+
+State: open.
+
+The review identified private project references and dated owner quotations in `docs/specs/2026-11-05-build-loop-design.md`.
+It also identified a private source commit reference in `docs/foundry.md`.
+This unit leaves those passages unchanged and does not repeat their contents here.
+
+## s22-6. Several drafted role rules assumed capabilities the engine does not provide.
+
+State: corrected in the shipped prose in s22.
+
+Only the actual project lead can create project records or change other agents' task assignments.
+A reviewer cannot add a note to another agent's task.
+Agents cannot list the owner's harness choices.
+Team creation does not allocate an isolated folder for each builder.
+The engine does not enforce frozen tests, hide review authorship or store executable test commands in project settings.
+The default instructions now route restricted work to the project lead and mark unavailable evidence as unknown.
+These capabilities were not added in this unit.
+
+## s22-7. Adapter user-message echoes could expose injected instructions in the thread.
+
+State: fixed in s22.
+
+The adapter can echo the first prompt in arbitrarily split user-message chunks.
+The runner now removes its exact ephemeral instruction prefix from live user echoes before redaction and event publication.
+The caller's echoed prompt remains visible.
+Replay updates retain their existing behavior and write no thread items.
+
+## s22-8. The first instruction store used syntax the Node.js strip-only loader cannot run.
+
+State: fixed in s22.
+
+A constructor parameter property passed through the test transpiler but failed in the relocated package test.
+The store now uses explicit fields and constructor assignments.
+The package test executes the module with Node.js and loads its adjacent Markdown resources from a path containing spaces.
+
+## s22-9. The existing foundry guide still suggests owner-only reads to agents.
+
+State: open.
+
+The guide tells a run to read `roles.settings.get` and `roles.actions.list`.
+Those commands are restricted to the owner.
+The new default instructions do not send agents to these commands.
+Rewriting the older foundry workflow guidance is outside this unit.
+
+## s22-10. The first default lead base omitted an existing lead-advice requirement.
+
+State: fixed in s22.
+
+Three established project lead orientation tests require advice to tell the lead to start its own workers.
+The first copied lead base did not say this explicitly.
+The shipped base now preserves that instruction and the existing post-acknowledgement requirement.
+The assertions remain unchanged.
+
+## s22-11. The API initially hid the new fixed instruction-limit errors.
+
+State: fixed in s22.
+
+The command handler returned a specific typed refusal for oversized instructions.
+The authenticated transport reduced it to its generic refusal because the new reasons were absent from its allow-list.
+The transport now preserves the three fixed instruction read and size errors.
+It still rejects arbitrary failure text.
+
+## s22-12. Existing prompt tests expected the old instruction-free first turn.
+
+State: corrected in s22.
+
+The configuration retry, service redaction and service restart tests compared the first adapter prompt with the caller's text alone.
+They now compare the complete instruction envelope, its delivery identifier and the unchanged caller text.
+Later prompts and existing-session replays retain their exact previous expectations.
+The capacity tests now compare the full composed advice for recognized instruction names, including unrecognized authority prefixes.
+Their authority and capacity-limit assertions remain unchanged.
+No assertion or wait was weakened.
+
+## s22-13. The first regression fixtures contained incorrect helper calls and expectations.
+
+State: corrected in s22.
+
+An acceptance fixture reversed the existing wait helper's label and callback arguments.
+A directory-swap fixture expected two independent file resolutions to share a pinned directory.
+It now swaps the directory within a single role-file read.
+A secret fixture initially expected the planted secret to survive redaction.
+It now requires the override marker with the secret removed.
+Two test expressions cast an Effect before yielding its result.
+Removing those unnecessary casts restored the type check.
+No production limit or wait was relaxed to accommodate these fixture errors.
+
+## s22-14. Two new pure tests omitted the required rebuild-hook registration.
+
+State: fixed in s22.
+
+The whole-suite registration guard found the instruction store and echo tests without the repository's required hook.
+Both now register the existing hook with `noLog: true` because they create no event log.
+The discovery guard remains unchanged.

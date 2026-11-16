@@ -2,6 +2,7 @@
 // MIT licence; the copy here is third_party/t3code/effect-acp/src/client.ts):
 // a session is reloaded through whichever method the peer advertised. The
 // shape was reused, no code.
+import { composeInstructions } from "../roles/compose.ts";
 import { randomUUID } from "node:crypto";
 import { PermissionLevel, type Caller, type AgentId, type Event } from "@lgtm/contracts";
 import type * as Context from "effect/Context";
@@ -57,7 +58,8 @@ export const spawnInput = (
   const launchChoice = agent.configuration?.revision === undefined ? {
     ...(agent.model === undefined ? {} : { model: agent.model }), ...(agent.effort === undefined ? {} : { effort: agent.effort }),
   } : {};
-  return { agentId: agent.agentId, token, folder, grant, harness, account,
+  const instructions = yield* composeInstructions(runtime, snapshot, agent.role);
+  return { agentId: agent.agentId, token, folder, grant, harness, account, instructions,
     permission: Schema.decodeUnknownSync(PermissionLevel)(agent.permission), ...launchChoice,
   };
 });
