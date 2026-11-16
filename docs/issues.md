@@ -4689,6 +4689,8 @@ policy even after the physical connection becomes usable again.
 
 ## 257. A permission prompt omits the options its agent holder must choose
 
+State check: verified against the code on 2026-11-15, this entry is partly fixed. A project lead can read a request options through the `project.requests` tool, since commit `2616fb5`. The delivery text still has none, and a team lead holder still cannot see them.
+
 Found: 2026-11-03, in the post-build review of commit `8ff4c9b`, finding A14.
 State: open, deferred by the owner on 2026-11-03.
 
@@ -5711,6 +5713,8 @@ Why it matters: A reader of the design would build a pairing that was dropped.
 
 ## 325. A board question's author looks settled to the engine
 
+State check: verified against the code on 2026-11-15, this entry is fixed. `packages/contracts/src/board/conditions.ts` keeps a board question author unsettled, since commit `42d4b1c`.
+
 Found: 2026-11-03, while planning the message board plan.
 State: open.
 
@@ -5932,6 +5936,8 @@ What should happen: The roles' crash rule sends its own carry-on prompt (row 42)
 Why it matters: The resumed agent does nothing until someone prompts it.
 
 ## 346. The board marks a capacity-returned wake undeliverable within seconds
+
+State check: verified against the code on 2026-11-15, this entry is partly fixed. Capacity errors are held and requeued in `packages/engine/src/routing/deliveries.ts`, since commit `f46d958`. The board rule of two returns then undeliverable remains as a fallback.
 
 Found: 2026-11-03, while planning the foundry roles plan.
 State: open.
@@ -11222,6 +11228,8 @@ The agent rows show role names, such as Builder 2, in place of the invented name
 
 ## 622. The Machines page counts capacity-held agents as agent slots
 
+State check: verified against the code on 2026-11-15, this entry is obsolete. The miscount exists only in the retired `packages/web` page. The website counts running agents in `design/mock/js/screens/service.js`.
+
 Found: 2026-11-13, while writing the checked gap table for connecting the mock.
 State: open.
 
@@ -11245,6 +11253,8 @@ Appearance keeps browser preferences, as intended.
 Supplied actions call the authenticated client API.
 
 ## 624. The live website's Machines page has no figures for the engine's machine
+
+State check: verified against the code on 2026-11-15, this entry is partly fixed. Harnesses, the workspace and the web port now come from the engine. The processor, memory, operating system, version and agent slot limit are still missing.
 
 Found: 2026-11-13, while connecting the mock to the engine.
 State: open.
@@ -11815,6 +11825,8 @@ Projects and teams name their workspaces in their own records.
 The mapping now joins those records so that the Git picker includes their worktrees.
 
 ## 673. The settings contract does not return effective role defaults.
+
+State check: verified against the code on 2026-11-15, this entry is partly fixed. Commit `87f9d2c` added the lead and assigned stall timers. `roles.settings.get` still returns only stored overrides.
 
 Found: 2026-11-13, while connecting Service settings.
 State: open.
@@ -13994,6 +14006,8 @@ The test read the first script file of the production build, and the editor's ch
 The test now reads the script file that holds the pinger.
 
 ## 855. Project settings shows controls that the engine cannot serve yet
+
+State check: verified against the code on 2026-11-15, this entry is partly fixed. Commit `f0b575c` hides the unbuilt controls and makes Delete work. The engine features behind them are still missing.
 
 Found: 2026-11-14, while finishing the Project settings tab.
 State: open.
@@ -16343,7 +16357,7 @@ Each failure was a text assertion in the merge review dialog that ran out of tim
 The change under test did not touch `packages/web/src`, which these journeys exercise.
 Issues 966 and 1014 record the other load-sensitive journeys.
 
-## s16-1. An automatic pass can cross the boundary of a measured minute.
+## 1045. An automatic pass can cross the boundary of a measured minute.
 
 Found: 2026-11-15, while proving the automatic request bound in part B.
 Status: fixed in part B of unit s16-gitrefresh.
@@ -16354,7 +16368,7 @@ The controller uses a three-second gap and at most five requests per pass.
 Twenty starts and one carried pass therefore contribute at most 105 requests in a half-open minute.
 The pure policy test includes that carried pass in its proof.
 
-## s16-2. A binary conflict failure must leave the text conflict usable.
+## 1046. A binary conflict failure must leave the text conflict usable.
 
 Found: 2026-11-15, while reusing the real binary-conflict fixture in part B.
 Status: fixed in part B of unit s16-gitrefresh.
@@ -16366,7 +16380,7 @@ The regression checks the real text conflict and the Abort control through the b
 The existing toast reports a detail failure.
 No new conflict or history error note was added, because the owner approved only the stale sentence.
 
-## s16-3. A failed change-list read can conceal a newer state head.
+## 1047. A failed change-list read can conceal a newer state head.
 
 Found: 2026-11-15, while checking reply publication in part B.
 Status: fixed in part B of unit s16-gitrefresh.
@@ -16377,7 +16391,7 @@ The new reader publishes the state immediately.
 A changed head clears mutable bodies before the next detail demand.
 The failed summary keeps the approved stale sentence visible.
 
-## s16-4. Direct Git replies must not queue a redundant summary pass.
+## 1048. Direct Git replies must not queue a redundant summary pass.
 
 Found: 2026-11-15, while inspecting part B's first journey measurement.
 Status: fixed in part B of unit s16-gitrefresh.
@@ -16390,7 +16404,7 @@ That mark caused an extra automatic read after their direct reply.
 Both actions now raise the epoch and retain their request identifier without dirtying the summary.
 A regression sends their own completion patches and checks that no summary read follows.
 
-## s16-5. An older detail can arrive after its file row changes identity.
+## 1049. An older detail can arrive after its file row changes identity.
 
 Found: 2026-11-15, during the final part B coverage review.
 Status: fixed in part B of unit s16-gitrefresh.
@@ -16402,7 +16416,7 @@ The detail publisher now checks the current file identity after its reply arrive
 A regression changes the status while the second body is held.
 It checks that the old body is discarded and an explicit demand loads the fresh body.
 
-## s16-6. Review-only success must not postpone the summary fallback.
+## 1050. Review-only success must not postpone the summary fallback.
 
 Found: 2026-11-15, while checking part B's idle measurement trace.
 Status: fixed in part B of unit s16-gitrefresh.
@@ -16415,7 +16429,7 @@ A failed review retains its backoff while an earlier summary fallback remains el
 A failing summary keeps its own retry deadline, so an overdue fallback cannot create a retry storm.
 The regression floods successful and failing review reads and still observes periodic summaries.
 
-## s16-7. Superseding a summary must retire its reading phase.
+## 1051. Superseding a summary must retire its reading phase.
 
 Found: 2026-11-15, while checking the final epoch transitions in part B.
 Status: fixed in fix round 1 of part B of unit s16-gitrefresh.
@@ -16429,7 +16443,7 @@ The pure selector would then skip that record indefinitely.
 Superseding a reading record now returns it to due while preserving its dirty counters.
 The regression covers a direct preview and a refused stage command during a held automatic summary.
 
-## s16-8. A hidden multi-row load could strand its remaining worktrees.
+## 1052. A hidden multi-row load could strand its remaining worktrees.
 
 Found: 2026-11-15, in review-b, finding 1.
 Status: fixed in fix round 1 of part B.
@@ -16440,7 +16454,7 @@ The loop now stops on suspension and checks current identity before claiming a r
 Every read ending uses one retirement function.
 The regressions hide during the first of four rows for initial load, forced refresh, and a fetch readback.
 
-## s16-9. Screen lifecycle cancellation could cancel a sent owner mutation.
+## 1053. Screen lifecycle cancellation could cancel a sent owner mutation.
 
 Found: 2026-11-15, in review-b, finding 2.
 Status: fixed in fix round 1 of part B.
@@ -16452,7 +16466,7 @@ Sent mutations retain the connection's session lifetime.
 Their refusals still reach the owner after hide, close, or navigation.
 Logout retains the connection's cancellation behavior.
 
-## s16-10. The initial load could cancel a newer owner readback.
+## 1054. The initial load could cancel a newer owner readback.
 
 Found: 2026-11-15, in review-b, finding 3.
 Status: fixed in fix round 1 of part B.
@@ -16463,7 +16477,7 @@ Each loop now captures identities and epochs before starting.
 It skips a row whose epoch changed before that row's turn.
 The regression releases the first initial row while a later row's Push readback remains held.
 
-## s16-11. Duplicated read and cancellation state could disagree.
+## 1055. Duplicated read and cancellation state could disagree.
 
 Found: 2026-11-15, in review-b, finding 4.
 Status: fixed in fix round 1 of part B.
@@ -16475,7 +16489,7 @@ The reading value and busy query derive from phases.
 The call set is removed.
 The typed record declares each remaining abort controller and its owner.
 
-## s16-12. Refresh failures added unapproved or duplicate toasts.
+## 1056. Refresh failures added unapproved or duplicate toasts.
 
 Found: 2026-11-15, in review-b, finding 5.
 Status: fixed in fix round 1 of part B.
@@ -16490,7 +16504,7 @@ Fix round 2 adds `a fresh forced refresh failure shows one toast without a prior
 The initial read succeeds, and the first forced failure has no previous toast timestamp.
 Removing the forced-read exclusion from the automatic toast decision fails this regression.
 
-## s16-13. Review-only passes reread unchanged displayed details.
+## 1057. Review-only passes reread unchanged displayed details.
 
 Found: 2026-11-15, in review-b, finding 6.
 Status: fixed in fix round 1 of part B.
@@ -16500,7 +16514,7 @@ The summary had not changed, so those detail requests were redundant.
 Only a pass that successfully reads the summary now revalidates the displayed body.
 A regression coalesces twenty review invalidations into one status read and no diff read.
 
-## s16-14. The automatic pass-width constant was not connected to production.
+## 1058. The automatic pass-width constant was not connected to production.
 
 Found: 2026-11-15, in review-b, finding 7.
 Status: fixed in fix round 1 of part B.
@@ -16510,7 +16524,7 @@ The automatic request builder now enforces that constant for the summary and dis
 A runtime regression requires the widest pass's five request tags and its exact declared width.
 Changing the constant therefore fails a test.
 
-## s16-15. Forced backoff reset and new build contracts lacked effective regressions.
+## 1059. Forced backoff reset and new build contracts lacked effective regressions.
 
 Found: 2026-11-15, in review-b, finding 8.
 Status: fixed in fix round 1 of part B.
@@ -16521,7 +16535,7 @@ The public Refresh Git regression now checks the actual retry ladder after repea
 Every live-helper build signature has a removal test.
 The unused force helper is removed.
 
-## s16-16. Service settings calls were subject to Git-screen cancellation.
+## 1060. Service settings calls were subject to Git-screen cancellation.
 
 Found: 2026-11-15, in review-b, finding 9.
 Status: fixed in fix round 1 of part B.
@@ -16534,7 +16548,7 @@ Fix round 2 removes the duplicate read-tag matcher and retains one mutation clas
 The regression `service settings tags never enter Git mutation bookkeeping` requires settings reads and writes to leave epochs, dirty counters, and owned identifiers unchanged.
 Replacing the classifier with the old broad project-prefix match fails this regression.
 
-## s16-17. Recovery order did not consistently prioritize the selected worktree.
+## 1061. Recovery order did not consistently prioritize the selected worktree.
 
 Found: 2026-11-15, in review-b, finding 10.
 Status: fixed in fix round 1 of part B.
@@ -16548,7 +16562,7 @@ They require the selected row first and all four starts within nine seconds.
 Removing either deadline alignment or the selection tie-break fails the focus regression.
 Failed records retain their backoff.
 
-## s16-18. Foreign attempt events invalidated state before completion.
+## 1062. Foreign attempt events invalidated state before completion.
 
 Found: 2026-11-15, in review-b, finding 11.
 Status: fixed in fix round 1 of part B.
@@ -16558,7 +16572,7 @@ The completion dirtied them again.
 The event mapper now ignores attempts and invalidates on completion.
 A regression distinguishes the two events.
 
-## s16-19. Git bookkeeping retained obsolete invalidations and unbounded request identifiers.
+## 1063. Git bookkeeping retained obsolete invalidations and unbounded request identifiers.
 
 Found: 2026-11-15, in review-b, finding 12.
 Status: fixed in fix round 1 of part B.
@@ -16572,7 +16586,7 @@ Fix round 1 removed the old background parameter name but retained its test-only
 Fix round 2 removes that parameter and exercises automatic reads through public focus and observation events.
 It also removes the unread completion field from mapped events.
 
-## s16-20. A removed row could be recreated by a stale load loop.
+## 1064. A removed row could be recreated by a stale load loop.
 
 Found: 2026-11-15, in review-b, finding 14.
 Status: fixed in fix round 1 of part B.
@@ -16583,7 +16597,7 @@ The loop now resolves the current row and checks its identity and captured epoch
 A regression removes the next row while the first is held.
 The removed row receives no request and no toast.
 
-## s16-21. The Part B report omitted abort owners and issue entries described fixed faults as current.
+## 1065. The Part B report omitted abort owners and issue entries described fixed faults as current.
 
 Found: 2026-11-15, in review-b, findings 13 and 15.
 Status: fixed in fix round 1 of part B.
@@ -16592,9 +16606,9 @@ The collection count excluded per-record controllers and mirrored flags.
 The original issue bodies also retained future-fix language after being marked fixed.
 The fix-round report counts the remaining owners and explains derived values.
 Issues 1036, 1042, and 1043 now describe their prior faults and implemented fixes.
-Issue s16-7 now records its incomplete first fix and its completed lifecycle correction.
+Issue 1051 now records its incomplete first fix and its completed lifecycle correction.
 
-## s16-22. The unchanged engine concurrency tests missed their startup markers under load.
+## 1066. The unchanged engine concurrency tests missed their startup markers under load.
 
 Found: 2026-11-15, during the full fix-round test command.
 Status: open, with isolated rechecks passing.
@@ -16608,7 +16622,7 @@ The cause of the missed marker has not been established.
 No engine code or test deadline was changed.
 The same startup-marker sensitivity was previously observed in issue s11-12.
 
-## s16-23. A read-back could start without a Git visit after an owner command finished.
+## 1067. A read-back could start without a Git visit after an owner command finished.
 
 Found: 2026-11-15, in review-b2, major 1.
 Status: fixed in fix round 2 of part B.
@@ -16619,7 +16633,7 @@ The throwaway-record branch is removed.
 The runtime regression starts Push with thirty changed files, leaves for another screen of the same project, and then completes Push.
 It requires success with no read-back requests or row writes.
 
-## s16-24. Four critical Git fixes lacked tests that failed when the fixes were removed.
+## 1068. Four critical Git fixes lacked tests that failed when the fixes were removed.
 
 Found: 2026-11-15, in review-b2, major 2.
 Status: fixed in fix round 2 of part B.
@@ -16630,7 +16644,7 @@ Each of the four temporary mutations now fails its targeted assertion.
 The duplicate tag matcher is removed, so the classifier mutation targets the single remaining mutation list.
 The mutation logs and restored-source checks are recorded in the task result.
 
-## s16-25. A pending owner command keeps Git controls busy across visits.
+## 1069. A pending owner command keeps Git controls busy across visits.
 
 Found: 2026-11-15, in review-b2, minor 13.
 Status: retained existing behavior.
@@ -16642,7 +16656,7 @@ This is the behavior of the pre-Part B baseline and follows the decision to pres
 The regression `a pending owner command keeps its existing busy state across Git visits` checks the busy state, refuses a second Push, and clears the state when the first Push settles.
 No timeout policy is introduced in this fix round.
 
-## s16-26. Refresh Git could lose forced review reads and its failure result during the initial load.
+## 1070. Refresh Git could lose forced review reads and its failure result during the initial load.
 
 Found: 2026-11-15, in review-b2, minor 5.
 Status: fixed in fix round 2 of part B.
@@ -16652,7 +16666,7 @@ The refresh then skipped those rows and could report success despite a review fa
 The public refresh now supersedes all visit records before starting its loop.
 Four-row runtime regressions require every row's forced review read and one failure result with one toast.
 
-## s16-27. A failed file detail wrote the engine reason into the file body.
+## 1071. A failed file detail wrote the engine reason into the file body.
 
 Found: 2026-11-15, in review-b2, minor 6.
 Status: fixed in fix round 2 of part B.
@@ -16662,7 +16676,7 @@ The detail catch again uses only the existing toast and leaves the failed body u
 A regression preserves a successful neighboring body and requires the failed file to contain no engine reason.
 Temporarily restoring the body write fails that regression.
 
-## s16-28. An automatic pass with no request consumed a gap slot.
+## 1072. An automatic pass with no request consumed a gap slot.
 
 Found: 2026-11-15, in review-b2, minor 7.
 Status: fixed in fix round 2 of part B.
@@ -16672,16 +16686,16 @@ Admission still advanced the global automatic timestamp and delayed the next row
 The timestamp now changes only when the automatic request builder sends its first request.
 A runtime regression requires the next summary read within the coalescing window after a request-free pass.
 
-## s16-29. Recovery events postponed already-due healthy records.
+## 1073. Recovery events postponed already-due healthy records.
 
 Found: 2026-11-15, in review-b2, minor 8.
 Status: fixed in fix round 2 of part B.
 
 Focus, return, and reconnect replaced existing due deadlines with a later coalescing deadline.
 Recovery now preserves the earliest healthy deadline while aligning selected-first admission.
-The uneven already-due runtime regressions in s16-17 protect both properties.
+The uneven already-due runtime regressions in 1061 protect both properties.
 
-## s16-30. The disabled-load loop guard had no effective regression.
+## 1074. The disabled-load loop guard had no effective regression.
 
 Found: 2026-11-15, in review-b2, minor 12.
 Status: resolved in fix round 2 of part B.
@@ -16692,7 +16706,7 @@ Removing the explicit enabled guard also passes this regression because suspensi
 The redundant enabled guard is therefore removed.
 The epoch check and the reader's claim validation still refuse disabled visits.
 
-## s16-31. The Git state inventory omitted visibility, timer, and timestamp ownership.
+## 1075. The Git state inventory omitted visibility, timer, and timestamp ownership.
 
 Found: 2026-11-15, in review-b2, minor 11.
 Status: fixed in fix round 2 of part B.
