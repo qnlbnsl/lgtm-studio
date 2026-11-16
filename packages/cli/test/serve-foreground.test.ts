@@ -152,7 +152,7 @@ for (const restarted of [false, true]) it.runIf(process.platform === 'linux')(`t
     await vi.waitFor(async () => expect(await answers(r.socket)).toBe(false), { timeout: 5000 })
   } finally {
     // This is the direct service child discovered while our launcher was alive.
-    if (serviceBirth && birth(servicePid) === serviceBirth && await answers(r.socket)) process.kill(servicePid, 'SIGTERM')
+    if (await answers(r.socket) && serviceBirth && birth(servicePid) === serviceBirth) process.kill(servicePid, 'SIGTERM')
     await p.closed
   }
   const again = launch(r)
