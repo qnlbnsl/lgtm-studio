@@ -46,7 +46,14 @@ export function observe(patch) {
   if (patch.settings && S().session.status === 'in') patch.settings = { ...patch.settings, ...draftValues() };
   if (patch.worktrees) patch.worktrees = patch.worktrees.map((w) => ({ ...w, ...(S().worktrees?.find((x) => x.id === w.id && x.folder === w.folder && x.branch === w.branch) || {}), ...Object.fromEntries(Object.entries(w).filter(([k]) => !['files', 'commits', 'ahead', 'behind', 'merge'].includes(k))) }));
   if (patch.subscriptions && subscriptionsLoaded) patch.subscriptions = S().subscriptions;
-  if (screen?.name === 'git') reconcileGit(patch.worktrees);
+  if (screen?.name === 'git') {
+    if (patch.worktrees) reconcileGit(patch.worktrees);
+    if (patch.git && gitController) {
+      for (const [id, r] of gitController.records) if (!patch.git.worktreeIds.length || patch.git.worktreeIds.includes(id)) mapping.dirtyGitRecord(r, patch.git.group, Date.now());
+      scheduleGit();
+    }
+    if (patch.conn?.status === 'live' && S().conn?.status !== 'live') dirtyAllGit();
+  }
   if (screen && screen.name !== 'git' && (patch.conn?.status === 'live' || patch.projects)) {
     clearTimeout(refreshTimer); refreshTimer = setTimeout(() => refreshScreen(), 100);
   }

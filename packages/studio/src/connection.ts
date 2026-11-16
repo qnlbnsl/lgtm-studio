@@ -21,9 +21,12 @@ import * as Schema from "effect/Schema"
 import { DisplayFrame } from "@lgtm/contracts/project/display"
 import { mapConnection, mapOwner, mapSnapshot, type ConnectionStatus, type EngineRecords, type StoreConn, type StoreOwner } from "./mapping.ts"
 
+import { gitEventPatch, type GitEventPatch } from './gitEvents.ts'
+
 export type SessionStatus = "checking" | "in" | "out" | "rejected" | "expired" | "unavailable" | "logout-unconfirmed"
 export interface StorePatch extends Partial<EngineRecords> {
   readonly chatEvent?: unknown
+  readonly git?: GitEventPatch | undefined
   readonly session?: { readonly status: SessionStatus; readonly firstRun: boolean }
   readonly conn?: StoreConn
   readonly owner?: StoreOwner
@@ -237,7 +240,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
             if (signal.aborted) return
             setConn("live")
             if (item.sequence <= after) return
-            if (!signal.aborted) write({ chatEvent: item })
+            if (!signal.aborted) write({ chatEvent: item, ...("event" in item ? { git: gitEventPatch(item, current) } : {}) })
             if ("event" in item) {
               if (item.event._tag === "project.SettingsChanged") yield* refreshOwner()
               yield* apply(item, refresh)
