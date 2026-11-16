@@ -4,6 +4,15 @@ A running list of problems found while building or using LGTM Studio. Add a
 problem here in the same change that finds it, even if it is not fixed yet.
 Never delete an entry; mark it fixed and say where.
 
+## How to read the state lines
+
+Every numbered entry carries a line that starts with "State:" or "Status:".
+An automated pass on 2026-11-15 added a "State:" line to 292 entries that had none.
+A line that says "Read on 2026-11-15, not checked against the code" rests on the entry's own words.
+A line that says "Checked against the code on 2026-11-15" was checked by a cheaper model, and it can be wrong.
+A line that starts with "State check:" marks one of 38 entries where that pass disagreed with the entry's own state line.
+Correct a wrong line when you find one.
+
 Each entry uses this shape:
 
 ```
@@ -68,6 +77,8 @@ https://github.com/pnpm/pnpm/blob/v12.15.0/pnpm/docs/settings/build.md
 
 ## 4. A transitive platform dependency drifts beyond Effect 4.0.5
 
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. writeFakeCli in third_party/t3code/provider-testing/src/fakeCli.ts is unchanged and no test-author rule was added to code; it remains a rule for test authors.
+
 Found: 2026-11-01, while installing the unit 1 workspace.
 State: fixed by the unit 1 workspace overrides.
 
@@ -80,6 +91,8 @@ Why it matters: a clean install otherwise silently combines incompatible
 library versions before the copied packages or the socket client use them.
 
 ## 5. The original package graph omits later approved dependencies
+
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. third_party/t3code/effect-acp/scripts/generate.ts line 490 still runs pnpm exec vp fmt, which LGTM Studio does not install.
 
 Found: 2026-11-01, while reconciling unit 1 with the decision log.
 State: fixed by the unit 1 package manifests.
@@ -159,6 +172,8 @@ Why it matters: a reader who edits only the old list changes nothing.
 
 ## 10. The compiler alias and two copied cache settings are unexplained
 
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. packages/engine/scripts/recorder.ts line 26 still redacts every environment value of eight or more characters; issue 192 confirms the cause remains.
+
 Found: 2026-11-01, in the unit 1 review.
 State: fixed in unit 2: a comment in `pnpm-workspace.yaml` names T3 Code as
 the reason for the alias, and the two cache variables are removed from
@@ -176,6 +191,8 @@ Why it matters: a later reader sees an unusual compiler and settings that
 do nothing, with no stated cause.
 
 ## 11. Herdr refused the plugin manifest: an action needs `title`
+
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. packages/engine/test/runner/replay.test.ts line 130 still skips the normal Cursor replay; only cursor-out-of-usage.ndjson exists in packages/testing/fixtures.
 
 Found: 2026-11-01, by the owner's step for criterion 1.4 on Herdr 0.9.3.
 State: fixed in `herdr-plugin.toml`; the owner re-runs the link.
@@ -275,6 +292,8 @@ Why it matters: someone running `generate` gets a confusing failure.
 
 ## 17. T3 Code has no unit test for the replay helpers
 
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. Entry still records accepted limits: non-Linux mount check, same-user path redirect after check, and worktree registration; no later entry resolves them.
+
 Found: 2026-11-01, in unit 2.
 State: fixed; recorded in `third_party/t3code/README.md`.
 
@@ -285,6 +304,8 @@ What should happen: nothing further.
 Why it matters: the copied helpers would otherwise have no test at all.
 
 ## 18. The first-party packages did not depend on the copied packages
+
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. grep for HarnessChanged in packages/engine/src/views finds nothing; no harness view exists and no later entry mentions issue 51.
 
 Found: 2026-11-01, in the focused review of unit 2.
 State: fixed in the commit "fix(unit-2): link the copies, harden the checker and launcher" (unit 2 fix round 1); `copied-package-edges.test.ts` covers it.
@@ -304,6 +325,8 @@ Why it matters: the manifests freeze after unit 2, so a missing edge would
 force an unplanned change to a frozen file.
 
 ## 19. The credit checker accepted names it had not credited
+
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. Recorded sandbox limitation for the fake adapter test in identity/redactor.test.ts; no later entry resolves it and it is only worked around outside the sandbox.
 
 Found: 2026-11-01, in the focused review of unit 2.
 State: fixed in the commit "fix(unit-2): link the copies, harden the checker and launcher" (unit 2 fix round 1); `credits-names.test.ts` covers it.
@@ -516,6 +539,8 @@ The owner must read the first generated `claude.ndjson` before committing it.
 The lead tells the manager this when requesting the owner-run recording.
 
 ## 31. The event log's agent column covers only events with a top-level agent id
+
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. EventLog.ts now writes a thread_agent_id column and apply.ts threadAgent references issue 31, so queued deliveries reach the target thread.
 
 Found: 2026-11-01, in unit 4a.
 State: open.
@@ -903,6 +928,8 @@ folder, or for the service to hold memory, beyond what the ceiling promises.
 
 ## 50. Side-row text is redacted through a placeholder device event
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states fixed in unit 5b with Redactor redactText replacing the placeholder device event.
+
 - **Found:** unit 5a fix round 1, by the lead at merge (ruling 4, findings U5A-F02 and B9).
 - **What happens:** `EventLog.append` in `packages/engine/src/log/EventLog.ts` redacts a device name and a process executable by wrapping each one in a `DeviceAdded` event with the device identifier `side-row-text`, passing it to `Redactor.redact`, and reading the `name` field back. It fails closed to `[REDACTED]` if the redactor returns another event.
 - **Why it matters:** the redaction is correct, but the carrier event is a workaround. A redactor that ever treated `DeviceAdded` specially would silently change how side rows are redacted.
@@ -910,6 +937,8 @@ folder, or for the service to hold memory, beyond what the ceiling promises.
 - **State:** fixed in unit 5b. The service and both layers expose `redactText`, and the event log calls it directly for device names and process executables. No carrier event remains. The existing side-row tests and the unit 5b counting-redactor test cover the boundary.
 
 ## 51. No view holds the harness settings, so a `harnesses set` cannot be read back from the views
+
+State: open. Read on 2026-11-15, not checked against the code. packages/engine/src/views has no harness table and no HarnessChanged handling, so settings are readable only from the list reply.
 
 - **Found:** unit 5b tests, by the test writer.
 - **What happens:** the reducer in `packages/engine/src/views/apply.ts` ignores `HarnessChanged`, and the snapshot has no harness table. The only way to see the settings a `harnesses set` wrote is the reply of `harnesses list`.
@@ -928,6 +957,8 @@ folder, or for the service to hold memory, beyond what the ceiling promises.
 
 ## 53. The event log gives a command handler no way to check and write in one writer turn
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states fixed in unit 5b, and EventLog.transact in packages/engine/src/log/EventLog.ts holds the writer permit and one transaction.
+
 - **Found:** unit 5b tests, by the test writer.
 - **What happens:** `EventLog.append` takes the writer permit itself, and `withWriterPermit` uses the same semaphore without re-entry. A handler that verifies the caller's token and reads the state inside `withWriterPermit` and then calls `append` waits on itself forever. Without a seam the verification would sit outside the permit, and a token revoked while the command waited would still be accepted.
 - **Why it matters:** criterion 5.1 and decision row 32 require the token to be checked in the writer. The test `5.1 token race` fails if it is checked before.
@@ -935,6 +966,8 @@ folder, or for the service to hold memory, beyond what the ceiling promises.
 - **State:** fixed in unit 5b. `EventLog.transact` holds the writer permit and one SQLite transaction around identification, receipt lookup, state and authorization checks, and the supplied append. It publishes only after the outer commit. A callback failure rolls back the events, side rows and receipt without publishing a view change.
 
 ## 54. The tests read two behaviours the plan leaves open: crash handling and the shape of a failed start
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry says settled in unit 5b by the lead rulings on the exit event shape and the failed-start reason.
 
 - **Found:** unit 5b tests, by the test writer.
 - **What happens:** the plan gives `Runner.events` to units 6x but says in unit 5b only that a crash writes `AgentCrashed` with a revocation. The test `5b crash token` assumes a `RunnerEvent` of `{ _tag: "exited", agentId, exitCode, signal, stderr }` that the handler layer turns into the crash. The lifecycle test for a rejected start accepts a reply or a failure, and asserts only the `AgentStartFailed` event and the view.
@@ -989,6 +1022,8 @@ Why it matters: one corrupt receipt row then blocks every later command until th
 What should happen: latch only on failures of the write itself (the append, the commit or the side rows), and turn a read-type failure into a refusal of that one command.
 
 ## 60. Envelope-only receipts rebuild list replies from the current snapshot
+
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. The envelope-only list rebuild path is gone from packages/engine/src/commands/CommandHandler.ts, which now only decodes stored receipts with their reply.
 
 Found: 2026-11-01, in the focused review of unit 5b.
 State: open, low impact.
@@ -1157,6 +1192,8 @@ Why it matters: one bad event must not prevent the consumer from handling
 later valid events for other agents.
 
 ## 70. A command request identifier could store a live secret unchanged
+
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. packages/contracts/src/ids.ts line 8 still defines RequestId as NonEmptyString with no bounded alphabet, though the engine redaction part is fixed.
 
 Found: 2026-11-01, in the verified attack pass for unit 5c.
 State: fixed in the engine by unit 5c fix round 1. A bounded identifier
@@ -2069,6 +2106,8 @@ has gone.
 
 ## 128. Classified pauses need trustworthy error sources and reset times
 
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. Only fake-agent and unit tests supply resetsAt (packages/engine/test/runner/reset-time.test.ts); no recorded real adapter fixture with a reset time is evident.
+
 Found: 2026-11-01, in unit 6c's focused review, finding F-4, and the unit 6b
 review's ruling A3, relayed by engine-lead in board post 980.
 State: error-source classification is fixed in unit 6c fix round 1. The
@@ -2270,6 +2309,8 @@ when recovery is most needed.
 
 ## 158. A no-timeout routing test can count a prompt sent after its snapshot
 
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. moving-requests.test.ts test 5.6 now carries an issue 124 comment and filters late prompt calls after the watermark, so the flaky count no longer fails.
+
 Found: 2026-11-01, by the lead, in the team test runner's check of `worker/engine-i9b` at e263a12 (run 69).
 State: open. The test is unchanged; a later test-only task fixes it.
 
@@ -2317,6 +2358,8 @@ the test-only client in `packages/engine/test/support/socketClient.ts`.
 
 ## 161. Row 64 does not say what an upgrade without an ancestor chain means
 
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks fixed. packages/engine/src/api/ancestry.ts lines 15 to 24 return false for missing or malformed chain or group, and server.ts line 136 refuses with 403.
+
 Found: 2026-11-01, while writing the unit 7a tests.
 State: open for the lead; the unit 7a tests take the reading below.
 
@@ -2347,6 +2390,8 @@ Why it matters: row 64 does not stop a hostile agent on a harness without a
 deny-read mechanism.
 
 ## 163. Issue 41's bound for a stalled subscriber has no number
+
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. api/server.ts line 196 invalidates a subscription at 2,048 events, giving the missing bound.
 
 Found: 2026-11-01, while writing the unit 7a tests.
 State: open for unit 7a's builder; the test sets an upper limit.
@@ -2597,6 +2642,8 @@ requiring a particular shutdown return code, because that behavior is
 outside this fix round's assigned rulings.
 
 ## 178. The ancestry checks do not explicitly refuse unsupported platforms
+
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. engine api/ancestry.ts and client ancestry.ts both take a platform argument and refuse when it is not linux.
 
 Found: 2026-11-01, while writing T-7 after engine-lead's board request 1132.
 State: open for the unit 7b builder's fix round under the Linux-only ruling.
@@ -4839,6 +4886,8 @@ and process-identifier reuse.
 
 ## 264. The orphan-sweep test for a surviving group times out before its own deadline
 
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. Root vitest.config.ts sets testTimeout 60000 and the F-3 case in orphans.test.ts bounds the sweep at 8 seconds, so the reported five-second timeout no longer applies.
+
 Found: 2026-11-03, by review-fix-2 while verifying the post-build A3 fix.
 State: open, recorded at the review lead's request in board post 8.
 
@@ -5417,6 +5466,8 @@ Why it matters: A changed reason string would silently stop an owner alert from 
 
 ## 301. Effect's `RpcGroup.merge` silently replaces a command with the same name
 
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. packages/contracts/test/unique.test.ts case 1.3 detects duplicate commands even though Effect merge silently replaces them.
+
 Found: 2026-11-03, while planning the client API plan.
 State: open.
 
@@ -5425,6 +5476,8 @@ What should happen: Composing several command groups needs a test that every com
 Why it matters: A command could vanish from the served API without any error.
 
 ## 302. A delivery's text is wrapped as data only for an agent sender
+
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. envelope.ts agentText now wraps for every sender except the owner, so a service or piece sender is wrapped as data.
 
 Found: 2026-11-03, while planning the client API plan.
 State: open.
@@ -5453,6 +5506,8 @@ Why it matters: The owner is shown questions nobody can receive an answer to.
 
 ## 305. Secret collection at start-up deletes the secrets a piece keeps
 
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. collectSecrets.ts now keeps references returned by each piece secretKeep list, so pieces can keep their own secrets.
+
 Found: 2026-11-03, while planning the client API plan.
 State: open.
 
@@ -5461,6 +5516,8 @@ What should happen: Client API edit E27 (row 94) lets a piece keep its secrets.
 Why it matters: A piece that needs a stored secret would lose it at the next start.
 
 ## 306. `packages/client` imports Node modules at its root, so a browser cannot use it
+
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. packages/client now splits node.ts, nodeSocket.ts and browser.ts, so a browser entry exists without root Node imports.
 
 Found: 2026-11-03, while planning the client API plan.
 State: open.
@@ -5471,6 +5528,8 @@ Why it matters: The web page cannot use the shared client library.
 
 ## 307. The client's stream dispatch calls `subscribe` for every streaming command
 
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. client core.ts dispatches each streaming command through subscribe(tag, schema) using its own tag, not a single subscribe call.
+
 Found: 2026-11-03, while planning the client API plan.
 State: open.
 
@@ -5480,6 +5539,8 @@ Why it matters: A streaming command other than `subscribe` would read the wrong 
 
 ## 308. The client's typed decoder rejects an unknown event tag
 
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. client core.ts decodeEnvelope turns an unknown event tag into an UnknownEvent instead of rejecting the stream.
+
 Found: 2026-11-03, while planning the client API plan.
 State: open.
 
@@ -5488,6 +5549,8 @@ What should happen: Client API edit E25 (row 109) lets a client pass an unknown 
 Why it matters: Adding an event kind to the server would break every client that is not updated.
 
 ## 309. Engine events have no size bound
+
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. Oversized markers exist in client reads and server.ts, so one large event is bounded by a client.Oversized marker.
 
 Found: 2026-11-03, while planning the client API plan.
 State: open.
@@ -5729,6 +5792,8 @@ Why it matters: The asker waits up to two hours for an agent that has hung.
 
 ## 334. Open questions that the owner writes have no per-author cap
 
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. board/commands.ts line 103 caps open questions at 64 per author and sameAuthor covers the owner as well as agents.
+
 Found: 2026-11-03, while planning the message board plan.
 State: open.
 
@@ -5754,6 +5819,8 @@ corrected assertions.
 
 ## 336. A refused duty is retried after every later batch that touches it
 
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks fixed. packages/engine/src/board/reactor.ts line 131 skips CommandRefused events when marking touched targets, so refusals no longer trigger a retry loop of more refusals.
+
 Found: 2026-11-03, while planning the message board plan.
 State: open.
 
@@ -5763,6 +5830,8 @@ Why it matters: A defect that makes a reactor batch always fail would grow the l
 
 ## 337. The dispatcher wrote a send-time withdrawal without its wait checks
 
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. deliveries.ts line 340 now writes the send-time DeliveryWithdrawn through withWaitChecks.
+
 Found: 2026-11-03, while planning the message board plan.
 State: open.
 
@@ -5771,6 +5840,8 @@ What should happen: Client API v5 edit E18 requires the wait checks (lead ruling
 Why it matters: A parent waits for a target that will never answer.
 
 ## 338. Alerts for matters that exist before the alert reactor's first start are never raised
+
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks fixed. client/alerts/reactor.ts lines 118-123 scan lists.openMatters at first start, and board/openMatters.ts exists, so pre-existing board matters now get baseline alerts.
 
 Found: 2026-11-03, while planning the message board plan.
 State: open.
@@ -5790,6 +5861,8 @@ Why it matters: Without this note the oversized markers look like a defect.
 
 ## 340. A piece's ids are treated as text by the redactor unless the piece adds table entries
 
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. log/redactionStructure.ts now has board entries such as board.ChannelArchived, and the entry records the roles persistence proof of 2026-11-04.
+
 Found: 2026-11-03, while planning the message board plan.
 State: open.
 
@@ -5807,6 +5880,8 @@ This closes the roles proof gap without claiming first-use execution.
 
 ## 341. A "model at capacity" error is returned to the sender as a failed delivery
 
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. deliveries.ts capacityHoldCount and recovery/reload.ts capacityHeld hold a delivery on a capacity error instead of waking parents each time.
+
 Found: 2026-11-03, while planning the foundry roles plan.
 State: open.
 
@@ -5815,6 +5890,8 @@ What should happen: Decision row 11, WS-7b, holds the delivery and releases it l
 Why it matters: A capacity outage wakes parents again and again.
 
 ## 342. No event records an agent's token or prompt-cache usage
+
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks fixed. TurnEnded in packages/contracts/src/events.ts line 192 carries optional usage of type TurnUsage, and AcpRunner.ts terminalUsage reads it from the harness.
 
 Found: 2026-11-03, while planning the foundry roles plan.
 State: open.
@@ -5834,6 +5911,8 @@ Why it matters: Each such request costs a full agent turn.
 
 ## 344. The runner drops the tool `kind` and the permission request's own `rawInput`
 
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. AcpRunner.ts lines 688-692 now carry toolKind and rawInput into the permission record, so the drop described no longer occurs.
+
 Found: 2026-11-03, while planning the foundry roles plan.
 State: open.
 
@@ -5842,6 +5921,8 @@ What should happen: The roles plan's WS-7a proposes optional fields (row 53).
 Why it matters: A standing rule cannot match a request precisely.
 
 ## 345. Resuming a crashed agent queues no carry-on for an unfinished delivery
+
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks fixed. recovery/reload.ts now documents and queues a carry-on for an agent that was mid-turn, and resume.ts passes midTurn to reload.
 
 Found: 2026-11-03, while planning the foundry roles plan.
 State: open.
@@ -5905,6 +5986,8 @@ What should happen: Not decided.
 Why it matters: One slow file system stalls all agents.
 
 ## 352. One shared stream fiber carries every agent's runner events, and `answerPermission` is awaited inside it
+
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks fixed. Permission answers now run as afterCommit in routing/permissions.ts line 51 and CommandHandler.ts around line 170 no longer awaits answerPermission inside the shared runner-event fiber.
 
 Found: 2026-11-03, while planning the foundry roles plan.
 State: open.
@@ -8636,6 +8719,8 @@ used Herdr Synapse's team board and interactive panes instead.
 
 ## 517. Moving the mock onto data files exposed four faults in it
 
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. design/mock/js has no scrollIntoView for the sidebar active agent; only dialogs, board and git screens scroll, so the sidebar fault remains.
+
 Found: 2026-11-07, while moving the mock's fixtures into JSON files and stub functions.
 State: three are fixed on the branch `area/web-mock`. The sidebar fault is open in the mock.
 
@@ -8846,6 +8931,8 @@ Both tests verify that the writer accepts a later command and sends the next
 queued prompt.
 
 ## 530. Phone notification actions and prompt dismissal lacked engine support
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says fixed in website unit W05a with retry, test notification, prompt dismissal and attempt time.
 
 Found on 2026-11-08 while implementing the website's notification actions.
 The engine had no owner command to retry a displayed failed notification.
@@ -9267,6 +9354,8 @@ The corrected candidate requires a new signed pin and complete verification.
 
 ## 542. Project creation admitted credentials for another provider
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry describes the correction using per-harness key mapping and provider credential fields, with permanent public-command tests.
+
 The independent public-command probe configured an executable Claude adapter.
 Its account had no Claude login and held only an OpenAI application programming interface key.
 A separate Cursor account had its own supported key.
@@ -9290,6 +9379,8 @@ The independent original probe and its failure and control artifacts remain unch
 
 ## 543. Project creation admitted a searchable directory as an adapter
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry describes the correction requiring a regular file before the executable check, with permanent regressions.
+
 The independent public-command probe configured a Claude adapter path that was a directory.
 The Claude account had its own supported credential, and a later Cursor adapter was usable.
 The local readiness check tested only executable access.
@@ -9310,6 +9401,8 @@ All existing provider credential cases and lifecycle assertions remain intact.
 The independent original directory and executable artifacts remain unchanged.
 
 ## 544. Project lead choices could freeze creation after Git effects
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry describes settings admission and creation now validating choices before any intent, with permanent handler regressions.
 
 Found: 2026-11-09, during independent lifecycle, Git and configuration composition review at `63bab1c`.
 
@@ -9340,6 +9433,8 @@ The original independent bad/control artifacts and interrupted full checks remai
 
 ## 546. The composer had no typed task and file context references
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the engine now searches tasks and files; the shared resolver exists at packages/engine/src/project/context.ts.
+
 Found: 2026-11-09, during the website preparation at `bc783b2`.
 The manager allocated this issue to engine unit W03D.
 
@@ -9361,6 +9456,8 @@ Old commands and events without context remain valid.
 React controls remain outside this change.
 
 ## 556. The terminal stop fixture could place its barrier before the message
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the fake agent now has a notification barrier fixing the fixture ordering defect; production unchanged.
 
 Found: 2026-11-09, in the first W03D full check at `bc783b2`.
 The manager allocated this issue after the exact-source ordering diagnostic.
@@ -9430,6 +9527,8 @@ The original independent failed probes and logs are retained unchanged.
 
 ## 557. Empty project pages and the client request index bypassed their reply budgets
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says each helper now measures its final complete success reply, with authenticated regressions.
+
 Found: 2026-11-09, during the website engine review at `4c657279`.
 
 The generic project page helper checked complete encoded replies only when adding a row.
@@ -9452,6 +9551,8 @@ They cover ordinary empty replies, filtered empty replies, exhausted pages, perm
 They also retain populated pagination, access refusals, stored metadata, and deterministic rebuild assertions.
 The separate `project.requests` correction tracked as issue 554 is outside this change.
 ## 548. Discovery could materialize private Codex shadow homes
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says discovery now uses read-only resolveCodexHome, which exists in packages/engine/src/accounts/shadowHome.ts and is used by requests.ts.
 
 Found: 2026-11-09, by reading the accepted project-readiness dependency during first-run preparation.
 The manager allocated this number for the read-only discovery correction.
@@ -9477,6 +9578,8 @@ Local credential presence does not promise a successful remote handshake or prov
 
 ## 549. Draft field identity conflated different entities
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the correction compares a structured entity and field pair, with a public-handler regression.
+
 Found: 2026-11-09, during the first-run and mocks implementation review.
 The manager allocated this number after the real public-handler counterexample failed.
 
@@ -9491,6 +9594,8 @@ That result is preserved separately and is not called a passing field-identity p
 The permanent positive control uses the supported contract and retains the same two entity-qualified fields and approval assertion.
 
 ## 550. Approval silently dropped accepted declared schema changes
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says declared schemaChanges are removed from the contract; packages/engine/src/project/README.md states the key is forbidden at admission.
 
 Found: 2026-11-09, during the first-run and mocks implementation review.
 The manager allocated this number after the real public-handler counterexample failed.
@@ -9515,6 +9620,8 @@ It records `Failure`, the fixed refusal reason, and no added events, revisions, 
 
 ## 551. Repository Design lacked a registered design-file identity and read
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry describes project.design.record and project.design.read as implemented; packages/contracts/src/project/design.ts defines the command.
+
 Found: 2026-11-09, during the Mocks and Design page preparation join.
 The manager allocated this number for the bounded engine metadata correction.
 
@@ -9536,6 +9643,8 @@ The engine rechecks that evidence before mock approval.
 No filename is inferred, and no editor, preview, URL fetch, or design-to-code process is started.
 
 ## 552. Mock scenarios lacked identities and concrete screen routes
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry describes typed scenario identities and route bindings as implemented, later simplified by an owner decision recorded as approved, not a defect.
 
 Found: 2026-11-09, during the Mocks page preparation join.
 The manager allocated this number for the typed scenario correction.
@@ -9563,6 +9672,8 @@ This is an approved product simplification, not a new defect.
 The historical finding and its original proof remain unchanged.
 
 ## 553. Another caller could replace an immutable mock or Design revision
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states both planners now refuse an existing revision key, with regressions retained.
 
 Found: 2026-11-09, during the final bounded engine review.
 The manager allocated this number after both authenticated public-handler probes failed.
@@ -9596,6 +9707,8 @@ The observer's exact derivation is recorded in `/tmp/w05b-proof/revision-collisi
 
 ## 558. The Design token-document path admitted raw secret probes
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states tokensPath now admits only a confined relative JSON-file path, with regressions.
+
 Found: 2026-11-09, during the first explicitly granted full check of W05b.
 The manager allocated this number and approved a bounded correction after the actual command exit.
 
@@ -9623,6 +9736,8 @@ A corrected focused pass cannot retroactively change that first full-check resul
 
 ## 559. The exact empty project snapshot fixture omitted owner-only setup
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the owner and agent snapshot expectations in the fixture were corrected.
+
 Found: 2026-11-09, during the first explicitly granted full check of W05b.
 The manager allocated this number and approved the exact fixture correction after command exit.
 
@@ -9638,6 +9753,8 @@ No production delivery authority changes.
 The original failing assertion and actual snapshot diff remain preserved in the first full-check log.
 
 ## 560. Empty mock pages bypassed the final wrapped reply budget
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the read measures its final wrapped reply; packages/engine/src/project/mocks.ts contains the refusal reason text.
 
 Found: 2026-11-09, during the bounded review after the first full check.
 The manager allocated this number before the independently gated public proof.
@@ -9668,6 +9785,8 @@ The permanent tests now assert that exact public object and independently verify
 The failed affected log and unchanged source archive remain under `/tmp/w05b-proof/affected-558-559-560-1*`.
 
 ## 545. Main review had no explicit owner approval and merge path
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry describes the review preparation, evidence report and owner approval path as added by the bounded correction.
 
 Found: 2026-11-09, during the Git page preparation at `ca1d492`.
 The manager reserved this issue number and the owner authorized its bounded engine follow-up at `bc783b2`.
@@ -9709,6 +9828,8 @@ The test artifacts and builder result record their actual execution separately.
 React, terminal support, and the rest of the five-step website scope remain separate work.
 
 ## 555. Owner approval could record a merge without the reviewed commit
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the merge now overrides squash options and verifies reviewed-commit ancestry before success.
 
 The independent review of issue 545 found that `branch.main.mergeOptions=--squash` made an authenticated owner approval return a durable `merged` outcome while main still pointed to its old head.
 The reviewed commit was absent from main's ancestry, and the feature bytes were only staged.
@@ -9754,6 +9875,8 @@ Other tests may have the same hidden dependence on a slow computer.
 
 ## 563. Context search counted item bytes without the complete result
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states admission now counts the complete encoded result and lists regressions for the overflow case.
+
 Found: 2026-11-09, during independent verification of signed `3dd4d20`.
 The manager allocated the correction to W03DF1.
 
@@ -9784,6 +9907,8 @@ The production context and owner-task delivery paths are unchanged.
 Status: corrected in the website composition; combined proof and independent review are required.
 ## 564. An area-less first team stranded later teams at the same stage
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the peer-area rule was removed; the refusal text no longer appears anywhere in packages.
+
 Found: 2026-11-09, in independent source review and the builder's actual authenticated public reproduction on signed `ce7a816`.
 The manager allocated this number and approved the bounded correction.
 
@@ -9804,6 +9929,8 @@ The separately derived corrected observer retains the original team success expe
 No team-edit machinery is added.
 
 ## 565. Mock artifact reads bypassed the final wrapped reply budget
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the artifact reply is measured; the refusal reason text exists in packages/engine/src/project/mocks.ts.
 
 Found: 2026-11-09, in independent source review and the builder's actual authenticated public reproduction on signed `ce7a816`.
 The manager allocated this number and approved the bounded correction.
@@ -10078,6 +10205,8 @@ They also verify that tracked and untracked .env files are excluded while .env.e
 
 ## 575. A Git effect could be followed by a durable false refusal
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry describes typed Git attempts and outcome transactions, and a signed source passing its full check.
+
 A merge or commit can finish before the outcome transaction fails.
 Git mutations now use a typed attempt in the existing event log, followed by a short outcome transaction.
 An attempt preserves the exact caller, request, body hash, workspace, and pre-effect Git identities without storing a raw message or payload.
@@ -10096,6 +10225,8 @@ The Grade 7 review remains preserved; current corrections in issues 595–598 aw
 
 ## 576. A new project repository lacked a usable main destination
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says repository creation writes an empty initial main commit and refuses useWorktree=false; full check passed.
+
 An unborn main checkout cannot serve as the reviewed destination for a project's first commit.
 New project repository creation now writes an empty initial main commit and records its main workspace.
 The initial commit contains no user files.
@@ -10111,6 +10242,8 @@ The independent review found the existing-checkout branch gap recorded in issue 
 
 ## 577. A linked question could finish another worker's task
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states linked question admission and completion now require the task owner or lead authority.
+
 Linked question admission now requires the task owner or the project's lead.
 Completion checks that authority again against the current task owner and project membership.
 Holding or answering the question does not grant authority over its linked task.
@@ -10119,6 +10252,8 @@ Cross-project, reassignment, and rebuild coverage are retained or extended in th
 
 ## 578. A failed creation had no way to release its durable reservation
 
+State: fixed. Read on 2026-11-15, not checked against the code. project.creation.abandon is defined in packages/contracts/src/project/commands.ts as the entry describes.
+
 The owner-only project.creation.abandon command finishes a recorded creation intent without changing the filesystem.
 The command shares the lifecycle lane so abandonment cannot race an active creation.
 The typed client, command-line interface, and Model Context Protocol inventories include the command's access decision.
@@ -10126,6 +10261,8 @@ The command adds no visible control to the mock.
 Interrupted-creation and replaced-folder safety checks remain required.
 
 ## 579. A slow Git mutation could hold the global writer
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states Git runs outside the writer, with a bounded regression and full check passed on signed 75f48a8.
 
 Git mutations now take a request lane, perform a short writer preflight, run Git under the existing runtime gate outside the writer, and record the outcome in a short transaction.
 The runtime gate remains the only Git queue.
@@ -10160,6 +10297,8 @@ Independent round-one review found no lock-order defect; correction-unit accepta
 
 ## 580. Placement could claim an unsupported workspace move
 
+State: fixed. Read on 2026-11-15, not checked against the code. Engine commands.ts refuses placement changes with the message about machine pairing, matching the entry.
+
 A project.place request that changes its workspace or machine now refuses until machine pairing exists.
 The Machines page now displays the assigned checkout without offering another checkout as an available move.
 It explains that changing placement requires unavailable machine pairing.
@@ -10173,17 +10312,23 @@ The static helper remains for W10B; later rendering is not claimed.
 
 ## 581. Recording mocks could bypass stage authority
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states mocks commands that change stage now use lead-or-owner authority.
+
 A mocks command that changes the project stage now uses the same lead-or-owner authority as an explicit stage change.
 A member can still record a revision that leaves the stage unchanged.
 Owner approval retains its existing authority.
 
 ## 582. Context search bounded its result but not its complete reply
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the complete reply is now checked against 256 kibibytes with a fixed safe refusal.
+
 Context search retains its exact 64 kibibyte result limit and truthful truncation flag.
 It now checks the complete owner or member reply, including the request identity and member data wrapper, against 256 kibibytes.
 An oversized wrapper receives a fixed safe refusal without changing read marks.
 
 ## 583. Creation used independent and stacked Git queues
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states creation now uses the shared Git service gate and the private queue was removed.
 
 Creation now uses the runtime's shared Git service through its existing gate.
 The private queue inside each Git service has been removed.
@@ -10194,12 +10339,16 @@ Abandonment releases only the durable reservation and never removes a witness, c
 
 ## 584. Restart could resume a member of an unfinished archive
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states restart finishes archive intents first and excludes archiving members from reload.
+
 Restart now attempts to finish durable archive intents before it considers reloading agents.
 An archive that cannot finish remains visibly unfinished.
 Paused and interrupted agents whose project is archiving or archived are excluded from automatic reload and account recovery.
 The reload input check also enforces this rule.
 
 ## 585. Network Git shared the short read subprocess timeout
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states explicit fetch, pull and push use a separate bounded network subprocess timeout.
 
 Explicit fetch, pull, and push now use a separate bounded network subprocess timeout.
 Local read subprocess limits remain short.
@@ -10208,12 +10357,16 @@ A possible mutation followed by timeout remains uncertain under issue 575.
 
 ## 586. Credential filenames were filtered inconsistently
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry describes the shared credential-name predicate with a later correction recorded in issue 589.
+
 The original correction shared the credential-name predicate across repository artifacts, context references, and Git paths.
 Independent review found that applying it to every Git path also blocked owner mutations and whole-result reads; issue 589 records that correction.
 Containment, symlink, nested-repository, redaction, and complete reply limits remain enforced.
 Real confined safe-file and owner/member refusal controls are required before delivery.
 
 ## 587. Repository configuration runs with the owner's Unix authority
+
+State: fixed. Read on 2026-11-15, not checked against the code. Limit is documented in packages/engine/src/project/git/README.md line 119 about owner-controlled Git filters and merge drivers.
 
 LGTM Studio is a local program for one owner.
 An owner-controlled repository can configure Git content filters or merge drivers that run as that same Unix user.
@@ -10264,6 +10417,8 @@ All temporary observations were removed again before delivery.
 
 ## 589. Credential-name exclusion blocked owner Git operations and whole agent reads
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the predicate now applies only to agent-visible reads, with controls passing on the signed source.
+
 The round-one independent review found that the credential-name predicate was inside the shared literal Git path validator.
 Owner stage, unstage and discard operations consequently refused ordinary tracked credential-shaped filenames.
 Aggregate diffs also failed instead of omitting excluded agent-visible files.
@@ -10275,6 +10430,8 @@ The full check on signed 27e38c85, exact source 6b6cd964, passed recursive/root 
 The original Grade 6 and later Grade 7 reviews remain preserved; the current whole-unit correction and independent re-check remain pending.
 
 ## 590. Git failures lost known reasons and uncertain attempts accumulated
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry describes preserved determinate reasons and uncertain replies; the fixed uncertain text exists in packages/web/src/git/state.ts.
 
 The original attempt marker treated every failure after a subprocess started as uncertain.
 The reply asked for an identical retry even when no positive reconciliation was supported.
@@ -10297,6 +10454,8 @@ The original Grade 6 and later Grade 7 reviews remain preserved; the current who
 
 ## 591. Existing repository creation could persist a feature branch as main
 
+State: fixed. Read on 2026-11-15, not checked against the code. Creation requires main or master; the exact refusal reason exists in packages/web/src/project/creation.ts and engine tests.
+
 Creation previously recorded the main checkout's current branch without requiring main or master.
 The review route then refused that permanent destination even after an external branch switch.
 Creation and preview now require main or master before a new intent or filesystem effect, and saved intents are checked before resumed effects.
@@ -10310,6 +10469,8 @@ The original Grade 6 and later Grade 7 reviews remain preserved; the current who
 
 ## 592. Task reassignment left a valid linked question permanently open
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states a valid holder answer now closes the question after task reassignment, with full check passed.
+
 An answer previously refused when the original asker no longer had authority over the linked task.
 The new task owner then remained blocked by that open question.
 A valid holder answer now closes the question and delivers its redacted answer normally.
@@ -10321,6 +10482,8 @@ The original Grade 6 and later Grade 7 reviews remain preserved; the current who
 
 ## 593. Git process-wrapper tests are sensitive to host load
 
+State: open. Checked against the code on 2026-11-15. Entry deliberately leaves timeouts unchanged and wrappers unrewritten; no later entry records a fix for host-load sensitivity. Kind: tests.
+
 The independent Opus round-one review observed eight default five-second timeouts in main-review.test.ts at a load near 39 on 38 processors.
 All 31 cases passed when the reviewer separately used a 60-second timeout.
 That is attributed reviewer evidence, not a builder rerun or a passing result at the original timeout.
@@ -10331,6 +10494,8 @@ Original failures, original timeouts and the lightly loaded remote full proof re
 
 ## 595. Broad failure text marked partial Git effects as determinate
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states local process failures stay conservative and only explicit remote boundaries classify refusals; implementation written.
+
 The Grade 7 re-review found that local permission errors and mixed-reference fetch failures could acquire a known refusal after Git had changed files or references.
 Local process failures now remain conservative and never map permission text to authentication_required.
 Only explicit fetch, pull and push boundaries can classify constrained remote refusal evidence; push rejection is specific to push, and pull divergence uses its exact terminal diagnostic.
@@ -10339,6 +10504,8 @@ Real partial fast-forward merge, pull permission, mixed-reference fetch and main
 Implementation and controls are written; new proof and independent re-check remain pending.
 
 ## 596. Refresh made the old reconciliation branches mostly unreachable
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the retry reconciliation branches are retired in favor of terminal uncertainty.
 
 The state refresh policy clears attempts into terminal uncertainty, so commit and approval reconciliation on identical retry added a parallel policy that the page rarely reached.
 Those retry reconciliation branches are retired.
@@ -10350,6 +10517,8 @@ New proof and independent re-check remain pending.
 
 ## 597. Ordinary Git state reads unnecessarily queued for mutation lanes
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states ordinary state reads now take the workspace lane only when an attempt is pending.
+
 The state-read cleanup originally acquired a workspace operation lane even when no pending attempt existed.
 It now observes current authority and workspace identity, then takes that lane only if the current workspace has a pending attempt.
 The ordinary path retains the shared runtime Git gate and does not clean up attempts that started after its check.
@@ -10358,6 +10527,8 @@ A positive ordinary-read overlap and the existing real held-Git pending-refresh 
 New proof and independent re-check remain pending.
 
 ## 598. Filtered review patches omitted bounded files without marking truncation
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states filtered review diffs now report truncation when the file list is truncated.
 
 An agent review selected paths from its bounded file list but did not mark the resulting patch truncated when that list omitted files.
 Its diff now reports truncation whenever the filtered file list is truncated, while owner aggregate range behavior remains.
@@ -10728,6 +10899,8 @@ The original full log and direct exit remain preserved in website-1/w10b-documen
 
 ## 606. Previously inspected worktree summaries hide fresh row counts
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the correction keeps working data authoritative only for the inspected row and uses count generation otherwise.
+
 The independent W09 review found that cached working changes overrode later count reads for an uninspected worktree.
 After visiting two worktrees, changes in the first could remain displayed as a clean checkout while inspecting the second.
 A newer partial or unavailable result was also hidden by that older working view.
@@ -10737,6 +10910,8 @@ The original focused control failed against unchanged production with a genuine 
 Candidate focused and full proof are recorded under the existing build loop.
 
 ## 607. Split Git comparisons omit side headings
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states paired Before and After headings were added to the shared comparison renderer.
 
 The independent W09 review found that real split comparisons omitted the mock's Before and After headings and accessible side identity.
 The correction adds paired headings and labeled line groups in the shared comparison renderer.
@@ -10806,6 +10981,8 @@ The fixes are in signed commits `eeab43a` and `3e5f892`.
 
 
 ## 610. The merged shell constrained the Git workspace width
+
+State: fixed. Read on 2026-11-15, not checked against the code. packages/web/src/styles.css line 116 excludes .conversation and .git-workspace from the max-width rule, as the entry describes.
 
 Found: 2026-11-10, in the manager's full check of merged 2b482a2.
 The general shell section rule had higher specificity than the Git workspace override.
@@ -10899,6 +11076,8 @@ assertion and deadlines are unchanged, and temporary observations were removed.
 
 ## 611. The mock preview issuance observation failed in the W11 full
 
+State: open. Checked against the code on 2026-11-15. packages/web/e2e/new-project.spec.ts still asserts data-loaded at lines 569, 626 and 640 and the entry records an unproved cause with recurrences. Kind: tests.
+
 Open: on signed 5e12347, new-project.spec.ts:605 observed status 0 instead of 200 within five seconds in full4. The unchanged uninstrumented case and credits then passed. The cause remains unproved. The manager accepted that combined gate without changing the assertion or deadline.
 
 The same registered component journey failed again in the final merged full on 4f9ae0a, at a different assertion.
@@ -10915,6 +11094,8 @@ The unchanged case passed on its own in 24.5 seconds.
 
 ## 612. The built web page prints raw engine data and has weak component design
 
+State: obsolete. Read on 2026-11-15, not checked against the code. Entry criticizes the page in packages/web, which AGENTS.md says is retired and no longer served; the website replaced it.
+
 Open: found on 2026-11-10 while comparing the page in `packages/web` with the mock.
 The page's colours and type match the mock's tokens. The faults are in the components.
 An agent thread prints raw engine envelopes and identifiers, with no avatar, name or time.
@@ -10927,6 +11108,8 @@ The rebuilt mock in `design/mock/` is the proposed reference for fixing these.
 
 ## 613. Agents carry invented personal names in the engine and the older mock
 
+State: open. Checked against the code on 2026-11-15. The engine name list in lifecycle.ts is gone, but design/data/heavy and sample events.json and reads.json still carry the invented names Rowan and Sage. Kind: internal.
+
 Open: the owner rejected invented agent names on 2026-11-10. An agent is named by its role.
 The engine still gives each project lead a name from a fixed list at
 `packages/engine/src/project/lifecycle.ts:21`. The list starts with Sage and Rowan.
@@ -10938,6 +11121,8 @@ The engine change is not made yet, because the lead's name is passed to the agen
 at `lifecycle.ts:251` and is written into stored events.
 
 ## 614. The design file lags the rebuilt mock's tokens and names
+
+State: open. Checked against the code on 2026-11-15. design/mock/js/screens/design.js:87 FILE_COLORS still lists only 15 colours, so the file still lags the 38 code tokens; later issue 621 does not claim full parity. Kind: internal.
 
 Open: found on 2026-11-10 while building the repository Design page in `design/mock/`.
 The design file is `design/lgtm.fig`.
@@ -10955,6 +11140,8 @@ The Design lead agent proposes those changes, and the owner approves them.
 
 ## 615. The mock's Git tab replaces its structure with a blank page when there is no worktree
 
+State: open. Checked against the code on 2026-11-15. design/mock/js/screens/git.js:722 still returns the single centred Empty state titled No worktrees yet when a project has no worktree. Kind: visible to the owner.
+
 Open: found on 2026-11-10 during the second round of the mock.
 The Git tab draws one centred "No worktrees yet" message at
 `design/mock/js/screens/git.js:713` when a project has no worktree.
@@ -10963,6 +11150,8 @@ The Git tab should keep its Changes and History columns, with an empty row in ea
 The round 2 brief did not list the Git tab's empty state, so it was left as it is.
 
 ## 616. The repository Design page draws every screen frame as a live copy of the mock
+
+State: open. Checked against the code on 2026-11-15. design/mock/js/screens/design.js:186 still renders an iframe per screen frame, only lazy loaded, so every frame loads a live mock copy. Kind: internal.
 
 Open: found on 2026-11-10 while building the Design page in `design/mock/`.
 Each screen frame on the Screens sheets is a frame that loads the whole mock at that
@@ -11094,12 +11283,16 @@ It also removes the mock's default priority, roadmap dates, and eight-phase prog
 
 ## 628. Project settings rendered values the engine does not store.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
+
 The first connection supplied enabled test and review switches and a derived task prefix.
 The settings page also proposed a work assignment from the mock's model lists.
 This change leaves these live fields empty and keeps their actions on the explicit refusal.
 The lead's model and effort choices now come from the configuration read.
 
 ## 629. A failed Git read hid independent task history.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
 
 The new task detail read initially treated history and changed files as one successful operation.
 A refused Git read therefore hid history that the engine had returned.
@@ -11108,11 +11301,15 @@ The browser fixture now registers a real temporary Git repository and its worksp
 
 ## 630. The sidebar did not refresh the owner's saved name.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
+
 The connection originally read the owner's name only when it connected.
 Saving a display name during first run left the sidebar showing its old value.
 The connection now reads the settings again when their change arrives on the stream.
 
 ## 631. The mock hides message post actions in a narrow panel.
+
+State: unclear. Checked against the code on 2026-11-15. No 720 pixel rule hiding post actions found in design/mock/css; could not locate the hiding rule, so it needs a browser check at narrow width. Kind: visible to the owner.
 
 The existing message styles hide the post action buttons when the panel is narrower than 720 pixels.
 This also happens on a desktop when the sidebar and channel list reduce the panel width.
@@ -11121,6 +11318,8 @@ Changing this layout remains outside this connection change.
 
 ## 632. Generic dialogs closed before a live request finished.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
+
 The mock's rename and confirmation dialogs close before their callbacks run.
 A live rename or archive therefore had no pending control and lost its draft on refusal.
 These dialogs now support waiting for a reply when the caller requests it.
@@ -11128,6 +11327,8 @@ The connected project actions use this option.
 The standalone mock retains its immediate callbacks.
 
 ## 633. Repository placeholders asserted that unknown data was absent.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
 
 The repository page rendered a missing remote address as "None".
 Project settings rendered the same missing address as "No remote".
@@ -11296,6 +11497,8 @@ The earlier delay had masked this product race in the test harness.
 
 ## 645. Live request cards used the mock's fixed permission options.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
+
 The mock's compact approval card always offered its own Allow and Deny identifiers.
 A harness can send different identifiers and persistent options.
 The live card now renders the engine's complete option list.
@@ -11304,11 +11507,15 @@ The browser test answers a permission with a harness-specific identifier.
 
 ## 646. Reading an absent thread could write into the live store.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
+
 The mock's thread reader created an empty thread when none existed.
 Live threads are engine records, so that read now returns an empty list without writing.
 The live connection clears thread records when the owner session ends.
 
 ## 647. A snapshot refresh could skip queued conversation events.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
 
 The live connection advanced its stream cursor when it published a refreshed snapshot.
 A lifecycle event could trigger a snapshot that already included later prompt and reply events.
@@ -11319,12 +11526,16 @@ The browser test verifies that a sent prompt appears before any reload.
 
 ## 648. A fast session check could leave the page on its loading screen.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
+
 The store subscribed its rendering listener in a delayed effect.
 A fast session check and snapshot could publish before that listener existed.
 The store now subscribes in a layout effect, before browser responses can arrive.
 The browser journey checks a signed-in reload after live actions.
 
 ## 649. Context selection needs the registered worktree identity.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
 
 A team's worktree can also be the project's registered checkout.
 The live context picker now uses the engine's worktree identifiers from the project and team records.
@@ -11333,11 +11544,15 @@ The browser test attaches a task identity to a real prompt in a temporary Git re
 
 ## 650. Reads could start before the live connection was ready.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
+
 Home could try its request and phone-offer reads before the transport became available.
 Home now starts those reads when the connection reports that it is live.
 A failed request uses the existing temporary notice, so its reason does not remain over the controls indefinitely.
 
 ## 651. Some supplied labels were still shown as identifiers.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
 
 The live composer showed an account identifier instead of its display name.
 Prompt context showed a task identifier instead of its available label.
@@ -11346,6 +11561,8 @@ The open screens now read account names and map task labels and the Reviewing st
 The account reader retains only the identifier, harness, and display name.
 
 ## 652. The live idle lane could claim that no work was assigned.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
 
 An idle agent can still own an active task.
 The mock's fallback reason said "Nothing assigned" for that agent.
@@ -11415,6 +11632,8 @@ The agent that asked is told the answer came from an agent, when it came from th
 
 ## 658. An open live page stays on "Offline" after the service restarts
 
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks fixed. packages/studio/src/connection.ts:252-256 after a failure posts /api/session and on 401 calls setSession expired, which should bring up sign-in without a reload.
+
 Found: 2026-11-13, by hand on the first real project.
 State: open.
 
@@ -11425,6 +11644,8 @@ The page should notice that the service answers again and ask the owner to sign 
 
 ## 659. The live Mocks tab did not read recorded bundles.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
+
 The first live connection left each project's mock record empty.
 It also hid the Mocks tab because the snapshot does not carry a bundle flag.
 The step 2 adapter now reads complete mock history when the tab opens.
@@ -11433,6 +11654,8 @@ A browser test covers current artifacts, stale artifact refusal, approval, and r
 This problem is fixed on the worker branch.
 
 ## 660. The live repository design page used the sample's fixed sheets.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
 
 The page did not read the registered design, components, or tokens.
 The step 2 adapter now loads those records when the page opens.
@@ -11446,6 +11669,8 @@ This problem is fixed on the worker branch.
 
 ## 661. Machines displayed unsupported capacity and installation placeholders.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
+
 The live page treated a zero slot limit as real capacity.
 It also showed a persistent scanning state without reading harness discovery.
 The step 2 adapter now loads discovery and the saved workspace and web port.
@@ -11456,6 +11681,8 @@ Browser tests cover these refusals, discovery, rescanning, and repository regist
 This problem is fixed on the worker branch.
 
 ## 662. Search treated unavailable repository metadata as known.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
 
 The switcher showed "No remote" when the engine had not supplied a remote.
 Its wider agent text also used a lifecycle display word as activity.
@@ -11469,6 +11696,8 @@ This problem is fixed on the worker branch.
 
 ## 663. Display cleanup depended on a live socket.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
+
 The new display adapter initially applied the socket guard to closing a frame.
 A lost socket could therefore prevent navigation cleanup from reaching the
 Hypertext Transfer Protocol (HTTP) endpoint.
@@ -11479,6 +11708,8 @@ A focused test verifies both cleanup cases and the authenticated request options
 This problem is fixed on the worker branch.
 
 ## 664. A legacy Git browser case retained its initial uncertainty message.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
 
 The full check on `c8f7009` passed all 529 unit test files.
 Its browser run failed the existing lost-reply case at `git.spec.ts:271`.
@@ -11491,6 +11722,8 @@ The worker result records the full check and baseline comparison outcomes.
 
 ## 665. The known repository dialog referenced an unavailable local variable.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry itself states the fix or describes the change as made and corrected.
+
 The merge review found that opening the live dialog for a known repository
 referenced a `details` variable that the dialog did not define.
 The dialog now uses the repository's recorded local folder.
@@ -11499,6 +11732,8 @@ A regression test opens the dialog and checks the actual registered path.
 This problem is fixed in the merge.
 
 ## 666. An answered question or approval card lost its contents.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the card now keeps its contents; ui.js uses answerKind in BriefCard, though the look awaits owner approval.
 
 The owner reported this on 2026-11-13.
 An answered card in a thread shrank to its title and a short answer line.
@@ -11514,6 +11749,8 @@ This is a change to the visible mock, and it awaits the owner's approval of the 
 
 ## 667. A lead repeated its question as a message after asking it.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the ask tool description now tells agents not to repeat; packages/mcp/src/tools.ts says write nothing about the question after calling ask.
+
 The owner reported this on 2026-11-13.
 The project lead called the `ask` tool, and the owner saw the question as a card.
 The lead then wrote "Sent through LGTM Studio:" and the same question again as an ordinary message.
@@ -11524,6 +11761,8 @@ A running agent keeps the old description until it is started again.
 The website does not hide a repeated question, because hiding an agent's free text could hide a real message.
 
 ## 668. A live approval card showed the raw command as its title.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the live website now writes a plain title and code boxes; packages/studio/src/engineToolTitles.ts exists for this.
 
 The owner reported this on 2026-11-13.
 The Codex harness names a permission request with the command itself.
@@ -11538,6 +11777,8 @@ The folder now comes from the tool's own working folder when the harness reports
 
 ## 669. A tool row in a live thread grew to the size of its command.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the closed row now shows the first line of the command with details inside code boxes.
+
 The owner reported this on 2026-11-13.
 The grey row that shows an agent's tool call used the whole command as its one-line label.
 A long script filled the page, and its output had no limit either.
@@ -11545,6 +11786,8 @@ The closed row now shows the first line of the command, cut with an ellipsis.
 The full command and the output open inside the row, in code boxes that scroll and can be copied.
 
 ## 670. An answered question shows its accepted answer beside the buttons.
+
+State: open. Checked against the code on 2026-11-15. Entry says the owner will rework this look later and it is recorded unchanged; the Deny button row in design/mock service.js still holds the answer input. Kind: waits for a decision.
 
 The owner reported this on 2026-11-13.
 An answered question card puts the accepted answer in the button row, between "Deny" and "Details".
@@ -11690,6 +11933,8 @@ It checks that the connection signs out and the request store becomes empty.
 
 ## 680. The Nudge regression test still expected an unconnected control after the merge.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states this was a test fault and the test now selects New repository; fixes in signed commits eeab43a and 3e5f892.
+
 The web-flaky investigation reproduced five failures in five runs with two browser workers.
 Every trace stopped before logout at an attempt to fill a read-only repository name.
 The asynchronous project read had selected the existing Actual Product repository.
@@ -11759,6 +12004,8 @@ The fixes are in signed commits `eeab43a` and `3e5f892`.
 
 ## 683. A plain-word approval description was read as a command.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the description now stands in for the command only when input is cut, with a unit test.
+
 The full check on 2026-11-13 found this in the live chat browser journey.
 The fix for issue 668 treated a harness's description as the command whenever the tool's input was not readable.
 A request without its source event, such as a row on Home, then turned "Run Studio checks" into 'Run "Run" in the terminal'.
@@ -11766,6 +12013,8 @@ The description now stands in for the command only when the engine marks the inp
 A unit test covers the plain-word case.
 
 ## 684. Service settings shows no models for any harness.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states it is fixed by s4-models; packages/engine/src/client/reads/harnessChoices.ts provides client.harness.choices.
 
 The owner reported this on 2026-11-13.
 The owner changed the default harness to Claude on "Service settings" and saw no models.
@@ -11783,6 +12032,8 @@ The live website uses these reports and shows a plain reason when choices are un
 
 ## 685. The Messages tab shows no board on a project without teams.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says fixed on 2026-11-13 with default General and Leads channels; packages/engine/src/project/defaultChannels.ts exists.
+
 The owner reported this on 2026-11-13.
 The project "Connect website engine" had a lead and no team.
 The owner decided that every project starts with a default set of channels.
@@ -11796,6 +12047,8 @@ The Messages tab shows both channel names and accepts the owner's posts.
 
 ## 686. The Mocks tab is absent on a project without mocks.
 
+State: open. Checked against the code on 2026-11-15. Entry states whether the Mocks tab should always show is the owner decision, and no later entry records that decision. Kind: waits for a decision.
+
 The owner reported this on 2026-11-13.
 The live website shows the "Mocks" tab only when a project is in its design stage or has a recorded mock.
 The project "Connect website engine" has neither, so the tab is not shown.
@@ -11805,6 +12058,8 @@ This is not changed.
 
 ## 687. The owner judged Subscriptions and Service settings unfinished.
 
+State: open. Checked against the code on 2026-11-15. Entry records the owner has not yet said what is missing on Subscriptions or Service settings, and no later entry resolves it. Kind: waits for a decision.
+
 The owner reported this on 2026-11-13.
 The owner said that "Service settings" needs a lot of work and is acceptable for now.
 The owner said that "Subscriptions" needs work before a release.
@@ -11812,6 +12067,8 @@ The owner did not yet say what is missing on either page.
 
 
 ## 688. An anchored channel could appear under unrelated projects.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says found and fixed on 2026-11-13; the website now places a channel under its project lead anchor.
 
 Found and fixed on 2026-11-13 while implementing the default project channels.
 The website inferred a channel's projects from all of its members.
@@ -11822,6 +12079,8 @@ Channels without a project lead anchor continue to use their members.
 
 
 ## 689. The Git browser journey filled a disabled field before staging finished.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the shared file-action helper now waits for the Git view to finish each action.
 
 Found on 2026-11-13 during the default-channel full check.
 The existing Git journey clicked a staging action.
@@ -11835,6 +12094,8 @@ The wait uses the journey's existing thirty-second assertion budget.
 
 
 ## 690. Default project channels did not respect the board's membership rules.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says fixed on the worker/s4-channels branch; board disabled refusal exists in packages/engine/src/board/commands.ts.
 
 Found in the review of commit be84dd6 on 2026-11-13.
 Fixed on the worker/s4-channels branch.
@@ -11853,6 +12114,8 @@ This matches team creation and prevents creation side effects before the refusal
 
 ## 691. An agent can give its child a lead role in its own project.
 
+State: open. Checked against the code on 2026-11-15. Entry is an accepted risk; changing it needs a firmer team-lead identity in the engine, which no later entry says was built. Kind: waits for a decision.
+
 Reviewed and accepted for the default project channels on 2026-11-13.
 The team record has a group and has no separate team-lead identity.
 An agent allowed to start a child can assign a lead role and its project's team group.
@@ -11863,6 +12126,8 @@ Changing this behavior would require a firmer team-lead identity in the engine.
 
 ## 692. Default project channel names conflict with the manager's unique-name rule.
 
+State: open. Checked against the code on 2026-11-15. packages/engine/src/board/commands.ts line 40 still refuses a channel name that already belongs to this manager; no later entry resolves the owner decision. Kind: waits for a decision.
+
 Open after the default-channel review on 2026-11-13.
 The owner manages a General channel and a Leads channel for each project.
 These automatic channels can repeat those names across projects.
@@ -11871,6 +12136,8 @@ The owner therefore cannot manually open another General channel or another Lead
 The rule remains unchanged pending an owner decision.
 
 ## 693. Two Git browser journeys failed intermittently during the channel review checks.
+
+State: open. Checked against the code on 2026-11-15. No later entry names a cause for the two intermittent Git journeys; the approve-without-evidence click still exists at packages/web/e2e/support/studioGit.ts line 129. Kind: tests.
 
 Found on 2026-11-13 while verifying the default-channel review fixes.
 The complete browser run passed 49 cases and failed two Git cases.
@@ -12018,6 +12285,8 @@ The output is recorded in `.foundry/fixes-check.log` and `.foundry/fixes-browser
 
 ## 705. Legacy session model reports were not exposed as choices.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the engine now reads the legacy model list and a version-one test covers it; fixed in this change.
+
 The model-choice reader used only configuration selectors.
 Gemini reports its models through the legacy model list in the new-session reply.
 The engine now reads that list when there is no model configuration report.
@@ -12025,6 +12294,8 @@ A scripted protocol-version-one test covers the complete discovery request.
 This is fixed in this change.
 
 ## 706. The new discovery read exposed a module initialization cycle.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the registry now calls the handler through a deferred function; fixed in this change.
 
 The native Node.js alert-restart fixtures failed while importing the new read.
 The client read registry tried to read the handler before its module finished initializing.
@@ -12034,6 +12305,8 @@ This is fixed in this change.
 
 ## 707. The setup Git-message model selector has no write action.
 
+State: open. Checked against the code on 2026-11-15. packages/studio/src/git.ts line 47 still maps gitModel to an empty string, so no stored setting or write action exists. Kind: waits for a decision.
+
 The first-run page calls the existing unavailable-action handler when its Git-message model changes.
 The service Git-message model setting has no persisted engine field either.
 This change supplies reported choices to those controls.
@@ -12042,6 +12315,8 @@ The New project dialog inherits the service lead defaults instead of offering a 
 Those existing product limits remain.
 
 ## 708. Effort discovery must follow the selected model.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the discovery request now accepts a model identifier and the cache separates reports by model; fixed in this change.
 
 A model change can replace the harness's effort choices.
 A report for the default session model cannot describe every model's efforts.
@@ -12053,6 +12328,8 @@ This is fixed in this change.
 
 ## 709. Subscription model choices must belong to the named account.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the subscription page now requests each account's choices; fixed in this change.
+
 Two accounts on one harness can report different models.
 The subscription page now requests each account's choices.
 A row uses that account's report and unavailable reason.
@@ -12060,6 +12337,8 @@ The default-harness report no longer supplies another account's choices.
 This is fixed in this change.
 
 ## 710. A stopped agent needs reported choices to save a new configuration.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the command now validates against the account discovery report for a stopped agent; fixed in this change.
 
 The old command validated stopped-agent choices against configured harness lists.
 Those lists are empty for the built-in harnesses.
@@ -12070,6 +12349,8 @@ This is fixed in this change.
 
 ## 711. A starting agent needs discovery until its model report arrives.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the read now uses discovery while the agent is starting; fixed in this change.
+
 The full check found that the failed-start remedy lost its model choices during startup.
 An unavailable live report was hiding the account's discovery result.
 The read now uses discovery while the agent is starting and has not reported models.
@@ -12077,6 +12358,8 @@ The existing model-refused and effort-refused remedy tests cover this behavior.
 This is fixed in this change.
 
 ## 712. A discovery failure must use one unavailable sentence.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the error now uses one sentence with a regression test; fixed in this change.
 
 The initial generic discovery error had two sentences.
 The requested empty state allows one plain sentence.
@@ -12086,6 +12369,8 @@ This is fixed in this change.
 
 ## 713. Configuration discovery held the engine writer permit.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the planner now uses only cached client reports and a regression covers it.
+
 A stopped agent's configuration planner could start discovery inside the single writer transaction.
 A hanging adapter therefore delayed unrelated event writes.
 The planner now uses only cached client reports and explicit configured lists.
@@ -12093,6 +12378,8 @@ A regression holds a discovery open while configuration is refused and another w
 An uncached caller without an explicit list must read the account's choices before saving them.
 
 ## 714. Concurrent discovery and failed reports were unbounded.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states distinct keys share two permits and results expire with a 128-entry cache, with tests.
 
 Concurrent requests for the same account and model could start duplicate adapters.
 Distinct keys now share two process permits in the engine process.
@@ -12105,6 +12392,8 @@ Tests cover the deadline, cancellation, shared processes, refreshes, expiry, and
 
 ## 715. Discovery left Cursor sessions and process identities behind.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states discovery now removes the Cursor session directory and process identity row on every outcome.
+
 Cursor discovery created a persistent engine session directory for each temporary identifier.
 Discovery now removes that directory on success, failure, timeout, or cancellation.
 It also deletes its structured query language (SQL) process identity row after closing the child.
@@ -12112,6 +12401,8 @@ The cleanup leaves ordinary agents' persistent sessions unchanged.
 A separate regression resolves a symbolic temporary directory before creating its folder grant.
 
 ## 716. Configured lists and fake discovery reports were coupled.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry describes the fix: the offline path intersects the report with the configured list and the fake discovery report is an independent fixture.
 
 Stopped-agent discovery ignored a non-empty configured list when offering or accepting choices.
 The offline configuration path now intersects a non-empty report with the configured list.
@@ -12124,6 +12415,8 @@ That test now proves both entry and a living child before interrupting the reque
 
 ## 717. Settings waited for the slowest harness.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the page now renders each harness as its settings arrive and the build rejects model-menu patches whose reference text is missing.
+
 The Service settings read waited for every harness and account report before rendering any choices.
 The page now renders a per-harness reading sentence as soon as its settings arrive.
 It publishes each report independently and rejects replies from an earlier page generation.
@@ -12132,6 +12425,8 @@ It also checks a signed-in account with an empty report and an account-free harn
 The build now rejects every model-menu patch whose expected reference text is missing.
 
 ## 718. Discovery notices must not enter the writer or an agent lane.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the handler now drops an absent roster identifier before requesting the writer, with a regression covering it.
 
 The handler already checked the snapshot and the registered incarnation before writing runner events.
 An unregistered discovery identifier therefore could not create a permission request or change an agent mode.
@@ -12142,6 +12437,8 @@ A regression sends valid permission and mode notices for an absent discovery ide
 It verifies zero writer attempts, zero new events, and zero permission or mode calls.
 
 ## 719. Account homes can retain discovery session history.
+
+State: open. Checked against the code on 2026-11-15. Recorded limitation about account-home discovery history; no later entry or code found that cleans arbitrary account homes beyond the Cursor directory. Kind: internal.
 
 The Agent Client Protocol (ACP) recordings show session identifiers and configuration replies.
 They do not record filesystem writes in account homes.
@@ -12178,6 +12475,8 @@ A future harness-specific discovery mode could disable persistence where its sup
 
 ## 720. A request could join a discovery that was already closing.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the final waiter now removes the key before closing the scope, with a regression test.
+
 The first shared-job implementation removed its key only after child cleanup finished.
 A new request arriving during the last waiter's cancellation could attach to that cancelled job.
 The final waiter now removes the key before closing the scope.
@@ -12186,6 +12485,8 @@ The initial regression also held its cleanup gate across a failed assertion.
 Its release now runs in an immediate finalizer so a failing assertion cannot park the test.
 
 ## 721. The model-recovery fixture depended on configured discovery.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the model-recovery and first-run fixtures now script the peer report independently.
 
 The full check found one remaining test that expected configured model names to become a fake peer report.
 The model-recovery conversation offered `valid-model` only through that coupling.
@@ -12197,6 +12498,8 @@ These are test-fixture corrections after separating discovery in review item 7.
 
 ## 722. The build-loop diagram still contains a hard exit after round six.
 
+State: open. Checked against the code on 2026-11-15. docs/specs/2026-11-05-build-loop-chart.md line 220 still contains the step Plan cut, split or accepted; the historical specification was deliberately left unchanged. Kind: internal.
+
 The owner removed the review limit on 2026-11-11.
 The prose now asks for approval before every further round.
 The steps under "Next round" still send round six to cutting, splitting, or accepting the plan.
@@ -12205,12 +12508,16 @@ The historical specification was left unchanged.
 
 ## 723. Workflow editing does not select or execute a project's workflow.
 
+State: open. Checked against the code on 2026-11-15. design/mock/js/screens/workflows.js line 107 still says projects run the default workflow because choosing a workflow for a project is not built yet. Kind: visible to the owner.
+
 The engine had no stored workflow definition when this work began.
 The new definition store and visual editor provide configuration operations.
 Project selection and workflow execution remain the later build-loop work.
 The Workflows page states that projects still run the default workflow.
 
 ## 724. The remote helper needs approval outside the restricted tool environment.
+
+State: obsolete. Checked against the code on 2026-11-15. One-time environment approval problem for the remote helper; tests now run on the host per project memory, so the remote helper step no longer applies. Kind: internal.
 
 The local package installation first failed because its store lock was read-only.
 The remote test helper first failed because the restricted environment presented an unsafe system Secure Shell configuration file.
@@ -12221,6 +12528,8 @@ No system configuration was changed.
 
 ## 725. An existing project push command parity test failed once in the full run.
 
+State: unclear. Checked against the code on 2026-11-15. Single flaky full-run failure of project.push parity that passed alone; no later entry records whether it repeated, so a recurrence history is needed. Kind: tests.
+
 The first full check failed the dotted `project.push` terminal dispatch case.
 The same case passed immediately when run by itself.
 No project push implementation was changed in this work.
@@ -12229,6 +12538,8 @@ The initial output is retained in the worker's result artifacts.
 
 ## 726. Serializing a reply before redaction missed secrets with escaped characters.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the handler now redacts each string value before serialization and the regression test passes.
+
 The first workflow reply sanitizer redacted the serialized JSON string.
 A registered secret containing a newline or quote was escaped before the sanitizer could match it.
 The new regression test failed on that assertion.
@@ -12236,6 +12547,8 @@ The handler now redacts each string value before serialization.
 The regression test and authenticated workflow API tests pass.
 
 ## 727. The existing service-settings browser journey failed once while waiting for its saved state.
+
+State: open. Checked against the code on 2026-11-15. Later entries around lines 12993, 13840 and 13921 record the same save journey failing again in full runs, so the flakiness persists with no fix. Kind: tests.
 
 The full check passed 8,080 unit tests and 50 browser tests.
 The existing service-settings journey timed out at `studioService.ts:74` after changing the heartbeat from 25 to 31.
@@ -12248,6 +12561,8 @@ The full check therefore remains a failed run even though the isolated retry pas
 
 ## 728. Workflow actions have no event or receipt.
 
+State: open. Checked against the code on 2026-11-15. Entry waits for an owner decision on audit history of workflow actions; no later entry resolves it. Kind: waits for a decision.
+
 This is open for the owner.
 Workflow actions operate directly on configuration files.
 They write neither an engine event nor an action receipt.
@@ -12255,11 +12570,15 @@ The owner must decide how workflow changes should appear in the audit history.
 
 ## 729. Two browser tabs can overwrite a workflow without a warning.
 
+State: open. Checked against the code on 2026-11-15. No revision or etag check found in engine workflow code and no later entry resolves the last-save-wins owner question. Kind: waits for a decision.
+
 This is open for the owner.
 The last successful save wins when two tabs edit the same workflow.
 The editor has no revision check or conflict warning.
 
 ## 730. Renaming a workflow changes only its display name.
+
+State: open. Checked against the code on 2026-11-15. Owner decision on separate identifier rename is still pending; no later entry resolves it. Kind: waits for a decision.
 
 This is open for the owner.
 Saving a different name leaves the workflow identifier and filename unchanged.
@@ -12267,12 +12586,16 @@ The owner must decide whether a separate identifier rename is needed.
 
 ## 731. The visual editor cannot change inner steps.
 
+State: open. Checked against the code on 2026-11-15. design/mock/js/screens/workflows.js line 120 only shows the count of inner moves per block with no step editing control. Kind: waits for a decision.
+
 This is open for the owner.
 The editor shows and preserves a block's inner steps.
 Only the application programming interface (API) and terminal can edit these steps.
 
 
 ## 732. The Git browser journey could not approve without evidence.
+
+State: open. Checked against the code on 2026-11-15. Intermittent Git journey approval timeout is a recorded flake; the click helper still exists at packages/web/e2e/support/studioGit.ts line 129 and no entry declares it fixed. Kind: tests.
 
 The review-fix full check passed every unit test.
 The existing Git browser journey timed out at `packages/web/e2e/support/studioGit.ts:100`.
@@ -12284,6 +12607,8 @@ This intermittent failure remains open.
 
 ## 733. A workflow reload could request the list before connecting.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the Workflows page now waits for the live connection before its first list request, with a Studio unit test.
+
 The review-fix full browser run exposed this race.
 The Workflows page requested its list before the live connection was ready.
 It kept The service is not connected after the connection became live.
@@ -12294,6 +12619,8 @@ A deterministic Studio unit test covers startup and reconnection.
 
 ## 734. Merge abort and conflict reopening were not connected.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the engine now exposes owner-only merge abort and conflict reopening requests, with refusals for stale or unsafe input.
+
 The live Git page refused both controls.
 The engine now exposes owner-only requests for the expected active merge.
 Abort uses Git's merge abort command after checking both heads and explicit confirmation.
@@ -12303,6 +12630,8 @@ An inactive merge, a stale head, and an unsafe file path are refused.
 Unsupported conflict kinds retain the terminal workflow.
 
 ## 735. Parent updates and builder integrations were missing.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the state reply carries the behind-parent count and parent update and builder integration are implemented.
 
 The Git page did not report how many commits a workspace was behind its parent.
 The state reply now carries that count separately from the remote count.
@@ -12315,6 +12644,8 @@ A conflict remains available in the ordinary conflict view.
 
 ## 736. Sending a main review back lost the owner's reason.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the owner can now decline an open review with a reason, stored with the board post in one transaction.
+
 The review had no sent-back state or connected action.
 The owner can now decline the exact open review with a nonblank reason.
 The decision and the addressed board post are stored in one writer transaction.
@@ -12324,6 +12655,8 @@ The built merge dialog reuses the existing send-back control and reason form sty
 The design reference is unchanged.
 
 ## 737. Git message generation has no configured execution boundary.
+
+State: open. Checked against the code on 2026-11-15. packages/studio/src/git.ts line 47 still sets gitModel to an empty placeholder, so Git message generation keeps its refusal. Kind: visible to the owner.
 
 ProjectSettings has no Git text-model or account selection.
 The live service mapping's gitModel value is an empty placeholder.
@@ -12335,6 +12668,8 @@ This assignment adds no implicit account selection and sends no repository conte
 
 ## 738. Hosted pull request editing has no stored provider record.
 
+State: open. Checked against the code on 2026-11-15. No hosted pull request record or provider update operation found; entry lists them as prerequisites and no later entry delivers them. Kind: visible to the owner.
+
 GitMainReview is a local approval record for a reviewed pair of heads.
 It has no hosted pull request number, provider identity, title, or body.
 The Git service can read local review evidence and merge it with owner approval.
@@ -12345,6 +12680,8 @@ A hosted record and a bounded authenticated provider action are prerequisites fo
 
 
 ## 739. The required local live check passed sixteen of twenty-three steps.
+
+State: unclear. Checked against the code on 2026-11-15. Records one historical live-check run of sixteen of twenty-three; current result would need running pnpm live-check, which this read-only pass cannot do. Kind: tests.
 
 The run used private service state under `/tmp/lgtm-live-b15F6M`.
 It did not use the owner's service on port 8787.
@@ -12359,6 +12696,8 @@ The assignment's earlier reference count was nineteen of twenty-three.
 
 ## 740. Competing review decisions need one workspace operation lane.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the decline now acquires the same workspace operation lane and a queued decline refuses after approval.
+
 The first send-back implementation used the writer transaction alone.
 A regression held an owner merge open and showed that a decline could record sent-back before that merge finished.
 The decline now acquires the same workspace operation lane as prepare and approve.
@@ -12367,6 +12706,8 @@ A completed approval makes the queued decline refuse without posting a reason.
 
 
 ## 741. The Git journey clicked approval during a background refresh.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the journey now waits for aria-busy to clear; entry 748 later replaced this with a production fix.
 
 Opening a main review finishes the comparison and evidence reads before recording an open review.
 The engine has no later transition that makes that review ready.
@@ -12382,12 +12723,16 @@ No separate engine readiness delay was found.
 
 ## 742. The builder mapping initially lost legacy team display metadata.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the mapping now retains the team identifier as a display fallback.
+
 The broader regression run found that callers without the optional team list displayed a team workspace as a project workspace.
 The mapping now retains the existing workspace team identifier as a display fallback.
 A registered builder parent still takes precedence in the page mapping.
 The engine continues to require the registered parent relationship for integration authority.
 
 ## 743. The first send-back composition dropped board withdrawals.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the composition now checks the complete board plan and keeps withdrawals, with regressions.
 
 Review of df9e486 found that tag-prefix filtering discarded an unprefixed DeliveryWithdrawn event.
 The named composition now checks the complete board plan before appending its final project decision.
@@ -12397,6 +12742,8 @@ A regression replaces an earlier queued lead wake and verifies its withdrawal in
 Separate malformed planner tests verify both boundary refusals.
 
 ## 744. A sent-back review did not wake an idle lead.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the post now requires a reply from the project lead and unavailable leads refuse the decision, with a regression.
 
 The original addressed notice required no reply and created no independent wake duty.
 The post now requires a reply from the recorded project lead.
@@ -12408,6 +12755,8 @@ This refusal policy is an implementation choice for the owner to review.
 
 ## 745. Parent updates incorrectly required a clean parent checkout.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the dedicated update operation no longer requires a clean parent checkout, with tests.
+
 The parent supplies only a committed object and is not mutated by an update.
 The dedicated update operation now shares the integration implementation without its source cleanliness requirement.
 The child must still be clean.
@@ -12416,6 +12765,8 @@ Tests retain uncommitted and untracked parent files while integrating its commit
 The existing builder and team integrations retain their source cleanliness checks.
 
 ## 746. Reopening a conflict could discard an edit made after resolution.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says reopening now requires a content fingerprint observation and returns a stale refusal on later edits.
 
 The resolved file read now returns a bounded content fingerprint with each path.
 The reopening request requires that observation and explicit confirmation.
@@ -12426,6 +12777,8 @@ The ordinary filesystem race limit documented in issue 49 still applies.
 
 ## 747. An unsafe resolved path could hide the rest of a merge.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the resolved file read now skips unsafe paths and returns the other safe files, with regressions.
+
 A resolved file can later become a directory, a symbolic link, or a member of a nested checkout.
 The resolved file read now skips such paths and returns the other safe files.
 Unreadable and oversized individual files are also omitted from the bounded list.
@@ -12433,6 +12786,8 @@ The reopening operation continues to validate its requested path independently.
 Regressions cover each unsafe kind while retaining another resolved file.
 
 ## 748. Background Git reads disabled owner controls.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the page tracks background reads under a separate key so owner controls stay enabled, with a regression.
 
 Review rejected the idle-state wait introduced in 741 because its debounce remained racy.
 The built page now tracks automatic refreshes under a separate Git read key.
@@ -12447,6 +12802,8 @@ That run passed 8230 unit tests and 52 browser tests before this browser failure
 
 ## 749. A blocked merge abort was reported as uncertain.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the service returns the fixed abort_blocked reason; abort_blocked is present in packages/engine/src/project/errors.ts.
+
 Git can refuse an abort when a working edit overlaps an index entry that the abort must replace.
 The service recognizes that bounded refusal only when both heads and the index entries remain unchanged.
 It returns the fixed abort_blocked reason.
@@ -12456,6 +12813,8 @@ The abort confirmation now says that files added during the merge are removed.
 A changed-index test verifies that Git removes a newly staged file and restores the original clean state.
 
 ## 750. Builder Git reads currently have project-wide access.
+
+State: open. Checked against the code on 2026-11-15. Policy on project-wide builder Git read access is recorded for the owner to rule on and no later entry changes it. Kind: waits for a decision.
 
 The workspace mapping added in df9e486 widened the existing project Git read scope to builder worktrees under registered teams.
 Every authenticated agent assigned to that project can read those builder worktrees through changes, diff, history, commit.files, git.state, review, and conflict.
@@ -12468,6 +12827,8 @@ The policy is recorded for the owner to rule on and is not changed by this revie
 
 ## 751. Unscoped Git destination lookup relies on owner-only access.
 
+State: fixed. Checked against the code on 2026-11-15. Comments stating the owner-only dependency exist at packages/engine/src/commands/gitOperation.ts:65 and packages/engine/src/project/gitCommands.ts:86 and 105.
+
 Integration, parent update, and durable attempt admission resolve their registered destination without inheriting the source project's scope.
 That lookup is safe only while these mutations remain owner-only.
 Comments now state this dependency at each lookup.
@@ -12477,6 +12838,8 @@ A future access change must review the destination lookup as well.
 
 ## 752. Builder integration holds the source workspace operation lane.
 
+State: open. Checked against the code on 2026-11-15. No later entry changes the lane; the entry says it was retained for the owner's ruling, and packages/engine/src/project/README.md still describes the workspace operation lane. Kind: waits for a decision.
+
 Builder-into-team integration mutates the team checkout while holding the builder's operation lane.
 The shared Git gate bounds individual external operations but does not make the team lane its operation owner.
 This can matter when another command targets the team during the integration.
@@ -12484,6 +12847,8 @@ The review explicitly requested recording this issue without changing the lane.
 The source lane is retained for the owner's ruling.
 
 ## 753. The live-check difference matches the documented Codex-seat context.
+
+State: open. Checked against the code on 2026-11-15. Analysis of live-check harness context tied to issue 526; no code fix exists or is possible, and no later entry resolves the baseline difference. Kind: tests.
 
 The three additional failures compared with the nineteen-of-twenty-three reference are state-read, permission-kinds, and reload.
 The reference failures were removed-variables, always-allow, and token-scan.
@@ -12497,12 +12862,16 @@ The sixteen-of-twenty-three run remains evidence from this worker and is not sub
 
 ## 754. New fixed Git refusals were hidden by the public reason allowlist.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the public reason allowlist now includes the fixed messages and abort_blocked.
+
 Exact wire assertions found that the blank reason, unavailable lead, invalid parent, and inactive merge cases reached the client as command refused.
 The public allowlist now includes their fixed messages and abort_blocked.
 No caller text, filesystem path, or subprocess diagnostic is exposed by these additions.
 
 
 ## 755. The Git journey staged a file before its preceding discard completed.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the journey now waits for the preceding action's aria-busy state to clear after confirmation.
 
 The review's final full check again reproduced issue 689 at Stage file.txt.
 All 8256 unit tests and the other 52 browser tests passed.
@@ -12518,6 +12887,8 @@ The final full-check failure is retained in the handoff.
 
 ## 756. The Git journey reopened review before send-back completed.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the journey now waits for the preceding owner action's aria-busy state before opening the next review.
+
 The browser-only rerun passed the corrected discard boundary and failed at the second Open merge review action.
 The send-back operation closes its dialog before completing its workspace readback.
 The journey treated the closed dialog as completion and could start another action while send-back still held the owner's pending key.
@@ -12529,6 +12900,8 @@ The failed browser-only run had 52 passes and one failure in 7.6 minutes.
 
 ## 757. The terminal parity test read a generated file and hung the full check.
 
+State: fixed. Read on 2026-11-15, not checked against the code. packages/cli/test/parity.test.ts now reads packages/engine/src/workflows/build-loop.json as the entry describes.
+
 `packages/cli/test/parity.test.ts` read the default workflow from `design/mock/workflows/build-loop.json`.
 The Studio build generates that file, and Git ignored it.
 A fresh checkout on the remote test computer had no such file.
@@ -12538,6 +12911,8 @@ The test now reads the engine's own file, `packages/engine/src/workflows/build-l
 The reason the test limit did not fire is not yet known.
 
 ## 758. The mock could not open in a fresh checkout without a Studio build.
+
+State: fixed. Read on 2026-11-15, not checked against the code. design/mock/vendor/workflow-contracts.js and design/mock/workflows/build-loop.json exist and are not git-ignored.
 
 `design/mock/js/app.js` imports the "Workflows" screen.
 That screen imports `design/mock/vendor/workflow-contracts.js` and fetches `design/mock/workflows/build-loop.json`.
@@ -12549,6 +12924,8 @@ No test yet fails when they fall behind.
 
 ## 759. The sample mock was blank when the engine served it.
 
+State: fixed. Read on 2026-11-15, not checked against the code. design/mock/index.html contains no import map any longer, as the entry's fix describes.
+
 `design/mock/index.html` used an inline import map to find the workflow contracts.
 The engine's static server sends a content security policy that allows no inline script.
 The browser ignored the import map, the "Workflows" screen failed to import, and the whole page stayed blank.
@@ -12557,12 +12934,16 @@ The mock now imports the committed bundle `design/mock/vendor/workflow-contracts
 
 ## 760. The Git journey failed once at "Use both" under load.
 
+State: open. Checked against the code on 2026-11-15. One-time load-sensitive Git journey failure with unknown cause; later issue 1044 records further load-sensitive failures of the same retired-page Git journeys. Kind: tests.
+
 The full check on `85cf37e` failed at `packages/web/e2e/support/studioGit.ts:157`.
 The "Use both" button did not appear within ten seconds after an external merge conflict and a refresh.
 The same journey passed when it ran alone on the same commit.
 The cause is not known.
 
 ## 761. Cursor has no compliant automatic recipe.
+
+State: open. Checked against the code on 2026-11-15. packages/engine/src/harnesses/recipes.ts:37 still sets automatic false for Cursor with a manual curl command and a reason text. Kind: visible to the owner.
 
 Cursor's official installation page documents a download piped into a shell.
 The assignment forbids that installation method inside LGTM Studio.
@@ -12574,6 +12955,8 @@ The source is https://cursor.com/docs/cli/installation.
 
 ## 762. A timed-out installer must stop its descendants.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the helper now spawns a separate process group that is killed on timeout, with a passing regression.
+
 The first harmless timeout test exposed an orphaned fixture process.
 The initial process helper did not create the process group it tried to kill.
 The helper now uses spawn with a separate process group on Linux.
@@ -12582,6 +12965,8 @@ The exact orphaned fixture process from the failed test was removed.
 The literal-argument and process-limit regression now passes.
 
 ## 763. A status refresh must preserve a complete harness row.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the page now finishes asynchronous reads before replacing the harness map, with a journey check.
 
 An asynchronous status read briefly replaced installed rows with incomplete settings rows.
 The Add account dialog could observe that intermediate state.
@@ -12594,6 +12979,8 @@ Every installer test uses a harmless fixture.
 
 ## 764. Concurrent npm installs would share a destination.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the engine now serializes all installer requests for the prefix and a second request is refused.
+
 The shipped recipes install into one user prefix.
 Separate harness locks alone would permit concurrent writes there.
 The engine now serializes all installer requests for that prefix.
@@ -12601,6 +12988,8 @@ A second request receives a plain refusal while the first is running.
 The overlap regression checks the same harness and another harness.
 
 ## 765. Contract inventories need the new installation surface.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the contract and parity tests now list the four requests and both installation events.
 
 The full check found that the independent command and event inventories did not yet list the installer additions.
 The contract tests now name all four owner-only requests and both installation audit events.
@@ -12611,6 +13000,8 @@ The subscription matrix now includes both events and checks their owner-only vis
 
 ## 766. Redaction must precede output shortening.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the engine now redacts the whole version capture before shortening it, with a regression.
+
 The security review found that shortening a raw version string could leave a partial secret at its end.
 A new harmless regression reproduced that boundary.
 The engine now redacts the complete version capture before selecting its first line and limiting its length.
@@ -12620,6 +13011,8 @@ This prevents the capture limit from cutting a secret before the redactor can re
 
 ## 767. A Codex sign-in command must name the account's private home.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the new read resolving the private home with a regression, stated in the past tense as done.
+
 Additional Codex accounts use the engine's existing private authentication layout.
 Displaying a command for the shared home would sign the owner into a different folder.
 The new read now resolves the same effective home as readiness and launch.
@@ -12628,6 +13021,8 @@ A harmless regression writes a synthetic credential to the displayed folder and 
 A login-folder secret reference or conflicting settings receive a plain refusal.
 
 ## 768. The installer must resolve its own package manager.
+
+State: fixed. Read on 2026-11-15, not checked against the code. programs.ts resolves the running Node.js and adjacent npm through realpathSync, matching the entry's described fix.
 
 The first installer selected npm and Node.js through a mutable search path.
 A harness executable folder could therefore replace the installer itself.
@@ -12650,6 +13045,8 @@ It does not stop a hostile process running as the same user.
 
 ## 770. A package version does not pin its dependency tree.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry says the Gemini recipe now ships a lockfile; packages/engine/src/harnesses/locks/gemini/package-lock.json exists.
+
 The automatic Codex and Gemini recipes now include npm lockfiles with registry integrity hashes.
 They use npm ci with all lifecycle scripts disabled.
 The current Claude Code npm package needs its postinstall linking script.
@@ -12659,6 +13056,8 @@ Cursor's shell installer remains manual.
 Automatic installation is limited to Linux, where process recovery can identify a leftover process group.
 
 ## 771. Interrupted installs need cleanup and recovery.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes process-group cancellation, intents and a ten-minute deadline as implemented; programs.ts carries the operation machinery.
 
 The original request masked interruption while a detached package manager ran.
 Requests now cancel the complete process group and wait for cleanup before auditing cancellation.
@@ -12676,12 +13075,16 @@ A subprocess probe still requires readable credential sources so its output can 
 
 ## 773. Cursor's executable name is not a vendor identity.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states Cursor discovery now requires its installation location and a recognizable version, written as done.
+
 An arbitrary program named agent on the service search path is no longer probed as Cursor.
 Discovery requires Cursor's installation location and a recognizable version report.
 A failed version read reports an unknown version.
 A found version that differs from a recipe's pin is labelled explicitly.
 
 ## 774. Moving the subscriptions page lost existing controls.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states the controls are restored and covered by the browser journey, written in the past tense.
 
 The combined page again shows the signed-in and capacity summary.
 Sample account creation refuses an offline machine and a machine without the selected harness.
@@ -12691,12 +13094,16 @@ The browser journey covers these restorations.
 
 ## 775. Automatic installs do not support inherited proxy settings.
 
+State: open. Checked against the code on 2026-11-15. installerEnvironment in packages/engine/src/harnesses/programs.ts:35 builds a fixed environment and no proxy setting exists; the entry itself says the matter is open. Kind: waits for a decision.
+
 This matter is open.
 The installer deliberately drops proxy variables and npm configuration variables.
 An installation behind a required proxy can fail.
 A future proxy setting needs an explicit owner-controlled design that preserves the fixed recipe and redaction rules.
 
 ## 776. npm has a built-in configuration beside its program.
+
+State: open. Checked against the code on 2026-11-15. Recorded accepted limitation of a trusted Node.js and npm toolchain; installer still relies on npm built-in configuration and nothing later changes this. Kind: security.
 
 This matter is open.
 The installer disables user and global npm configuration and uses an empty working folder.
@@ -12706,6 +13113,8 @@ The installer does not claim to protect a compromised toolchain.
 
 ## 777. npm rejects one file used as both user and global configuration.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The engine now has an empty-npmrc file in packages/engine/src/harnesses, matching the entry's fix.
+
 The original environment named /dev/null for both configuration roles.
 Current npm refuses to load the same configuration file twice.
 The user configuration now names a repository-owned empty file.
@@ -12713,6 +13122,8 @@ The global configuration still names /dev/null.
 The command-plan and child-environment regressions cover the fixed environment without installing a vendor package.
 
 ## 778. The full browser check can time out in the existing Git journey.
+
+State: open. Checked against the code on 2026-11-15. Intermittent timeout in the existing Git browser journey with no recorded fix; issue 1044 records related load-sensitive Git journey failures. Kind: tests.
 
 The full check of the original feature passed its type checks and unit tests.
 It passed 51 browser journeys.
@@ -12722,6 +13133,8 @@ This matter remains open because the Git journey is outside this builder's assig
 
 ## 779. The web transform requires an explicit relative lockfile URL.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states the engine now uses the explicit relative lockfile URL; verification.ts uses new URL with a dot-slash path.
+
 The full review check found that Vite treated the dynamic lockfile URL as an asset glob.
 A relative glob must begin with a dot and a slash.
 The engine now uses that explicit relative URL.
@@ -12730,12 +13143,16 @@ The focused follow-up runs every affected suite.
 
 ## 780. New engine tests must register the rebuild hook.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states the new tests now register the rebuild hook, written as corrected.
+
 The repository-wide guard found three new test files without their rebuild registration.
 The files that open an event log now register a scoped rebuild comparison.
 The process-only and filesystem-only files register the no-log form.
 The follow-up includes the repository guard and the harness tests.
 
 ## 781. The service journey still looked for permission settings on Harnesses.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states the browser helper now checks Harnesses then Service settings, written as corrected.
 
 The review restored the default permission picker to Service settings.
 The existing browser helper still looked for it on Harnesses.
@@ -12744,6 +13161,8 @@ The separate Harnesses journey also verifies the restored location.
 
 ## 782. The admin browser journey intermittently misses token clearing.
 
+State: open. Checked against the code on 2026-11-15. Intermittent admin journey failure on the token-cleared label, passing on isolated rerun; no later entry records a fix. Kind: tests.
+
 The full browser run passed 50 journeys and failed two journeys.
 The admin journey failed while waiting for its token-cleared label.
 An immediate isolated rerun passed without a source change.
@@ -12751,6 +13170,8 @@ This matter remains open because notifications are outside this builder's assign
 The other failure was the permission-picker test location recorded above.
 
 ## 783. A same-user process can replace the installed harness despite verification.
+
+State: open. Checked against the code on 2026-11-15. Same-user replacement is a recorded limitation awaiting the planned agent sandbox; verification.ts only checks files and does not form a boundary against the same user. Kind: security.
 
 This matter is open.
 Every input the installation verification reads is in a folder that a process running as the same user can write.
@@ -12766,6 +13187,8 @@ An extra entry or an executable outside the expected package folder is refused.
 
 ## 784. Damaged install intents blocked engine startup.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes atomic intent publication and recovery cleanup as implemented in the past tense.
+
 Pending intents are now published by writing a temporary file and renaming it.
 Recovery removes malformed and unreadable intents and known unreceipted partial prefixes.
 It also cleans an intent for a harness whose recipe has been removed.
@@ -12775,11 +13198,15 @@ Recovery logs that identity limit instead of claiming that such a process was st
 
 ## 785. The separate Codex installation was unused by its adapter.
 
+State: fixed. Read on 2026-11-15, not checked against the code. recipes.ts marks codex as not automatic and no codex lockfile exists under harnesses/locks, matching the removal.
+
 The engine uses its bundled Codex adapter and vendor runtime.
 The separate automatic Codex recipe and its lockfile have been removed.
 The page describes Codex as bundled with nothing to install.
 
 ## 786. A slow version probe deleted a verified installation.
+
+State: fixed. Read on 2026-11-15, not checked against the code. programs.ts sets a 30_000 millisecond probe timeout after install, matching the entry's fixed thirty-second limit.
 
 The probe immediately after installation now has a fixed thirty-second limit.
 A timeout keeps the verified tree and reports that it is installed with an unknown version.
@@ -12788,6 +13215,8 @@ An explicit refresh that times out also keeps a previously verified installation
 An ordinary explicit refresh retains its two-second limit.
 
 ## 787. A recognized program looked missing until its version was checked.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states a found program now reports its version as not checked yet, written as implemented.
 
 A program found through the service search path now reports that it was found with its version not checked yet.
 It allows account creation without offering another installation.
@@ -12798,11 +13227,15 @@ This trust does not protect against a same-user process changing that program.
 
 ## 788. An embedded engine implicitly enabled real installations.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states an embedded engine now defaults to a read-only check and refuses installation, written as done.
+
 An embedded engine now defaults to a read-only file check and refuses installation.
 Only the production service explicitly supplies the real installer.
 A test can opt in by injecting a harmless installer dependency.
 
 ## 789. A sample account could no longer simulate signing in.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states the sample Sign in control updates the sample account again, covered by the browser journey.
 
 The sample Sign in control now updates the sample account again.
 The live control still displays the owner's provider command without running it.
@@ -12810,11 +13243,15 @@ The browser journey adds a sample account and signs it in.
 
 ## 790. Whole-tree receipt checks can block the engine.
 
+State: open. Read on 2026-11-15, not checked against the code. The entry says this is open; programs.ts still imports synchronous readFileSync, readdirSync and statSync for tree hashing.
+
 This matter is open.
 The engine hashes the whole managed tree synchronously on every status read and agent launch.
 Large installations can therefore delay other work on the engine's event loop.
 
 ## 791. The page has no control to cancel an installation.
+
+State: open. Checked against the code on 2026-11-15. Grep of packages/engine/src, packages/studio/src and design/mock/js finds no cancel-install control or handler. Kind: visible to the owner.
 
 This matter is open.
 The installation can run for ten minutes.
@@ -12823,11 +13260,15 @@ Engine shutdown and request interruption still stop its process group.
 
 ## 792. A symbolic link in the home path refuses automatic installation.
 
+State: open. Checked against the code on 2026-11-15. packages/engine/src/harnesses/verification.ts:32 still requires realpathSync(folder) to equal folder, so a symlinked home path is refused. Kind: visible to the owner.
+
 This matter is open.
 The managed root must equal its absolute real path.
 A home folder reached through a symbolic link therefore refuses automatic installation.
 
 ## 793. npm can read configuration from the managed prefix.
+
+State: open. Checked against the code on 2026-11-15. Entry says open; the npm cache and project npmrc remain inside the managed root and no later entry reports a change. Kind: security.
 
 This matter is open.
 A project .npmrc placed in the managed prefix can affect npm or break an installation.
@@ -12836,6 +13277,8 @@ The post-install checks reject changed manifests or package metadata before exec
 Those checks do not create a boundary against another process running as the same user.
 
 ## 794. Gemini's real installation still needs an owner trial.
+
+State: open. Checked against the code on 2026-11-15. Requires an owner trial of a real Gemini installation before release; automated tests use fake package trees and no later entry reports the trial. Kind: waits for a decision.
 
 This matter is open.
 No real vendor installation has run during this assignment.
@@ -12847,12 +13290,16 @@ The automated tests use local fake package trees and never contact a registry.
 
 ## 795. Recipe citations cannot be verified from this repository alone.
 
+State: open. Checked against the code on 2026-11-15. Recipes in packages/engine/src/harnesses/recipes.ts hold only source addresses, and the repository has no page snapshots. Kind: internal.
+
 This matter is open.
 The repository records source addresses but does not include snapshots of those pages.
 Their contents can change or become unavailable.
 The recipe's documentation claims therefore cannot be confirmed from this repository alone.
 
 ## 796. Recovery could remove a valid installation or block startup.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes recovery refusing a symbolic managed root and tolerating failures, written as fixed.
 
 The third review found that recovery did not check the managed root for symbolic links.
 A planted pending intent could remove a valid receipted installation.
@@ -12863,6 +13310,8 @@ It tolerates filesystem failures with fixed warnings instead of blocking startup
 
 ## 797. The version probe could change a tree before its receipt was replaced.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states the installer now validates the whole tree against the first receipt after the probe, written as fixed.
+
 The second receipt previously hashed the tree again without comparing it with the first receipt.
 A change made during the version probe could therefore become the accepted installation.
 The installer now validates the whole tree against the first receipt after the probe.
@@ -12870,6 +13319,8 @@ A changed tree is refused and removed.
 Only the version field of a valid receipt is updated.
 
 ## 798. Model-choice replies erased harness installation details after the merge.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states the live build now combines model updates with installation status and recipes, with a regression.
 
 The merged website first read installation status and recipes correctly.
 A later model-choice reply replaced the entire harness entry with its model fields.
@@ -12880,6 +13331,8 @@ A regression executes the built website's actions with delayed model replies.
 It checks both the installed flag and the recipe's display name after the replies arrive.
 
 ## 799. The explicit defaults bookmark lost its harness model editor after the merge.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states the live copy now includes the shared harness defaults editor for that bookmark.
 
 The Harnesses page owns the shared defaults editor.
 The existing explicit /settings?section=defaults bookmark still has callers that edit harness defaults.
@@ -12892,6 +13345,8 @@ The browser journey is unchanged.
 
 ## 800. Service updates remain manual.
 
+State: open. Checked against the code on 2026-11-15. Deliberate design: updates stay manual with a refusal button, a standing owner decision rather than a defect; no later entry changes it. Kind: waits for a decision.
+
 The service settings page does not download or execute an update.
 An update replaces the program that holds the owner's credentials and runs agents.
 The page shows the terminal commands for the owner to inspect and run.
@@ -12901,6 +13356,8 @@ A different remote head is reported as different, because it does not prove that
 
 ## 801. Reviewer defaults have no automatic selector yet.
 
+State: open. Checked against the code on 2026-11-15. Grep of packages/engine/src finds no reviewer selector function; defaults are stored but nothing assigns reviewers. Kind: visible to the owner.
+
 The engine stores the default reviewer count and the different-vendor rule in project settings.
 The page says that these values are saved for future reviewer assignment.
 No engine code currently selects reviewers.
@@ -12908,6 +13365,8 @@ The defaults therefore do not yet assign a reviewer or enforce a vendor choice.
 The first reviewer selector must read these defaults.
 
 ## 802. Several service controls still lack their execution paths.
+
+State: open. Checked against the code on 2026-11-15. Controls still show the not-connected notice (design/mock/js/actions.js, packages/studio/src/connection.ts) and standing permission rules remain unbuilt per AGENTS.md. Kind: visible to the owner.
 
 The need-to-know default has no team-creation privacy setting to consume it.
 Removing agent credits would need a defined commit-rewriting policy before the approved Git heads change.
@@ -12919,6 +13378,8 @@ The existing standing-rules setting is outside this implementation and still doe
 
 ## 803. Stall timers currently follow idle board obligations.
 
+State: open. Checked against the code on 2026-11-15. Deliberate stall timer scope limited to idle board obligations with a page note; recorded limitation, no later entry extends it to active turns. Kind: waits for a decision.
+
 The existing stall rule watches idle agents with unanswered board work.
 It deliberately excludes a working turn, queued delivery, account hold, and open dependency.
 The assigned timer applies before the first recorded turn.
@@ -12929,6 +13390,8 @@ The live page explains the idle-obligation scope so that the owner does not mist
 
 ## 804. The parity fixture depended on generated mock output.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states the parity fixture now reads the canonical engine workflow file, written as corrected.
+
 The command parity fixture read the workflow sample from a generated design file.
 A fresh remote copy did not contain that file before a website build.
 Several command tests then timed out after their fake engine threw while preparing replies.
@@ -12936,6 +13399,8 @@ The fixture now reads the canonical engine workflow file.
 This removes the build-order dependency.
 
 ## 805. The settings live check passed 17 of 23 stages.
+
+State: open. Checked against the code on 2026-11-15. Historical live-check run of 17 of 23 stages tied to issues 526 and 240; the token exposure and harness-context limitation remain recorded. Kind: tests.
 
 The settings worker ran the required live check with private temporary state.
 The run passed 17 stages out of 23.
@@ -12950,6 +13415,8 @@ This run does not establish the known 19-of-23 baseline.
 
 ## 806. The new browser test used an unsupported declaration option.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states the test now uses the configured browser timeout and branded identifiers, written as corrected.
+
 The first full settings check stopped during TypeScript checking.
 The new browser test passed a timeout property as Playwright test metadata.
 Playwright ran the isolated journey but rejected that property during type checking.
@@ -12959,6 +13426,8 @@ Those synthetic identifiers now use the client contract's request identifier typ
 
 ## 807. Service controls were missing from the standalone client declarations.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states both requests now belong to the standalone client group and inventory tests, written as corrected.
+
 The full unit run found six contract inventory failures after adding the service controls.
 The running service exposed both requests through the installed group.
 The standalone client definition group did not include them.
@@ -12967,6 +13436,8 @@ The explicit inventory tests include both requests.
 The alert, read, and web subgroups still exclude them before installation.
 
 ## 808. A Git transport default alone did not constrain URL rewriting.
+
+State: fixed. Read on 2026-11-15, not checked against the code. serviceControl.ts now references GIT_ALLOW_PROTOCOL, matching the entry's HTTPS-only environment allowlist fix.
 
 A repository can override a general transport default with a per-protocol setting.
 A URL rewrite could then select an executable helper after the HTTPS URL check.
@@ -12978,6 +13449,8 @@ The relevant Git documentation is at https://git-scm.com/docs/git.
 
 ## 809. The workflow redaction fixture omitted project state.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states the fixture now supplies an empty project view and private state folder, written as corrected.
+
 The full unit run found one workflow redaction failure in addition to the six contract failures.
 The fixture passed an empty snapshot to the workflow handlers.
 Reading the saved workflow folder now requires the normal project view.
@@ -12985,6 +13458,8 @@ The fixture now supplies an empty project view and its private state folder.
 Its real redactor and secret assertions remain unchanged.
 
 ## 810. The heartbeat save race recurred in the settings full check.
+
+State: open. Checked against the code on 2026-11-15. Entry records a recurring intermittent heartbeat save race linked to issue 727 with no fix recorded; no later entry reports it fixed. Kind: tests.
 
 The settings full check passed all 552 unit files and 8,303 tests.
 Two unit tests were skipped.
@@ -12996,6 +13471,8 @@ The new settings journey passed both times.
 The full check remains a failed run.
 
 ## 811. The existing email journey could not find its Notifications heading.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states the sample fixture now serves the generated workflow bundle directly and the email journey passed alone.
 
 The settings full browser run failed the existing email journey.
 The targeted retry reproduced the failure.
@@ -13011,6 +13488,8 @@ The corrected email journey passed alone in six seconds.
 
 ## 812. The merged live check matched the known baseline.
 
+State: open. Checked against the code on 2026-11-15. Records the live check baseline of 19 of 23 stages with three failing stages; no later entry says those stages were fixed. Kind: tests.
+
 The required live check ran again after merging `origin/area/build-loop`.
 It passed 19 stages out of 23.
 The removed-variables, always-allow, and token-scan stages failed.
@@ -13021,6 +13500,8 @@ The run used private state under `/tmp/lgtm-live-HIveOX`.
 The owner's service was not changed.
 
 ## 813. The merged full check failed while waiting for Use both.
+
+State: open. Checked against the code on 2026-11-15. Records an intermittent ten-second click timeout in the Git journey at studioGit.ts:157 that passed on retry; no fix or cause recorded. Kind: tests.
 
 The merged full check passed all 554 unit files.
 It passed 8,392 unit tests and skipped two.
@@ -13035,6 +13516,8 @@ The settings worker changed no Git timeout or implementation beyond the lead's r
 
 ## 814. Service build replacements could silently stop matching.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states every replacement now checks its exact match count and fails the build; serviceSettings.ts is the transformer.
+
 The settings transformer used unchecked string replacements.
 The merged Harnesses screen still matches every patch.
 Every replacement now checks its exact match count and fails the build on a mismatch.
@@ -13044,6 +13527,8 @@ Regression tests remove and duplicate each source fragment.
 
 ## 815. Holder stall notices used wording addressed to the stalled agent.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states notice wording now follows the recipient and invalid timer values are refused, written as fixed.
+
 A disabled nudge or an increased replacement threshold could send the holder the agent's instructions.
 Notice wording now follows the recipient at every occurrence.
 The running watch test changes an armed timer in both directions without restarting.
@@ -13052,12 +13537,16 @@ The existing timer rearming already honored saved changes.
 
 ## 816. Partial project settings could clear the workflow folder and review defaults.
 
+State: fixed. Read on 2026-11-15, not checked against the code. clearWorkflowFolder exists in packages/contracts/src/project/commands.ts and serviceSettings.ts, matching the entry's flag.
+
 Omitting these two fields now preserves their stored values.
 The request has an explicit clearWorkflowFolder flag.
 The live page offers a button to restore the default workflow folder.
 Review defaults are preserved during that clear.
 
 ## 817. Restart executes the writable checkout under the same user.
+
+State: open. Checked against the code on 2026-11-15. Restart still runs the writable checkout via process.argv[1] in serviceControl.ts; line 13084 of the list says it remains subject to issue 817, sandboxes planned. Kind: security.
 
 Restart runs the installed Node.js executable and the script currently at the recorded path.
 An agent running as the owner's user can change that checkout before an owner requests restart.
@@ -13068,12 +13557,16 @@ Agent sandboxes remain planned.
 
 ## 818. A stop signal during the restart window can still reexecute the service.
 
+State: open. Checked against the code on 2026-11-15. packages/engine/src/client/serviceControl.ts keeps the pending flag set and resets it only in Effect.onError, so a stop signal still leaves the restart flag set. Kind: internal.
+
 The restart acknowledgement schedules shutdown after a short transport drain.
 A stop signal during this window interrupts the service but leaves the restart flag set.
 The process can therefore start again after that signal.
 This review records the behavior without changing signal semantics in this fix.
 
 ## 819. Restart lacked a durable owner receipt and checked launch files too late.
+
+State: fixed. Read on 2026-11-15, not checked against the code. ServiceRestartRequested is defined in packages/contracts/src/client/events.ts and serviceControl.ts preflights launch files, matching the entry.
 
 Restart is now a mutation with an owner-attributed ServiceRestartRequested event.
 The event and its request identifier receipt commit before any agent stop.
@@ -13084,6 +13577,8 @@ An execution failure after teardown writes a fixed recovery line and sets exit s
 Launch-file substitution by the same user remains subject to issue 817.
 
 ## 820. Version checks trusted checkout TLS configuration and assumed the default branch.
+
+State: fixed. Read on 2026-11-15, not checked against the code. serviceControl.ts uses the fixed /usr/bin:/bin path and Git protocol allowlist, matching the entry's described fix.
 
 A per-URL certificate setting could override the command's general certificate check.
 Network comparison now runs in an empty temporary directory with system and global Git configuration disabled.
@@ -13098,6 +13593,8 @@ The output and time limits are exercised against real child processes.
 
 ## 821. Settings regression fixtures needed corrections during review fixes.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made to the tests or code, for example now reads or now passes, and no remaining fault is stated.
+
 The first build-transformer test used an unavailable TypeScript compiler runtime enum.
 It now reads the transformer's literal patch fragments directly.
 The first running-timer fixture bound the same socket twice.
@@ -13111,6 +13608,8 @@ The code now explicitly merges the returned version fields into the current stor
 
 ## 822. The restart continuation needed an explicit recursive effect type.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made to the tests or code, for example now reads or now passes, and no remaining fault is stated.
+
 The first review-fix type check found a cycle between the mutation handler and its stop continuation.
 The handler now has its existing public execute type as an explicit annotation.
 The continuation uses the concrete command and log error types instead of an unconstrained effect.
@@ -13120,6 +13619,8 @@ The live settings browser journey passed with the folder reset and no-tracking e
 
 ## 823. The first full review-fix check found a visibility fixture gap and a forbidden type import.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made to the tests or code, for example now reads or now passes, and no remaining fault is stated.
+
 The new restart event was missing from the exhaustive subscription visibility samples.
 Its empty payload now has a sample, so the existing tests check owner-only visibility in catch-up and live streams.
 A type-only import of LogWriteFailed from the client piece also crossed the repository's piece boundary.
@@ -13128,6 +13629,8 @@ The client piece does not import the log writer.
 
 ## 824. Two process-only tests omitted the required rebuild registration.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made to the tests or code, for example now reads or now passes, and no remaining fault is stated.
+
 The first full check finished with 8,547 passed tests, five failed tests, and two skipped tests.
 The exhaustive registration guard found the new restart-launch and version-process files.
 These two tests create no engine log.
@@ -13135,6 +13638,8 @@ They now register the explicit noLog form required for those tests.
 The browser and credit stages did not run because the unit stage failed.
 
 ## 825. The final review-fix check still hit the known Git browser timeout.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The Git browser timeout it reports was addressed by the later entries 835 to 841, which fixed the refresh and dialog causes.
 
 The final full check passed all package and root type checks.
 All 567 unit files passed, with 8,552 passed tests and two skipped tests.
@@ -13148,12 +13653,16 @@ The lead assigned that Git problem to another builder.
 
 ## 826. This Codex session cannot invoke the remote test helper.
 
+State: obsolete. Read on 2026-11-15, not checked against the code. The remote test helper limit applied to one Codex session, and tests now run on the host, so the problem cannot recur.
+
 The Mocks control assignment requires the `run-remote-test` wrapper.
 Automatic approval review rejects this session's source transfer to the remote test computer.
 The lead will run the requested checks from this worktree and return their output.
 The builder records exact commands in `.foundry/test-request.txt`.
 
 ## 827. The first Mocks check found incorrect comment authors and ambiguous test controls.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made to the tests or code, for example now reads or now passes, and no remaining fault is stated.
 
 The comment mapper passed a complete comment to the author mapper.
 It now passes the comment's author.
@@ -13166,6 +13675,8 @@ The next request runs parity separately.
 
 ## 828. The public API hid fixed mock refusal reasons.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made to the tests or code, for example now reads or now passes, and no remaining fault is stated.
+
 The second browser run received a generic refusal instead of the engine's stale-revision reason.
 The public reason list omitted that fixed mock reason.
 It also omitted fixed artifact and design reasons used by editor saves.
@@ -13173,6 +13684,8 @@ The list now includes those fixed sentences without exposing paths or host error
 The authenticated screen and editor tests now assert stale-revision reasons across the transport.
 
 ## 829. The full check found missing event fixtures and indirect rebuild registration.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made to the tests or code, for example now reads or now passes, and no remaining fault is stated.
 
 The first full Mocks check passed type checking and failed seven tests.
 Four exhaustive fixtures omitted the three new screen review events.
@@ -13183,6 +13696,8 @@ Each test now registers the real rebuild comparison before seeding its engine st
 The shared fixture no longer registers a duplicate comparison.
 
 ## 830. The older Mocks browser journey still expected disconnected controls.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made to the tests or code, for example now reads or now passes, and no remaining fault is stated.
 
 The second full check passed all unit tests and failed two browser journeys.
 The older project journey expected no New badge on an unseen revision.
@@ -13195,6 +13710,8 @@ The next request reruns that unchanged journey in isolation before choosing a fi
 
 ## 831. The email browser fixture served the sample without a usable workflow module.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made to the tests or code, for example now reads or now passes, and no remaining fault is stated.
+
 The isolated email journey again failed to find its Notifications heading.
 The fixture serves the standalone sample through the engine's strict script policy.
 That policy blocks the sample's inline import map.
@@ -13204,6 +13721,8 @@ The engine's content policy and the standalone sample sources are unchanged.
 The next isolated email run will verify this fixture correction.
 
 ## 832. The third full check failed in the merged Git conflict journey.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The Git journey failure was traced to the refresh key mismatch and fixed by entries 835 to 841.
 
 The run passed 8459 unit tests and 54 browser tests.
 The Git journey timed out at `packages/web/e2e/support/studioGit.ts:157` while waiting for Use both after recreating a conflict and refreshing.
@@ -13225,6 +13744,8 @@ Both Mocks journeys and the standalone sample journey passed.
 
 ## 833. The review found Mocks behavior and coverage gaps.
 
+State: fixed. Checked against the code on 2026-11-15. Entry lists review findings given to a builder fix task; the build script uses a replace helper that fails on missing text, and later Mocks work merged, so it was handled.
+
 The review found that the feedback loader makes one read per screen version and fails when any engine event arrives during the load.
 Earlier screen comments disappear from the page after a new mock revision.
 A comment does not notify the project's designer or lead.
@@ -13237,12 +13758,16 @@ The builder is adding failing regression tests before changing each implementati
 
 ## 834. Compressed design exports are not inspected for registered secrets.
 
+State: open. Checked against the code on 2026-11-15. Recorded limitation for the owner that compressed fig exports are not scanned for registered secrets; no later entry or code change resolves it. Kind: security.
+
 The editor-save redaction check scans decoded export bytes as text.
 A secret inside a compressed `.fig` export is not detected by that check.
 The review found this limitation and asked that it be recorded for the owner.
 A file signature check does not inspect compressed document contents.
 
 ## 835. An explicit Git refresh could be dropped behind an automatic read.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry says explicit refresh now uses the owner-action key and a regression verifies it.
 
 The Refresh Git button and automatic refreshes used the same git-read pending key.
 A click during an older read returned false without starting a fresh read.
@@ -13271,6 +13796,8 @@ A rendered regression holds this state and verifies the visible status and disab
 
 ## 837. Git dialogs closed before their owner action finished.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry says dialogs now stay open with pending labels and the workaround waits were removed.
+
 Issues 755 and 756 were worked around by journey waits after discard and send-back.
 Discard now uses the existing confirmation dialog's pending mode through its complete readback.
 Abort and reopen use that same pending mode.
@@ -13284,6 +13811,8 @@ No timeout was raised.
 
 ## 838. The baseline admin journey lost its changed heartbeat value once.
 
+State: open. Checked against the code on 2026-11-15. One-off baseline failure of the admin heartbeat assertion with no cause found; similar heartbeat flakiness is still tracked in issues 727 and 810. Kind: tests.
+
 The unmodified d34b903 full browser run failed in admin-pages.spec.ts at its heartbeat assertion.
 The input showed 25 after the test filled 30, blurred the input, and clicked Refresh settings.
 The next diagnostic full browser run passed that case.
@@ -13291,6 +13820,8 @@ The saved failure snapshot and output are retained in the Git worker's handoff.
 This page is outside the current Git assignment and was not changed.
 
 ## 839. The baseline thread journey observed no permission answer once.
+
+State: open. Checked against the code on 2026-11-15. One-off thread-browser permission answer failure that passed on rerun; no cause found or fix recorded in any later entry. Kind: tests.
 
 The unmodified d34b903 full browser run failed in thread-browser.spec.ts after its permission clicks.
 The fake runner had zero answerPermission calls instead of one within five seconds.
@@ -13302,6 +13833,8 @@ This finding remains outside the current Git assignment.
 
 
 ## 840. The Git journey clicked past the visible reopening confirmation.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry says the journey now waits for the reopening confirmation to close before choosing lines.
 
 The first full browser validation with the page fixes passed the external-merge refresh boundary.
 It later attempted Use both immediately after confirming Reopen.
@@ -13316,6 +13849,8 @@ The page fix itself is unchanged.
 
 
 ## 841. Git action readback reread every unrelated worktree in sequence.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry says readback now reads only the selected checkout and regressions cover it.
 
 The first complete validation on 7c37033 passed all 55 browser cases in 10.5 minutes.
 Its Git journey took 5.8 minutes.
@@ -13333,6 +13868,8 @@ No engine gate, authorization check, Git command, or timeout is changed.
 
 
 ## 842. The global inspection selector does not call the Git detail reader.
+
+State: open. Checked against the code on 2026-11-15. design/mock/js/live/git.js line 344 still sets s.inspecting directly from the global menu path without calling the Git detail reader. Kind: visible to the owner.
 
 The global inspection menu in the copied app updates the selected branch directly.
 The Git worktree picker calls the Git selection action and refreshes its records.
@@ -13521,6 +14058,8 @@ The three file commands are in the engine, so the connected mock can use them.
 
 ## 860. The sign-in terminal brief conflicts with the rule against sending login tokens to a client.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry records the owner ruling exception granted on 2026-11-14 and says implementation resumed under it.
+
 The sign-in terminal brief permits command output containing a token to reach the owner's initiating connection.
 Rule 6 in the security policy forbids sending harness login tokens to any client.
 The brief also forbids weakening that rule and requires the builder to stop if the work needs an exception.
@@ -13532,6 +14071,8 @@ Implementation resumed under that ruling.
 
 ## 861. The remote test helper fails before running checks in this worker environment.
 
+State: obsolete. Read on 2026-11-15, not checked against the code. It concerned the remote test helper in one worker environment, and tests now run on the host.
+
 The required remote check exited with status 255 before running a test.
 Secure Shell rejected `/etc/ssh/ssh_config.d/20-systemd-ssh-proxy.conf` with `Bad owner or permissions`.
 Running the same helper with sandbox escalation reached the remote computer and started the required check.
@@ -13539,12 +14080,16 @@ The worker did not change the system configuration or substitute local tests.
 
 ## 862. The sandbox cannot open the local package store operation lock.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry says a sandbox escalation completed the local installation afterward.
+
 The required local dependency installation exited with status 1.
 The package manager reported `ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK` because its store lock was on a read-only file system.
 The remote check installed its own dependencies and ran there.
 A sandbox escalation completed the same local installation with 299 packages afterward.
 
 ## 863. The baseline Mocks browser journey did not see its editor-save confirmation.
+
+State: open. Checked against the code on 2026-11-15. Entry states the cause is not proven and state open; no later entry in issues.md mentions 863 as resolved. Kind: tests.
 
 The baseline check passed 577 test files with 8,720 tests passed and two skipped.
 The browser stage passed 56 journeys and failed the existing Mocks journey.
@@ -13560,6 +14105,8 @@ The cause is not proven. The state is open.
 
 ## 864. Opening Harnesses can discard metadata that a project's Chat still needs.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry says the live build now retains metadata for harnesses used by current agents, with a new journey.
+
 The required browser regression found a second cause of the failure described in issue 845.
 The Harnesses read cleared every harness name before replacing configured harnesses.
 An agent using a harness absent from that response then lost the metadata its Chat view needs.
@@ -13567,6 +14114,8 @@ The live build now retains metadata for harnesses used by current agents.
 The new browser journey opens Harnesses and then checks the project lead's composer.
 
 ## 865. Cursor has no established variable for isolating its login credentials.
+
+State: open. Checked against the code on 2026-11-15. packages/engine/src/runner/AcpRunner.ts line 425 still overrides CURSOR_CONFIG_DIR with the tool directory; no later entry establishes credential isolation. Kind: visible to the owner.
 
 Cursor documents `CURSOR_CONFIG_DIR` for its configuration.
 Its authentication documentation does not establish that this moves login credentials.
@@ -13576,6 +14125,8 @@ A separate Cursor sign-in remains unavailable until the credential isolation can
 
 ## 866. Sign-in registration depended on the module import order.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made in the code with tests covering it.
+
 The first full implementation check found that two plain Node.js import orders could reach the sign-in table before its initialization.
 The same cycle could omit the six new handlers from the test loader's table.
 The registration now happens in the engine's existing delayed read-table getter.
@@ -13583,12 +14134,16 @@ The import-order tests and the command-table completeness test cover the correct
 
 ## 867. A finished sign-in retained its disconnect listener.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made in the code with tests covering it.
+
 A focused cleanup assertion found one abort listener after the session ended.
 Repeated sign-ins on one connection could retain unnecessary session closures.
 The session now removes its listener when it begins ending.
 The test checks that no abort listener remains after the fake program exits.
 
 ## 868. The older service browser fixture cannot create a separate login folder.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made in the code with tests covering it.
 
 The full browser run passed 58 journeys and failed the service-settings journey while adding its account.
 That journey used a synthetic harness with no shipped sign-in recipe or documented home variable.
@@ -13598,6 +14153,8 @@ The journey still covers account settings, notifications, removal, and persisten
 
 ## 869. A newly added account could appear before its action cache was refreshed.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made in the code with tests covering it.
+
 The updated service journey found that a newly added row could change its action menu while the owner clicked it.
 The dialog had inserted the account reply before the older service cache finished its next read.
 Account creation now awaits a fresh service read before it closes the dialog or starts sign-in.
@@ -13606,6 +14163,8 @@ The build checks the refresh export's replacement marker.
 
 ## 870. The removal confirmation used a shadowed sign-in name.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made in the code with tests covering it.
+
 The service journey reached removal after the account-cache correction.
 Its existing local sign-in action shadowed the new imported namespace.
 That caused the folder-label call in the live removal confirmation to fail.
@@ -13613,6 +14172,8 @@ The import now uses a distinct namespace name.
 The same journey verifies that the account can be removed afterward.
 
 ## 871. The review found account compatibility and folder admission regressions.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made in the code with tests covering it.
 
 Existing accounts sharing a default folder could not be renamed or disabled.
 Account editing now checks folder uniqueness only when the effective folder changes.
@@ -13627,6 +14188,8 @@ Writable folders are refused.
 
 ## 872. Account creation could leave folders and duplicate accounts behind.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made in the code with tests covering it.
+
 An append failure left a newly created login folder on disk.
 Schema errors escaped as defects.
 Retries minted another account.
@@ -13637,6 +14200,8 @@ The durable receipt returns the original account on retries, including after res
 
 ## 873. A missing native package could prevent engine startup.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes the correction as already made in the code with tests covering it.
+
 The sign-in module imported the native pseudo-terminal package at module load.
 A missing platform package therefore stopped unrelated service work.
 The package is now loaded inside the asynchronous start operation.
@@ -13646,6 +14211,8 @@ The session manager also avoids signaling a group after its child exits.
 A process identifier can otherwise refer to an unrelated process later.
 
 ## 874. The review found missing server coverage and inaccurate descriptions.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry describes new tests and corrected descriptions already in place, in past tense, superseding the 868 workaround.
 
 The previous privacy tests bypassed the real remote procedure layer.
 New tests use authenticated sockets, the application access gate, and the production redactor.
@@ -13673,41 +14240,57 @@ Both screens are now on the website, from the units `s8-files` and `s8-psettings
 
 ## 876. The live project settings screen had unsupported controls that still looked editable.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The unsupported controls are now removed from the live build by packages/studio/scripts/projectSettings.ts, so none look editable.
+
 The connected mock at `/studio/` showed active controls that only refused a change.
 The live build now disables these controls with the hover text, "Engine work needed".
 The standalone sample keeps its existing behaviour.
 
 ## 877. A project has no configurable base branch.
 
+State: open. Checked against the code on 2026-11-15. grep of packages/contracts/src finds no project base branch setting or command. Kind: visible to the owner.
+
 The engine does not expose a project base branch setting or a command to change it.
 The live base branch picker is disabled.
 
 ## 878. A project lead cannot change its subscription.
+
+State: open. Checked against the code on 2026-11-15. The configure command in packages/contracts/src/commands.ts still takes only model and effort; no subscription change command exists. Kind: visible to the owner.
 
 The engine reports the lead's account, but `configure` accepts only a model and an effort.
 The live subscription picker shows the account and is disabled.
 
 ## 879. A project cannot set the permission for every agent.
 
+State: open. Checked against the code on 2026-11-15. packages/contracts/src/project/commands.ts has no project permission command; only preferences.set for shell exists. Kind: visible to the owner.
+
 The engine reports each agent's permission, but has no project permission command.
 The live permission choices are disabled.
 
 ## 880. A project cannot set the write-tests-first switch.
+
+State: open. Checked against the code on 2026-11-15. No project write-tests-first setting in project contracts; the tests flag in contracts/src/workflows.ts is a workflow field, not a project command. Kind: visible to the owner.
 
 The engine has no project setting or command for this switch.
 The live switch is disabled.
 
 ## 881. A project cannot set the agent-review switch.
 
+State: open. Checked against the code on 2026-11-15. No project agent-review command in packages/contracts/src/project; agentReview appears only in workflows.ts. Kind: visible to the owner.
+
 The engine has no project setting or command for this switch.
 The live switch is disabled.
 
 ## 882. A project cannot choose to remove agent credits when merging.
 
+State: open. Checked against the code on 2026-11-15. grep of packages/contracts/src finds no project preference for removing agent credit lines. Kind: visible to the owner.
+
 The engine has no project preference for removing agent credit lines.
 The live switch is disabled.
 
 ## 883. A project cannot configure or approve the assignment table.
+
+State: open. Checked against the code on 2026-11-15. No assignment table record or apply and approve commands exist in packages/contracts/src/project. Kind: visible to the owner.
 
 The engine has no project work-kind assignment record or commands to apply or approve it.
 The live harness, model, and effort choices are disabled for each work kind.
@@ -13715,26 +14298,36 @@ The Every row picker, Apply button, and Approve button are disabled.
 
 ## 884. A team cannot change its need-to-know setting.
 
+State: open. Checked against the code on 2026-11-15. grep of packages/contracts/src finds no team need-to-know record or command. Kind: visible to the owner.
+
 The engine has no team need-to-know record or command.
 The live team switches are disabled.
 
 ## 885. A project cannot configure its task label prefix.
+
+State: open. Checked against the code on 2026-11-15. grep of packages/contracts/src finds no project task label prefix setting. Kind: visible to the owner.
 
 The engine accepts labels on tasks, but exposes no project prefix setting.
 The live task label prefix field is disabled.
 
 ## 886. A project cannot be deleted.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The contracts now include a project.delete command and design/mock/js/live/project-settings.js calls it.
+
 The engine supports archive and restore, but has no project deletion command.
 The live Delete button is disabled.
 
 ## 887. The project lead pickers did not distinguish desired and applied settings.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry is written in the past tense and describes the live screen now reading client.agent.configuration.
 
 The live project settings screen previously selected values from the roster.
 The screen now reads the lead's configuration and choices from `client.agent.configuration`.
 It displays the engine's desired values and reports the applied model and acknowledgement status separately.
 
 ## 888. The engine hides the specific reason for a refused lead configuration.
+
+State: open. Checked against the code on 2026-11-15. commandError in packages/engine/src/api/server.ts line 57-63 whitelists reasons only for project., roles commands; the configure command still gets command refused. Kind: visible to the owner.
 
 The `configure` planner can refuse a model or an effort that is no longer available.
 The public command error filter reduces that reason to "command refused".
@@ -13744,6 +14337,8 @@ The filter remains unchanged in this migration.
 
 ## 889. The existing Mocks browser journey failed intermittently during the full check.
 
+State: unclear. Checked against the code on 2026-11-15. Entry records an intermittent Mocks journey failure with unconfirmed cause; no later entry resolves it, and the code check cannot show whether it is flaky today. Kind: tests.
+
 The full remote check passed 57 browser journeys and failed the existing Mocks journey.
 The failure was a missing "Editor changes saved" notice at `packages/web/e2e/support/studioMocks.ts:89`.
 The same Mocks journey passed in isolation without a code change.
@@ -13752,11 +14347,15 @@ The cause of the intermittent Mocks failure remains unconfirmed.
 
 ## 890. The project shell command has no control on the live project settings screen.
 
+State: open. Checked against the code on 2026-11-15. design/mock/js/live/project-settings.js has no shell control while preferences.set with shell exists in packages/contracts/src/project/commands.ts line 64. Kind: visible to the owner.
+
 The engine supports `project.preferences.set` for a project's preferred shell.
 The connected mock's project settings screen has no shell control.
 This migration does not add one.
 
 ## 891. A goal update from another client replaces an unsaved goal draft without a notice.
+
+State: open. Checked against the code on 2026-11-15. Entry records the draft-replacement behaviour as unchanged; no later issue entry mentions 891 as fixed. Kind: visible to the owner.
 
 The live project settings screen resets its goal draft when the engine reports a changed goal.
 An update from another client can therefore replace an unsaved local draft.
@@ -13764,6 +14363,8 @@ The screen does not warn the owner before replacing that draft.
 This behaviour remains unchanged in Round 1.
 
 ## 892. The first review found unnecessary lead reads and shared settings records.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry lists the Round 1 fixes in the present tense as implemented limits, guarded collection and build checks.
 
 The first implementation re-read the lead configuration on every roster publish.
 Those reads disabled the model and effort pickers.
@@ -13779,6 +14380,8 @@ It checks that the final build output retains the lead loader.
 It renders configuration status in plain words.
 
 ## 893. The existing oversized-state browser journey failed intermittently during the Round 1 full check.
+
+State: unclear. Checked against the code on 2026-11-15. Entry records an intermittent oversized-state journey failure with unconfirmed cause; no later entry resolves it and a static check cannot show flakiness. Kind: tests.
 
 The full remote check passed 57 browser journeys and failed the existing oversized-state journey.
 The failure was a five-second timeout waiting for the fake runner to receive the permission answer at `packages/web/e2e/oversized-state.spec.ts:187`.
@@ -13908,6 +14511,8 @@ The full check remains a failed run.
 
 ## 905. A stall-watch timer field came back empty after a reload in one full run.
 
+State check: the line below may be out of date. Read on 2026-11-15, not checked against the code, this entry looks open. The entry says it stays open until several full runs pass; a likely cause was fixed under 918 but never reproduced.
+
 Found: 2026-11-14, in the full check of `area/studio-default` at `cfcc4de`.
 Status: a likely cause is fixed under issue 918; the failure was never reproduced, so it stays open until several full runs pass.
 
@@ -13926,12 +14531,16 @@ An owner who types quickly across these fields might lose one value in the same 
 
 ## 906. Agent terminal watching and takeover need engine support.
 
+State: open. Checked against the code on 2026-11-15. design/mock/js/live/terminal.js lines 127-128 still draw Watch agent session and Take over agent session disabled with Engine work needed. Kind: visible to the owner.
+
 The project terminal API opens private owner shells only.
 It cannot attach to an agent's terminal or transfer that terminal's keyboard.
 The live Session actions menu draws Watch agent session and Take over agent session disabled.
 Both controls show “Engine work needed” on hover.
 
 ## 907. Ended project shells cannot reconnect.
+
+State: open. Checked against the code on 2026-11-15. design/mock/js/live/terminal.js line 133 still draws the Reconnect button disabled with title Engine work needed. Kind: visible to the owner.
 
 A project shell belongs to its opening connection.
 Reloading the page or losing that connection ends the shell after the grace period.
@@ -13942,6 +14551,8 @@ They show “Engine work needed” on hover.
 
 ## 908. Interactive shell jobs use separate process groups.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states found and fixed, with cleanup now killing other process groups in the session.
+
 Found and fixed during the project terminal work.
 Killing only the pseudo-terminal child's process group left background shell jobs running.
 Cleanup now finds and kills the other process groups in the live child's operating-system session.
@@ -13950,6 +14561,8 @@ The request-layer tests run a real shell and background job through every cleanu
 
 ## 909. Terminal requests must reject undeclared fields before decoding.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states found and fixed, with a raw request filter rejecting undeclared fields.
+
 Found and fixed during the project terminal work.
 Effect 4 parser options are not controlled by schema annotations.
 A filter on the raw request now rejects undeclared fields before the structure decoder runs.
@@ -13957,12 +14570,16 @@ Authenticated raw socket tests send command, path, executable, argument, and env
 
 ## 910. A new terminal import exposed an engine module cycle.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states found and fixed, with the terminal loading the worktree resolver lazily.
+
 Found and fixed during the project terminal work.
 Importing the project Git API while composing the request tables accessed web settings before initialization.
 The terminal now loads the shared worktree resolver only when an open request runs.
 The native-package regression tests still import and start the engine with the pseudo-terminal package unavailable.
 
 ## 911. Private terminal streams must use their opening socket.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states found and fixed, with terminal streams using the opening read socket.
 
 Found and fixed by the project terminal browser journey.
 The client normally uses a separate socket for subscriptions.
@@ -13973,12 +14590,16 @@ Node and browser client tests verify both properties.
 
 ## 912. The sample terminal has a local variable named live.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states found and fixed, with the build importing the live flag under a distinct name.
+
 Found and fixed by the project terminal browser journey.
 An injected guard that used the same name accessed the local variable before initialization.
 The build now imports the live-mode flag with a distinct name.
 The standalone sample source is unchanged.
 
 ## 913. A remote worktree may have no paired machine record.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states found and fixed, with a machine identifier fallback and disabled remote menu item.
 
 Found and fixed during the project terminal review.
 The live worktree menu now falls back to the engine's machine identifier when its machine record is absent.
@@ -13987,6 +14608,8 @@ The menu explains that project terminals are available only on the local machine
 The terminal browser journey covers this state.
 
 ## 914. The terminal must resolve the repository main checkout.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states found and fixed, with the resolver accepting the main checkout on explicit request.
 
 Found and fixed during the project terminal review.
 The live menu includes the registered main checkout of the project's repository.
@@ -13997,6 +14620,8 @@ The browser journey opens both the project's worktree and its main checkout.
 
 ## 915. The live terminal used the sample folder field.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states found and fixed, with the menu and status bar reading the folder field.
+
 Found and fixed during the project terminal review.
 The engine maps a worktree's folder to the folder field.
 The live menu and status bar now read that field.
@@ -14004,12 +14629,16 @@ The browser journey checks the initial folder for both worktrees.
 
 ## 916. Terminal requests need the pinned API and CLI inventories.
 
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states found and fixed, with the contract inventories including the five terminal requests.
+
 Found and fixed by the full check during the project terminal work.
 The contract inventories now include the five owner-only terminal requests.
 The command-line parity fixtures cover their payloads and stream.
 The logout route uses the caller returned by the shared cookie boundary.
 
 ## 917. A refused subscription could reset another reader's redaction carry.
+
+State: fixed. Read on 2026-11-15, not checked against the code. The entry states found and fixed, with each subscription now having its own redaction key.
 
 Found and fixed during the project terminal privacy review.
 A rejected stream ran cleanup with the active stream's redaction key.
@@ -14119,6 +14748,8 @@ The general redactor still protects stored events, logs, and agent-facing stream
 Its existing tests remain unchanged.
 
 ## 926. The full review check timed out on Mocks and Files save completion.
+
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. Entry says causes remain unproved; issue 898 line 13921 groups it with similar save-journey failures and no fix is recorded.
 
 Found in the full remote check of `38a825a` during review round 1.
 State: unresolved.
@@ -14252,6 +14883,8 @@ The owner's decision to remove terminal blanking removes the dependency on secre
 The browser echo assertion now checks the active prompt line rather than any row.
 
 ## 935. The round-2 full check found a startup timeout and an obsolete sign-in assertion.
+
+State check: the line below may be out of date. Checked against the code on 2026-11-15, this entry looks open. Startup timeout is tied to issue 360, which in docs/issues.md is still open with the cause not established.
 
 Found in the full remote check of `e763c06` during review round 2.
 State: the assertion is fixed; the startup timeout remains unresolved under issue 360.
@@ -14790,6 +15423,8 @@ The lead definition unit did not introduce this race.
 
 ## 971. Many controls in "Project settings" are disabled on the website, and the page does not say why.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the page problem is fixed by unit s14; packages/studio/scripts/projectSettings.ts exists, hidden engine features remain listed separately.
+
 The owner found this on 2026-11-15.
 The "Task label prefix" field shows "Not set" and cannot be edited.
 The "Base branch" dropdown does nothing.
@@ -14807,6 +15442,8 @@ The standalone mock keeps the complete sample design.
 This page problem is fixed, and the hidden engine features remain open.
 
 ## 972. A setting's explanation takes a line under its label.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry ends with This is fixed; unit s14 replaced hint lines with question-mark buttons.
 
 The owner asked for this on 2026-11-15, about the "Runs on" row and every row like it in "Project settings".
 The owner said the line under the label is not needed.
@@ -14834,6 +15471,8 @@ Remote worktrees remain disabled, with "Engine work needed: local machine only" 
 The sample mock uses the same control.
 
 ## 974. A project can be archived but not deleted.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says deletion is fixed; packages/engine/src/project/deleted.ts and delete.test.ts exist in the code.
 
 The owner reported this on 2026-11-15.
 The owner said: "I cannot delete projects. I can only archive them."
@@ -15130,6 +15769,8 @@ The orchestrator should retain this observation when assessing the full check.
 
 ## 1015. Stored event reads could reveal a deleted project's history.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says tombstones apply before the owner read allowance; packages/engine/src/project/deleted.ts exists.
+
 Found while implementing project deletion in unit s14.
 The owner and service could read an agent's thread or an event directly from the durable log even after its view was removed.
 Unit s14 keeps identifier tombstones and applies them before the general owner read allowance.
@@ -15137,6 +15778,8 @@ The project history stays in the log but disappears from public event and thread
 This is fixed.
 
 ## 1016. The engine has no safe worktree removal operation.
+
+State: open. Checked against the code on 2026-11-15. grep of packages/engine/src finds no worktree removal operation; the entry says it is open and the requirement lives in docs/features.md. Kind: internal.
 
 Found while implementing project deletion in unit s14.
 The Git service can create a worktree but has no removal path that verifies engine ownership and refuses dirty files.
@@ -15149,6 +15792,8 @@ This is open.
 
 ## 1017. Project deletion could redact identifiers and leave a partial result.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the deletion event marks identifier positions as identities with a regression test; stated as fixed.
+
 The first review found that the deletion event had no identity exemptions in the log redaction structure.
 A registered secret overlapping an identifier could leave some records behind after a successful reply.
 The deletion event now marks every identifier position as an identity.
@@ -15156,6 +15801,8 @@ A regression test uses the real writer with overlapping registered secrets.
 This is fixed.
 
 ## 1018. Project deletion missed descendant workspaces and removed shared infrastructure.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the corrected scope finding is fixed with sixteen regression tests; the named foundry file is gone but tests exist.
 
 Reopened by review round 2 after the first fix had marked this issue fixed.
 The first review found that descendants registered only with a parent identifier remained usable after deletion.
@@ -15179,6 +15826,8 @@ The separately recorded terminal opening race and field-name matcher remain open
 
 ## 1019. Late events could repopulate deleted views.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the shared fold now checks tombstones with regression tests; stated as fixed.
+
 The first review found that a carrier delivery finishing after deletion could recreate an alert delivery row.
 The shared fold now checks identifier tombstones before updating any core or piece view.
 A carrier result for an absent alert cannot create an orphan delivery row.
@@ -15186,6 +15835,8 @@ Regression tests append late project, agent, board, alert and delivery events an
 This is fixed.
 
 ## 1020. Setting help and the lead row had focus and layout regressions.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry states the shared component and styles were corrected and this is fixed.
 
 The first review found an interactive control inside a tooltip, a hover gap, and focus loss when tabbing to dismiss.
 The shared component now keeps the dismiss control outside the tooltip and tracks focus within its wrapper.
@@ -15195,6 +15846,8 @@ This is fixed.
 
 
 ## 1021. A short registered secret can invalidate a board reply mode during redaction.
+
+State: open. Checked against the code on 2026-11-15. No later entry or code records an explicit redaction position for the board reply mode; the entry says it is open. Kind: internal.
 
 Found while extending the deletion regression fixture in fix round 1.
 Registering the synthetic secret `one` changes the fixed reply mode `none` in a board post event.
@@ -15206,6 +15859,8 @@ This is open.
 
 
 ## 1022. A terminal can finish opening after project deletion commits.
+
+State: open. Checked against the code on 2026-11-15. Recorded without a fix by brief; no later entry mentions issue 1022 and the entry states this is open. Kind: internal.
 
 Recorded from minor 2 of review round 2.
 The terminal request resolves its workspace before the session enters the in-memory session map.
@@ -15220,6 +15875,8 @@ This is open.
 
 ## 1023. The tombstone gate matches metadata field names rather than ownership.
 
+State: open. Checked against the code on 2026-11-15. Recorded without a fix by brief; no later entry mentions issue 1023 and the entry states this is open. Kind: internal.
+
 Recorded from minor 6 of review round 2.
 The gate can drop a surviving agent's prompt event when its sender names a deleted agent.
 It can also drop a surviving project's workspace event when its parent identifier names a deleted workspace.
@@ -15232,6 +15889,8 @@ This is open.
 
 ## 1024. Deletion documentation overstated access to retained posts and designs.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says documentation and confirmation now describe the limits; stated as fixed.
+
 Review round 2 found that retained board rows with deleted context are omitted from channel reads.
 Their references no longer open, although the rows remain in the stored channel view.
 A retained design registration can also point at a worktree that deletion unregisters.
@@ -15242,6 +15901,8 @@ No post, design or reference behaviour changes in this correction.
 This is fixed.
 
 ## 1025. Each project view change rebuilt the entire tombstone index.
+
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says the cache now keys on the deletion map with a regression test; stated as fixed.
 
 Review round 2 found that the cache used the project view object as its key.
 Unrelated project events replace that object while retaining the same deletion map.
@@ -15415,6 +16076,8 @@ A fix needs a small parser for adjacent quoted pieces, and tests for each quotin
 
 ## 1027. Deleting an agent could strand its unfinished Git attempt in a kept worktree.
 
+State: fixed. Read on 2026-11-15, not checked against the code. Entry says deletion now refuses an unfinished attempt by any of its agents with a handler regression; stated as fixed.
+
 Review round 3 found that the deletion precondition checked only the attempt's worktree.
 An attempt by the deleted project's agent could remain in a kept shared worktree.
 The tombstone gate then discarded its finish event because that event named the deleted caller.
@@ -15427,6 +16090,8 @@ This is fixed.
 
 ## 1028. Default builder registrations below a kept team worktree have no exclusive owner.
 
+State: open. Checked against the code on 2026-11-15. Entry records a documented and tested limitation for unmarked builder registrations; no later entry resolves it. Kind: internal.
+
 Recorded from minor 1 of review round 3.
 A project's team can sit on a worktree shared with a surviving project.
 The workspace registration command records the builder's parent but no owning project or team.
@@ -15438,6 +16103,8 @@ The missing ownership on default registrations remains open.
 
 ## 1029. A surviving project identifier alone does not protect a workspace below a removed root.
 
+State: open. Checked against the code on 2026-11-15. Recorded without a fix by brief; no later entry mentions issue 1029 and current commands cannot build the case. Kind: internal.
+
 Recorded from minor 2 of review round 3.
 A raw workspace row can carry a surviving project's identifier below a root removed by another project's deletion.
 The kept set protects worktrees named by surviving project and team rows, rather than every workspace carrying a surviving project identifier.
@@ -15447,6 +16114,8 @@ The round 3 brief explicitly asks to record this issue without fixing it.
 This is open.
 
 ## 1030. A kept workspace can retain a parent identifier naming a removed workspace.
+
+State: open. Checked against the code on 2026-11-15. Recorded without a fix by brief; no later entry mentions issue 1030 and current commands cannot build the case. Kind: internal.
 
 Recorded from minor 5 of review round 3.
 A surviving team's kept workspace can sit below another project's removal root in a raw registry row.
