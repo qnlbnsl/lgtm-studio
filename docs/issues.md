@@ -16989,3 +16989,20 @@ Forwarding service logs to a closed terminal could emit an unhandled stream erro
 The forwarding path now ignores output write failures and waits for the child to end.
 The final command flush also tolerates the closed foreground output.
 A closed pipe stands in for a terminal hangup in the regression test.
+
+## s18-18. A test could remove its state folder while its foreground service survived.
+
+State: fixed in s18-smallfix round 3.
+
+The saved host evidence identifies a service started by the foreground CLI fixture.
+Its command and caught-signal mask match code from before the round 2 parent-death fix.
+That code installed neither a hangup handler nor a channel-disconnection handler.
+An open stdout socket did not fail merely because the launcher ended.
+The fixture teardown tracked the launcher rather than its surviving service.
+The exact historical test invocation was not saved with the process evidence.
+A new reproduction also found that an early launcher death could make the newer service accept process 1 when its private parent argument was missing.
+The foreground entry now requires the saved launcher identity.
+A test-only ownership lease follows Node child launches through explicit environments and detached launchers.
+Each service ends itself when teardown revokes its lease or its test worker dies.
+The teardown waits for owned services before removing the lease folder.
+Regressions cover normal teardown, a killed worker, early parent death, and service restart.

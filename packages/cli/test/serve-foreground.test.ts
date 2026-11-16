@@ -156,6 +156,33 @@ for (const restarted of [false, true]) it.runIf(process.platform === 'linux')(`t
   await ready(r, again)
 }, 30_000)
 
+for (const parentArgument of [false, true]) it.runIf(process.platform === 'linux')(`an adopted foreground service exits when its launcher died before main (parent argument ${parentArgument})`, async () => {
+  const r = root(), helper = join(r.folder, 'launcher.mjs'), hook = join(r.folder, 'delay-main.mjs'), record = join(r.folder, 'service-pid'), gate = join(r.folder, 'continue')
+  const service = fileURLToPath(new URL('../../engine/src/service.ts', import.meta.url))
+  // Keep stdout open in this test, as the orphan's socket was. Deliver channel
+  // disconnect before main installs its listener, so only parent identity can help.
+  writeFileSync(hook, `import { existsSync, writeFileSync } from 'node:fs'; if (process.argv[1] === ${JSON.stringify(service)}) { process.on('disconnect', () => writeFileSync(${JSON.stringify(record + '-disconnected')}, 'yes')); while (!existsSync(${JSON.stringify(gate)})) await new Promise(r => setTimeout(r, 10)); }`)
+  writeFileSync(helper, `import { spawn } from 'node:child_process'; import { writeFileSync } from 'node:fs'; const c = spawn(process.execPath, [${JSON.stringify(service)}, '--foreground', ...(${parentArgument} ? [String(process.pid)] : [])], { env: process.env, stdio: ['ignore', 1, 'ignore', 'ipc'] }); writeFileSync(${JSON.stringify(record)}, String(c.pid)); setInterval(() => {}, 1000);`)
+  const owner = spawn(process.execPath, [helper], { env: { ...environment(r), NODE_OPTIONS: `--import=${hook}` }, stdio: ['ignore', 'pipe', 'pipe'] }); children.push(owner)
+  owner.stdout!.resume(); owner.stderr!.resume()
+  let servicePid: number | undefined
+  try {
+    await vi.waitFor(() => { servicePid = Number(readFileSync(record, 'utf8')); expect(servicePid).toBeGreaterThan(1) })
+    // The preload has to be listening before the launcher disappears.
+    await new Promise(resolve => setTimeout(resolve, 100))
+    const ended = new Promise(resolve => owner.once('exit', resolve)); owner.kill('SIGKILL'); await ended
+    await vi.waitFor(() => expect(readFileSync(record + '-disconnected', 'utf8')).toBe('yes'))
+    writeFileSync(gate, 'continue')
+    await vi.waitFor(() => {
+      let running = false
+      try { const stat = readFileSync(`/proc/${servicePid}/stat`, 'utf8'); running = stat.slice(stat.lastIndexOf(')') + 2)[0] !== 'Z' } catch {}
+      expect(running).toBe(false)
+    }, { timeout: 5000 })
+  } finally {
+    if (servicePid) { try { process.kill(servicePid, 'SIGTERM') } catch {} }
+  }
+}, 15000)
+
 it('waits for shutdown after its terminal output pipe closes', async () => {
   const r = root(), hook = join(r.folder, 'shutdown-output.mjs')
   writeFileSync(hook, "if (process.argv[1]?.endsWith('/engine/src/service.ts')) process.prependOnceListener('SIGTERM', () => process.stdout.write('test shutdown forwarding\\n'));\n")
