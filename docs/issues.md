@@ -15467,3 +15467,214 @@ The chat shows the square brackets, the round brackets and the full path as plai
 The message is hard to read, because each such link takes three lines.
 The chat should show the link's label only, or the label with a short path.
 A local file path must not become a clickable address in the browser.
+
+## 1035. Head-changing Git actions reread worktrees that they could not affect.
+
+Found: 2026-11-15, while measuring the Git journey for issue 966.
+Status: fixed for the owner's readbacks in part A and its two fix rounds.
+
+The solid result of the original five-run comparison is the request reduction.
+Every baseline sent 87 state reads.
+Every baseline sent 87 change-list reads.
+Every baseline sent 30 review-status reads.
+Every original after-change run sent 69 state reads.
+Every original after-change run sent 69 change-list reads.
+Every original after-change run sent 18 review-status reads.
+The total Git request count fell from 298 to 250 in every run.
+These counts precede the review-read fixes in fix round 1.
+The single fix-round-1 journey sent 70 state reads.
+That journey sent 70 change-list reads.
+That journey sent 18 review-status reads.
+Its total was 252 Git requests.
+The two extra requests read the base row after pull.
+The review-status increase was zero in that journey.
+The synthetic open-review test covers the newly eligible background status read.
+That test does not prove live evidence freshness.
+
+The observed median journey time fell from 275.39 to 215.98 seconds.
+The after-change machine was quieter.
+The full reduction cannot be attributed to the code.
+Pricing the reduced request counts at baseline per-tag costs attributes about 36 seconds per run to fewer requests.
+About 26 seconds per run came from the quieter machine in the summed engine durations.
+These are estimates from the existing measurements rather than an isolated experiment.
+At baseline load, the slowest journey would be near 260 seconds.
+Its estimated margin under the unchanged 360-second limit is near 100 seconds.
+The original observed 137.63-second margin came from the quieter after-change series.
+
+Commit, pull, push, update, integrate, abort, and approval now read only their affected worktrees.
+The affected worktrees include the source, the destination when present, and the direct children of each.
+Fetch still reads every worktree in the project view.
+Refresh Git still reads every worktree in the project view.
+The measurement lives only in the journey's test support.
+The automatic refresh scheduler remains unchanged for part B, as issue 1033 describes.
+
+The first trade-off is between fewer review reads and review freshness.
+Skipping a known closed or absent review saves requests on background passes.
+A review opened by another client during the same screen visit can wait for an explicit refresh or a review or head-changing action.
+A successful first pass on a new Git screen visit also discovers that review.
+Issue 1042 tracks this regression as open.
+Fix round 1 clears the loaded mark on each screen visit.
+A background pass rereads every known open review.
+A review decided from another client is then seen again on that pass.
+These status reads reduce the original request savings when they become eligible.
+An unsuccessful first review read does not mark the review as loaded.
+The separate evidence-mapping defect remains open in issue 1041.
+
+The second trade-off is between narrow readbacks and covering indirect Git dependencies.
+Pull fetches all origin branches.
+Every parentless row's upstream count can therefore change outside the source's child tree.
+Fix round 1 added the same repository's base row to the readback after pull.
+Fix round 2 includes every parentless row in that repository.
+Each extra row costs one state read.
+Each extra row costs one change-list read.
+Push keeps its narrower set.
+Push does not fetch origin.
+
+## 1036. A failed Git readback can hide the original mutation refusal.
+
+Found: 2026-11-15, while checking the narrowed Git readbacks against the earlier reviews.
+Status: open.
+
+Some Git actions read back their state in a finally block.
+If the mutation fails and that readback also fails, the readback error replaces the original error.
+The owner therefore sees the failure to read current state instead of the mutation's refusal.
+A controlled probe reproduced this with a refused pull followed by a failed state read.
+The same structure exists in integration, update, abort, and reopening.
+This behavior predates part A of unit s16-gitrefresh.
+Part A preserves it because the current brief changes only readback scopes and review-status reads.
+A future fix must keep the mutation error and the failure to confirm current state distinguishable.
+
+## 1037. An open merge review hid decisions made from another client.
+
+Found: 2026-11-15, in the review of part A of unit s16-gitrefresh.
+Status: fixed in fix round 1 for remote decisions and the first-load requirement per screen visit.
+
+Part A skipped review status after the first successful read.
+That rule also skipped status while the known review remained open.
+A decision from another client therefore stayed unseen during background refreshes.
+The loaded mark also survived leaving the Git screen.
+A new screen visit did not reset that mark.
+Review status now refreshes for every known open review in a background pass.
+An approval, refusal, or send-back from another client is then seen again.
+The loaded mark resets on each Git screen visit.
+The first successful pass of that visit reads review status.
+Issue 1043 records the pre-existing case where a busy background pass drops that first attempt.
+The synthetic open-review test proves that another status read happens.
+The test does not prove that the dialog receives passing evidence from the real engine.
+Issue 1041 records that separate defect as open.
+Other regression tests cover skipping closed or absent reviews.
+A regression test covers the first review read on a new screen visit.
+The narrowed-action tests also assert review-status reads for every action after its first load.
+
+## 1038. Pull left parentless rows' upstream counts stale.
+
+Found: 2026-11-15, in the reviews of part A of unit s16-gitrefresh.
+Status: fixed for base rows in fix round 1 and other parentless rows in fix round 2.
+
+Pull fetches all origin branches before updating the selected checkout.
+A parentless row's upstream comparison can change even when its local head stays unchanged.
+The original narrowed set omitted the base row when it was outside the source's direct children.
+Fix round 1 added that base row.
+A project worktree can also have no parent when no main checkout is registered.
+Fix round 2 includes every parentless row in the same repository after pull.
+The new test covers a parentless project worktree.
+The existing tests cover the base row.
+The push test keeps its narrower set.
+
+## 1039. Appended Git actions could build after their source helper contracts changed.
+
+Found: 2026-11-15, in the review of part A of unit s16-gitrefresh.
+Status: fixed in fix round 1.
+
+The appended abort and update actions depend on affectedGit.
+They also depend on the three-argument loadGit.
+Part A moved those signatures into the source.
+The build did not verify those signatures.
+The build now fails when either expected signature is missing.
+Each signature has a regression test.
+
+## 1040. Test measurement could replace a browser journey's failure.
+
+Found: 2026-11-15, in the review of part A of unit s16-gitrefresh.
+Status: fixed in fix round 1.
+
+The test-only measurement finished in the journey's finally block.
+A failure to write the measurement file could replace the journey's own failure.
+The counter now catches failures in its finish method.
+Fix round 2 warns with the failure kind when an enabled measurement fails.
+The warning omits the error message, path, and payload.
+A regression test preserves the original journey error when the output path cannot be used as a directory.
+Measurement is enabled only when LGTM_GIT_MEASURE_DIR is set.
+Ordinary journey runs keep the unwrapped service and install no measurement listener.
+
+## 1041. Fresh evidence from review status never reaches an already open merge dialog.
+
+Found: 2026-11-15, by the reviewer's real-engine probe in review-a2.
+Status: open, awaiting the owner's approval for a change to what the dialog shows.
+
+The engine stores review evidence when project.review.prepare opens a review.
+A later project.review.report updates the separate evidence table.
+The project.review.status read returns the stored review in result.review.
+It returns fresh evidence in the separate result.evidence field.
+The live loadGit function reads only status.review.
+It ignores status.evidence.
+Passing evidence reported after the review opens therefore never reaches the dialog through a status refresh.
+The dialog can keep offering approval without evidence after passing evidence exists.
+An approval can then record approve_without_evidence.
+The reviewer observed missing evidence inside the stored review after a passing report.
+The same reply contained current passing evidence in the separate evidence field.
+Master behaves the same way.
+This is a pre-existing defect rather than a regression from unit s16-gitrefresh.
+The synthetic open-review test does not use the engine's current reply shape.
+That test covers status-read scheduling only.
+A later fix must map the separate fresh evidence while the review is open.
+That fix changes what the dialog shows.
+It waits for the owner's approval.
+
+## 1042. A review opened elsewhere stays unseen while the known review is absent or answered.
+
+Found: 2026-11-15, in review-a2 of unit s16-gitrefresh.
+Status: open for part B.
+
+A background pass skips review status after its first successful read when the known review is absent or answered.
+A review opened or reopened by the owner's other client can therefore stay unseen during the same screen visit.
+Focus, reconnect, and project events do not refresh that review status.
+Selecting another worktree row does not refresh that review status.
+Master was fresh on those paths.
+This is a regression from part A's request reduction.
+Refresh Git can discover the changed review.
+A head-changing action can discover it.
+Opening the merge review dialog prepares fresh review state.
+A successful first pass on a new Git screen visit can discover it.
+A decision made elsewhere for a known open review remains eligible for background refresh.
+
+## 1043. Reopening the Git screen can lose its first load while an old background pass is busy.
+
+Found: 2026-11-15, by reading the screen lifecycle and background-read guard in review-a2.
+Status: open.
+
+Closing the Git screen raises revision.
+An in-flight background pass keeps the git-read key busy until its current request returns.
+Reopening the screen asks for another background pass.
+The busy guard returns false for that attempt.
+The new visit's first load is dropped.
+Its project rows can remain unloaded until a later focus or project event.
+The old pass exits at its revision check when its reply returns.
+It cannot restore the cleared review-loaded mark.
+Master has the same sequence.
+This problem predates unit s16-gitrefresh.
+This finding came from reading rather than from a test.
+A later fix can retry the new visit's first load after the busy pass finishes.
+
+## 1044. Two journeys of the retired page's Git screen also fail under load.
+
+**Status: open.** Found on 2026-11-15 during the full check of the Git read-back change.
+
+The journeys are "Git: actual owner prepares, reviews and approves main; dialog focus and real destination bytes" and "Git: current failed and then stale reported evidence remains data, and the owner can explicitly approve".
+Both are in `packages/web/e2e/git.spec.ts`.
+Both failed in the full check while the machine's load average was above 20.
+The first passed when it ran alone.
+The second failed once and passed once when it ran alone under the same load.
+Each failure was a text assertion in the merge review dialog that ran out of time.
+The change under test did not touch `packages/web/src`, which these journeys exercise.
+Issues 966 and 1014 record the other load-sensitive journeys.
