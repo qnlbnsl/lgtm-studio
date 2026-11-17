@@ -339,7 +339,7 @@ function App() {
   if (top === 'setup' && !waiting) return html`<${FirstRun} s=${s} route=${route} /><${DialogHost} s=${s} /><${Toasts} s=${s} />`;
   const project = top === 'p' ? projectOf(s, route.parts[1]) : null;
   let content;
-  if (waiting) content = html`<div class="view-body"><div class="page" role="status" aria-busy="true"><${Empty} title="Loading…" /></div></div>`;
+  if (waiting) content = html`<div class="view-body"><div class="page" role="status" aria-busy=${!s.conn.notice || !!s.conn.starting}><${Empty} title=${!s.conn.starting && s.conn.notice || 'Loading…'} /></div></div>`;
   else if (top === 'p' && project) content = html`<${ProjectView} s=${s} route=${route} project=${project} />`;
   else if (top === 'p') content = html`<div class="view-body"><div class="page"><div class="empty" data-empty><strong>This project does not exist</strong><span>It may have been removed. <a class="link" href=${href('/home')}>Go to Home</a></span></div></div></div>`;
   else if (top === 'r') content = route.parts[2] === 'design' ? html`<${RepoDesign} s=${s} repoId=${route.parts[1]} route=${route} />` : html`<${RepoPage} s=${s} repoId=${route.parts[1]} />`;

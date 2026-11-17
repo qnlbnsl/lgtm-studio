@@ -1,10 +1,12 @@
 import type { Account } from '@lgtm/contracts'
 
-// Existing local checks produce evidence without adding an event or storing a
-// credential. A changed account row invalidates this in-memory observation.
+// Remember every check on this row, including inconclusive outcomes. Local
+// stores cover only some login methods, so absence is never sign-out evidence.
+// Replacing the row invalidates both the observation and the automatic check.
 const checks = new WeakMap<Account, boolean>()
+export const hasSignInCheck = (account: Account): boolean => checks.has(account)
 export const recordSignInCheck = (account: Account, state: string): void => {
-  if (state === 'local-credential' || state === 'signed-out') checks.set(account, state === 'local-credential')
+  checks.set(account, checks.get(account) === true || state === 'local-credential')
 }
 export const signInEvidence = (account: Account & { readonly signedIn?: boolean; readonly status?: string }): boolean | undefined =>
-  account.status === 'needs-sign-in' ? false : checks.get(account) ?? account.signedIn
+  account.status === 'needs-sign-in' ? false : account.signedIn ?? (checks.get(account) === true ? true : undefined)

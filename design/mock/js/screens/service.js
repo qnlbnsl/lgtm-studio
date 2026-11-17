@@ -340,7 +340,7 @@ export function Harnesses({ s }) {
   return html`<div class="view-body"><div class="page">
     <div class="page-head"><h1 class="page-title">Harnesses</h1><${Saved} s=${s} /><span class="grow"></span>
       <button type="button" class="btn" disabled=${live.on && liveGit.busy('read-service')} onClick=${() => live.on ? liveGit.checkHarnesses() : act.toast('Sample harnesses checked.')}><${Icon} name="refresh-cw" size=${14} />Check again</button></div>
-    <p class="muted">${signed} of ${s.subscriptions.length - unknown} signed in${unknown ? `, ${unknown} Not reported` : ''}, ${limited} at its limit</p>
+    <p class="muted">${s.subscriptions.length === unknown ? `${unknown} Not reported${limited ? `, ${limited} at its limit` : ''}` : `${signed} of ${s.subscriptions.length - unknown} signed in${unknown ? `, ${unknown} Not reported` : ''}, ${limited} at its limit`}</p>
     ${(!live.on || s.ui.serviceReady) && html`<nav class="svc-jump" aria-label="Harnesses on this page">${Object.entries(HARNESSES).map(([hid, h]) => { const n = s.subscriptions.filter((x) => x.harness === hid).length;
       return html`<a key=${hid} class="svc-jump-item" href=${'#harness-' + hid} onClick=${(e) => { e.preventDefault(); document.getElementById('harness-' + hid)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
         <i class=${cx('dot', !h.installed ? 'waiting' : n ? 'working' : 'idle')}></i><b>${h.name}</b><span class="muted">${!h.installed ? 'Not installed' : n ? plural(n, 'account') : 'No account'}</span></a>`; })}</nav>`}

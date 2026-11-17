@@ -53,3 +53,35 @@ it.each(["first", "fixture"])("keeps %s installation metadata when the built pag
     expect(toasts).toEqual([])
   } finally { release(); close() }
 })
+
+it.each([
+  ['signed-out', undefined, false, false],
+  ['signed-out', true, true, true],
+  ['local-credential', false, true, false],
+] as const)('the explicit %s check uses stored snapshot evidence %s', async (stateValue, evidence, known, signedIn) => {
+  const state: any = { session: { status: 'in' }, ui: {}, settings: {}, subscriptions: [{ id: 'account', signInKnown: false, signedIn: false }] }
+  const request = async (tag: string) => {
+    if (tag === 'client.harness.account.check') return { state: stateValue }
+    if (tag === 'accounts') return { accounts: [{ id: 'account', harness: 'fixture' }] }
+    if (tag === 'harnesses' || tag === 'client.harness.status') return { harnesses: [] }
+    if (tag === 'roles.role-file.get') return { file: null }
+    if (tag === 'client.snapshot') return { accounts: [{ id: 'account', status: evidence === false ? 'needs-sign-in' : 'available', ...(evidence === undefined ? {} : { signedIn: evidence }) }] }
+    return { settings: {} }
+  }
+  const actions = new Function('serviceSettings', 'store', 'live', 'engineWrite', 'notify', 'engine', 'act', 'HARNESSES', `${source}\nreturn { installMappings, checkAccount };`)(
+    { loadVersion: async () => {} }, { state }, { on: true }, (patch: object) => Object.assign(state, patch), () => {}, { request }, {}, {})
+  actions.installMappings(mappings)
+  await actions.checkAccount('account')
+  expect(state.subscriptions[0]).toMatchObject({ signInKnown: known, signedIn })
+})
+
+it('terminal completion refreshes engine evidence instead of asserting a local sign-out', async () => {
+  const signin = readFileSync('design/mock/js/live/signin.js', 'utf8').replace(/^import .*;$/gm, '').replace(/export /g, '')
+  const state: any = { subscriptions: [{ id: 'account', signInKnown: false, signedIn: false }] }
+  const refreshAccounts = vi.fn(async () => {})
+  const apply = new Function('live', 'store', 'engineWrite', 'liveGit', `${signin}\nreturn applyCheck;`)(
+    { on: true }, { state }, (patch: object) => Object.assign(state, patch), { refreshAccounts, run: (_key: string, work: () => Promise<void>) => work() })
+  apply({ id: 'account' }, { state: 'signed-out' })
+  await vi.waitFor(() => expect(refreshAccounts).toHaveBeenCalledOnce())
+  expect(state.subscriptions[0]).toMatchObject({ signInKnown: false, signedIn: false })
+})

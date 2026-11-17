@@ -19294,3 +19294,62 @@ The Setup route now waits for the first snapshot too.
 The first notice guard remembered a composer key after its text was cleared.
 Clearing the draft or making it short enough now resets that guard.
 A later overlong draft receives its own single notice.
+
+## s24-17. A missing local credential was treated as proof of sign-out.
+
+The local check does not cover every harness or login method.
+Its negative result disabled usable Cursor and custom accounts.
+It also overrode successful session evidence and an owner's availability reset.
+Local checks now only add positive evidence.
+Stored event evidence takes precedence.
+Only the stored AccountNeedsSignIn evidence confirms sign-out.
+
+## s24-18. Automatic account checks were unbounded and repeated inconclusive reads.
+
+A subscription load now checks at most 64 previously unchecked account rows.
+Every outcome is remembered on its account row.
+An account with no harness configuration also consumes a slot and remembers its outcome.
+Later loads advance through the remaining rows.
+Replacing the row permits a new automatic check.
+The explicit account check can still run again.
+
+## s24-19. The boot account-return step could reload a paused agent with a live token.
+
+Normal startup revokes the old tokens before recovery.
+An intervening token issuance could still make a planned return stale.
+The boot return selection now skips an agent that already holds a live token.
+A regression issues a token during an ordinary reload and verifies the paused agent is skipped.
+
+## s24-20. A recovery progress preview moved a stored-event failure earlier.
+
+The preview decoded availability history before ordinary agents reloaded.
+An unreadable availability event therefore prevented those reloads.
+A failed preview now supplies an empty estimate.
+The actual account-return step still reports the failure after ordinary reloads.
+A regression restores the deliberately corrupted test event before checking replay consistency.
+
+## s24-21. A refused first snapshot left the main area loading indefinitely.
+
+The main area now shows the existing snapshot notice when it is set.
+The startup count notice still leaves the existing Loading… state in the main area.
+A later successful snapshot opens the usual screen.
+
+## s24-22. A sample account added without sign-in became unknown and usable.
+
+The mock now creates that sample row with known sign-out status.
+Its row again shows Signed out and the Sign in button.
+The live account still begins without sign-in evidence.
+
+## s24-23. The all-unknown header reported zero signed-in accounts out of zero.
+
+The header now reads n Not reported when every account is unknown.
+It appends the existing limit count only when that count is positive.
+The empty list reads 0 Not reported.
+The mixed list retains separate known and unknown counts.
+
+## s24-24. The round-two report overstated unsupported checks and omitted visible behavior.
+
+The report said unsupported local checks left accounts unknown.
+The implementation actually marked those accounts signed out.
+The corrected report acknowledges that error.
+Its final visible-change list now covers the whole unit against the original base.

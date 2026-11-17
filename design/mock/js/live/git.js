@@ -160,7 +160,9 @@ export const installHarness = async (harnessId) => {
 export const checkHarnesses = () => run('read-service', () => loadService('harnesses', true));
 export const checkAccount = async (accountId) => {
   const result = await request('client.harness.account.check', { accountId });
-  if (['local-credential', 'signed-out'].includes(result.state)) engineWrite({ subscriptions: S().subscriptions.map((a) => a.id === accountId ? { ...a, signInKnown: true, signedIn: result.state === 'local-credential' } : a) });
+  // The snapshot combines stored evidence with positive local observations.
+  // A local absence cannot override an opened session or assert sign-out.
+  await refreshAccounts();
   return result;
 };
 export const harnessSetting = (harnessId, patch) => run('subscriptions', async () => {

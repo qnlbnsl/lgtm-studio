@@ -254,13 +254,14 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
       catch: () => new LogWriteFailed({ reason: "stored event is unreadable" }),
     });
     const now = yield* Clock.currentTimeMillis;
+    const live = yield* liveAgents;
     const planned: Array<{ agentId: AgentId; accountId: string; cause: AvailableCause }> = [];
     for (const account of Object.values(snapshot.accounts)) {
       const overdue = preview && account.status === "out-of-usage" && account.resetAt !== undefined && account.resetAt <= now;
       const cause = overdue ? "usage reset" : causes.get(account.id);
       if ((!overdue && account.status !== "available") || cause === undefined) continue;
       for (const agent of Object.values(snapshot.agents)) {
-        if (returnable(agent, account.id, cause) && !projectPreventsRun(snapshot, agent.agentId))
+        if (returnable(agent, account.id, cause) && !live.has(agent.agentId) && !projectPreventsRun(snapshot, agent.agentId))
           planned.push({ agentId: agent.agentId, accountId: account.id, cause });
       }
     }
@@ -308,7 +309,9 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
     const recovered = new Set<string>();
     // Preview overdue returns without moving step 8's timer reconciliation
     // ahead of ordinary reloads. All old tokens were revoked in step 4.
-    const plannedReturns = yield* returningAccounts(true);
+    // A preview only estimates progress. Preserve step 8's failure point for
+    // unreadable availability history, after ordinary agents have reloaded.
+    const plannedReturns = yield* returningAccounts(true).pipe(Effect.catchTag("LogWriteFailed", () => Effect.succeed([])));
     const snapshot = yield* views.snapshot;
     const interrupted = Object.values(snapshot.agents).filter(agent => {
       if (projectPreventsRun(snapshot, agent.agentId) || agent.state._tag !== "interrupted") return false;

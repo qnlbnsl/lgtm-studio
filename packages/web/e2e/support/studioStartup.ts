@@ -21,7 +21,7 @@ import { decisionSetup } from '../../../engine/test/support/projectDecisionFixtu
 import { buildStudio } from '../../../studio/scripts/build.ts'
 import { completedSetup } from './completedSetup.ts'
 
-export async function exerciseStartup(page: Page, kind: 'startup' | 'drafts' | 'plans' | 'mock-drafts' | 'mock-unknown') {
+export async function exerciseStartup(page: Page, kind: 'startup' | 'drafts' | 'plans' | 'mock-drafts' | 'mock-unknown' | 'mock-add') {
   const rig = makeRig(), previous = process.env.LGTM_HOME
   process.env.LGTM_HOME = rig.stateFolder
   const password = randomBytes(32).toString('base64url'), port = await unusedPort()
@@ -57,6 +57,17 @@ export async function exerciseStartup(page: Page, kind: 'startup' | 'drafts' | '
           await page.goto(kind.startsWith('mock-') ? root + '#/p/console/chat/console-lead' : root)
           if (kind.startsWith('mock-')) {
             const chatRoute = `${root}#/p/console/chat/console-lead`
+            if (kind === 'mock-add') {
+              await page.goto(`${root}#/harnesses`)
+              await page.evaluate(async () => {
+                const path = '/js/live/signin.js'; const { addAccount } = await import(path)
+                await addAccount('claude', 'Added without sign-in', 'existing', '', 'studio')
+              })
+              const row = page.locator('.svc-sub').filter({ hasText: 'Added without sign-in' })
+              await expect(row.locator('.c-state')).toContainText('Signed out')
+              await expect(row.getByRole('button', { name: 'Sign in', exact: true })).toBeVisible()
+              return
+            }
             if (kind === 'mock-unknown') {
               const account = await page.evaluate(async () => {
                 const path = '/js/lib.js'; const { store, update } = await import(path)
@@ -84,6 +95,14 @@ export async function exerciseStartup(page: Page, kind: 'startup' | 'drafts' | '
               await page.getByRole('button', { name: 'Subscription', exact: true }).click()
               const option = page.getByRole('menuitemradio').filter({ hasText: account.name }).first()
               await expect(option).toBeEnabled(); await expect(option).not.toContainText('Signed out')
+              await page.keyboard.press('Escape')
+              const count = await page.evaluate(async () => {
+                const path = '/js/lib.js'; const { store, update } = await import(path)
+                update(() => { for (const x of store.state.subscriptions) { x.signInKnown = false; x.signedIn = false; x.window = null; x.usage = null } })
+                return store.state.subscriptions.length
+              })
+              await page.goto(`${root}#/harnesses`)
+              await expect(page.locator('.page > p.muted').first()).toHaveText(`${count} Not reported`)
               return
             }
             const composer = page.locator('.chat-main .composer textarea')
