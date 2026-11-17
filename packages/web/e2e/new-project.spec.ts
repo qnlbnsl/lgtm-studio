@@ -64,7 +64,7 @@ const fixture = async (page: Page, body: (rig: Rig, gate: ReplyGate, runner: Eff
       return yield* provideRig(rig, { runner, secrets: makeFakeSecrets(), lists: engineLists, wrapLog: replyGate(gate), ...(isolated ? { redactor: makeRedactor({ secrets: () => displaySecrets, tokenHashes: () => new Set() }).layer } : {}) }, Effect.gen(function* () {
         yield* registerRebuildCheck()
         success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "zsh" } }))
-        success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }] }) }))
+        success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }] }) }))
         success(yield* call(owner, "accounts", { operation: "add", account: { id: "primary", harness: "cursor", enabled: true } }))
         success(yield* call(owner, "accounts set-secret", { accountId: "primary", name: "CURSOR_API_KEY", nonce: freshRequest(), value: Redacted.make("synthetic-browser-project-credential") }))
         if (registered) {
@@ -654,7 +654,7 @@ for (const axis of ["model", "effort"] as const) test(`first-run ${axis} refusal
       efforts: { source: "negotiated", options: [{ id: "high", label: "high" }, { id: "low", label: "low" }] },
     }))
     success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath,
-      models: ["test-model", "valid-model"], efforts: ["high", "low"], reportedModes: [{ id: "default", level: "ask" }] }) }))
+      models: ["test-model", "valid-model"], efforts: ["high", "low"], reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }] }) }))
     runner.script("start", () => Effect.fail(new RunnerRejected({ reason: "controlled first-run refusal", startFailure: `${axis}-refused` })))
     yield* Effect.promise(async () => {
       await page.getByRole("button", { name: "Get started", exact: true }).click()

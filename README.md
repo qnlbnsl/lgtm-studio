@@ -169,8 +169,18 @@ Registered worker worktrees appear in the existing Git, Files, and Terminal choi
 On 2026-11-17, the owner chose `auto` as the default for new project leads and their workers.
 The ordered levels are `read-only`, `ask`, `edit`, `auto` and `full`.
 New harness defaults use `auto`.
-An untouched previous factory harness setting receives the new effective defaults when read.
-Owner-edited settings and existing agents keep their chosen levels.
+The historical upgrade is applied by field when settings are read.
+If the four old permission mappings and reported modes match the previous factory values, the row gains the automatic mapping and mode.
+This applies even when the owner edited the model, effort, run mode or adapter path.
+Every stored `defaultPermission` of `ask` reads as `auto` under the owner's decision of 2026-11-17.
+The website never offered a control for that harness field.
+A stored default other than `ask` is kept.
+Custom mappings, custom reported modes and unrelated owner edits are kept.
+Existing agents keep their levels.
+The stored event log is not rewritten.
+Factory adapter discovery runs once at service startup.
+`harnesses reset` uses the same startup snapshot.
+Ordinary starts and recovery read current stored settings without repeating discovery.
 Claude's automatic mode is `auto`.
 Codex's automatic review mode is `agent`.
 A harness without a configured automatic mode uses its edit mapping and reports the fallback in its status.

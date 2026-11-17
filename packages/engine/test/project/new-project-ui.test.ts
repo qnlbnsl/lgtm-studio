@@ -37,7 +37,7 @@ afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals(); removeRig(rig) })
 
 const configured = () => Effect.gen(function* () {
   success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "zsh" } }))
-  success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }] }) }))
+  success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }] }) }))
   success(yield* call(owner, "accounts", { operation: "add", account: { id: "primary", harness: "cursor", enabled: true } }))
   success(yield* call(owner, "accounts set-secret", { accountId: "primary", name: "CURSOR_API_KEY", nonce: freshRequest(), value: Redacted.make("synthetic-new-project-readiness") }))
 })
@@ -157,7 +157,7 @@ live("reads durable unfinished intent after lost write and writer restart, retai
   yield* provideRestart(rig, runner.layer, Effect.gen(function* () {
     yield* recover
     const api = yield* connected(); activeClient = api
-    success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("claude", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }] }) }))
+    success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("claude", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }] }) }))
     success(yield* call(owner, "accounts", { operation: "add", account: { id: "other", harness: "claude", enabled: true } }))
     success(yield* call(owner, "accounts set-secret", { accountId: "other", name: "ANTHROPIC_API_KEY", nonce: freshRequest(), value: Redacted.make("synthetic-other-project-readiness") }))
     yield* api["project.settings.set"]({ requestId: freshRequest(), settings: { workspaceFolder: rig.root, shell: "bash", lead: { harness: "claude" as never,

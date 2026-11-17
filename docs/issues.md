@@ -19523,14 +19523,17 @@ This unit changes no sign-in session or process-group cleanup implementation.
 
 ## s26-6. Stored factory defaults kept new leads at ask after the upgrade.
 
-State: Fixed in round 2 of unit s26.
+State: Fixed in round 2 of unit s26 and refined by the owner's round-three field policy.
 
 The first implementation changed only defaults for fresh installations.
-An exact previous factory setting now receives the current effective automatic mapping, reported mode and default when read.
+Round two upgraded an exact previous factory row when read.
+Round three upgrades factory permission fields despite unrelated owner edits.
+Every stored ask default now reads as auto.
+Other defaults and custom permission fields are kept.
 The stored log and existing agents remain unchanged.
-An owner-edited setting remains unchanged.
 Status distinguishes an older stored mapping from a harness with no separate automatic mode.
-Pre-unit-log regressions cover Claude and Codex through a service restart and a real start handler.
+The current pre-unit-log regressions cover all four factory harness shapes through restart and real start handlers.
+Issue s26-14 records the field policy.
 
 ## s26-7. Automatic review can approve commands without raising an engine permission request.
 
@@ -19582,7 +19585,9 @@ State: Fixed in round 2 of unit s26.
 
 An omitted permission uses the lowest of automatic review, the saved harness default and the starter's ceiling.
 An explicit permission remains subject to the starter's ceiling.
-A full-permission lead therefore respects a saved ask default when it omits the worker level.
+A full-permission lead respects a saved edit default when it omits the worker level.
+The owner's round-three decision upgrades stored ask harness defaults to auto.
+Issue s26-14 records that explicit default change.
 The role instructions and start-tool description state this rule.
 
 ## s26-12. The whole round-two unit run failed a secret-carry stop check that passed alone.
@@ -19617,3 +19622,134 @@ The merge-to-main case failed both individual runs while waiting for the merged 
 Its final individual run had no competing whole suite.
 The browser gate therefore remains failing.
 This round changes no Git merge implementation or existing browser assertion.
+The round-three comparison did not reproduce the named historical failures on the base or either tested unit revision.
+Issue s26-23 records the round-three whole-run failures and their separate passing reruns.
+
+
+## s26-14. Owner model edits prevented the automatic permission upgrade.
+
+State: Fixed in round 3 of unit s26 under the owner's explicit default decision.
+
+The old upgrade required the entire stored harness row to match the previous factory row.
+Factory permission mappings and reported modes now upgrade independently of model, effort, run mode and adapter edits.
+Every stored ask default reads as auto.
+Other defaults and custom permission fields remain intact.
+The event log and existing agent levels remain unchanged.
+Regressions use the previous factory shapes and current executable discovery for all four harnesses.
+Existing test fixtures now use the current auto default.
+The saved-default cap regression uses edit because the owner explicitly replaced stored ask defaults.
+A future website control is recorded in the feature list.
+
+## s26-15. A refused worker allocation could change a protected checkout.
+
+State: Fixed in round 3 of unit s26.
+
+A clean linked source could allocate beneath a protected main checkout before child admission refused.
+Git could leave an empty allocation directory and a changed exclusion file after rollback.
+The allocation directory and common directory are now checked before worktree creation.
+Missing allocation directories are checked through their nearest existing ancestor.
+The regression preserves the existing exclusion bytes, branch inventory and workspace inventory.
+The preliminary check returns no spawn grant.
+
+## s26-16. A foreign checkout outside home bypassed the project boundary check.
+
+State: Fixed in round 3 of unit s26.
+
+The boundary check previously ran only when an own-project registration enclosed the requested folder.
+A foreign sibling checkout outside home could pass through shared-repository containment.
+The check now also refuses that foreign boundary without an enclosing own registration.
+Read-only permission does not bypass the boundary.
+The earlier Git scope for direct manual team children outside home remains available.
+Those manual registrations still grant no admission inside home.
+Existing non-local starts that retain their folder still avoid Git.
+Allocation registration and machine refusals retain their specific recovery sentences.
+
+## s26-17. Reading harness settings repeated executable discovery.
+
+State: Fixed in round 3 of unit s26.
+
+Commands and per-agent recovery could repeatedly probe the executable search path and repeat missing-adapter warnings.
+The real service now resolves factory discovery once at startup.
+Reset uses that startup snapshot.
+Ordinary settings reads use the latest stored rows and pure permission migration.
+A regression counts discovery across settings reads and starts.
+
+## s26-18. An unreadable home dotfolder blocks unrelated agent starts.
+
+State: Documented as a fail-closed limitation in round 3 of unit s26.
+
+An unreadable home dotfolder can block starts and recovery outside home too.
+An unresolved alias could point into the requested folder.
+The engine cannot prove that entry unrelated by directory identity.
+SECURITY.md now states this refusal and the owner's remedy.
+
+## s26-19. The folder documentation omitted shared Git settings and clean subfolders.
+
+State: Clarified in round 3 of unit s26.
+
+Sibling worktrees share the Git common directory, configuration and hooks with the service checkout.
+Folder admission does not isolate those settings.
+The main checkout root containing the service is refused as a child folder.
+A clean subfolder such as packages remains admitted when the parent is already in that main checkout.
+The clean-subfolder regression passed before the clarification.
+
+
+## s26-20. Project fixtures advertised only the previous default mode.
+
+State: Fixed in round 3 of unit s26.
+
+The whole unit run found project fixtures that advertised only the fake harness's ask mode.
+The automatic default falls back to their configured edit mapping.
+Lead selection correctly refused that unreported mode before the intended Git and project assertions ran.
+The affected fake harness settings now advertise the existing edit mapping too.
+Production mode validation remains unchanged.
+The existing assertions and time limits remain unchanged.
+Frozen historical factory fixtures retain their old shapes.
+
+
+## s26-21. The boundary fix mistook a broad own registration for a foreign project.
+
+State: Fixed in round 3 of unit s26.
+
+Two existing resume tests exposed an own-project registration spanning a home ancestor outside home.
+That broad registration cannot grant admission inside home.
+It still identifies the project's boundary outside home.
+The boundary comparison now distinguishes that membership from a grant for a home descendant.
+The ordinary protected-folder and containment checks still apply to the child's actual directory.
+The existing resume assertions remain unchanged.
+The foreign-checkout regressions still require refusal.
+
+
+## s26-22. Some test fixtures inherit the invoking home for readiness checks.
+
+State: Open as a test-isolation gap found in round 3 of unit s26.
+
+The common unit setup clears provider variables but does not replace HOME.
+Some Git fixtures also omit their own HOME override.
+Lead readiness builds its environment from the invoking process before checking login stores.
+Those fixtures can therefore probe login paths outside their synthetic rig.
+The earlier round-three commands did not provide a synthetic outer home.
+No real login store was inspected to determine whether such a file existed.
+Subsequent validation uses a temporary outer home and clears provider variables before starting the test runner.
+The wrapper keeps the installed browser binary cache available without using it as a login directory.
+A repository-wide test-environment fix remains separate work.
+
+
+## s26-23. Seven browser journeys failed in the whole run and passed separately.
+
+State: Open as whole-run-only browser failures observed in round 3 of unit s26.
+
+The whole browser run passed 68 journeys and failed seven journeys.
+The main merge case at `git.spec.ts:183` did not observe the merged dialog content within five seconds.
+The stale-evidence case at `git.spec.ts:253` timed out waiting for review dialog content.
+The temporary-remote case at `git.spec.ts:316` did not observe the fetch acknowledgment within five seconds.
+The eight-size creation case at `new-project.spec.ts:149` still showed the creation dialog after five seconds.
+The throttled-state case at `oversized-state.spec.ts:25` timed out waiting for a state-marker predicate.
+The projects-and-board case at `studio.spec.ts:372` timed out waiting for the expected topbar text.
+The file-editor case at `studio.spec.ts:1200` still reported itself busy after five seconds.
+All seven passed as exact-title single-test reruns with their existing assertions and time limits.
+No other test, typecheck or install of this worker was active during those reruns.
+The earlier isolated attribution also passed the main merge, temporary remote, placement and both issue-579 cases on the base, round one and round three.
+That attribution used a synthetic outer home with a one-minute load between 14.27 and 23.39.
+It did not reproduce those historical failures on any revision.
+The long Git workspace journey at `studio.spec.ts:970` passed the whole run in 5.4 minutes.

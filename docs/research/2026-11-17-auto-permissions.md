@@ -36,8 +36,11 @@ The harness status describes the fallback.
 An old mapping without an `auto` field falls back to its existing edit mapping.
 New harness defaults use `auto`.
 A child start without a level uses `auto`, capped at the saved harness default and the starter's level.
-Existing agents and owner-edited settings retain their levels.
-An exact previous factory setting receives the current effective defaults at read time.
+Existing agents keep their levels.
+Unrelated owner edits, custom permission mappings and non-ask harness defaults are kept.
+Factory-identical permission mappings and reported modes receive automatic mode fields at read time, even when other fields were edited.
+Every stored ask default reads as auto under the owner's decision of 2026-11-17.
+The website never offered a control for that harness field.
 The stored log remains unchanged.
 No existing event needs migration.
 The engine's persistent-permission routing and permission ceiling still apply.

@@ -23,7 +23,7 @@ afterEach(() => { cleanupUnit7b(); vi.unstubAllEnvs(); removeRig(rig) })
 const snapshot = Effect.gen(function* () { return yield* (yield* Views).snapshot })
 const setup = (runner: FakeRunner, settings: 'ask' | 'default' = 'ask') => Effect.gen(function* () {
   yield* registerRebuildCheck()
-  success(yield* call(owner, 'harnesses', { operation: 'set', harness: harnessSettings('cursor', { adapterPath: process.execPath, reportedModes: [{ id: 'default', level: 'ask' }] }) }))
+  success(yield* call(owner, 'harnesses', { operation: 'set', harness: harnessSettings('cursor', { adapterPath: process.execPath, reportedModes: [{ id: 'default', level: 'ask' }, { id: 'acceptEdits', level: 'edit' }] }) }))
   success(yield* call(owner, 'accounts', { operation: 'add', account: { id: 'primary', harness: 'cursor', enabled: true } }))
   success(yield* call(owner, 'accounts set-secret', { accountId: 'primary', name: 'CURSOR_API_KEY', nonce: freshRequest(), value: Redacted.make('synthetic-lead-test-readiness') }))
   success(yield* call(owner, 'project.settings.set', { settings: { workspaceFolder: rig.root, shell: 'sh' } }))

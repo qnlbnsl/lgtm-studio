@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { ProjectId, WorkspaceId, parseRole, defaultChildPermission, type PermissionLevel, type Workspace } from "@lgtm/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { start } from "./start.ts";
+import { checkAllocationDirectory } from "../identity/ceiling.ts";
+import { projectFolderScope } from "../project/folderScope.ts";
 import { readHarnesses, refused, type Input, type Payload, type Planner } from "./internal.ts";
 import { own, projectView, workspaceInProject, allocatedWorkspaceInProject } from "../project/view.ts";
 import { gitCall, localMachine, safePath, withGit, workspacePath } from "../project/gitApi.ts";
@@ -79,8 +82,13 @@ const normalize = (input: Input, raw: Record<string, unknown>) => Effect.gen(fun
 });
 
 export const prepareStartWorkspace = (input: Input, raw: Record<string, unknown>, allocated: (release: Effect.Effect<void>) => void) => Effect.gen(function* () {
+  const caller = input.actor;
+  if (caller._tag !== "owner" && caller._tag !== "agent") return yield* refused();
   const p = yield* normalize(input, raw);
   const selection = yield* context(input, p);
+  if (selection?.allocate && selection.base === undefined) return yield* refused("The starter's checkout is not registered for this project. Ask your parent or the owner to register it before starting a worker.");
+  if (selection?.allocate && (selection.base!.machineId !== "local" || selection.project.machineId !== "local"))
+    return yield* refused("Worker worktrees can only be allocated on the local machine before machine pairing.");
   const projectId = selection?.project.projectId;
   const starterFolder = input.actor._tag === "agent" ? input.snapshot.agents[input.actor.agentId]?.folder : selection?.base?.path;
   const folder = selection?.selected?.path ?? (selection?.allocate ? starterFolder ?? p.folder : p.folder);
@@ -95,9 +103,6 @@ export const prepareStartWorkspace = (input: Input, raw: Record<string, unknown>
       return yield* start(current, { ...normalized, ...(now === undefined ? {} : { projectId: now.project.projectId }) });
     })) satisfies Planner;
   const base = selection.base;
-  if (selection.allocate && base === undefined) return yield* refused("The starter's checkout is not registered for this project. Ask your parent or the owner to register it before starting a worker.");
-  if (selection.allocate && (base!.machineId !== "local" || selection.project.machineId !== "local"))
-    return yield* refused("Worker worktrees can only be allocated on the local machine before machine pairing.");
   let workspace: Workspace | undefined = selection.selected;
   let created: Workspace | undefined;
   let reused: Workspace | undefined;
@@ -134,6 +139,11 @@ export const prepareStartWorkspace = (input: Input, raw: Record<string, unknown>
     const prefix = `worker/${safeSlug(selection.project.name, selection.project.projectId).slice(0, 48).replace(/-$/, "")}`;
     const name = safeSlug(p.name, id);
     yield* safePath(input, prefix); yield* safePath(input, name);
+    const repo = yield* gitCall(git.register(base!.path));
+    for (const folder of [join(dirname(repo.commonDirectory), ".worktrees"), repo.commonDirectory]) {
+      yield* checkAllocationDirectory({ ...input.runtime, ...projectFolderScope(input.runtime, input.actor._tag === "agent" ? input.actor.agentId : undefined),
+        caller, parentFolder: base!.path, folder }).pipe(Effect.mapError(error => refused(`Worker allocation folder: ${error.reason}`)));
+    }
     const tree = yield* git.createWorktree(base!.path, name, "HEAD", prefix).pipe(
       Effect.mapError((error) => refused(`worker-worktree:${error.reason}`)),
     );

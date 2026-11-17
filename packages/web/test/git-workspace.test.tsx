@@ -53,7 +53,7 @@ const setup = (base = "main") => Effect.gen(function* () {
   yield* registerRebuildCheck()
   if (base !== "main") git(rig.work, "branch", "-m", base)
   yield* seedAccount("launch", "cursor")
-  success(yield* call(ownerCredential, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }] }) }))
+  success(yield* call(ownerCredential, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }] }) }))
   success(yield* call(ownerCredential, "accounts set-secret", { accountId: "launch", name: "CURSOR_API_KEY", nonce: "web-git", value: Redacted.make("synthetic-web-git-key") }))
   const api = yield* connect()
   yield* api["project.settings.set"]({ requestId: freshRequest(), settings: { workspaceFolder: rig.root, shell: "zsh" } })

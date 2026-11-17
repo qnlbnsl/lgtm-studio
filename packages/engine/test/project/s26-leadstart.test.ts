@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, renameSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { it } from "@effect/vitest";
 import { afterEach, beforeEach, expect, vi } from "vitest";
@@ -171,7 +171,8 @@ for (const permission of ['read-only', 'edit'] as const) it.live(`s26 r2 M3: a b
     leadAgentId: other.agentId, machineId: 'local', name: 'Other project', goal: 'Stay separate' })]);
   const folder = join(p.path, 'src'); mkdirSync(folder);
   const process = vi.spyOn(GitProcess, 'gitProcess');
-  expect(failureOf(yield* call(agentCredential(lead.token), 'start', workerPayload(folder, { role: 'lead:team', permission })))).toBeDefined();
+  expect(failureOf(yield* call(agentCredential(lead.token), 'start', workerPayload(folder, { role: 'lead:team', permission })))!.reason)
+    .toBe("Start folder: This folder belongs to a nested worktree outside the starter's project.");
   expect(process).not.toHaveBeenCalled(); expect(runner.callsOf('start')).toHaveLength(0);
 })));
 
@@ -181,7 +182,8 @@ it.live('s26 r2 M3: an unregistered linked checkout under a broad root cannot in
   workerGit(rig.work, 'worktree', 'add', '-b', 'hand-made', folder);
   const nested = join(folder, 'src'); mkdirSync(nested);
   const process = vi.spyOn(GitProcess, 'gitProcess');
-  expect(failureOf(yield* call(agentCredential(lead.token), 'start', workerPayload(nested, { role: 'lead:team', permission: 'read-only' })))).toBeDefined();
+  expect(failureOf(yield* call(agentCredential(lead.token), 'start', workerPayload(nested, { role: 'lead:team', permission: 'read-only' })))!.reason)
+    .toBe("Start folder: This nested checkout is not registered to the starter's project.");
   expect(process).not.toHaveBeenCalled(); expect(runner.callsOf('start')).toHaveLength(0);
 })));
 
@@ -191,7 +193,8 @@ it.live('s26 r2 m1: replacing an allocated registration with a symlink cannot fo
   const folder = (yield* snapshot).agents[first.agentId]!.folder;
   renameSync(folder, folder + '-original'); symlinkSync(p.teamPath, folder);
   const count = runner.callsOf('start').length;
-  expect(failureOf(yield* call(p.leadCredential, 'start', workerPayload(folder, { name: 'Alias child', role: 'lead:team', permission: 'read-only' })))).toBeDefined();
+  expect(failureOf(yield* call(p.leadCredential, 'start', workerPayload(folder, { name: 'Alias child', role: 'lead:team', permission: 'read-only' })))!.reason)
+    .toBe("Start folder: The registered worktree path is now a symbolic link. Ask the owner to restore its directory before retrying.");
   expect(runner.callsOf('start')).toHaveLength(count);
 })));
 
@@ -209,13 +212,14 @@ for (const location of ['home', 'outside-home'] as const) for (const kind of ['r
   }));
 });
 
-it.live('s26 r2 m4: omitted worker permission honors the saved harness default', () => run(runner => Effect.gen(function* () {
+it.live('s26 r2 m4: omitted worker permission honors a non-ask saved harness default', () => run(runner => Effect.gen(function* () {
   const p = yield* workerProject(rig);
+  success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: harnessSettings('first', { defaultPermission: 'edit' }) }));
   const lead = yield* seedAgent({ id: 'full-lead', role: 'lead:team', folder: p.path, parent: p.lead.agentId, permission: 'full' });
   const payload = workerPayload(p.path); delete (payload as Partial<typeof payload>).permission;
   const child = success(yield* call(agentCredential(lead.token), 'start', payload));
-  expect((yield* snapshot).agents[child.agentId]!.permission).toBe('ask');
-  expect(runner.callsOf('start').at(-1)!.input.permission).toBe('ask');
+  expect((yield* snapshot).agents[child.agentId]!.permission).toBe('edit');
+  expect(runner.callsOf('start').at(-1)!.input.permission).toBe('edit');
 })));
 
 it.live('s26 r2: a main-checkout starter allocates beside the nested service but cannot start a child in main', () => {
@@ -244,7 +248,7 @@ it.live('s26 r2 m5: a protected source refuses before Git and preserves its inve
     const p = yield* workerProject(rig);
     const before = { folders: readdirSync(join(rig.work, '.worktrees')).sort(), branches: workerGit(rig.work, 'for-each-ref', '--format=%(refname)', 'refs/heads'), workspaces: projectView(yield* snapshot).workspaces };
     const process = vi.spyOn(GitProcess, 'gitProcess');
-    expect(failureOf(yield* call(p.leadCredential, 'start', workerPayload(p.path)))).toBeDefined();
+    expect(failureOf(yield* call(p.leadCredential, 'start', workerPayload(p.path)))!.reason).toBe('Start folder: folder is, or is inside, a protected folder');
     expect(process).not.toHaveBeenCalled(); expect(runner.callsOf('start')).toHaveLength(0);
     expect({ folders: readdirSync(join(rig.work, '.worktrees')).sort(), branches: workerGit(rig.work, 'for-each-ref', '--format=%(refname)', 'refs/heads'), workspaces: projectView(yield* snapshot).workspaces }).toEqual(before);
   }));
@@ -288,5 +292,54 @@ it.live('s26 r2: an owner-started main-checkout lead allocates beside the protec
     expect(workspace.owner).toBe(child.agentId);
     expect(runner.callsOf('start')).toHaveLength(2);
     expect((yield* snapshot).agents[lead.agentId]!.permission).toBe('full');
+  }));
+});
+
+for (const permission of ['read-only', 'edit'] as const) it.live(`s26 r3 m2: a foreign registered checkout outside home refuses ${permission} without an enclosing own root`, () => {
+  const work = join(rig.root, 'outside-repository'); renameSync(rig.work, work); rig = { ...rig, work };
+  return run(runner => Effect.gen(function* () {
+    const p = yield* workerProject(rig), path = join(rig.work, '.worktrees', 'other-project');
+    workerGit(rig.work, 'worktree', 'add', '-b', 'other-project', path);
+    const row = success(yield* call(ownerCredential, 'project.workspace.register', { repoId: p.repoId, path, branch: 'other-project', machineId: 'local', checkout: 'worktree', parentId: p.mainId }));
+    const other = yield* seedAgent({ id: 'other-lead', role: 'lead:project', folder: path });
+    yield* appendSetup([eventOf({ _tag: 'project.Created', projectId: 'other-project', repoId: p.repoId, worktreeId: row.worktreeId,
+      leadAgentId: other.agentId, machineId: 'local', name: 'Other project', goal: 'Keep checkouts separate' })]);
+    const starter = yield* seedAgent({ id: 'outside-full-lead', role: 'lead:team', folder: p.path, parent: p.lead.agentId, permission: 'full' });
+    expect(failureOf(yield* call(agentCredential(starter.token), 'start', workerPayload(path, { role: 'lead:team', permission })))?.reason)
+      .toBe("Start folder: This folder belongs to a worktree outside the starter's project.");
+    expect(runner.callsOf('start')).toHaveLength(0);
+  }));
+});
+
+it.live('s26 r3 m1: a clean linked source cannot allocate into a protected main checkout before Git mutates it', () => {
+  rig = { ...rig, pluginRoot: rig.work };
+  return run(runner => Effect.gen(function* () {
+    const p = yield* workerProject(rig), source = join(rig.home, 'separate-checkout');
+    workerGit(rig.work, 'worktree', 'remove', p.teamPath);
+    workerGit(rig.work, 'worktree', 'move', p.path, source);
+    rmSync(join(rig.work, '.worktrees'), { recursive: true });
+    const exclude = join(rig.work, '.git', 'info', 'exclude'); writeFileSync(exclude, 'owner exclusion\n');
+    const view = projectView(yield* snapshot);
+    yield* appendSetup([eventOf({ _tag: 'project.WorktreeCreated', ...view.workspaces[p.worktreeId]!, path: source })]);
+    const lead = yield* seedAgent({ id: 'clean-source-lead', role: 'lead:team', folder: source, parent: p.lead.agentId });
+    const before = { branches: workerGit(rig.work, 'for-each-ref', '--format=%(refname)', 'refs/heads'), workspaces: projectView(yield* snapshot).workspaces };
+    const process = vi.spyOn(GitProcess, 'gitProcess');
+    expect(failureOf(yield* call(agentCredential(lead.token), 'start', workerPayload(source)))?.reason)
+      .toBe('Worker allocation folder: folder is, or is inside, a protected folder');
+    expect(process.mock.calls.some(([, args]) => args.includes('worktree') && args.includes('add'))).toBe(false);
+    expect(existsSync(join(rig.work, '.worktrees'))).toBe(false);
+    expect(readFileSync(exclude, 'utf8')).toBe('owner exclusion\n');
+    expect({ branches: workerGit(rig.work, 'for-each-ref', '--format=%(refname)', 'refs/heads'), workspaces: projectView(yield* snapshot).workspaces }).toEqual(before);
+    expect(runner.callsOf('start')).toHaveLength(0);
+  }));
+});
+
+it.live('s26 r3 m7: a main-checkout lead may start a child in a clean subfolder beside the service', () => {
+  const service = join(rig.work, '.worktrees', 'service'); mkdirSync(service, { recursive: true });
+  rig = { ...rig, pluginRoot: service };
+  return run(runner => Effect.gen(function* () {
+    const p = yield* workerProject(rig), lead = yield* mainLead(p), folder = join(rig.work, 'packages'); mkdirSync(folder);
+    success(yield* call(agentCredential(lead.token), 'start', workerPayload(folder, { role: 'lead:team' })));
+    expect(runner.callsOf('start').at(-1)!.input.folder).toBe(folder);
   }));
 });

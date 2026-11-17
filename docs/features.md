@@ -1395,8 +1395,11 @@ Claude uses its `auto` mode.
 Codex uses its `agent` automatic review mode.
 An unsupported or historical mapping falls back to edit and reports that fact in harness status.
 The website offers Automatic review alongside the existing choices.
-Existing agents and owner-edited settings keep their levels.
-An exact previous factory harness setting receives the effective new defaults at read time.
+Existing agents keep their levels.
+Unrelated owner edits, custom permission mappings and non-ask harness defaults are kept.
+Factory-identical permission mappings and reported modes receive automatic mode fields at read time, even when other fields were edited.
+Every stored ask default reads as auto under the owner's decision of 2026-11-17.
+The website never offered a control for that harness field.
 
 ## Reconciliation of interrupted worker allocations
 
@@ -1422,3 +1425,13 @@ Without an active task, it uses the latest mapped tool summary or delivered mess
 The description preserves redaction and occupies one bounded line.
 An idle or stopped agent retains its lifecycle description.
 See issues s25-3 and s25-5 in `docs/issues.md`.
+
+## A website control for a harness's default permission
+
+State: Planned as an idea recorded in round 3 of unit s26.
+
+The website does not offer a control for a harness's `defaultPermission` field.
+The owner can currently choose a project lead permission in the existing Defaults editor.
+A future harness control should let the owner choose that separate harness default.
+It needs a stored indication of an explicit choice so a newly chosen ask default can survive the historical upgrade.
+This unit adds no website control.

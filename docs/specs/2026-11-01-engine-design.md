@@ -238,8 +238,11 @@ narrowest to widest, is: read only, ask before every change, edit files
 without asking, automatic review, and full access.
 The owner added automatic review on 2026-11-17 as the default for new leads and workers.
 An omitted child level is limited by the saved harness default and the starter's ceiling.
-Existing agents and owner-edited settings keep their levels.
-An exact previous factory harness setting receives the effective automatic defaults at read time.
+Existing agents keep their levels.
+Unrelated owner edits, custom permission mappings and non-ask harness defaults are kept.
+Factory-identical permission mappings and reported modes receive automatic mode fields at read time, even when other fields were edited.
+Every stored ask default reads as auto under the owner's decision of 2026-11-17.
+The website never offered a control for that harness field.
 Each harness maps its own modes onto this scale in its settings.
 Claude uses `auto`, and Codex uses `agent` for automatic review.
 An older or unsupported automatic mapping falls back to `edit` and reports that fact in harness status.

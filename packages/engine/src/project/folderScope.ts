@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
 import { harnessLogin } from "../runner/harnesses.ts";
 import type { Runtime, Snapshot } from "../commands/internal.ts";
-import { allocatedWorkspaceInProject, own, projectView } from "./view.ts";
+import { allocatedWorkspaceInProject, own, projectView, workspaceInProject } from "./view.ts";
 
 // Only project roots, team roots and engine allocations grant home admission.
 // A manual descendant in the Git read scope is not a folder grant.
@@ -25,7 +25,11 @@ export const projectFolderScope = (runtime: Runtime, starterId: AgentId | undefi
       && pending.workspace.repoId === project.repoId && pending.workspace.machineId === "local") {
       paths.push(pending.workspace.path); boundaries.push(pending.workspace.path);
     }
-    return { allowed: paths, boundaries };
+    // Preserve the older Git scope outside home, including direct manual team
+    // children and non-local registrations used without Git. None grants home
+    // admission. Foreign project boundaries still refuse in either location.
+    const outsideHome = Object.values(view.workspaces).filter(row => workspaceInProject(view, row, id!)).map(row => row.path);
+    return { allowed: paths, boundaries, outsideHome };
   })),
   harnessHomes: Effect.gen(function* () {
     const snapshot = yield* runtime.views.snapshot;
