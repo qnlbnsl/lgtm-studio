@@ -1,4 +1,4 @@
-import type { Event, ProjectRecord, ProjectView, ProjectTaskRecord, TaskHistoryEntry } from "@lgtm/contracts"
+import type { Event, Workspace, ProjectRecord, ProjectView, ProjectTaskRecord, TaskHistoryEntry } from "@lgtm/contracts"
 import type { Snapshot } from "../commands/internal.ts"
 
 export const own = <T>(rows: Readonly<Record<string, T>>, id: string): T | undefined => Object.hasOwn(rows, id) ? rows[id] : undefined
@@ -83,7 +83,7 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
     case "project.MainReviewDecided": return { ...view, gitReviews: { ...view.gitReviews, [event.review.worktreeId]: event.review } }
     case "AgentStarted": {
       const parent = event.parent._tag === "agent" ? event.parent.agentId : undefined
-      const projectId = parent === undefined ? undefined : own(view.agentProjects, parent)
+      const projectId = event.projectId ?? (parent === undefined ? undefined : own(view.agentProjects, parent))
       return { ...view, ...(parent === undefined ? {} : { parents: { ...view.parents, [event.agentId]: parent } }),
         ...(projectId === undefined ? {} : { agentProjects: { ...view.agentProjects, [event.agentId]: projectId } }) }
     }
@@ -215,3 +215,20 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
     default: return view
   }
 }
+
+// A registered worker can sit beneath a project or a team, at any depth.
+// Only ancestry to this project's root/team proves membership; repoId alone
+// never grants access to another project in the same repository.
+export const workspaceInProject = (view: ProjectView, workspace: Workspace, projectId: string): boolean => {
+  const project = own(view.projects, projectId);
+  if (!project || workspace.repoId !== project.repoId || workspace.projectId !== undefined && workspace.projectId !== projectId) return false;
+  const roots = new Set([project.worktreeId, ...Object.values(view.teams).filter((team) => team.projectId === projectId).map((team) => team.worktreeId)]);
+  const seen = new Set<string>();
+  let row: Workspace | undefined = workspace;
+  while (row && row.repoId === project.repoId && !seen.has(row.worktreeId)) {
+    if (roots.has(row.worktreeId)) return true;
+    seen.add(row.worktreeId);
+    row = row.parentId === undefined ? undefined : own(view.workspaces, row.parentId);
+  }
+  return false;
+};

@@ -2,6 +2,7 @@ import { ProjectApprovalOutcome, ProjectRequestLinkFields, QuestionMetadataField
 import { DeliveryContextReferences } from "./project/context.ts"
 import { AgentChoice, ConfigurationReason } from "./agentConfiguration.ts"
 import * as Schema from "effect/Schema"
+import { ProjectId } from "./project/schema.ts"
 import { ProjectEvent } from "./project/events.ts"
 import { BoardEvent } from "./board/events.ts"
 import { ClientEvent } from "./client/events.ts"
@@ -159,6 +160,7 @@ export const EngineEvent = Schema.Union([
     role: Schema.String,
     groups: Schema.Array(Schema.String),
     parent: Actor,
+    projectId: Schema.optionalKey(ProjectId),
     harness: HarnessId,
     account: AccountId,
     model: Schema.optionalKey(Schema.NonEmptyString),

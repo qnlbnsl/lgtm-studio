@@ -137,7 +137,7 @@ export function workspaceIdentity(row: Workspace, workspaces: ReadonlyArray<Work
   const team = teams.find((t) => t.worktreeId === row.worktreeId && projects.find((p) => p.projectId === t.projectId)?.worktreeId !== row.worktreeId)
   const builderTeam = teams.find((t) => t.worktreeId === row.parentId && workspaces.find((w) => w.worktreeId === row.parentId)?.repoId === row.repoId)
   const project = projects.find((p) => p.worktreeId === row.worktreeId || p.projectId === (team?.projectId ?? builderTeam?.projectId ?? row.projectId))
-  const kind = row.checkout === 'main' ? 'base' : team ? 'team' : builderTeam ? 'agent' : row.teamId ? 'team' : project ? 'project' : 'base'
+  const kind = row.checkout === 'main' ? 'base' : team ? 'team' : row.owner && row.parentId ? 'agent' : builderTeam ? 'agent' : row.teamId ? 'team' : project ? 'project' : 'base'
   const parent = workspaces.find((w) => w.worktreeId === row.parentId) ?? (kind === 'project' ? workspaces.find((w) => w.repoId === row.repoId && w.checkout === 'main') : undefined)
   return { kind, project: kind === 'base' ? null : project?.projectId ?? null, team: team?.teamId ?? builderTeam?.teamId ?? row.teamId ?? null,
     owner: row.owner ?? (kind === 'project' ? project?.leadAgentId : undefined) ?? null, parent: parent?.branch ?? null, parentId: parent?.worktreeId ?? null } as const

@@ -92,10 +92,13 @@ export const gitPlanners = {
     const team = Object.values(view.teams).find((row) => row.worktreeId === source.worktreeId)
     const parentTeam = Object.values(view.teams).find((row) => row.worktreeId === destination.worktreeId)
     const project = team === undefined ? undefined : own(view.projects, team.projectId)
+    const workerProject = source.projectId === undefined ? undefined : own(view.projects, source.projectId)
+    const worker = source.owner !== undefined && workerProject !== undefined && workerProject.repoId === source.repoId
+      && (workerProject.worktreeId === destination.worktreeId || destination.projectId === workerProject.projectId)
     const builder = parentTeam !== undefined && !Object.values(view.projects).some((row) => row.worktreeId === source.worktreeId)
       && team === undefined && source.checkout === "worktree"
     if (source.parentId !== destination.worktreeId || source.repoId !== destination.repoId
-      || !(project?.worktreeId === destination.worktreeId || builder)) {
+      || !(project?.worktreeId === destination.worktreeId || builder || worker)) {
       return yield* refused("integration requires a registered team source and its project workspace")
     }
     return { head: yield* gitCall(git.mergeTeam(path, destination.path, raw.expectedHead as string)) }
@@ -111,10 +114,14 @@ export const gitPlanners = {
     const projectParent = project !== undefined && parent.checkout === "main"
       && parent.path === own(view.repositories, child.repoId)?.path
     const teamParent = team !== undefined && own(view.projects, team.projectId)?.worktreeId === parent.worktreeId
+    const workerProject = child.projectId === undefined ? undefined : own(view.projects, child.projectId)
+    const workerParent = child.owner !== undefined && workerProject !== undefined && child.parentId === parent.worktreeId
+      && (workerProject.worktreeId === parent.worktreeId || parent.projectId === workerProject.projectId
+        || Object.values(view.teams).some((row) => row.projectId === workerProject.projectId && row.worktreeId === parent.worktreeId))
     const builderParent = builderTeam !== undefined && child.checkout === "worktree"
     if (child.repoId !== parent.repoId || child.worktreeId === parent.worktreeId
       || child.parentId !== undefined && child.parentId !== parent.worktreeId
-      || !(projectParent || teamParent || builderParent && child.parentId === parent.worktreeId)) return yield* refused("update requires the registered parent workspace")
+      || !(projectParent || teamParent || workerParent || builderParent && child.parentId === parent.worktreeId)) return yield* refused("update requires the registered parent workspace")
     return { head: yield* gitCall(git.updateFromParent(parent.path, path, raw.expectedHead as string)) }
   })),
   "project.merge.abort": mutate((git, path, raw) => git.abortMerge(path, raw.expectedHead as string, raw.expectedMergeHead as string, raw.confirmed as boolean)),

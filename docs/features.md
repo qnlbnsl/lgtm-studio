@@ -1339,8 +1339,37 @@ Changing project placement remains unavailable until machine pairing exists.
 ## Optional removal of a deleted project's worktree folder
 
 Project deletion currently keeps all folders and branches on disk.
-The engine has no existing worktree removal operation.
+The engine has no public worktree removal operation.
+The internal rollback for a refused worker allocation only removes its unchanged new checkout.
 The website therefore has no removal checkbox.
 A future removal path must prove that the engine created the exact worktree for that project.
 It must verify the worktree's identity and refuse uncommitted changes.
 It must never remove a branch or an externally registered folder.
+
+## Automatic worker worktrees
+
+State: Implemented in unit s23-worktrees, pending merge.
+
+Starting a project worker allocates a registered child worktree and a safe worker branch.
+The starter's current committed head supplies its starting point.
+The owner can select a project through the client application programming interface.
+The start command can select an existing registered worktree for a reviewer or another intentional reuse.
+Leads keep their current checkout.
+The existing website shows the worker in its Git, Files, and Terminal choices.
+Resume and recovery reuse the stored folder.
+Removal preserves worktrees and branches.
+
+## Reconciliation of interrupted worker allocations
+
+State: Idea.
+
+A durable allocation intent could reconcile a Git checkout created just before a hard service crash.
+The recovery path would verify the original folder and branch identities before registering or removing anything.
+See issue s23-5 in `docs/issues.md`.
+
+## Removal of finished worker checkouts
+
+State: Idea.
+
+An owner-directed command could remove a worker checkout after proving that its branch is merged into its parent and that its folder is clean.
+See issue s23-4 in `docs/issues.md`.

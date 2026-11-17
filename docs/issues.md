@@ -17714,3 +17714,91 @@ Each of the four passed when it was run alone with one worker.
 This is the load sensitivity that issue 1139 and the issues it names record.
 
 State: open. Recorded on 2026-11-16.
+
+## s23-1. Project workers shared their starter's checkout.
+
+State: Fixed in unit s23-worktrees on 2026-11-16.
+
+The start command previously opened its supplied folder without allocating a checkout.
+Project workers now receive a registered child worktree by default.
+The start command accepts an existing registered worktree for intentional reuse.
+The owner's start accepts an explicit project identifier.
+An agent cannot use that identifier to join another project.
+
+## s23-2. Integration and terminal choices assumed a worker belonged beneath a team.
+
+State: Fixed in unit s23-worktrees on 2026-11-16.
+
+The integration admission previously accepted workers only beneath a registered team.
+A worker directly beneath the project lead could not integrate through that path.
+The Terminal chooser omitted that worker too.
+Both paths now include registered workers beneath their recorded project parent.
+The worker retains the same existing controls in the website.
+
+## s23-3. Lead instructions must describe automatic worker allocation.
+
+State: Open, pending the merge of unit s23-worktrees and the role instruction unit.
+
+The directory `packages/engine/src/roles/instructions/` is absent in this checkout.
+The assignment reports that the role unit tells leads to allocate worker folders themselves.
+Those instructions must describe the default allocation and the optional `worktreeId` after both units merge.
+No absent instruction file was created in this unit.
+
+## s23-4. Retained worker checkouts need an owner-directed cleanup path.
+
+State: Open.
+
+Stopping a worker does not remove its checkout or branch.
+Deleting a team preserves its registered worktrees too.
+This preserves uncommitted changes and commits that have not reached the parent.
+An optional cleanup command should prove that the exact registered checkout is clean and merged before removal.
+The internal rollback for a refused new allocation is not a general removal command.
+
+## s23-5. A hard service crash can leave an allocation without a registration.
+
+State: Open.
+
+Git allocation happens before the atomic worktree registration and agent start append.
+Normal refusal, interruption, and writer failure run a guarded rollback.
+A process kill or power loss in that interval cannot run the rollback.
+The resulting Git checkout is preserved as recovery evidence.
+The engine does not adopt or delete it on a later start.
+A retry chooses another safe numeric name.
+A durable allocation intent would allow this interval to be reconciled on startup.
+
+## s23-6. A failed worker allocation could retain its reserved empty folder.
+
+State: Fixed in unit s23-worktrees on 2026-11-16.
+
+The first rollback implementation attempted to delete an expected branch even when Git had not created it.
+Git refused the missing reference before the reserved folder was removed.
+Rollback now checks whether the reference exists.
+The reserved folder has an exclusive directory identity and is removed only when it is still that empty directory.
+Injected failures before checkout, after branch creation, and after checkout cover the cleanup.
+
+## s23-7. The existing home-folder ceiling blocks lead starts in home-hosted repositories.
+
+State: Open, preserving the existing security rule.
+
+The folder ceiling refuses an agent-started child anywhere inside the owner's home folder.
+The existing ceiling tests explicitly require that refusal for protected folders and their descendants.
+A project stored under the owner's home therefore cannot start workers through its lead.
+An owner-started worker still has the existing owner exception.
+A temporary-directory reproduction returned `FolderRefused` with the protected-folder reason.
+This unit does not weaken that rule.
+Using a repository outside the protected home permits lead-started workers under the current policy.
+Changing that policy requires the owner's explicit security decision.
+
+## s23-8. The installer process-tree test can observe a live descendant after timeout cleanup.
+
+State: Open, observed during the full unit s23-worktrees suite.
+
+The full suite failed the existing timeout and cancellation test in `packages/engine/test/client/harness-toolchain.test.ts`.
+Its immediate process-state assertion found a state other than absent or zombie after the recipe returned.
+The same unchanged file passed when run alone with its original timing.
+The installer sends the kill signal to the process group and resolves when the direct child closes.
+It does not explicitly await every descendant's exit.
+Neither the installer nor that test was changed in this unit.
+The full-run result was 9,921 passed tests, one failed test, and two skipped tests.
+A subsequent whole-suite run passed all 638 files, with 9,922 tests passed and two skipped.
+That run used the unchanged installer test and its original timing.

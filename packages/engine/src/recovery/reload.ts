@@ -42,7 +42,7 @@ export const spawnInput = (
   if (agent.parent._tag === "agent" && parent === undefined) return yield* refused();
   const grant = yield* checkFolder({ ...runtime, caller: agent.parent,
     parentFolder: parent?.folder ?? agent.folder, folder: agent.folder,
-  }).pipe(Effect.mapError(() => refused()));
+  }).pipe(Effect.mapError((error) => refused(`Agent folder unavailable: ${error.reason}`)));
   if (grant.realPath !== agent.folder) return yield* refused();
   const folder = yield* folderForSpawn(grant, operation).pipe(Effect.mapError(() => refused()));
   const harness = (yield* readHarnesses(runtime)).find((settings) => settings.id === agent.harness);

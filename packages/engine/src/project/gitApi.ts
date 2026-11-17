@@ -7,7 +7,7 @@ import { type Runtime, type Input, refused, CommandUncertain } from "../commands
 import type { Workspace } from "@lgtm/contracts"
 import { agentReadReply } from "../api/reads.ts"
 import { canReadProject } from "./access.ts"
-import { own, projectView } from "./view.ts"
+import { own, projectView, workspaceInProject } from "./view.ts"
 import { makeGitService, type GitService, type GitOperation, type Conflict, type Repository } from "./git/index.ts"
 
 // One queue owner per command runtime. The gate survives settings replacement,
@@ -53,7 +53,7 @@ export const workspaceReference = (input: Input, raw: Record<string, unknown>, o
     const id = raw.projectId as string
     const project = own(view.projects, id)
     if (project === undefined || !canReadProject(input.snapshot, input.actor, id) || project.repoId !== workspace.repoId
-      || !(project.worktreeId === workspace.worktreeId || options.ownerMain === true && input.actor._tag === "owner" && workspace.checkout === "main" || Object.values(view.teams).some((team) => team.projectId === id && (team.worktreeId === workspace.worktreeId || team.worktreeId === workspace.parentId && workspace.checkout === "worktree")))) {
+      || !(workspaceInProject(view, workspace, id) || options.ownerMain === true && input.actor._tag === "owner" && workspace.checkout === "main")) {
       return yield* refused("project is unavailable to this caller")
     }
   }

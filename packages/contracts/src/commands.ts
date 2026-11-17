@@ -15,6 +15,7 @@ import { HarnessSettings, RunMode } from "./harnesses.ts"
 import { AccountId, AgentId, DeliveryId, EventSequence, HarnessId, PermissionRequestId, QuestionId, RequestId, WaitId } from "./ids.ts"
 import { AlertRpcGroup, ClientRpcGroup, clientCommandAccess } from "./client/commands.ts"
 import { PermissionLevel } from "./permission.ts"
+import { ProjectId, WorkspaceId } from "./project/schema.ts"
 import { ProjectRpcGroup, projectAccess } from "./project/commands.ts"
 import { RolesRpcGroup, rolesAccess } from "./roles/commands.ts"
 
@@ -63,6 +64,8 @@ export const EngineCommandsRpcGroup = RpcGroup.make(
       effort: Schema.optionalKey(ChoiceId),
       permission: PermissionLevel,
       folder: Schema.String.check(Schema.isPattern(/^\/.*$/)),
+      projectId: Schema.optionalKey(ProjectId),
+      worktreeId: Schema.optionalKey(WorkspaceId),
       runMode: Schema.optionalKey(RunMode),
       groups: Schema.optionalKey(Schema.Array(Schema.String)),
       prompt: Schema.optionalKey(Schema.String)

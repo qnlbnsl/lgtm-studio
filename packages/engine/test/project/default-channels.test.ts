@@ -1,3 +1,6 @@
+import { execFileSync } from "node:child_process"
+import { mkdirSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import { createHash } from "node:crypto"
 import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
@@ -20,6 +23,17 @@ import { snapshot, eventually } from "../support/routingRig.ts"
 import { agentCredential, call, failureOf, ownerCredential, startPayload, success, appendSetup, eventOf, makeRig, readLog, removeRig, seedAgent, type Rig } from "../support/handlerRig.ts"
 
 let rig: Rig
+// Starts now require a real registered source checkout. Keep all channel
+// assertions unchanged, while giving the live-start cases real Git fixtures.
+const checkout = (folder: string) => {
+  mkdirSync(folder, { recursive: true })
+  const git = (...args: string[]) => execFileSync("/usr/bin/git", ["-C", folder, ...args], { stdio: "ignore" })
+  git("init", "-b", "topic")
+  writeFileSync(join(folder, "base.txt"), "Fixture\n")
+  git("add", "base.txt")
+  git("-c", "user.name=Test", "-c", "user.email=test@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", "Fixture")
+  return folder
+}
 beforeEach(() => { rig = makeRig(); vi.stubEnv("HOME", rig.home); vi.stubEnv("LGTM_HOME", rig.stateFolder) })
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); removeRig(rig) })
 const channels = (state: Effect.Success<typeof snapshot>) => Object.values((state.board as BoardView).channels)
@@ -50,8 +64,14 @@ it.live("backfills only missing defaults on startup, preserves events and names,
   expect(channels(yield* snapshot).find((c) => c.channelId === general.channelId)?.name).toBe("Project_discussion")
 })))
 
-const startChild = (credential: Parameters<typeof call>[0], role: string, groups: unknown[] = []) =>
-  call(credential, "start", startPayload(rig, { name: "Agent", role, groups })).pipe(Effect.map(success))
+const liveDecisionSetup = () => Effect.gen(function* () {
+  const folder = checkout(rig.work)
+  const f = yield* decisionSetup(folder)
+  success(yield* call(ownerCredential, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "sh" } }))
+  return f
+})
+const startChild = (credential: Parameters<typeof call>[0], role: string, groups: unknown[] = [], folder = rig.work) =>
+  call(credential, "start", startPayload(rig, { name: "Agent", role, groups, folder })).pipe(Effect.map(success))
 const member = (agentId: string) => ({ _tag: "agent", agentId })
 const hasMember = (state: Effect.Success<typeof snapshot>, channelId: string, agentId: string) =>
   channelMembers(state, channelId as never).some((m) => m._tag === "agent" && m.agentId === agentId)
@@ -60,12 +80,12 @@ const waitMember = (channelId: string, agentId: string) => eventually(snapshot, 
 
 it.live("starts real lead roles and variants, and excludes workers and a second project's agents after a completed sync", () => provideBoard(rig, (runner) => Effect.gen(function* () {
   yield* registerRebuildCheck()
-  const f = yield* decisionSetup(), other = yield* decisionProject("two")
+  const f = yield* liveDecisionSetup(), otherFolder = checkout(join(rig.root, "second-project")), other = yield* decisionProject("two", otherFolder)
   yield* boardReactor.pipe(Effect.forkScoped)
   const lead = yield* startChild(f.leadCredential, "lead", [f.team.group])
   const variant = yield* startChild(f.leadCredential, "lead:build", [f.team.group])
   const nested = yield* startChild(agentCredential(Redacted.value(runner.callsOf("start").find((c) => c.input.agentId === lead.agentId)!.input.token)), "worker")
-  const outsider = yield* startChild(other.leadCredential, "lead", [f.team.group])
+  const outsider = yield* startChild(other.leadCredential, "lead", [f.team.group], otherFolder)
   yield* startChild(f.leadCredential, "lead:design")
   yield* startChild(f.leadCredential, "lead", [other.team.group])
   const unknown = yield* startChild(f.leadCredential, "team-lead", [f.team.group])
@@ -80,7 +100,7 @@ it.live("starts real lead roles and variants, and excludes workers and a second 
 
 it.live("honors owner removals after a later sync and a signalled reactor restart", () => provideBoard(rig, Effect.gen(function* () {
   yield* registerRebuildCheck()
-  const f = yield* decisionSetup()
+  const f = yield* liveDecisionSetup()
   const reactor = yield* boardReactor.pipe(Effect.forkScoped)
   const lead = yield* startChild(f.leadCredential, "lead", [f.team.group])
   const [general, leads] = defaults.openDefaultProjectChannels({ projectId: f.projectId as never, leadAgentId: f.leadId as never })
@@ -138,7 +158,7 @@ it.live("neither opens nor adds members while a project is archived or archiving
 
 it.live("caps backfilled channels and writes each skipped admission once as an owner-visible service post", () => provideBoard(rig, Effect.gen(function* () {
   yield* registerRebuildCheck()
-  const f = yield* decisionSetup()
+  const f = yield* liveDecisionSetup()
   for (let i = 0; i < 64; i++) yield* seedAgent({ id: `worker-${i}`, parent: f.leadId, state: "idle" })
   const reactor = yield* boardReactor.pipe(Effect.forkScoped)
   const general = defaults.openDefaultProjectChannels({ projectId: f.projectId as never, leadAgentId: f.leadId as never })[0]!
