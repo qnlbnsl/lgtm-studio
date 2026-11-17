@@ -5,6 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 import { refused, type Input, type Payload, type PiecePlan } from "../commands/internal.ts";
+import { composeInstructions } from "./compose.ts";
 
 export class RoleFileError extends Data.TaggedError("RoleFileError")<{
   readonly path: ReadonlyArray<string | number>;
@@ -61,7 +62,10 @@ export const setRoleFile = (input: Input, payload: Payload<"roles.role-file.set"
   // The view must contain only committed, redacted data. Refuse if redaction
   // makes the serialized document invalid instead of committing an unusable file.
   const content = yield* input.runtime.log.redactText(payload.content);
-  yield* load(content);
+  const redacted = yield* load(content);
+  for (const name of Object.keys(redacted.file.roles)) {
+    for (const kind of ["worker", "lead", "orchestrator"]) yield* composeInstructions(input.runtime, input.snapshot, `${kind}:${name}`, redacted.file);
+  }
   return {
     // The writer performs the mandatory redaction pass. Passing the original
     // avoids redacting replacement markers again. It validates the final

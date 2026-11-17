@@ -53,7 +53,7 @@ export const requestRows = (snapshot: Snapshot): ClientRequest[] => [
       ...(row.answeredBy?._tag === "owner" || row.answeredBy?._tag === "agent" ? { answeredBy: row.answeredBy } : {}),
       ...(row.answer?._tag === "selected" && Buffer.byteLength(row.answer.optionId) <= 128 ? { optionId: row.answer.optionId } : {}),
       ...(row.reason === undefined ? {} : { reason: cutUtf8(row.reason, 512) }),
-      canAnswer: row.status === "open" && row.holder._tag === "owner",
+      canAnswer: row.status === "open",
     })),
     ...Object.values(snapshot.questions).filter((row) => row.status !== "open" || canReceiveAnswer(snapshot, row.agentId)).map((row): ClientRequest => ({
       ...requestLink(snapshot, row), id: row.questionId, kind: "question", agentId: row.agentId, holder: row.holder,

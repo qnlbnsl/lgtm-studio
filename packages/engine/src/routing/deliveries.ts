@@ -357,7 +357,10 @@ export const dispatchQueued = (agentId: AgentId, options: { readonly recovered?:
           ...(row.content._tag === "prompt" && row.content.context !== undefined ? { context: row.content.context } : {}),
         }]),
       ], {});
-      return { incarnation, delivery: asDelivery(row), sentSequence: sent[0]!.sequence };
+      const started = snapshot.threads[agentId]?.find((entry) => entry.event._tag === "AgentStarted")?.event;
+      const startBrief = started?._tag === "AgentStarted" && started.firstPromptDelivery?.id === row.id
+        && row.sender._tag === "agent" && started.parent._tag === "agent" && started.parent.agentId === row.sender.agentId;
+      return { incarnation, delivery: asDelivery(row), sentSequence: sent[0]!.sequence, ...(startBrief ? { startBrief: true } : {}) };
     }));
     if (reserved === undefined) return;
     const send = { agentId, ...reserved };

@@ -41,6 +41,15 @@ Synapse fork. It is at `docs/message-board/features.md` in the
 
 ## 1. The foundry: roles and their lifecycle
 
+- **Default role instructions** (built in s22). The engine ships twelve role files and three bases.
+  It composes them for the first turn of a fresh session and for `roles.orient`.
+  The owner can replace individual files under `~/.lgtm/roles`.
+  See [the role instructions document](roles.md).
+- **Repository role overrides** (idea). Decide whether a repository may supply agent instructions before adding repository override loading.
+- **Role instruction editor and file commands** (idea). Add authenticated API actions to list, read and save role instruction files, and an editor that uses them.
+- **Evidence before done** (idea). Check that a reported completion names an existing branch head and that required checks have finished.
+- **No run notes in commits** (idea). Reject a team merge that adds run notes, reports or scratch files according to an owner-approved rule.
+
 - **Repeat the roles stall check without the cache wait** (agreed,
   2026-11-05). The owner can run `pnpm live-check:roles --skip-timed-flush`
   to repeat the team collection and first stall without waiting for the

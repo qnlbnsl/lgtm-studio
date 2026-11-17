@@ -87,7 +87,7 @@ describe("agents", () => {
     expect(mapAgentState(agent("ag-worker"))).toBe("waiting")
     expect(mapAgentState(agent("ag-failed"))).toBe("failed")
     expect(mapAgentState({ ...agent("ag-lead"), state: { _tag: "interrupted", previous: "working" } })).toBe("stopped")
-    expect(mapAgentState({ ...agent("ag-lead"), state: { _tag: "crashed" } })).toBe("failed")
+    expect(mapAgentState({ ...agent("ag-lead"), state: { _tag: "crashed" } })).toBe("stopped")
   })
   it("places an agent in its project and its team", () => {
     expect(mapAgent(agent("ag-lead"), section)).toMatchObject({ project: "pj-orchard", team: null, role: "project-lead", activity: "" })
@@ -116,7 +116,7 @@ describe("requests", () => {
       sourceSequence: 30, id: "perm-1", kind: "approval", agent: "ag-worker", project: "pj-orchard", task: null, title: "Run the orchard checks",
       body: "Run the orchard checks\nnpm test", command: null, folder: "/srv/repos/orchard", tool: "execute", recommendation: null,
       options: [{ id: "allow", label: "Allow once", kind: "allow_once", primary: true }, { id: "deny", label: "Deny", kind: "reject_once" }],
-      createdAt: 1_700_000_100_000, status: "open", heldBy: null
+      createdAt: 1_700_000_100_000, status: "open", heldBy: null, canAnswer: true
     })
   })
   it("keeps a question's title, recommendation, project and task", () => {

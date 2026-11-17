@@ -173,7 +173,7 @@ test("conversations retain drafts, real context, delivery and owner peek across 
         const initial = success(yield* call(ownerCredential, "client.requests", { after: 0, limit: 200,
           agentId: worker.agentId, kind: "permission" })).items.find((row: ClientRequest) => row.id === permissionId) as ClientRequest
         expect(initial).toMatchObject({ id: permissionId, kind: "permission", agentId: worker.agentId,
-          holder: { _tag: "agent", agentId: lead.agentId }, status: "open", canAnswer: false })
+          holder: { _tag: "agent", agentId: lead.agentId }, status: "open", canAnswer: true })
         success(yield* call(agentCredential(Redacted.value(leadToken)), "pass-up", { subject: { _tag: "permission", id: permissionId } }))
         const ownerHeld = success(yield* call(ownerCredential, "client.requests", { after: 0, limit: 200,
           agentId: worker.agentId, kind: "permission" })).items.find((row: ClientRequest) => row.id === permissionId) as ClientRequest

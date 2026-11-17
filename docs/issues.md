@@ -2243,7 +2243,7 @@ thread, without failing on its own setup.
 ## 152. A paused agent that cannot reload after a restart has no path back except stop
 
 Found: 2026-11-01, while building unit 6d.
-State: open.
+State: open. Unit s21-recover adds the website's fresh fallback for states that accept resume, but the existing command contract refuses resume while paused.
 
 What happens: when its account returns, a paused agent with a session whose
 adapter cannot reload gets `AgentReloadFailed` with the fixed reason "agent
@@ -3863,7 +3863,7 @@ token in a form a client can decode.
 
 Found: 2026-11-02, by the security review of the issue 223 fix (commit
 b88b876, finding F4).
-State: fixed in s19-secrets with one combined streaming window, every public-prefix candidate, independent public match context, and completed-match coverage across updates and forced replacements. A genuine private prefix still delays following tools, as recorded in issue s19-5.
+State: fixed in s19-secrets with one combined streaming window, every public-prefix candidate, independent public match context, and completed-match coverage across updates and forced replacements. A genuine private prefix still delays following tools, as recorded in issue 1264.
 
 What happens: streamed message text is held back by the chunk redactor, so
 a secret split across chunks is still matched.
@@ -5755,7 +5755,7 @@ Why it matters: A long-running service uses more memory without bound.
 ## 332. Recovery leaves an interrupted agent with a session that cannot reload, and writes no event
 
 Found: 2026-11-03, while planning the message board plan.
-State: open.
+State: partly fixed in unit s21-recover. The website can request a fresh session after a refused reload. Automatic recovery still leaves that agent interrupted, and the unrelated board-disposition description below remains open.
 
 What happens: A follower of the board must apply the `waits.ts` test itself (board review round 2, R2-A3).
 What should happen: Not decided.
@@ -17576,6 +17576,594 @@ Ran: the final complete suite was restarted after these corrections.
 Ran: the final complete suite passed all 635 files with 9706 passing tests and two existing skips.
 Ran: the complete typecheck passed after the type-only fixture correction.
 
+## 1170. Agents did not receive the default workflow instructions on launch.
+
+State: fixed in s22.
+
+A start sent only the caller's prompt.
+The orientation read supplied named owner advice or one generic line.
+The engine now composes shipped role files and their bases before the adapter's first ordinary prompt in a fresh session.
+The same composition is available through `roles.orient`.
+Stored prompt events retain their existing text and shape.
+
+## 1171. Repository role overrides need an owner decision about trust.
+
+State: open.
+
+A repository could carry instructions written by a stranger.
+This unit loads role overrides only from the configured home's `.lgtm/roles` folder.
+The owner must decide whether repository files may instruct agents before repository overrides are built.
+
+## 1172. Role instruction files have no editor or file-management API.
+
+State: open.
+
+The owner can replace instruction files on disk.
+The existing authenticated role-file command can replace named advice.
+There are no commands to list, read or save individual Markdown instruction files.
+An editor and those application programming interface (API) actions remain future work.
+
+## 1173. Done reports and product-only commits remain prose rules.
+
+State: open.
+
+The engine does not require a completion report to name an existing branch head with finished checks.
+It does not reject a merge that includes run notes or scratch files.
+The shipped instructions require these checks from agents and leads.
+Mechanical enforcement remains future work.
+
+## 1174. Two existing documents contain details that need the owner's publication decision.
+
+State: open.
+
+The review identified private project references and dated owner quotations in `docs/specs/2026-11-05-build-loop-design.md`.
+It also identified a private source commit reference in `docs/foundry.md`.
+This unit leaves those passages unchanged and does not repeat their contents here.
+
+## 1175. Several drafted role rules assumed capabilities the engine does not provide.
+
+State: corrected in the shipped prose in s22.
+
+Only the actual project lead can create project records or change other agents' task assignments.
+A reviewer cannot add a note to another agent's task.
+Agents cannot list the owner's harness choices.
+Team creation does not allocate an isolated folder for each builder.
+The engine does not enforce frozen tests, hide review authorship or store executable test commands in project settings.
+The default instructions now route restricted work to the project lead and mark unavailable evidence as unknown.
+These capabilities were not added in this unit.
+
+## 1176. Adapter user-message echoes could expose injected instructions in the thread.
+
+State: fixed in s22.
+
+The adapter can echo the first prompt in arbitrarily split user-message chunks.
+The runner now removes its exact ephemeral instruction prefix from live user echoes before redaction and event publication.
+The caller's echoed prompt remains visible.
+Replay updates retain their existing behavior and write no thread items.
+Round 2 also suppresses changed echoes after recognizing the engine header, as recorded in 1189.
+
+## 1177. The first instruction store used syntax the Node.js strip-only loader cannot run.
+
+State: fixed in s22.
+
+A constructor parameter property passed through the test transpiler but failed in the relocated package test.
+The store now uses explicit fields and constructor assignments.
+The package test executes the module with Node.js and loads its adjacent Markdown resources from a path containing spaces.
+
+## 1178. The existing foundry guide still suggests owner-only reads to agents.
+
+State: open.
+
+The guide tells a run to read `roles.settings.get` and `roles.actions.list`.
+Those commands are restricted to the owner.
+The new default instructions do not send agents to these commands.
+Rewriting the older foundry workflow guidance is outside this unit.
+
+## 1179. The first default lead base omitted an existing lead-advice requirement.
+
+State: fixed in s22.
+
+Three established project lead orientation tests require advice to tell the lead to start its own workers.
+The first copied lead base did not say this explicitly.
+The shipped base now preserves that instruction and the existing post-acknowledgement requirement.
+The assertions remain unchanged.
+
+## 1180. The API initially hid the new fixed instruction-limit errors.
+
+State: fixed in s22.
+
+The command handler returned a specific typed refusal for oversized instructions.
+The authenticated transport reduced it to its generic refusal because the new reasons were absent from its allow-list.
+The transport now preserves the three fixed instruction read and size errors.
+It still rejects arbitrary failure text.
+
+## 1181. Existing prompt tests expected the old instruction-free first turn.
+
+State: corrected in s22.
+
+The configuration retry, service redaction and service restart tests compared the first adapter prompt with the caller's text alone.
+They now compare the complete instruction envelope, its delivery identifier and the unchanged caller text.
+Later prompts and existing-session replays retain their exact previous expectations.
+The capacity tests now compare the full composed advice for recognized instruction names, including unrecognized authority prefixes.
+Their authority and capacity-limit assertions remain unchanged.
+No assertion or wait was weakened.
+Round 2 removes the instruction block's delivery identifier and restores generic advice for unknown kinds, as recorded in 1187 and 1190.
+
+## 1182. The first regression fixtures contained incorrect helper calls and expectations.
+
+State: corrected in s22.
+
+An acceptance fixture reversed the existing wait helper's label and callback arguments.
+A directory-swap fixture expected two independent file resolutions to share a pinned directory.
+It now swaps the directory within a single role-file read.
+A secret fixture initially expected the planted secret to survive redaction.
+It now requires the override marker with the secret removed.
+Two test expressions cast an Effect before yielding its result.
+Removing those unnecessary casts restored the type check.
+No production limit or wait was relaxed to accommodate these fixture errors.
+Round 2 fixtures initially used an invalid legacy role-file hash and looked for an agent identifier on a carry-on event whose delivery target supplies that identity.
+Both fixtures now follow the stored contracts.
+Two new test helpers also needed explicit type annotations for the existing restart environment and public reply.
+
+## 1183. Two new pure tests omitted the required rebuild-hook registration.
+
+State: fixed in s22.
+
+The whole-suite registration guard found the instruction store and echo tests without the repository's required hook.
+Both now register the existing hook with `noLog: true` because they create no event log.
+The discovery guard remains unchanged.
+
+## 1184. Browser asset rewriting broke Node resource paths in web tests.
+
+State: fixed in s22.
+
+Three web test files reproduced role resource read failures.
+A direct browser-environment test exposed a rewritten filesystem path starting at `/packages/`.
+Importing the Node.js URL constructor under its ordinary name did not prevent the asset rewrite.
+The instruction store now imports it as `NodeURL` for its filesystem resources.
+The regression test loads real instruction resources in the browser test environment.
+Round 2 removes the global-constructor stub because it did not exercise the browser asset rewrite.
+Removing the Node.js constructor alias makes the real browser test fail.
+The existing web tests and their assertions remain unchanged.
+
+## 1185. Instruction composition could prevent a healthy session from reloading.
+
+State: fixed in s22 round 2.
+
+Existing-session loads no longer read or compose instructions.
+Legacy oversized advice and a shipped-file read failure cannot turn those loads into reload failures.
+New sessions still require a valid composition.
+Saving named role-file advice now checks each applicable composition before planning its event.
+An oversized composition returns the existing typed refusal.
+
+## 1186. A failed first turn could lose its role instructions on retry.
+
+State: fixed in s22 round 2.
+
+The runner previously cleared the instruction obligation before the send was confirmed.
+It now keeps that obligation until a carrying turn succeeds without error or cancellation.
+Capacity outcomes, usage pauses, sign-in failures, prompt errors and cancellation retain it.
+A failed transport send also retains it.
+Fake-adapter tests cover every prompt outcome and both cancellation protocol versions.
+
+## 1187. The engine instruction label misidentified its source and changed replay acceptance.
+
+State: fixed in s22 round 2.
+
+Engine instructions now have a separate engine label and a fresh random marker.
+A lead's brief retains its agent-data envelope and has its actual sending agent identified before that envelope.
+The engine block contains no delivery identifier.
+It therefore adds no acceptance proof to replayed owner text.
+Restart tests cover saved first-prompt history before and after acceptance.
+
+## 1188. Missing override files produced unnecessary warnings.
+
+State: fixed in s22 round 2.
+
+A missing file or override directory is the normal default and is now silent.
+Unsafe, unreadable and oversized overrides retain a fixed diagnostic without supplied paths or content.
+
+## 1189. A changed adapter echo could expose instruction text in the thread.
+
+State: fixed in s22 round 2.
+
+After recognizing the engine header, the filter suppresses the block through its closing marker even when its body or line endings differ.
+A malformed closing marker withholds the remaining echo.
+Chunk-boundary tests cover changed text and markers.
+A real service test checks thread privacy with normalized line endings.
+
+## 1190. Mismatched role kinds selected inappropriate prose and owner advice.
+
+State: fixed in s22 round 2.
+
+A recognized name with a mismatched kind now receives only the parsed kind's base.
+Unknown kinds receive the generic worker base and no owner advice named for a known role.
+The role table includes `lead:builder`, `worker:build-lead`, `chef:builder` and `:builder`.
+The capacity test again checks that unknown kinds receive generic advice.
+Permission and capacity checks remain unchanged.
+
+## 1191. Several shipped instructions omitted required fields or contradicted their delivery format.
+
+State: fixed in s22 round 2.
+
+Review reports and waits now name all required fields.
+The bases describe sections of one composed text.
+Worker posting rules allow final reports and required test or review requests.
+Test runners may not edit product files anywhere.
+Project leads receive self-contained approval rules after a fresh resume.
+Those rules keep ordinary end-result confirmation separate from the two project permissions.
+Contract checks cover all fifteen files and the required report and wait fields.
+
+## 1192. A failed composition also withheld orientation identity and roster.
+
+State: fixed in s22 round 2.
+
+Orientation now returns its metadata and roster with a fixed unavailable-advice note when composition fails.
+It also substitutes that note when the encoded advice would exceed the reply bound.
+The existing refusal remains necessary if the roster and metadata alone exceed 256 kibibytes.
+The roster is not silently truncated.
+
+## 1193. The global URL stub did not test the browser resource-path workaround.
+
+State: fixed in s22 round 2.
+
+The trivial stub test has been removed.
+The real browser-environment resource test fails without the Node.js URL constructor alias.
+
+## 1194. Override loading requires the descriptor filesystem and a real home directory.
+
+State: documented limitation in s22 round 2.
+
+Overrides do not apply without `/proc/self/fd` or when the configured home path is a symbolic link.
+The engine falls back to its shipped files.
+A missing descriptor filesystem has a distinct diagnostic.
+The constraints are now stated in `docs/roles.md`.
+
+## 1195. Agents running as the engine's user can write future role instructions.
+
+State: open, pending the planned agent sandbox.
+
+An agent with shell access or full permission can write an override as the same operating-system user.
+The next agent of that role receives the override as engine instructions.
+This is the same file-access exposure as `~/.lgtm/workflows`.
+Safe file opening does not isolate programs that run as the same user.
+The exposure is now stated in `docs/roles.md`.
+
+## 1196. Compaction repeats instruction costs and harness compaction is not detected.
+
+State: documented limitation in s22 round 2; harness compaction detection remains open.
+
+Every successful engine-requested compaction restores the full instructions on the next ordinary prompt.
+The restored text costs roughly 10 kibibytes for a default lead and can reach the 48 kibibyte composition bound.
+A compaction started by the harness itself is not detected.
+These limits are now stated in `docs/roles.md`.
+
+## 1197. Older integration fixtures expected behavior changed by the second review.
+
+State: corrected in s22 round 2.
+
+Three orientation assertions expected named builder advice for the mismatched role `lead:builder`.
+They now require the exact lead base while retaining their identity, roster and transport assertions.
+The carry-on dispatch test expected a bare second prompt after a failed first turn.
+It now requires the complete repeated instruction block and unchanged carry-on text.
+Its prompt count, ordering and acceptance assertions remain intact.
+The maximum stored role-file fixture placed all repeated short secrets in one advice value.
+Redaction of its replacement markers now exceeds the composition bound.
+The test requires that single-role refusal and spreads the same repetitions across ten roles for its admitted fixture.
+It still checks exact content, one redaction at storage, the full 64 kibibyte bound and refusal of one additional byte.
+
+## 1198. The sign-in process-group check failed in a full run and passed alone.
+
+State: open, load-sensitive test failure recorded in s22 round 2.
+
+The final whole-suite run reported one failure in `packages/engine/test/harnesses/signin.test.ts`.
+The process-group cleanup test saw a descendant still running at its immediate check on line 67.
+The same file passed all eight tests when run alone after the suite finished.
+It also passed in the earlier whole-suite run.
+The task classifies a full-run failure that passes alone as load.
+Neither the sign-in implementation nor its test changed in this unit.
+No timeout or assertion was relaxed.
+
+## 1140. Chat cannot recover an unloadable session and mislabels a crash
+
+Found: 2026-11-16, while building unit s21-recover.
+State: fixed in unit s21-recover.
+
+The chat Resume control sent only a reload request.
+A refused reload therefore left the agent unavailable.
+The roster mapping also presented a crash as a failed start.
+Resume now requests a fresh session after the engine explicitly refuses a reload.
+The chat uses the existing stopped composer, the engine's existing crash label, and the existing Resume control.
+An unfinished accepted turn now receives recovery's existing carry-on before later queued work.
+The crash handler still withdraws and returns deliveries that it had not accepted.
+Those returned deliveries are not silently revived.
+
+## 1141. A paused agent still cannot request a fresh session
+
+Found: 2026-11-16, while reading the resume contract for unit s21-recover.
+State: open, as the remaining part of issue 152.
+
+The command contract refuses resume in the paused state.
+The website's fresh fallback cannot override that refusal.
+Changing paused-state admission would change the existing lifecycle contract.
+This unit leaves that contract unchanged.
+
+## 1142. A website restart deliberately stops every agent
+
+Found: 2026-11-16, while building unit s21-recover.
+State: fixed in unit s21-recover.
+
+The restart continuation issued the stop command for every non-stopped agent.
+Recovery correctly left those stopped agents stopped.
+A website restart now closes the service scope through the same executable callback as before.
+It preserves the recorded lifecycle states for recovery, as a termination signal does.
+A deliberate stop of one agent still records that stop.
+The existing restart confirmation says that agents are stopped during shutdown.
+That wording is kept under this unit's restriction on visible changes.
+
+## 1143. The owner's request views hide answers while a lead holds a permission
+
+Found: 2026-11-16, while building unit s21-recover.
+State: fixed in unit s21-recover.
+
+The engine accepted the owner's answer in this state.
+The request index nevertheless reported that the owner could not answer.
+Home also excluded held requests, and the chat card omitted its answer buttons.
+Open permissions now advertise the owner's existing answer authority.
+Home includes those permissions, and both existing card presenters keep their answer controls.
+A worker receives one harness answer, and the lead's queued request is withdrawn.
+A later answer from the lead is refused because the subject is closed.
+Held questions keep their existing presentation.
+
+## 1144. A sign-in failure crashes the live chat composer
+
+Found: 2026-11-16, while checking the sign-in exception for unit s21-recover.
+State: fixed in unit s21-recover.
+
+The failed-start composer used the mock's `studio` machine identifier as its fallback.
+The live website's machine identifier is `local`.
+Reading the missing machine's name threw an exception before the sign-in control appeared.
+The live composer now uses the agent's project machine for that existing control.
+The sample keeps its original fallback.
+
+## 1145. Phone alert links target an absent thread route
+
+Found: 2026-11-16, while building unit s21-recover.
+State: fixed in unit s21-recover.
+
+The notification transport emitted a thread route that the website does not handle.
+Agent alerts now link to the existing project chat route.
+Permission and question links use the existing request-focus parameter.
+Board alerts link to the existing Messages channel and post thread.
+Login also discarded those bookmarks by always navigating to Home.
+Login now retains the existing subject route when a phone bookmark uses one of those forms.
+The link contains identifiers instead of request text or credentials.
+
+## 1146. An agent outside a project has no reachable website chat
+
+Found: 2026-11-16, while checking notification destinations for unit s21-recover.
+State: open.
+
+The website reaches agent chats through a project.
+An agent outside every project has no matching website chat route.
+The notification sender omits that unusable link.
+This unit does not add a screen or a route for an unassigned agent.
+
+## 1147. A crash after an errored turn repeats work that was returned
+
+Found: 2026-11-16, while running the round 2 recovery regressions.
+State: fixed in unit s21-recover, round 2.
+
+An accepted delivery could outlive its turn's error without a TurnEnded event.
+Resume treated that old acceptance as unfinished work after a later crash.
+Resume now folds the thread with the views' lifecycle reducer.
+It checks the lifecycle state immediately before the crash.
+Fresh replay uses TurnEnded alone as its boundary, as corrected in round 3b.
+It also requires each replayed delivery to remain accepted.
+A crash carry-on now says that the agent crashed instead of saying that the engine restarted.
+
+## 1148. Crash mapping and a shared request query changed unrelated attention views
+
+Found: 2026-11-16, while running the round 2 presentation regressions.
+State: fixed in unit s21-recover, round 2.
+
+A crash had moved from Needs you to Idle in Messages and from Waiting to Idle in Workflow.
+Those attention groups now retain the crash.
+The shared request query also changed worker status words, lead waiting counts, and sample stop dialogs.
+Those callers now retain their previous audience.
+Home and its matching owner counts use a separate answerable-request query.
+The held permission card again names the lead that holds it while offering the owner's answer buttons.
+
+## 1149. Source guards accepted duplicated integration anchors
+
+Found: 2026-11-16, while running the round 2 build-guard regressions.
+State: fixed in unit s21-recover, round 2.
+
+The recovery, notification-login, and held-permission index replacements checked only for presence.
+They could replace the first of two anchors silently.
+Each guard now requires its exact number of anchors.
+The tests run the original source, a missing anchor, and an extra anchor separately.
+
+## 1150. A fresh resume can repeat steps without the previous session's memory
+
+Found: 2026-11-16, while reading the round 2 review and fresh-resume path.
+State: open for the owner's wording decision.
+
+The composer and stop confirmation say that Resume continues from its last turn.
+A fresh resume opens a new session without the old session's memory.
+Replaying an unfinished delivery can repeat a step that was already performed.
+Proposed wording: "Resume tries the saved session. If it cannot reload, a new session retries unfinished deliveries and may repeat steps."
+The screen text was not changed in this unit.
+
+## 1151. Restart messages still say that running agents are stopped
+
+Found: 2026-11-16, while reading the round 2 review and the restart texts.
+State: open for the owner's wording decision.
+
+The service confirmation, terminal API confirmation, and website toast still describe agents as stopped.
+A service restart preserves their recorded lifecycle for recovery.
+The affected files are serviceControl.ts, api/server.ts, and design/mock/js/live/service-settings.js.
+Proposed confirmation: "Restart LGTM Studio? Recoverable agents will reconnect after restart. Agents you stopped stay stopped."
+Proposed toast: "LGTM Studio is restarting. Reconnect to see recovered agents."
+The existing text was not changed in this unit.
+
+## 1152. An already-delivered holder copy receives no answered-elsewhere notice
+
+Found: 2026-11-16, while running the round 2 idle-lead permission regression.
+State: open.
+
+An idle lead can receive a permission's routed copy before the owner answers it.
+The owner's answer reaches the worker once.
+The engine withdraws queued copies but leaves the already-sent copy unchanged.
+No existing delivery tells the lead that another actor answered.
+A later answer attempt receives the generic command refusal.
+This unit records that gap without inventing a notice or a stored event.
+
+## 1153. A board alert uses the alert agent's project for another project's channel
+
+Found: 2026-11-16, while running the round 2 alert-route regressions.
+State: fixed in unit s21-recover, round 2.
+
+A board alert could combine one project's address with another project's channel.
+The link now follows the website's team, project-anchor, and member placement rules for channels.
+A reply to a reply already linked to its immediate parent's existing thread correctly.
+The engine and browser tests now cover both cases.
+
+## 1154. Merge and sprint alerts with an agent open that agent's chat
+
+Found: 2026-11-16, while reading the round 2 review and running the alert-kind journey.
+State: open.
+
+An alert with an agent uses that agent's chat unless its subject is a board post or a request.
+A merge or sprint alert can therefore open chat instead of its merge or sprint.
+This unit does not add destinations for those subjects.
+
+## 1155. The older phone-alert journeys expect routes for unassigned agents
+
+Found: 2026-11-16, while running the round 2 browser journeys.
+State: fixed on 2026-11-16, with website coverage added before changing the retired journeys.
+
+The board-alert and phone-flow journeys build the retired website and start agents outside every project.
+They expect notifications to contain that page's old thread address.
+The engine now emits destinations for the website served by Studio.
+That website has no chat for an unassigned agent, as issue 1146 records.
+The website's notification journey covers board subject links, including nested replies and another project's channel.
+The studio-board-alert journey now follows an actual carrier link on a 360-pixel phone viewport.
+It reads the subject, posts the owner's reply, and checks one durable wake and delivery to the real child process after two flushes.
+The studio-phone-flow journey follows a project agent's permission alert on the same viewport.
+It checks secure login, one permission answer, released output, and readback after reload without another answer.
+Both retired journeys now navigate directly to their existing thread screens.
+Only their assertions and navigation that depended on the omitted carrier link were replaced.
+Every other old assertion remains, including the explicit Read post gate that the website does not have.
+
+## 1156. The email browser fixture assumes the repository root as its working directory
+
+Found: 2026-11-16, while running the round 2 browser journeys from packages/web.
+State: open.
+
+The email notification fixture copies design/mock through a working-directory-relative path.
+Running the assigned journey from packages/web looks for packages/web/design/mock and fails before opening the page.
+The failure is in the fixture's source-path lookup.
+This unit leaves that unrelated fixture unchanged.
+
+## 1157. Crash recovery forgets accepted work during a pause, hold, or resume setup
+
+Found: 2026-11-16, while reproducing the round 3b recovery review.
+State: fixed in unit s21-recover, round 3b.
+
+A usage pause retains accepted work with its mid-turn flag.
+A capacity hold retains accepted work while the lifecycle is idle.
+Resume previously treated neither state as an unfinished turn after a crash.
+A second crash during session setup also erased the first crash's unfinished-turn evidence.
+The thread fold now retains all three cases for a reload carry-on.
+A capacity hold before acceptance still receives no carry-on after its queued work is withdrawn.
+
+## 1158. A fresh resume drops accepted work after an owner stop or capacity hold
+
+Found: 2026-11-16, while reproducing the round 3b fresh-session review.
+State: fixed in unit s21-recover, round 3b.
+
+The round 2 replay boundary included a stop and every transition from working to idle.
+Those events can cut a turn without completing its accepted delivery.
+Fresh replay now uses TurnEnded alone as its historical boundary.
+An accepted delivery after that boundary is requeued with its original identifier.
+A returned delivery from an errored turn is still excluded by its current status.
+
+## 1159. A group-only board channel loses its notification destination
+
+Found: 2026-11-16, while reproducing the round 3b channel-placement review.
+State: fixed in unit s21-recover, round 3b.
+
+The notification mapper read the channel's stored members.
+A group channel resolves its members through the board instead of storing that list.
+The website receives those resolved members through the board channels command.
+Notification placement now uses that same member resolver.
+A channel anchored by a project worker therefore reaches that project's Messages thread without a team or project-lead anchor.
+
+## 1160. The Workflow waiting count excludes a permission listed on Home
+
+Found: 2026-11-16, while reproducing the round 3b request-count review.
+State: fixed in unit s21-recover, round 3b.
+
+The Workflow overview links its waiting count to Home.
+Its query excluded a permission that the owner could answer while a lead held it.
+The overview now uses Home's answerable audience.
+The website journey follows that count to the matching Home row before answering it.
+
+## 1161. The thread's requests-below indicator excludes an answerable held card
+
+Found: 2026-11-16, while reviewing the round 3b visible-change list.
+State: open for the owner's presentation decision.
+
+The thread can display a permission held by its lead with owner answer controls.
+Its requests-below indicator still uses the earlier audience that excludes held requests.
+The indicator can therefore omit a card that the owner can answer below the current scroll position.
+This round records the difference without changing that indicator.
+
+## 1162. A collapsed team's request count differs from its expanded agent rows
+
+Found: 2026-11-16, while reviewing the round 3b visible-change list.
+State: open for the owner's presentation decision.
+
+The collapsed sidebar team count includes an answerable permission held by a lead.
+The expanded agent rows keep their earlier status audience, which excludes that held permission.
+The count can therefore show one request while the expanded rows show no matching request status.
+This round records the difference without changing the expanded status words.
+
+## 1163. A crashed Messages card replaced the earlier failure explanation
+
+Found: 2026-11-16, while reproducing the round 3b visible-change review.
+State: fixed in unit s21-recover, round 3b.
+
+The crash lane used the activity label Crashed as its explanation.
+The earlier Messages card used the stored failure reason or Failed to start.
+That earlier explanation is restored on this card.
+The card remains in Needs you, and the existing chat recovery controls remain available.
+
+## 1164. A resolved crash continuation returns after a later setup crash
+
+Found: 2026-11-16, while reproducing the round 4 recovery review.
+State: fixed in unit s21-recover, round 4.
+
+The resume fold retained its earlier unfinished-crash flag after a replacement session opened.
+It also retained that flag after the owner deliberately stopped the crashed agent.
+A later crash during setup could therefore request a carry-on after the earlier continuation had ended.
+The fold now clears that remembered interruption on SessionOpened and AgentStopped.
+A failed reload that never opens a session still retains the unfinished work through another setup crash.
+The turn table also checks a non-mid-turn pause and a released capacity turn that has finished.
+
+## 1165. A working agent receives a crash carry-on before accepting its delivery
+
+Found: 2026-11-16, while reproducing the round 4 recovery review.
+State: fixed in unit s21-recover, round 4.
+
+Sending a delivery makes the agent working before its content update accepts the work.
+The crash handler returns that unaccepted delivery to its sender as not delivered.
+The resume fold nevertheless treated working state alone as unfinished accepted work.
+The fold now tracks the current delivery and requires its status to remain accepted before carrying on working state.
+The regression keeps an older finished delivery accepted to prove that it cannot substitute for the current delivery.
+The lead can resend the returned work after resume without an extra carry-on.
+
 ## 1125. The live merge review discarded fresh status evidence.
 
 State: fixed on 2026-11-16. This is the same fault as issue 1041.
@@ -17747,7 +18335,7 @@ This is the same load sensitivity that issues 966, 1014, 1044, 1066, 1079 and 11
 State: open. Recorded on 2026-11-16.
 
 
-## s19-1. Mixed percent escapes after a public token prefix escaped streaming redaction.
+## 1260. Mixed percent escapes after a public token prefix escaped streaming redaction.
 
 Found: 2026-11-16, from round-two review blocker B1.
 State: fixed in round three with the literal prefix included in the percent candidate probe.
@@ -17758,7 +18346,7 @@ Ran: the new differential B1 regression failed on `0ff155f9` before the producti
 Read: diagnostics report split positions and counts without publishing token bytes.
 Ran: the guard includes fully escaped, one-escape, alternating, and literal-prefix spellings.
 
-## s19-2. A private suffix displaced already-published public match context.
+## 1261. A private suffix displaced already-published public match context.
 
 Found: 2026-11-16, from round-two review blocker B2.
 State: fixed in round three by retaining public context independently of private suffix selection.
@@ -17769,7 +18357,7 @@ Read: the carry now retains at most fifteen already-published characters before 
 Read: these characters own no pending event span and add no output delay.
 Ran: the differential guard tests zero, one, three, and twenty value secrets at every two-way and three-way split.
 
-## s19-3. GNU base64 wrapping escaped single and double encoding matches.
+## 1262. GNU base64 wrapping escaped single and double encoding matches.
 
 Found: 2026-11-16, from round-two review findings M1 and m3.
 State: fixed for the bounded GNU forms listed in SECURITY.md rule 6.
@@ -17783,7 +18371,7 @@ Read: bounded partial forms cover the first and last inner line segments at each
 Read: arbitrary wrap widths, separators, phases, and middle segments are outside this set.
 Read: the maximum is 78 attempted insertions and 77 distinct form entries per secret.
 
-## s19-4. Large secret forms made the prefix fallback scan every full chunk separately.
+## 1263. Large secret forms made the prefix fallback scan every full chunk separately.
 
 Found: 2026-11-16, from round-two review finding M2.
 State: fixed in round three with suffix-only scanning and one compact failure automaton per spelling category.
@@ -17798,7 +18386,7 @@ Read: the index preserves overlapping matches and exact case outside hexadecimal
 Ran: the six requested benchmark rows are recorded in the round-three result.
 Read: earlier full-expression and candidate-index experiments missed the requested bound and were replaced.
 
-## s19-5. Genuine one-character secret prefixes delay ordinary sentence endings and tools.
+## 1264. Genuine one-character secret prefixes delay ordinary sentence endings and tools.
 
 Found: 2026-11-16, from round-two review finding M3.
 State: waits for the owner's decision.
@@ -17820,7 +18408,7 @@ Read: these are fixture frequencies, not a probability estimate for all writing.
 Ran: a runner regression shows the final private `s` and its following tool held until the planted continuation arrives.
 Read: this task deliberately preserves that behavior.
 
-## s19-6. A supplied redactor without withholding could leave the event queue unbounded.
+## 1265. A supplied redactor without withholding could leave the event queue unbounded.
 
 Found: 2026-11-16, from round-two review finding m1.
 State: fixed in round three with original-span accounting after forced replacement.
@@ -17832,7 +18420,7 @@ Read: a count tracks the original spans already replaced when the supplied redac
 Ran: both the count and byte limits are tested with and without the optional withholding method.
 Read: the existing 1024-event and one-mebibyte limits are unchanged.
 
-## s19-7. Streamed token replacement shapes differ from whole-text replacement shapes.
+## 1266. Streamed token replacement shapes differ from whole-text replacement shapes.
 
 Found: 2026-11-16, from round-two review finding m4.
 State: recorded as the owner's public-prefix design.
@@ -17845,7 +18433,7 @@ Read: the private remainder is never published merely to make the shapes equal.
 Ran: the differential guard checks original source spans rather than assuming equal rendered shapes.
 
 
-## s19-8. An intermediate whole-form expression exceeded the constrained heap test's compilation limit.
+## 1267. An intermediate whole-form expression exceeded the constrained heap test's compilation limit.
 
 Found: 2026-11-16, during the round-three performance correction.
 State: fixed before accepting the final implementation.
@@ -17857,7 +18445,7 @@ Read: small collections share literal heads instead.
 Read: larger collections use a compact failure automaton.
 Read: full forms are verified at each candidate and overlapping matches are retained.
 
-## s19-9. New test callbacks passed array indexes to the redacted-value constructor.
+## 1268. New test callbacks passed array indexes to the redacted-value constructor.
 
 Found: 2026-11-16, by the round-three typecheck.
 State: fixed in the new differential and overlap fixtures.
@@ -17868,7 +18456,7 @@ Read: an explicit callback now passes only the planted value.
 Ran: the complete typecheck passes after that correction.
 
 
-## s19-10. An inner public prefix displaced the real beginning of a streamed token.
+## 1269. An inner public prefix displaced the real beginning of a streamed token.
 
 Found: 2026-11-16, from round-three review blocker B1.
 State: fixed in round four by checking every prefix occurrence in the bounded window.
@@ -17880,7 +18468,7 @@ Read: each occurrence now contributes to the maximum required hold.
 Ran: the directed regression tests chunk sizes one, two, three, and seven and every two-way split.
 Ran: it checks all three spellings with and without a registered value.
 
-## s19-11. A completed match could lose coverage while no new ordinary text was released.
+## 1270. A completed match could lose coverage while no new ordinary text was released.
 
 Found: 2026-11-16, from round-three review blocker B2.
 State: fixed in round four by rendering the completed replacement reach even when the cut does not pass previous coverage.
@@ -17892,7 +18480,7 @@ Ran: overlapping value secrets reproduced the same leak without withholding.
 Read: the corrected carry preserves the entire completed match's covered reach.
 Ran: the extended stream reference includes the review's three exact schedules.
 
-## s19-12. First-use matching allocated large automatons synchronously.
+## 1271. First-use matching allocated large automatons synchronously.
 
 Found: 2026-11-16, from round-three review finding M2.
 State: ordinary-set compilation and accelerator memory are bounded in round four. Large-set synchronous form construction remains open.
@@ -17913,7 +18501,7 @@ Ran: the final time and memory table is in the round-four result.
 Read: very large uncached sets rebuild their forms on later calls.
 Read: the first long query can still pay for native expression compilation.
 
-## s19-13. Whole-text strategies disagreed on percent escapes and had no naive reference test.
+## 1272. Whole-text strategies disagreed on percent escapes and had no naive reference test.
 
 Found: 2026-11-16, from round-three review findings M1 and m2.
 State: fixed in round four with one normalization rule and repository reference tests.
@@ -17929,7 +18517,7 @@ Ran: shared heads, prefix and suffix secrets, infix secrets, repetitions, expres
 Ran: the stream reference plants values and two tokens and tests random forced withholding.
 Ran: temporary copies of both reference tests fail against the round-three implementation.
 
-## s19-14. A lone surrogate in a registered value made every redaction throw.
+## 1273. A lone surrogate in a registered value made every redaction throw.
 
 Found: 2026-11-16, from round-three review finding m4.
 State: fixed in round four for raw, JSON, and supported encoded forms.
@@ -17940,7 +18528,7 @@ Read: UTF-8 means Unicode Transformation Format, 8-bit.
 Read: the exact raw value and its JSON-escaped spelling remain registered.
 Ran: high, low, and separated surrogate fixtures are checked whole and at every split.
 
-## s19-15. Five alternating secret sets continually evict compiled states.
+## 1274. Five alternating secret sets continually evict compiled states.
 
 Found: 2026-11-16, from round-three review finding m5.
 State: recorded without a separate cache-policy fix, as assigned.
@@ -17952,9 +18540,9 @@ Read: the registry is still compared by string values rather than wrapper identi
 Read: this affects latency and does not reuse the wrong secret set.
 Read: today's runner supplies the combined secrets of all running processes to each stream.
 Read: that wiring does not independently cycle five per-agent additional sets on successive items.
-Read: oversized uncached sets also rebuild on every call, as recorded in issue s19-12.
+Read: oversized uncached sets also rebuild on every call, as recorded in issue 1271.
 
-## s19-16. Several wrapped encoding pipelines remain outside the bounded form set.
+## 1275. Several wrapped encoding pipelines remain outside the bounded form set.
 
 Found: 2026-11-16, from round-three review finding m3.
 State: recorded as limits in SECURITY.md rule 6, without expanding the assigned form set.
@@ -17965,7 +18553,7 @@ Read: this includes an encoded login file.
 Read: line-wrapped hexadecimal output from xxd -p can escape the contiguous hexadecimal form.
 Read: the security document now names all three cases in plain words.
 
-## s19-17. The first cold benchmark expected a baseline stream to release ordinary text immediately.
+## 1276. The first cold benchmark expected a baseline stream to release ordinary text immediately.
 
 Found: 2026-11-16, while measuring round-four first use.
 State: corrected before accepting benchmark results.
@@ -17975,7 +18563,7 @@ Read: validation now includes its final flush outside the timed first call.
 Read: the measured call remains its actual first whole-text or streamed call.
 Read: no repository assertion or wait was changed.
 
-## s19-18. The simpler matcher costs more for a few long values in whole-text scans.
+## 1277. The simpler matcher costs more for a few long values in whole-text scans.
 
 Found: 2026-11-16, while comparing the round-four matcher.
 State: recorded as the tradeoff authorized by the round-four preference for fewer strategies.
@@ -17988,7 +18576,7 @@ Read: the final result reports every warmed row and does not claim the older twi
 Read: no required secret form was removed to improve the measurement.
 
 
-## s19-19. A copied reference test retained whitespace on an otherwise empty line.
+## 1278. A copied reference test retained whitespace on an otherwise empty line.
 
 Found: 2026-11-16, by the round-four staged diff check.
 State: fixed by removing the empty line's whitespace.
@@ -17997,7 +18585,7 @@ Ran: the old and cleaned source have identical non-whitespace bytes.
 Read: the cleanup occurred after the full test run started.
 Read: the frozen hash record includes the cleaned file and the result records this formatting-only difference.
 
-## s19-20. The thread acceptance fixture depended on a random credential's prefix.
+## 1279. The thread acceptance fixture depended on a random credential's prefix.
 
 Found: 2026-11-16, in the complete round-four test run.
 State: fixed with a deterministic fake owner credential and the original assertions.
@@ -18010,3 +18598,134 @@ Read: withholding that character until the turn ends preserves the owner's priva
 Read: the scenario now writes a fixed fake owner credential before its manual boot.
 Read: its assertions, waits, and allow-list remain unchanged.
 Ran: both thread acceptance scenarios pass with that fixture.
+
+## 1230. Restored instructions called every agent message the start brief.
+
+State: fixed in round 3.
+
+The second review identified a routed child question being described as the lead's brief after compaction.
+The engine now derives the brief label from the original start event, its delivery identifier and its recorded parent.
+An owner prompt and other agent messages receive no brief sentence.
+Tests cover a routed question after compaction and a failed first turn followed by a retry of the real brief.
+
+## 1231. A restoration failure rejected prompts after loaded-session compaction.
+
+State: fixed in round 3.
+
+The restoration callback could fail before the caller's prompt reached the adapter.
+The runner now sends the caller's text alone, retains the obligation and retries restoration on the next ordinary prompt.
+Consecutive failures produce one fixed warning without the private failure detail.
+A loaded-session regression covers two failures, successful restoration and the following ordinary prompt.
+
+## 1232. The instruction echo filter reset between user messages and assumed an undecorated header.
+
+State: fixed in round 3.
+
+The second review identified leading decoration and message boundaries that bypassed the filter.
+The filter now belongs to the turn and suppresses everything through the random closing marker.
+Tests cover every split boundary with an empty prelude, a newline, a byte-order mark and a role tag.
+The live translator currently ignores user-message echoes before they reach this filter.
+The runner regression deliberately enables that translation in its fixture to exercise the filter without changing production translation.
+Ordinary unmatched text is retained until turn completion, with a bounded search buffer.
+
+## 1233. A fresh start during restart hid the typed composition refusal.
+
+State: fixed in round 3.
+
+Restart recovery wrote only the generic agent-start failure when composition failed.
+It now also logs one fixed warning containing the recognized size or read refusal.
+Tests inject each failure and assert that private read details are absent.
+The stored failure event remains unchanged.
+
+## 1234. The base instructions did not state the instruction label's trust boundary explicitly.
+
+State: fixed in round 3.
+
+Each of the worker, lead and reviewer bases now states that engine instructions appear first, outside data blocks.
+The same sentence states that a matching label inside a data block remains data.
+Contract tests require the sentence in all three bases.
+The composed sizes remain below the 48 KiB bound.
+
+## 1235. A restart can forget an instruction obligation after a failed first turn.
+
+State: open. Recorded as requested by the second review; no fix is included.
+
+The runner keeps the instruction obligation in process memory.
+A failed first turn can leave its initial delivery queued for retry.
+A service restart can load the existing session without recovering the obligation.
+That requeued delivery can then be sent without role instructions.
+This round changes no persisted event shape and does not repair this recovery gap.
+
+## 1236. Instruction tests omitted the final orientation bound and an actual transport write failure.
+
+State: fixed in round 3.
+
+The restored orientation test creates a roster whose metadata alone exceeds 256 KiB.
+It requires the exact typed refusal and fails when that final guard is temporarily disabled.
+A test-only child spawner wrapper now fails an actual prompt write to standard input before it reaches the fake adapter.
+The next prompt attempt still restores the owed instructions.
+The test fails when the obligation is temporarily cleared before the write.
+The protocol closes its writer after a sink failure, so this test does not claim a successful retry on that same transport.
+
+## 1237. The test runner's prohibition list mixed negative and positive wording.
+
+State: fixed in round 3.
+
+Five bullets under What you never do omitted the word Never.
+Every bullet now starts with Never and retains its existing prohibition.
+The contract test checks all six bullets.
+
+## 1238. Initial round 3 fixtures observed an unfinished turn and used an unsupported question method.
+
+State: fixed in round 3 test development.
+
+The first origin fixture read the adapter echo before its initial prompt arrived.
+It then requested compaction while the first turn was still running.
+The fixture now waits for the completed initial turn before requesting compaction.
+Its scripted elicitation method was unsupported by that harness fixture.
+The regression now routes the question through the real authenticated ask command.
+An intermediate test run also loaded the runner change before its filter finish method existed.
+Completing the filter removed that temporary fixture failure.
+Adding optional brief metadata initially made prompt and compact callback types diverge in an existing generic test helper.
+Both methods now share the same optional metadata shape.
+No existing wait was widened.
+
+## 1166. Four browser journeys failed in the full check of the recovery unit and passed alone.
+
+The journeys were `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:783` and `studio.spec.ts:1189`.
+Other builders were running their own test suites on the same computer during the full check.
+Each of the four passed when it was run alone with one worker.
+This is the load sensitivity that issue 1139 and the issues it names record.
+
+State: open. Recorded on 2026-11-16.
+
+## 1239. In one live check of three, the small Claude lead did not attempt the exact commands it was asked to run.
+
+The live check starts a Claude Code lead on the smallest model at low effort.
+With the role instructions in place, the lead receives about 11,000 bytes of instructions ahead of its first prompt.
+In the first of three runs on the role instruction branch, the steps "removed-variables", "state-read", "always-allow", "permission-kinds" and "reload" reported that Claude did not attempt the command.
+That run passed 16 of 23 steps.
+The second run passed 18 of 23, with the "reload" socket read error that issue 1124 records.
+The third run passed 19 of 23, which is the known result.
+One run in three does not prove a cause.
+A small model that is given long role instructions may follow them over a direct request from the owner.
+
+State: open. Recorded on 2026-11-16. Watch the next live checks for the same pattern.
+
+## 1240. Browser journeys and one sign-in test failed under load in the full check of the role instruction unit.
+
+The unit test "stops the process group on timeout, owner stop and disconnection after the grace period" in `packages/engine/test/harnesses/signin.test.ts` failed in the whole run and passed alone.
+The journeys `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:902` and `studio.spec.ts:1132` failed in the whole browser run.
+Other builders were running their own test suites on the same computer.
+The journey results after rerunning each alone are recorded in the pull request for this unit.
+
+State: open. Recorded on 2026-11-16.
+
+## 1241. The foreground lock race test failed once in a whole run under load.
+
+The test "two foreground launches race for one lifetime lock" in `packages/cli/test/serve-foreground.test.ts` failed in a whole run of the unit tests on the role instruction branch after `master` was merged in.
+Two builders were running their own test suites on the same computer.
+The test passed when its file was run alone.
+The role instruction unit does not change that code.
+
+State: open. Recorded on 2026-11-16.

@@ -3,7 +3,7 @@ import { watchHome, loadRequest, busy } from '../live/chat.js';
 // Project navigation lives in the sidebar and on the All projects page, not here.
 import { html, useState, useEffect, Icon, cx, href, go, ago, clock, useNow, HOUR, live } from '../lib.js';
 import {
-  openRequests, projectOf, repoOf, agentOf, teamOf, machineOf, KIND_LABEL, projectStatus, leadOf, agentStatus,
+  answerableRequests, projectOf, repoOf, agentOf, teamOf, machineOf, KIND_LABEL, projectStatus, leadOf, agentStatus,
   agentsOfProject, byId, routeForRequest, STAGES,
 } from '../data.js';
 import * as act from '../actions.js';
@@ -76,7 +76,7 @@ export function Home({ s, route }) {
   const kind = KIND_FROM_ROUTE[route.parts[1]] || route.query.get('type') || null;
   const setKind = (k) => go(k ? `/home?type=${k}` : '/home');
 
-  const all = openRequests(s);
+  const all = answerableRequests(s);
   const inScope = (r, skip) => {
     const p = projectOf(s, r.project);
     if (skip !== 'kind' && kind && r.kind !== kind) return false;
