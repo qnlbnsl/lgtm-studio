@@ -173,7 +173,9 @@ These rules apply to every change. A change that breaks one is a security bug.
    The two-step forms require its value to be registered too.
    The GNU wrapped forms also require the value to be registered.
    A streamed agent token's public prefix may be published as match context.
-   Its private remainder is still withheld and redacted when the complete token is recognized.
+   Every public-prefix occurrence in the bounded candidate window remains eligible.
+   A prefix inside a token cannot displace an earlier candidate.
+   The private remainder stays withheld until a continuation rules out the candidate or the complete registered token is replaced.
    Published public characters remain match context even when a value-known secret also has a matching suffix.
    Whole-text output may be `[REDACTED]` where streamed output is `shp_[REDACTED]`.
    A value inferred only from an inherited environment variable whose name

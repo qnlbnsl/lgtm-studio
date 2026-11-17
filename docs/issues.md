@@ -3863,7 +3863,7 @@ token in a form a client can decode.
 
 Found: 2026-11-02, by the security review of the issue 223 fix (commit
 b88b876, finding F4).
-State: fixed in s19-secrets with one combined streaming window, independent public match context, original-span mapping, and coverage for every required update and termination kind. A genuine private prefix still delays following tools, as recorded in issue s19-5.
+State: fixed in s19-secrets with one combined streaming window, every public-prefix candidate, independent public match context, and completed-match coverage across updates and forced replacements. A genuine private prefix still delays following tools, as recorded in issue s19-5.
 
 What happens: streamed message text is held back by the chunk redactor, so
 a secret split across chunks is still matched.
@@ -17866,3 +17866,28 @@ Ran: direct use of the constructor as an Array.map callback failed typechecking 
 Read: its second parameter is an options object rather than an array index.
 Read: an explicit callback now passes only the planted value.
 Ran: the complete typecheck passes after that correction.
+
+
+## s19-10. An inner public prefix displaced the real beginning of a streamed token.
+
+Found: 2026-11-16, from round-three review blocker B1.
+State: fixed in round four by checking every prefix occurrence in the bounded window.
+
+Read: using the last occurrence of a prefix discarded an earlier valid token candidate.
+Ran: the reviewer's planted token reproduced the leak in raw and hexadecimal text.
+Ran: one percent escape after its inner prefix also leaked when registered by value.
+Read: each occurrence now contributes to the maximum required hold.
+Ran: the directed regression tests chunk sizes one, two, three, and seven and every two-way split.
+Ran: it checks all three spellings with and without a registered value.
+
+## s19-11. A completed match could lose coverage while no new ordinary text was released.
+
+Found: 2026-11-16, from round-three review blocker B2.
+State: fixed in round four by rendering the completed replacement reach even when the cut does not pass previous coverage.
+
+Read: the old branch returned the previous covered point without examining newly completed matches.
+Read: the next call could then publish their tails after their starts left the retained context.
+Ran: directed tests reproduced the hash-only token and both value-secret variants after forced withholding.
+Ran: overlapping value secrets reproduced the same leak without withholding.
+Read: the corrected carry preserves the entire completed match's covered reach.
+Ran: the extended stream reference includes the review's three exact schedules.

@@ -486,22 +486,23 @@ const hashTail = (text: string): Tail => {
   let tail = hashPublicMatcher(suffix);
   for (const spec of hashPrefixes) {
     const view = spec.fold ? hex : suffix;
-    const start = view.lastIndexOf(spec.prefix);
-    if (start < 0 || view.length - start >= spec.max) continue;
-    const rest = view.slice(start + spec.prefix.length);
-    if (spec.alphabet.test(rest)) tail = largerTail(tail, { held: rest.length > 0 ? spec.prefix.length + rest.length : 0, context: spec.prefix.length });
+    for (let start = view.indexOf(spec.prefix); start !== -1; start = view.indexOf(spec.prefix, start + 1)) {
+      if (view.length - start >= spec.max) continue;
+      const rest = view.slice(start + spec.prefix.length);
+      if (spec.alphabet.test(rest)) tail = largerTail(tail, { held: rest.length > 0 ? spec.prefix.length + rest.length : 0, context: spec.prefix.length });
+    }
   }
   // Mixed literal and percent-escaped public prefixes are public too. Partial
   // escapes after the prefix stay held until their decoded byte is known.
   const percent = foldEscapes(suffix).replace(/%[0-9A-Fa-f]$/, escape => escape.toLowerCase());
   tail = largerTail(tail, hashPublicMatcher(percent));
   for (const prefix of publicPercent) {
-    const start = percent.lastIndexOf(prefix);
-    if (start < 0) continue;
-    const rest = percent.slice(start + prefix.length);
-    const decoded = rest.replace(/%[0-9a-f]{2}/g, escape => String.fromCharCode(parseInt(escape.slice(1), 16)));
-    if (/^[A-Za-z0-9_-]*(?:%[0-9a-f]?)?$/.test(decoded) && decoded.replace(/%[0-9a-f]?$/, "").length < credentialLength - 4) {
-      tail = largerTail(tail, { held: rest.length > 0 ? prefix.length + rest.length : 0, context: prefix.length });
+    for (let start = percent.indexOf(prefix); start !== -1; start = percent.indexOf(prefix, start + 1)) {
+      const rest = percent.slice(start + prefix.length);
+      const decoded = rest.replace(/%[0-9a-f]{2}/g, escape => String.fromCharCode(parseInt(escape.slice(1), 16)));
+      if (/^[A-Za-z0-9_-]*(?:%[0-9a-f]?)?$/.test(decoded) && decoded.replace(/%[0-9a-f]?$/, "").length < credentialLength - 4) {
+        tail = largerTail(tail, { held: rest.length > 0 ? prefix.length + rest.length : 0, context: prefix.length });
+      }
     }
   }
   return tail;
@@ -615,9 +616,9 @@ export const makeRedactor = (registry: {
     // Keep a candidate whole once it contains private characters. If an
     // earlier chunk published public prefix characters, never hold them again.
     const cut = Math.max(context.length, joined.length - tail.held);
-    const released = cut > from
-      ? renderParts(joined, intervals, from, cut, publicContext)
-      : { parts: [], covered: from };
+    // Even with no ordinary span to release, a completed overlapping match
+    // can extend the previous replacement. Keep its entire covered reach.
+    const released = renderParts(joined, intervals, from, Math.max(from, cut), publicContext);
     // Published public bytes are context only. They neither own a pending
     // event span nor require a second marker when the private remainder ends.
     // A base64 decoder also needs up to three already-published characters
