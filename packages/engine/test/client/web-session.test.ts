@@ -18,11 +18,11 @@ const filesIn = (root: string): string[] => readdirSync(root).flatMap((name) => 
   return stat.isDirectory() ? filesIn(path) : stat.isFile() ? [path] : [];
 });
 
-it("s28 each login rotates a 256-bit token without persisting the token", async () => withWeb((ctx) => Effect.gen(function* () {
+it("r2 each login adds a separate 256-bit token without persisting either token", async () => withWeb((ctx) => Effect.gen(function* () {
   const first = yield* login(ctx);
   const second = yield* login(ctx);
   expect(first.cookie === second.cookie, "login must rotate the session").toBe(false);
-  expect((yield* Effect.promise(() => post(ctx, "/api/session", undefined, { Cookie: first.cookie }))).status).toBe(401);
+  expect((yield* Effect.promise(() => post(ctx, "/api/session", undefined, { Cookie: first.cookie }))).status).toBe(204);
   expect((yield* Effect.promise(() => post(ctx, "/api/session", undefined, { Cookie: second.cookie }))).status).toBe(204);
   const token = tokenFrom(first.cookie);
   expect(token.byteLength).toBe(32);

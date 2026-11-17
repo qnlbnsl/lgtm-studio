@@ -54,3 +54,18 @@ it('reattaches only the selected project even when projects share a main checkou
     { sessionId: 'removed', projectId: 'p', worktreeId: 'gone' }
   ], [main], 'p')).toEqual([{ sessionId: 'mine', worktree: main }])
 })
+
+it('r2 offers reattachment only after connection loss and keeps takeover input enabled', async () => {
+  const source = readFileSync('design/mock/js/live/terminal.js', 'utf8').replace(/^import .*;$/gm, '').replace(/export /g, '')
+  // Evaluate the module with its ordinary function declarations and a stubbed preference.
+  const helpers = new Function('persist', 'notify', `${source}; return { isConnectionLoss, outputEnded, outputClosed };`)(() => 13, () => {})
+  expect(helpers.isConnectionLoss('The connection ended. Reconnecting checks for this shell.')).toBe(true)
+  for (const reason of ['The shell exited.', 'The owner closed the terminal.', 'The owner signed out.', 'This shell has ended. Open a new session.']) expect(helpers.isConnectionLoss(reason)).toBe(false)
+  const item = { ended: '', terminal: { options: { disableStdin: false } } }
+  helpers.outputEnded(item, 'Output is open in another owner connection. Typing still works.')
+  helpers.outputClosed(item)
+  expect(item.ended).toBe('')
+  expect(item.terminal.options.disableStdin).toBe(false)
+  helpers.outputEnded(item, 'The shell exited.')
+  expect(item.terminal.options.disableStdin).toBe(true)
+})

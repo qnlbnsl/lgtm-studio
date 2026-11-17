@@ -33,7 +33,7 @@ export const setTerminalSwitch = (log: object, enabled: boolean) => {
   if (!enabled) manager.stopTerminals('The project terminal was turned off.')
   else manager.terminalEnabled = true
 }
-export const signOutTerminals = (log: object, ownerSessionId?: string) => { instances.get(log)?.signOut(ownerSessionId) }
+export const signOutTerminals = (log: object, ownerSessionId: string, remaining: ReadonlySet<string>) => { instances.get(log)?.signOut(ownerSessionId, remaining) }
 export const closeSignIns = (log: object) => { instances.get(log)?.close(); instances.delete(log) }
 const add = (input: Input, p: Record<string, unknown>) => Effect.gen(function* () {
   if (input.actor._tag !== 'owner') return yield* refused(signInReasons.owner)
@@ -104,7 +104,7 @@ const start = (input: Input, p: Record<string, unknown>) => Effect.gen(function*
 })
 const control = (method: 'write' | 'resize' | 'stop') => (input: Input, p: Record<string, unknown>) => Effect.gen(function* () {
   const connection = yield* Effect.try({ try: () => owner(input), catch: e => e as ReturnType<typeof refused> })
-  yield* Effect.try({ try: () => { const manager = sessions(input), id = p.sessionId as string; if (method === 'write') manager.write(id, connection, p.text as string); else if (method === 'resize') manager.resize(id, connection, p.cols as number, p.rows as number); else manager.stop(id, connection) }, catch: failure })
+  yield* Effect.try({ try: () => { const manager = sessions(input), id = p.sessionId as string; if (method === 'write') manager.write(id, connection, p.text as string, undefined, input.ownerSessionId); else if (method === 'resize') manager.resize(id, connection, p.cols as number, p.rows as number, undefined, input.ownerSessionId); else manager.stop(id, connection, undefined, input.ownerSessionId) }, catch: failure })
   return { reply: { requestId: p.requestId } }
 })
 export const terminalOutput = (input: Input, p: Record<string, unknown>, kind?: 'project') => Stream.unwrap(Effect.gen(function* () {

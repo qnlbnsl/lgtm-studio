@@ -10,7 +10,7 @@ export type CommandName = Rpc.Tag<RpcGroup.Rpcs<typeof CommandsRpcGroup>> | "cli
 export const commandNames: ReadonlyArray<CommandName> = [...CommandsRpcGroup.requests.keys()] as Array<CommandName>
 
 const summaries: Record<CommandName, string> = {
-  "client.terminal.list": "List the owner session’s live project terminals.",
+  "client.terminal.list": "List live project terminals opened by this local-socket connection. Authenticated web sessions share the owner's web terminals.",
   "client.terminal.open": "Open an owner shell in a registered local project worktree, if enabled in service settings.",
   "client.terminal.write": "Send keys on the opening connection only. A standalone invocation cannot control an existing terminal. --text puts keys in shell history.",
   "client.terminal.resize": "Resize a project terminal on its opening connection only.",
@@ -23,7 +23,7 @@ const summaries: Record<CommandName, string> = {
   "client.harness.signin.stop": "Stop the sign-in process group and check local sign-in. Standalone invocations open a new connection and cannot control an existing session.",
   "client.harness.signin.subscribe": "Read ephemeral sign-in output only on the initiating connection. Standalone invocations open a new connection and cannot control an existing session.",
   "client.service.version": "Read the running version and optionally compare the tracked remote branch over HTTPS without downloading code.",
-  "client.service.restart": "Confirm sign-out of every page and stop running agents, then restart the service with its original arguments and environment.",
+  "client.service.restart": "Confirm stopping running agents, then restart the service with its original arguments and environment. Pages stay signed in; terminals close.",
   "client.harness.status": "Read each harness's installed program, path and version.",
   "client.harness.recipe": "Show the exact repository-owned install commands for a harness.",
   "client.harness.install": "Install a harness using its fixed user-only recipe. Provider sign-in stays in your terminal.",

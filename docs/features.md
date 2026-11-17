@@ -447,7 +447,10 @@ Machine coordination remains planned.
   Service settings has a stored switch that starts off.
   The renderer supports colours, cursor movement, full-screen programs, and resizing.
   Live output reaches the attached owner connection unchanged.
-  On 2026-11-17, the owner approved reattachment within the same web session.
+  On 2026-11-17, the owner approved reattachment across the owner's signed-in web sessions.
+  Up to eight independent web sessions survive service restarts for 30 days each.
+  Signing out ends only that browser's session.
+  The last output reader wins, while other signed-in tabs can still type.
   A reload restores the shells and at most 64 kibibytes of recent output from memory.
   The service never writes terminal input or output to disk or logs.
   At most eight sessions may be open, including detached shells.

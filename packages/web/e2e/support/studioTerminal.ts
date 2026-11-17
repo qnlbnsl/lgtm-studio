@@ -53,7 +53,7 @@ export async function exerciseStudioTerminal(page: Page) {
         const projectViewPathValue = projectView(yield* (yield* Views).snapshot).workspaces[project.worktreeId]!.path
         yield* completedSetup(project.projectId)
         yield* appendSetup([eventOf({ _tag: 'project.WorktreeCreated', repoId, worktreeId: 'remote-terminal', branch: 'remote-terminal', path: '/unavailable/terminal', machineId: 'remote-terminal', checkout: 'main' })])
-        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
+        yield* serve({ stateFolder: rig.stateFolder, password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
           const base = `http://127.0.0.1:${port}/`, url = base + `#/p/${project.projectId}/terminal`
           await page.goto(url); await page.locator('#login-password').fill(password); await page.getByRole('button', { name: 'Sign in', exact: true }).click()
@@ -100,6 +100,34 @@ export async function exerciseStudioTerminal(page: Page) {
           await expect(page.locator('.xterm-rows')).toContainText('BROWSER_TERMINAL_OK')
           await input.focus(); await page.keyboard.type('echo S28_AFTER_RELOAD:$S28_SHELL:$$'); await page.keyboard.press('Enter')
           await expect(page.locator('.xterm-rows')).toContainText('S28_AFTER_RELOAD:' + prior + ':' + prior)
+          const sibling = await page.context().newPage()
+          try {
+            await sibling.goto(url)
+            await expect(sibling.locator('.term-tab')).toHaveCount(1)
+            await expect(sibling.locator('.xterm-rows')).toContainText('S28_BEFORE_RELOAD:' + prior)
+            await expect(page.locator('.term-bar')).toContainText('Typing still works.')
+            await input.focus(); await page.keyboard.type("printf 'R2_OLD_TAB_%s\\n' INPUT"); await page.keyboard.press('Enter')
+            await expect(sibling.locator('.xterm-rows')).toContainText('R2_OLD_TAB_INPUT')
+            await sibling.locator('.xterm-helper-textarea').focus(); await sibling.keyboard.type('echo R2_NEW_TAB:$S28_SHELL:$$'); await sibling.keyboard.press('Enter')
+            await expect(sibling.locator('.xterm-rows')).toContainText('R2_NEW_TAB:' + prior + ':' + prior)
+          } finally { await sibling.close() }
+          await page.reload(); await expect(page.locator('.xterm-rows')).toContainText('R2_OLD_TAB_INPUT')
+          const phoneContext = await page.context().browser()!.newContext({ viewport: { width: 390, height: 844 } })
+          try {
+            const phone = await phoneContext.newPage()
+            await phone.goto(url); await phone.getByLabel('Password', { exact: true }).fill(password)
+            await phone.getByRole('button', { name: 'Sign in', exact: true }).click()
+            await expect(phone).toHaveURL(/#\/home/); await phone.goto(url)
+            await expect(phone.locator('.term-tab')).toHaveCount(1)
+            await expect(phone.locator('.xterm-rows')).toContainText('R2_NEW_TAB:' + prior + ':' + prior)
+            await expect(page.locator('.term-bar')).toContainText('Typing still works.')
+            await phone.locator('.xterm-helper-textarea').focus(); await phone.keyboard.type('echo R2_PHONE_BROWSER:$S28_SHELL:$$'); await phone.keyboard.press('Enter')
+            await expect(phone.locator('.xterm-rows')).toContainText('R2_PHONE_BROWSER:' + prior + ':' + prior)
+            expect(await phone.evaluate(async () => (await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' })).status)).toBe(204)
+          } finally { await phoneContext.close() }
+          await page.reload()
+          await expect(page.locator('.term-tab')).toHaveCount(1)
+          await expect(page.locator('.xterm-rows')).toContainText('R2_PHONE_BROWSER:' + prior + ':' + prior)
           const before = await page.locator('.term-status').innerText()
           await page.setViewportSize({ width: 1100, height: 740 })
           await expect(page.locator('.term-status')).not.toHaveText(before)

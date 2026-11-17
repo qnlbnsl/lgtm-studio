@@ -118,19 +118,28 @@ These rules apply to every change. A change that breaks one is a security bug.
 3. **The password is checked in constant time and is not kept by the browser.**
    A login carries it in the request body, never in a URL. One person uses
    LGTM Studio, and the owner chose no rate limits and no lockouts on 2026-11-03.
-4. **The web session lasts at most 30 days and survives a service restart.**
-   The owner approved this change on 2026-11-17.
-   A new sign-in creates a fresh random 256-bit token and invalidates the previous session.
-   Signing out, changing `LGTM_WEB_PASSWORD`, or removing that variable ends the session.
-   The browser holds the token in an `HttpOnly`, `SameSite=Strict` cookie with a 30-day maximum age.
+4. **Up to eight web sessions survive service restarts for at most 30 days each.**
+   The owner approved persistent sessions and simultaneous devices on 2026-11-17.
+   Each sign-in creates an independent random 256-bit token.
+   A ninth sign-in evicts the oldest session.
+   Signing out ends only the presenting browser's session.
+   Changing or removing `LGTM_WEB_PASSWORD` invalidates every session before the listener starts.
+   Restoring an earlier password does not restore invalidated sessions.
+   Each session expires 30 days after its own sign-in.
+   The browser holds its token in an `HttpOnly`, `SameSite=Strict` cookie with that maximum age.
    The cookie is `Secure` on a public request when the public address is `https`.
-   The service atomically writes only the token's Secure Hash Algorithm 256 (SHA-256) verifier, its creation time, and a keyed password digest to `web-session.json` in the state folder.
-   The file has mode 0600.
-   The password digest uses the verifier as its key and includes a fixed domain label.
-   A reader of the file cannot use its contents as a cookie or recover the random token from its verifier.
-   The digest permits password guesses by a reader of the state folder.
-   It does not change the existing limit against processes running as the same user, which can already read the password or rewrite state files.
-   Invalid, expired, unreadable, wrongly permissioned, or symbolic-link records do not authenticate a browser.
+   The private `web-session.json` file holds one record per session.
+   Each record contains only a Secure Hash Algorithm 256 (SHA-256) token verifier, a creation time, an independent random 16-byte salt, and a keyed password binding.
+   The binding key comes from scrypt with fixed parameters N=65536, r=8, and p=1.
+   The binding authenticates a fixed domain label and the token verifier.
+   Checking a stored binding requires about 64 mebibytes of derivation memory for each password guess.
+   A file reader cannot forge a cookie from a verifier or test a password with a single fast digest.
+   The service verifies every password binding at startup.
+   Each update replaces the entire bounded collection through an exclusive mode-0600 temporary file, a file flush, a rename, and a directory flush.
+   Memory changes only after that update succeeds.
+   A failed update attempts an empty snapshot and then a mode-zero fallback before rejecting the old in-memory sessions.
+   If storage cannot be invalidated, the request fails without claiming a successful revocation or clearing the pre-operation memory state.
+   Invalid, expired, unreadable, wrongly permissioned, symbolic-link, hard-linked, oversized, or future-dated records do not authenticate a browser.
 5. **An encrypted channel for remote access is the owner's setup**, such as TLS, a
    Tailscale tailnet, or an SSH tunnel. LGTM Studio serves plain HTTP on loopback and
    does not offer it to a non-loopback address. A configured public address must use
@@ -204,7 +213,7 @@ These rules apply to every change. A change that breaks one is a security bug.
    nor `false`, and is not a plain number.
    On 2026-11-14, the owner authorized ephemeral output for the project terminal and the harness sign-in terminal.
    The owner ruled: "what you echo on terminal is none of our business. just keep it away from log. if they use tmux or something and it hold this in the buffer then that is not on us."
-   On 2026-11-17, the owner allowed project terminals to reattach from another connection of the same authenticated web session.
+   On 2026-11-17, the owner allowed every authenticated owner web session to reattach the owner's web project terminals.
    Harness sign-in output remains restricted to its opening owner connection.
    Both terminals send the program's output byte for byte, with no redaction, hold, or idle timer.
    Project terminals retain at most 64 kibibytes of recent output in memory for reattachment.
@@ -226,7 +235,8 @@ Resolved `secret:` values in the account environment are passed to the child.
 Only the initiating owner connection may read output, type keys, resize the terminal, or stop it.
 Sign-in terminals do not reattach after reload because their credential flow stays bound to that initiating connection.
 Their five-minute total time limit and five-second connection grace remain unchanged.
-Sign-out also closes them.
+Signing out closes only harness sign-ins initiated by that web session.
+Local socket sign-ins and other web sessions' sign-ins remain unaffected.
 Agent and service credentials cannot use these requests.
 The service kills a live process group when the owner stops it, the connection grace period ends, the time limit passes, or engine shutdown begins.
 After the child exits, the service does not signal its former process group because the identifier may be reused.
@@ -245,11 +255,14 @@ The stored project terminal switch starts off in Service settings.
 While it is off, every open request is refused before a shell can start.
 Only an authenticated owner may open a terminal.
 Agent and service credentials are refused.
-On 2026-11-17, the owner approved reattachment within the same authenticated web session.
-Any connection of that session may list its project terminals, read output, type into them, resize them, or close them.
-Only one output stream may attach to a terminal at a time.
-Another web session, an agent, or an unauthenticated caller cannot use them.
+On 2026-11-17, the owner approved shared web terminals across the owner's authenticated web sessions.
+Any such session may list the web project terminals, read output, type into them, resize them, or close them.
+A new output subscription takes over from the previous reader and replays recent output.
+The previous stream ends cleanly even when its connection is half-open.
+The last reader wins, while both signed-in connections may still type.
+An agent, a service credential, an unauthenticated caller, or a local socket connection cannot use web terminals.
 A local socket terminal remains bound to its opening connection.
+A web session cannot use a local socket terminal.
 The request names a project and a registered worktree by their engine identifiers.
 It cannot supply a path, command, executable, argument, environment variable, or shell expression.
 Only a worktree on the local machine can open a shell.
@@ -262,7 +275,12 @@ A detached web terminal remains available for five minutes.
 The service closes it after that grace period.
 A local socket terminal keeps its five-second connection grace.
 A shell has no time limit.
-The service kills its live process groups on close, sign-out, switch-off, connection loss past the grace period, and engine shutdown.
+The service kills its live process groups on close, switch-off, connection loss past the grace period, and engine shutdown.
+When a web session ends, its shells close unless another live web session is reading them.
+A surviving shell becomes that reader's shell for subsequent sign-out cleanup.
+When a reader signs out of another session's shell, that shell detaches with its usual grace period.
+The last web session's sign-out closes all web shells.
+Web sign-in, sign-out, eviction, and expiry do not close local socket shells.
 On Linux, the service reads `/proc` to find and kill jobs in the shell's operating-system session.
 It does this when the shell exits too.
 After the shell exits, it signals only processes still found in that session.
@@ -280,7 +298,8 @@ Input is not retained for replay.
 Neither stream is written to disk, logged, posted, sent as events, or included in snapshots or protocol logs.
 The owner's ruling of 2026-11-14 covers both this stream and the harness sign-in stream.
 The program's live output reaches the attached connection byte for byte, with no redaction, hold, or idle timer.
-The output never goes to an unrelated session or an agent.
+The output goes only to the attached authenticated owner web session or the opening local socket connection.
+It never goes to an agent.
 Neither output nor typed keys are traced or included in an error message.
 A secret printed in the terminal appears on the owner's screen and in any scrollback the owner's own tools keep.
 The shell runs as the owner and can change files with that user's permissions.

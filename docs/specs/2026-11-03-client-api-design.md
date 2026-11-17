@@ -256,10 +256,12 @@ replaces pairing codes and per-device credentials, and nothing is kept for them.
 - A login carries the password in the request body, and the server compares it
   in constant time. On a match, the reply sets a session cookie.
 - The owner revised the session decision on 2026-11-17.
-  A sign-in rotates the random token.
-  The service stores its verifier and keyed password binding in a private file.
-  The session survives a restart with the same password for at most 30 days.
-  Logout or a changed or removed password ends the session.
+  Each sign-in adds an independent random token to a collection of at most eight sessions.
+  A ninth sign-in evicts the oldest session.
+  The service atomically replaces the private file containing their verifiers and salted scrypt password bindings.
+  Each session survives a restart with the same password for at most 30 days from its sign-in.
+  Logout ends only the presenting browser's session.
+  A changed or removed password invalidates every session before the listener starts.
 - A logged-in session is the owner. No command is computer-only.
 - If the variable is not set, the web server does not start, and the engine says
   why. The engine and its Unix socket run as normal.

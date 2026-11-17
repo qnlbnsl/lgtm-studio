@@ -14516,7 +14516,8 @@ Both controls show “Engine work needed” on hover.
 State: fixed by s28-session on 2026-11-17 for a live shell within the five-minute disconnect grace period.
 The owner approved reattachment on 2026-11-17.
 
-The live Terminal tab lists and reattaches shells belonging to the same authenticated web session.
+The live Terminal tab lists and reattaches the owner's web shells across authenticated owner web sessions.
+The newest output reader takes over cleanly, while other signed-in connections may still type.
 It restores at most 64 kibibytes of recent output from memory.
 A closed or expired shell cannot be resumed.
 Remote terminal transport remains unbuilt.
@@ -19502,3 +19503,108 @@ The six journeys that failed only in the whole run were the merge to main, remot
 The whole run overlapped review edits, so it does not establish that every transient failure was caused by load.
 Earlier issues 1374 and 1375 record similar Git, board, workflow, and Files waits.
 State: open as a record of batch-run failures, with every failed journey passing on the final source in a rerun.
+
+Round 2 repeated the whole browser suite on settled source.
+It passed 65 journeys and failed 10 journeys.
+Individual one-test invocations passed conflict resolution, project placement, live projects and board, the long website Git journey, and Files.
+Main approval, master approval, remote Git operations, first-run navigation, and throttled oversized-state recovery failed again individually.
+Those five failures are not classified as whole-run-only.
+Main approval also failed at its merge-completion wait when the changed production modules were temporarily restored to signed Round 1.
+The original assertions and timeouts remain unchanged.
+State: open with the repeated failures above still unresolved.
+
+## s28-6. A sign-in displaced the owner's other browsers.
+
+Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
+The first brief incorrectly required global token rotation.
+The implementation consequently signed out the owner's other devices.
+The revised collection holds eight independent sessions with independent creation times.
+A ninth sign-in evicts the oldest session.
+Logout revokes only the presenting browser.
+Real process restart tests cover two browsers, individual logout and expiry, and global password invalidation.
+
+## s28-7. A stored password binding permitted fast offline guesses.
+
+Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
+The original binding used the stored verifier as its public hash-based message authentication code (HMAC) key.
+A leaked record therefore permitted one fast digest per password guess.
+Each record now derives its binding key through scrypt with an independent random salt.
+The fixed derivation parameters require about 64 mebibytes of memory per guess.
+Every binding is checked before the web listener starts.
+A changed or removed password invalidates the whole collection before any old cookie can authenticate.
+
+## s28-8. A half-open reader prevented terminal reattachment.
+
+Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
+The previous subscription flag remained set until the old socket closed.
+A new authenticated reader now takes over with a new subscription generation and recent output replay.
+The old reader ends cleanly without detaching its replacement.
+Both signed-in connections may continue typing.
+A real transport test pauses the old socket before the phone takes over.
+A browser journey covers two tabs and an independently signed-in phone using the same shell process.
+
+## s28-9. Web session cleanup crossed unrelated connection boundaries.
+
+Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
+The original sign-out sweep included terminals and harness sign-ins without a web session.
+Web login, logout, expiry, and eviction now clean only the affected web sessions.
+An affected shell survives only when another live web session is reading it.
+That reader becomes the shell's owner for subsequent logout cleanup.
+The last web session's logout closes every web shell.
+Local socket terminals and unrelated harness sign-ins remain alive.
+Display cleanup also tracked only one global service.
+Each display frame now records its initiating web session so one browser's logout preserves the other's display.
+
+## s28-10. Session revocation could reject memory while leaving a valid record.
+
+Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
+The previous implementation cleared memory before removing the session file.
+A failed removal could allow the old cookie again after restart.
+Updates now commit the complete snapshot before changing memory.
+A failed update attempts an empty snapshot and then a mode-zero invalidation.
+If storage cannot be invalidated, the operation reports failure without claiming a committed revocation.
+Fault injection covers rename, flush, and unlink failures.
+Logout now also runs before the recovery gate.
+
+## s28-11. Replay history repeatedly encoded its accumulated output.
+
+Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
+The original history concatenated and encoded its retained text on every output chunk.
+A ring now tracks measured chunk byte counts and builds replay only on subscription.
+Small writes coalesce into bounded chunks without encoding retained history.
+An initial ring implementation retained too little output when thousands of tiny writes exhausted its metadata slots.
+The stress regression now requires a near-full 64-kibibyte replay window for those writes.
+Replay skips an incomplete leading terminal escape sequence and preserves Unicode boundaries.
+
+## s28-12. Terminal hints and restart help retained the old session assumptions.
+
+Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
+The reattach hint appeared after shell exit and explicit close.
+It now appears only for connection loss.
+A displaced output reader explains that typing still works.
+Command-line restart help now states that pages stay signed in and terminals close.
+The web test rig now passes the state folder explicitly instead of relying on a production environment fallback.
+
+## s28-13. The large-output terminal test can mistake command echo for completion.
+
+Observed during the s28-session round 2 whole unit run on 2026-11-17.
+The test waits 200 milliseconds after sending `stty -echo`.
+It then accepts any occurrence of `LARGE_DONE` as completion.
+The failed run still contained that marker in the echoed command before all 400,000 lines arrived.
+Its output-length assertion consequently ran after only a prefix of the output.
+The original test passed when rerun alone.
+The timeout and assertions remain unchanged.
+State: open as a fixture synchronization problem.
+
+## s28-14. A Git overlap test failed before its held subprocess started.
+
+Observed during the s28-session round 2 whole unit run on 2026-11-17.
+The test named "issue 579/583: queued registration and creation do not block a positive independent writer while real Git is held" did not observe its subprocess marker within five seconds.
+It failed again when selected alone with the original assertion and timeout.
+The failure occurs before the test launches its queued writers.
+The Git implementation and this test are unchanged by round 2.
+A control run with the changed production modules restored to signed Round 1 passed this case.
+A following run with the exact round 2 source restored failed the five-second marker wait again.
+The test uses the local socket and does not start a web listener.
+These observations do not establish the cause of the difference.
+State: open with the failure unresolved.

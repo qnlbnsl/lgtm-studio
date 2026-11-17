@@ -53,7 +53,7 @@ test('the executable restarts with the same arguments and environment and preser
     expect((await session()).status).toBe(204)
     const rotatedCookie = (await login()).headers.get('set-cookie')!.split(';')[0]!
     expect(rotatedCookie === cookie).toBe(false)
-    expect((await session()).status).toBe(401)
+    expect((await session()).status).toBe(204)
     cookie = rotatedCookie
     watcher = new WebSocket(origin.replace('http:', 'ws:') + '/api', { headers: { Cookie: cookie, Origin: origin } })
     await once(watcher, 'open')
@@ -76,7 +76,7 @@ test('the executable restarts with the same arguments and environment and preser
     })))
     await new Promise((resolve) => setTimeout(resolve, 350))
     expect((await fetch(origin + '/api/session', { method: 'POST', headers: { Cookie: freshCookie, Origin: origin } })).status).toBe(204)
-    expect((await session()).status).toBe(401)
+    expect((await session()).status).toBe(204)
   } finally {
     watcher?.terminate()
     if (child && child.exitCode === null) {

@@ -8,7 +8,7 @@ vi.mock('@lydell/node-pty', () => ({ spawn: vi.fn() }))
 vi.mock('node:fs', async original => { const actual = await original<typeof import('node:fs')>(); return { ...actual, readdirSync: vi.fn(actual.readdirSync), readFileSync: vi.fn(actual.readFileSync), existsSync: vi.fn(actual.existsSync) } })
 afterEach(() => vi.restoreAllMocks())
 const leader = 2000000000
-async function fixture(members: number[], options: { reused?: boolean; absent?: boolean; fork?: boolean } = {}) {
+async function fixture(members: number[], options: { reused?: boolean; absent?: boolean; fork?: boolean; web?: string } = {}) {
   vi.clearAllMocks()
   const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
   let exited!: () => void, data!: (text: string) => void
@@ -28,7 +28,7 @@ async function fixture(members: number[], options: { reused?: boolean; absent?: 
     return true
   }) as typeof process.kill)
   const manager = new SignInSessions(); manager.terminalEnabled = true
-  const session = await manager.start({ kind: 'project', accountId: '', connectionId: 'owner', executable: '/bin/sh', args: [], cwd: '/tmp', environment: {}, check: async () => ({ state: 'unavailable' }) })
+  const session = await manager.start({ ownerSessionId: options.web, kind: 'project', accountId: '', connectionId: 'owner', executable: '/bin/sh', args: [], cwd: '/tmp', environment: {}, check: async () => ({ state: 'unavailable' }) })
   return { manager, session, child, signals, scans, exit: () => { child._boundClose = true; exited() }, data: (text: string) => data(text) }
 }
 it('a natural exit with an empty session scans once and signals nothing', async () => {
@@ -75,5 +75,48 @@ it('s28 a stale reader cleanup cannot detach its replacement on the same connect
     const next = replacement.next(); f.data('SECOND')
     expect((await next).value).toMatchObject({ _tag: 'output', text: 'SECOND' })
     await replacement.return(undefined)
+  } finally { f.exit(); f.manager.close() }
+})
+
+it('r2 a half-open web reader is replaced by another owner session and both can type', async () => {
+  const f = await fixture([], { web: 'desktop' })
+  const old = f.manager.output(f.session.id, 'owner', 'project', undefined, 'desktop')
+  try {
+    const first = old.next(); f.data('BEFORE'); expect((await first).value).toMatchObject({ text: 'BEFORE' })
+    const waiting = old.next()
+    const next = f.manager.output(f.session.id, 'phone-socket', 'project', undefined, 'phone')
+    expect((await next.next()).value).toMatchObject({ _tag: 'output', text: 'BEFORE' })
+    expect((await waiting).value).toMatchObject({ _tag: 'ended', reason: expect.stringContaining('another') })
+    expect((await old.next()).done).toBe(true)
+    f.manager.write(f.session.id, 'owner', 'desktop keys', 'project', 'desktop')
+    f.manager.write(f.session.id, 'phone-socket', 'phone keys', 'project', 'phone')
+    expect(f.child.write.mock.calls).toEqual([['desktop keys'], ['phone keys']])
+    const live = next.next(); f.data('AFTER'); expect((await live).value).toMatchObject({ text: 'AFTER' })
+    await next.return(undefined)
+  } finally { f.exit(); f.manager.close() }
+})
+it('r2 a web logout does not touch local terminals', async () => {
+  const f = await fixture([])
+  try { f.manager.signOut('web'); expect(f.child.kill).not.toHaveBeenCalled(); f.manager.write(f.session.id, 'owner', 'still local', 'project') }
+  finally { f.exit(); f.manager.close() }
+})
+it('r2 an attached phone inherits a desktop shell on desktop logout and last-session logout closes it', async () => {
+  const f = await fixture([], { web: 'desktop' })
+  try {
+    const phone = f.manager.output(f.session.id, 'phone-socket', 'project', undefined, 'phone')
+    const first = phone.next(); f.data('PHONE'); await first
+    f.manager.signOut('desktop', new Set(['phone']))
+    expect(f.child.kill).not.toHaveBeenCalled()
+    f.manager.write(f.session.id, 'phone-socket', 'still here', 'project', 'phone')
+    f.manager.signOut('phone', new Set())
+    expect(f.child.kill).toHaveBeenCalledOnce()
+  } finally { f.exit(); f.manager.close() }
+})
+it('r2 a local socket cannot reach a live web terminal even with its exact identifier', async () => {
+  const f = await fixture([], { web: 'desktop' })
+  try {
+    expect(() => f.manager.write(f.session.id, 'local-socket', 'forbidden', 'project')).toThrow()
+    expect(f.manager.list('phone')).toHaveLength(1)
+    expect(f.manager.list(undefined, 'local-socket')).toEqual([])
   } finally { f.exit(); f.manager.close() }
 })

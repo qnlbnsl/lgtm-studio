@@ -23,6 +23,14 @@ export function observe(patch) {
     projects.clear(); enabled = undefined;
   }
 }
+export function isConnectionLoss(reason) { return typeof reason === 'string' && reason.startsWith('The connection ended.'); }
+export function outputEnded(item, reason) {
+  if (reason === 'Output is open in another owner connection. Typing still works.') { item.readingElsewhere = true; notify(); }
+  else end(item, reason);
+}
+export function outputClosed(item) {
+  if (!item.readingElsewhere) end(item, 'The connection ended. Reconnecting checks for this shell.');
+}
 async function load() {
   if (loading) return loading;
   loading = engine.request('client.web.settings').then(settings => { enabled = settings.terminalEnabled === true; notify(); }).finally(() => { loading = null; });
@@ -97,8 +105,8 @@ export function LiveTerminalTab({ s, project }) {
     state.sessions.push(item); state.active = item.id;
     item.cancel = engine.connection().terminalOutput(item.id, event => {
       if (event._tag === 'output') terminal.write(event.text);
-      else end(item, event.reason);
-    }, () => end(item, 'The connection ended. Reconnecting checks for this shell.'));
+      else outputEnded(item, event.reason);
+    }, () => outputClosed(item));
     redraw();
   };
   const open = async worktree => {
@@ -138,6 +146,7 @@ export function LiveTerminalTab({ s, project }) {
   const rename = item => act.openDialog({ type: 'rename', title: 'Rename session', value: item.label, taken: state.sessions.filter(x => x !== item).map(x => x.label), note: 'The name is only a label for this tab. The folder and the machine stay the same.', onRename: value => { item.label = value; redraw(); } });
   if (enabled === false) return html`<div class="term"><div class="term-none"><${Icon} name="square-terminal" size=${22} class="faint" /><strong>The project terminal is turned off.</strong><a class="btn" href=${href('/settings?section=remote')}>Open Service settings</a></div></div>`;
   if (!session) return html`<div class="term"><div class="term-none"><${Icon} name="square-terminal" size=${22} class="faint" /><strong>${enabled === undefined ? 'Reading terminal settings…' : s.conn.status !== 'live' ? 'The machine is offline.' : project.machine !== 'local' ? 'Project terminals are available only on the local machine.' : 'No sessions are open'}</strong><span class="muted">A session is a shell in one worktree on one machine. Reloading this page restores the shell and recent output. Disconnected shells stay available for five minutes.</span>${notice && html`<span role="status">${notice}</span>`}${enabled && newSession('btn primary')}</div></div>`;
+  const canReattach = !session.ended || isConnectionLoss(session.ended);
   const ended = session.ended || s.conn.status !== 'live';
   return html`<div class="term">
     <div class="term-tabs"><div class="term-tablist" role="tablist" aria-label="Terminal sessions">
@@ -153,7 +162,8 @@ export function LiveTerminalTab({ s, project }) {
       { label: 'Smaller text', icon: 'minus', disabled: fontSize <= 11, onSelect: () => font(fontSize - 1) },
       { sep: true }, { label: 'Close session', icon: 'x', danger: true, onSelect: () => close(session) }
     ]} /></div></div>
-    ${ended && html`<div class="term-bar warn"><${Icon} name="wifi-off" size=${14} /><span class="grow">${session.ended || 'The machine is offline.'} Disconnected shells stay available for five minutes. Reload to reattach.</span><button type="button" class="btn sm" disabled title="A closed shell cannot be restarted.">Reconnect</button></div>`}
+    ${ended && html`<div class="term-bar warn"><${Icon} name="wifi-off" size=${14} /><span class="grow">${session.ended || 'The machine is offline.'}${canReattach && ' Disconnected shells stay available for five minutes. Reload to reattach.'}</span><button type="button" class="btn sm" disabled title=${canReattach ? 'Reload to reattach within five minutes.' : 'A closed shell cannot be restarted.'}>Reconnect</button></div>`}
+    ${!ended && session.readingElsewhere && html`<div class="term-bar warn"><${Icon} name="monitor" size=${14} /><span class="grow">Output is open in another tab or device. Typing still works. Reload to read output here.</span></div>`}
     ${notice && html`<div class="term-bar error" role="status">${notice}</div>`}
     ${state.sessions.map(item => html`<${TerminalView} key=${item.id} session=${item} active=${item === session} sizeChanged=${redraw} />`)}
     <div class="term-keys only-phone-keys" role="group" aria-label="Extra keys">${keys.map(([label, key]) => html`<button type="button" aria-label=${label} disabled=${!!ended} aria-pressed=${key === null ? !!session.ctrl : null} onPointerDown=${e => e.preventDefault()} onClick=${() => { if (key === null) { session.ctrl = !session.ctrl; redraw(); } else { write(key); session.terminal.focus(); } }}>${label}</button>`)}</div>

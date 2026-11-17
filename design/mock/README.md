@@ -158,11 +158,17 @@ The content security policy is unchanged.
 Live output reaches the attached owner connection unchanged, under the owner's rulings of 2026-11-14 and 2026-11-17.
 A printed secret appears on the owner's screen and in any scrollback the owner's tools keep.
 The service writes neither output nor input to disk.
-The live Terminal tab reattaches its shells automatically after a page reload.
+The live Terminal tab reattaches the owner's web shells automatically after a page reload.
+Any signed-in owner device can pick up the same shell.
+The newest reader takes over the output stream.
+The previous tab explains that output moved and keeps its input enabled.
 A disconnected web shell remains available for five minutes.
 The engine retains at most 64 kibibytes of recent output per shell in memory for replay.
 At most eight shells may be live, including detached shells.
-Shells end when their connection grace expires, the owner signs out, the switch turns off, or the service stops.
+Shells end when their connection grace expires, the switch turns off, or the service stops.
+When a browser signs out, its shells close unless another signed-in session is reading them.
+A surviving shell becomes that reader's shell for subsequent sign-out cleanup.
+The last web session's sign-out closes every web shell.
 The standalone mock continues to use sample data.
 Remote shells, agent terminal watching, and agent terminal takeover need engine support.
 Those controls are disabled in the live screen, with the tooltip “Engine work needed”.

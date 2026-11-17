@@ -54,7 +54,7 @@ const control = (method: 'write' | 'resize' | 'close') => (input: Input, p: Reco
 export const terminalReads = {
   'client.terminal.list': (input: Input, p: Record<string, unknown>) => Effect.gen(function* () {
     const connection = yield* Effect.try({ try: () => owner(input), catch: e => e as ReturnType<typeof refused> })
-    return { reply: { requestId: p.requestId, sessions: sessions(input).list(input.ownerSessionId ?? connection) } }
+    return { reply: { requestId: p.requestId, sessions: sessions(input).list(input.ownerSessionId, connection) } }
   }),
   'client.terminal.open': open,
   'client.terminal.write': control('write'),

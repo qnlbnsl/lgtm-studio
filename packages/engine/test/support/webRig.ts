@@ -38,8 +38,10 @@ export interface WebModule {
   readonly serve: (options: {
     readonly password: Redacted.Redacted<string> | undefined;
     readonly staticRoot: string;
+    readonly stateFolder: string;
     readonly settings: WebSettings;
     readonly lists: EngineLists;
+    readonly registerSecret?: (secret: Redacted.Redacted<string>) => void;
   }) => Effect.Effect<{ readonly close: Effect.Effect<void, unknown> }, unknown, any>;
 }
 export interface Reply { readonly status: number; readonly body: string; readonly headers: import("node:http").IncomingHttpHeaders }
@@ -177,6 +179,7 @@ export const withWeb = async (
     readonly lists?: EngineLists;
     readonly clock?: boolean;
     readonly recovery?: Layer.Layer<Restart>;
+    readonly registerSecret?: (secret: Redacted.Redacted<string>) => void;
   } = {},
 ): Promise<void> => {
   const moduleUrl = new URL("../../src/client/web/server.ts", import.meta.url);
@@ -200,7 +203,7 @@ export const withWeb = async (
       }));
       let run = Effect.gen(function* () {
         yield* registerRebuildCheck();
-        const open = (...override: [password?: string]) => { const value = override.length ? override[0] : password; return module.serve({ password: value === undefined ? undefined : Redacted.make(value), settings, staticRoot, lists }); };
+        const open = (...override: [password?: string]) => { const value = override.length ? override[0] : password; return module.serve({ stateFolder: rig.stateFolder, ...(options.registerSecret === undefined ? {} : { registerSecret: options.registerSecret }), password: value === undefined ? undefined : Redacted.make(value), settings, staticRoot, lists }); };
         const listener = yield* open();
         return yield* body({ rig, runner, lists, password: password ?? "", staticRoot, settings,
           origin: `http://127.0.0.1:${settings.port}`, host: `127.0.0.1:${settings.port}`, open, close: listener.close });

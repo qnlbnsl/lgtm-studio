@@ -20,7 +20,7 @@ it("5.14 serves static files and login during recovery, authenticating before ty
     expect((yield* Effect.promise(() => http(ctx, "/"))).status).toBe(200);
     expect((yield* Effect.promise(() => post(ctx, "/api/login", { password: 'wrong' }))).status).toBe(401);
     const { cookie } = yield* login(ctx);
-    for (const path of ["/api", "/api/session", "/api/logout"]) {
+    for (const path of ["/api", "/api/session"]) {
       expect((yield* Effect.promise(() => post(ctx, path))).status).toBe(401);
       const reply = yield* Effect.promise(() => post(ctx, path, undefined, { Cookie: cookie }));
       expect(reply.status).toBe(503);
@@ -43,5 +43,18 @@ it("5.14 serves static files and login during recovery, authenticating before ty
       expect((yield* Effect.promise(() => post(ctx, '/api/login', { password: ctx.password }, headers))).status).toBe(403);
       expect((yield* upgrade(ctx, { Cookie: cookie, ...headers })).status).toBe(403);
     }
+  }), { recovery });
+});
+
+it("r2 logout revokes its cookie during recovery and stays revoked after restart", async () => {
+  const recovery = Layer.succeed(Restart, { ready: Effect.succeed(false), whenReady: Effect.never, recover: Effect.void, returnAccount: () => Effect.void });
+  await withWeb(ctx => Effect.gen(function* () {
+    const one = yield* login(ctx), two = yield* login(ctx);
+    expect((yield* Effect.promise(() => post(ctx, "/api/logout", undefined, { Cookie: one.cookie }))).status).toBe(204);
+    yield* ctx.close;
+    const next = yield* ctx.open();
+    expect((yield* Effect.promise(() => post(ctx, "/api/session", undefined, { Cookie: one.cookie }))).status).toBe(401);
+    expect((yield* Effect.promise(() => post(ctx, "/api/session", undefined, { Cookie: two.cookie }))).status).toBe(503);
+    yield* next.close;
   }), { recovery });
 });
