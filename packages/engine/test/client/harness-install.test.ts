@@ -155,3 +155,25 @@ it.live("shows the private Codex account's actual login folder without creating 
     expect(runner.calls).toHaveLength(0)
   }))
 }))
+
+
+it.live("s24 r2 subscription loading checks unknown local evidence again after an engine restart", () => Effect.gen(function* () {
+  rig = makeRig();
+  mkdirSync(join(rig.home, "account"), { recursive: true });
+  writeFileSync(join(rig.home, "account", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "synthetic-owner-token" } }));
+  for (let boot = 0; boot < 2; boot++) {
+    const runner = yield* makeFakeRunner();
+    yield* provideRig(rig, { runner, secrets: makeFakeSecrets() }, Effect.gen(function* () {
+      yield* registerRebuildCheck();
+      if (boot === 0) yield* appendSetup([
+        eventOf({ _tag: "HarnessChanged", harness: harnessSettings("claude", { adapterPath: process.execPath }) }),
+        eventOf({ _tag: "AccountChanged", accountId: "owner-account", account: { id: "owner-account", harness: "claude", home: join(rig.home, "account"), enabled: true } })
+      ]);
+      const account = (reply: any) => reply.accounts.find((row: any) => row.id === "owner-account");
+      expect(account(success(yield* call(ownerCredential, "client.snapshot", {})))).not.toHaveProperty("signedIn");
+      success(yield* call(ownerCredential, "client.harness.status", {}));
+      expect(account(success(yield* call(ownerCredential, "client.snapshot", {})))).toMatchObject({ signedIn: true });
+      expect(runner.calls).toHaveLength(0);
+    }));
+  }
+}));

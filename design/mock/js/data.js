@@ -8,6 +8,7 @@ const T = Date.now();
 const at = (msAgo) => T - msAgo;
 
 // ---- vocabulary ------------------------------------------------------------
+export const usableSubscription = (account) => !!account && (account.signInKnown === false || account.signedIn === true);
 export const STAGES = ['Define', 'Design', 'Plan', 'Build', 'Review', 'Hand over'];
 export const PHASES = [
   { id: 'define', n: 1, name: 'Define', stage: null, what: 'Say what to change. Mockups are made if screens change, and the end-result page is written.' },
@@ -394,7 +395,7 @@ export const harnessOfModel = (m) => Object.keys(HARNESSES).find((h) => HARNESSE
 export const WORK_KINDS = ['Plan', 'Build', 'Review', 'Test'];
 // The table the project lead proposes, from the harnesses the owner has signed in to.
 export function proposeAssignment(s) {
-  const on = new Set(s.subscriptions.filter((x) => x.signedIn && x.enabled).map((x) => x.harness));
+  const on = new Set(s.subscriptions.filter((x) => usableSubscription(x) && x.enabled).map((x) => x.harness));
   const c = on.has('claude'), x = on.has('codex');
   const pick = (h, m, e) => ({ harness: h, model: m, effort: hasEffort(h, m) ? e : null });
   const fallback = c ? 'claude' : x ? 'codex' : 'claude';

@@ -648,3 +648,26 @@ live("s24 recovery progress counts completed reloads while the next agent is sti
     expect(yield* service.progress!).toEqual({ _tag: "ServiceStarting", recovered: 2, total: 2 });
   }));
 }));
+
+
+live("s24 r2 progress excludes blocked pauses and counts a failed attempt before the next finishes", () => Effect.gen(function* () {
+  yield* history(() => Effect.gen(function* () {
+    yield* seedAgent({ id: "attempt-fails" }); yield* seedAgent({ id: "attempt-held" });
+    yield* seedAgent({ id: "blocked-pause", state: "paused" });
+  }));
+  const runner = yield* makeFakeRunner();
+  const entered = yield* Deferred.make<void>(), release = yield* Deferred.make<void>();
+  runner.script("load", input => Effect.gen(function* () {
+    if (input.agentId === "attempt-fails") return yield* new RunnerRejected({ reason: "agent reload failed" });
+    yield* Deferred.succeed(entered, undefined); yield* Deferred.await(release);
+    return { ...sessionFor(input.agentId), session: input.session };
+  }));
+  yield* restart(runner, Effect.gen(function* () {
+    const service = yield* Restart.Restart;
+    const fiber = yield* recover.pipe(Effect.forkChild);
+    yield* Deferred.await(entered);
+    expect(yield* service.progress!).toEqual({ _tag: "ServiceStarting", recovered: 1, total: 2 });
+    yield* Deferred.succeed(release, undefined); yield* Fiber.join(fiber);
+    expect(yield* service.progress!).toEqual({ _tag: "ServiceStarting", recovered: 2, total: 2 });
+  }));
+}));

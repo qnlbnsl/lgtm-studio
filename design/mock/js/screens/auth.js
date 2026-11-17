@@ -1,7 +1,7 @@
 // The login page and the three first-run pages. LGTM Studio has one user and one password,
 // so there is no user name, no account and no pairing here.
 import { html, useState, useEffect, useRef, Icon, cx, update, go, href, parseRoute, live, refuse } from '../lib.js';
-import { HARNESSES, machineOf } from '../data.js';
+import { usableSubscription, HARNESSES, machineOf } from '../data.js';
 import * as act from '../actions.js';
 import * as board from '../live/board.js';
 import * as alertsLive from '../live/alerts.js';
@@ -150,7 +150,7 @@ export function FirstRun({ s }) {
   const finish = () => {
     setTried(true);
     if (goalError || !found) return;
-    const sub = s.subscriptions.find((x) => x.harness === (connected.includes(harness) ? harness : connected[0]) && x.signedIn) || s.subscriptions[0];
+    const sub = s.subscriptions.find((x) => x.harness === (connected.includes(harness) ? harness : connected[0]) && usableSubscription(x)) || s.subscriptions[0];
     act.setSession('in');
     update((st) => { st.session.firstRun = false; st.settings.gitModel = gitModel; });
     act.createProject({ repo: found.repo, newRepo: found.repo ? null : found.name, goal: goal.trim(), machine: master.id, subscription: sub.id });

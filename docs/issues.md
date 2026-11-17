@@ -19210,3 +19210,87 @@ The final whole unit-test run failed the interruption-only shutdown test in `pac
 Issue 1295 already records this load-sensitive failure.
 The same test passed immediately when run alone.
 This change does not modify the command-line shutdown code or its test.
+
+
+## s24-6. Signing out left composer drafts in the browser.
+
+The first startup change preserved drafts across every session transition.
+Sign-out, expiry, and an unconfirmed logout now clear both memory and per-tab storage.
+An outage preserves the drafts.
+
+## s24-7. Unknown sign-in evidence disabled previously usable account controls.
+
+The first startup change made unknown accounts look signed out to controls beyond their status label.
+Unknown accounts now retain the base account actions, default badge, model choices, and composer selection.
+The header counts confirmed sign-ins among known accounts and reports unknown accounts separately with “Not reported”.
+Subscription loading now runs the existing sequential local check for accounts without evidence.
+It repeats that check after an engine restart.
+Successful session events and explicit sign-out events derive deterministic evidence on replay.
+An owner-cleared availability event now returns the account to unknown.
+Local-check evidence stays in memory for its current account row.
+A replaced row loses that observation and can be checked again.
+
+## s24-8. Recovery progress counted successful reloads against unrelated pauses.
+
+The total now includes only the interrupted and returning paused agents selected for recovery attempts.
+An attempt counts when it finishes, including a failed attempt.
+Progress cannot exceed the total.
+The browser clamps excess counts instead of rejecting the authenticated starting state.
+The notice names completed recovery attempts.
+The preflight phase reports zero attempts until its recovery work is selected.
+
+## s24-9. An overlong saved draft could return as shortened text.
+
+A composer draft longer than 8,192 characters is now omitted from storage in full.
+Its complete text remains in the current tab's memory.
+The existing toast area reports once per composer that the draft is too long to keep after a reload.
+The other draft count and total-size bounds remain in force.
+
+## s24-10. The first authenticated page could look like an empty installation during recovery.
+
+The main area now uses the existing empty-state component with “Loading…” until its first snapshot arrives.
+The connection controls remain visible during that wait.
+The held-recovery journey verifies the main area before recovery completes.
+
+## s24-11. A plan update can change text above later tool calls.
+
+The latest plan replaces its first row in the turn.
+An update after tool calls therefore changes a row above those calls.
+This keeps one stable plan row without changing stored events.
+State: open as the presentation tradeoff recorded by review finding m5.
+
+## s24-12. A starting badge can remain visible until the next session probe.
+
+A failed socket attempt first preserves the last authenticated startup counts.
+The subsequent session probe clears that starting state when the service stops answering.
+The badge can therefore retain the old counts for one retry.
+State: open as review finding m7.
+
+## s24-13. Recovery coverage omitted hostile request headers and the feature list was stale.
+
+The recovery test now checks that a bad Host or Origin receives the same forbidden response during and after recovery.
+Those request-policy checks already ran before the recovery gate.
+The test retains its 5.14 identifier.
+The feature list now describes static loading and login during recovery.
+
+
+## s24-14. The first attempt-count fix moved timer reconciliation ahead of ordinary reloads.
+
+The existing recovery-order regression caught an account becoming available before an ordinary reload finished.
+The final implementation previews overdue returns without releasing the account early.
+Timer reconciliation still follows ordinary reloads.
+The total is reconciled with the actual returning work because account deadlines can change while an adapter loads.
+The completed count remains bounded by that total.
+
+
+## s24-15. A Setup bookmark bypassed the first-snapshot loading guard.
+
+The first loading guard covered the main views after the Setup route had already returned.
+A held-recovery journey reproduced the gap through that bookmark.
+The Setup route now waits for the first snapshot too.
+
+## s24-16. The long-draft notice initially stayed suppressed for the next draft.
+
+The first notice guard remembered a composer key after its text was cleared.
+Clearing the draft or making it short enough now resets that guard.
+A later overlong draft receives its own single notice.

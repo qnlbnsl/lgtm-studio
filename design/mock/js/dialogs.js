@@ -4,7 +4,7 @@ import { live, refuse } from './lib.js';
 // the merge review, and provider sign-in.
 import { html, useState, useEffect, useRef, Icon, cx, go, update, useKey } from './lib.js';
 import {
-  projectOf, repoOf, agentOf, teamOf, teamName, machineOf, subOf, byId, HARNESSES, openRequests, agentStatus, projectStatus, routeForAgent,
+  usableSubscription, projectOf, repoOf, agentOf, teamOf, teamName, machineOf, subOf, byId, HARNESSES, openRequests, agentStatus, projectStatus, routeForAgent,
 } from './data.js';
 import * as act from './actions.js';
 import * as board from './live/board.js';
@@ -97,11 +97,11 @@ export function SubscriptionTable({ s, machine, value, onPick, name = 'lead-sub'
   const rows = s.subscriptions.filter((x) => x.enabled);
   return html`<div class="table-wrap"><table class="table sub-table">
     <thead><tr><th></th><th>Harness</th><th>Subscription</th><th>Machine</th><th>Models</th></tr></thead>
-    <tbody>${rows.map((x) => { const ok = x.signedIn && (!machine || x.machine === machine); const h = HARNESSES[x.harness];
+    <tbody>${rows.map((x) => { const ok = usableSubscription(x) && (!machine || x.machine === machine); const h = HARNESSES[x.harness];
       return html`<tr key=${x.id} class=${cx(ok && 'click', !ok && 'off')} aria-selected=${value === x.id} onClick=${() => ok && onPick(x.id)}>
         <td style="width:28px"><input type="radio" name=${name} aria-label=${`${h.name} · ${x.name}`} checked=${value === x.id} disabled=${!ok} onChange=${() => onPick(x.id)} /></td>
         <td>${h.name}</td>
-        <td>${x.name}${!x.signedIn ? html` <span class="faint">· signed out</span>` : x.usage ? html` <span class="faint num">· ${x.usage.pct}% used</span>` : ''}</td>
+        <td>${x.name}${x.signInKnown === false ? html` <span class="faint">· Not reported</span>` : !x.signedIn ? html` <span class="faint">· signed out</span>` : x.usage ? html` <span class="faint num">· ${x.usage.pct}% used</span>` : ''}</td>
         <td class="muted">${machineOf(s, x.machine).name}</td>
         <td class="muted wrap">${h.models.join(', ')}</td></tr>`; })}</tbody></table></div>`;
 }
@@ -110,7 +110,7 @@ function NewProject({ s, d }) {
   const [repo, setRepo] = useState(d.repo || s.repos[0]?.id || '__new');
   const [newRepo, setNewRepo] = useState('');
   const [goal, setGoal] = useState(d.goal || '');
-  const ready = s.subscriptions.filter((x) => x.signedIn && x.enabled && x.machine === machine);
+  const ready = s.subscriptions.filter((x) => usableSubscription(x) && x.enabled && x.machine === machine);
   const [sub, setSub] = useState(ready[0]?.id);
   useEffect(() => { if (!ready.some((x) => x.id === sub)) setSub(ready[0]?.id); }, [machine]);
   useEffect(() => { if (live.on) void board.loadSetup(); }, []);
@@ -189,7 +189,7 @@ function SignIn({ s, d }) {
   const cmd = sub.harness === 'codex' ? 'codex login' : 'claude /login';
   useEffect(() => { if (step === 1) { const t = setTimeout(() => setStep(2), 1800); return () => clearTimeout(t); } }, [step]);
   const done = () => {
-    update((st) => { const x = subOf(st, sub.id); x.signedIn = true; x.usage = x.usage || { pct: 3, resetsAt: Date.now() + 6 * 864e5 }; });
+    update((st) => { const x = subOf(st, sub.id); x.signInKnown = true; x.signedIn = true; x.usage = x.usage || { pct: 3, resetsAt: Date.now() + 6 * 864e5 }; });
     act.closeDialog(); act.toast(`Signed in to ${h.name} · ${sub.name} on ${m.name}`);
     if (d.then) act.answerRequest(d.then, 'resume');
   };

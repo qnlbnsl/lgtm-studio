@@ -28,6 +28,7 @@ import { gitEventPatch, type GitEventPatch } from './gitEvents.ts'
 
 export type SessionStatus = "checking" | "in" | "out" | "rejected" | "expired" | "unavailable" | "logout-unconfirmed"
 export interface StorePatch extends Partial<EngineRecords> {
+  readonly snapshotReady?: boolean
   readonly chatEvent?: unknown
   readonly git?: GitEventPatch | undefined
   readonly session?: { readonly status: SessionStatus; readonly firstRun: boolean }
@@ -187,7 +188,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
     write({ session: { status, firstRun: false } })
   }
   // Records leave the browser when the session ends, so no signed-out page keeps them.
-  const forget = () => { retryIds.clear(); accountLimits = {}; write({ ...emptyRecords, notifications: [], accountLimits, owner: mapOwner(undefined), channels: [], posts: [], taskDetails: {}, boardAgents: {}, projectLeadSettings: {}, setupData: null, mocks: {}, design: {}, machineDetails: null, boardUnread: {}, boardRevision: 0, boardDetails: {} }) }
+  const forget = () => { retryIds.clear(); accountLimits = {}; write({ snapshotReady: false, ...emptyRecords, notifications: [], accountLimits, owner: mapOwner(undefined), channels: [], posts: [], taskDetails: {}, boardAgents: {}, projectLeadSettings: {}, setupData: null, mocks: {}, design: {}, machineDetails: null, boardUnread: {}, boardRevision: 0, boardDetails: {} }) }
 
   const post = async (path: string, body?: unknown): Promise<number | undefined> => {
     try {
@@ -199,7 +200,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
       if (response.status === 503) {
         const value = await response.text()
         if (value.length <= 1024) {
-          try { const decoded = Schema.decodeUnknownSync(ServiceStarting)(JSON.parse(value)); if (decoded.recovered <= decoded.total) starting = decoded } catch { /* an ordinary outage */ }
+          try { const decoded = Schema.decodeUnknownSync(ServiceStarting)(JSON.parse(value)); starting = { ...decoded, recovered: Math.min(decoded.recovered, decoded.total) } } catch { /* an ordinary outage */ }
         }
       }
       return response.status
@@ -224,7 +225,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
     const publish = (snapshot: ClientSnapshot) => {
       current = snapshot
       const records = board.mapBoardRecords(snapshot, mapSnapshot(snapshot, now()))
-      if (!signal.aborted) write({ ...records, notifications: mapAlerts(snapshot.alerts ?? [], records.agents), channels: board.snapshotChannels(snapshot, records), boardUnread: board.mapUnread(snapshot.board), boardRevision, boardDetails: board.mapStalls(snapshot.roles),
+      if (!signal.aborted) write({ snapshotReady: true, ...records, notifications: mapAlerts(snapshot.alerts ?? [], records.agents), channels: board.snapshotChannels(snapshot, records), boardUnread: board.mapUnread(snapshot.board), boardRevision, boardDetails: board.mapStalls(snapshot.roles),
         session: { status: "in", firstRun: snapshot.project?.setup !== undefined && snapshot.project.setup.completedAt === undefined } })
     }
     const program = Effect.gen(function* () {

@@ -115,9 +115,9 @@ async function loadService(name, refreshHarnesses = false) {
     engineWrite({ notifications: mapping.mapAlerts(items, S().agents, requests), phoneOffer: mapping.mapPhoneOffer(settings) });
     return;
   }
-  const [accountReply, harnessReply, project, roles, web, roleFile, snapshot] = await Promise.all([
+  const [accountReply, harnessReply, project, roles, web, roleFile] = await Promise.all([
     request('accounts', { operation: 'list' }), request('harnesses', { operation: 'list' }), request('project.settings'),
-    request('roles.settings.get'), request('client.web.settings'), request('roles.role-file.get'), request('client.snapshot')
+    request('roles.settings.get'), request('client.web.settings'), request('roles.role-file.get')
   ]);
   if (!currentRead()) return;
   const installationReply = await request('client.harness.status', { refresh: refreshHarnesses });
@@ -126,7 +126,9 @@ async function loadService(name, refreshHarnesses = false) {
   }));
   if (!currentRead()) return;
   service = { harnesses: harnessReply.harnesses, project: project.settings, roles: roles.settings, web, roleFile: roleFile.file };
-  accounts = accountReply.accounts; statuses = snapshot.accounts;
+  const checkedSnapshot = await request('client.snapshot');
+  if (!currentRead()) return;
+  accounts = accountReply.accounts; statuses = checkedSnapshot.accounts;
   Object.keys(HARNESSES).forEach((k) => { delete HARNESSES[k]; });
   Object.assign(HARNESSES, mapping.mapHarnesses(service.harnesses));
   Object.assign(HARNESSES, mapping.mapInstalledHarnesses(HARNESSES, installationReply.harnesses, recipes));

@@ -1,3 +1,4 @@
+import { signInEvidence } from "../accounts/signInEvidence.ts"
 import * as Schema from "effect/Schema"
 import { HarnessSettings } from "@lgtm/contracts"
 import { harnesses as planHarnesses } from "../commands/harnesses.ts"
@@ -38,6 +39,13 @@ const audit = (input: Pick<Input, "runtime">, events: ReadonlyArray<Event>) => i
 const status: ReadHandler = (input, p) => Effect.gen(function* () {
   if (input.actor._tag !== "owner") return yield* refused()
   const { programs } = instance(input), configured = yield* readHarnesses(input.runtime)
+  // Subscription loading reuses the same local check and its sequential bounds.
+  // Known event or local-check evidence never causes another credential read.
+  for (const account of Object.values(input.snapshot.accounts)) {
+    if (signInEvidence(account) !== undefined) continue
+    const harness = configured.find(row => row.id === account.harness)
+    if (harness) yield* accountReadiness(input, harness, account)
+  }
   const ids = [...new Set([...programs.ids, ...configured.map((h) => h.id)])]
   const harnesses = []
   for (const id of ids) {

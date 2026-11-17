@@ -5,7 +5,7 @@ import * as signInUi from '../live/signin.js';
 // plus one project's Settings tab and the Add repository dialog.
 import { html, useState, useEffect, useRef, Icon, cx, update, store, go, href, ago, clock, dayLabel, useNow, uid, plural, MIN, HOUR, DAY, live, refuse } from '../lib.js';
 import {
-  HARNESSES, PERMISSION_MODES, KIND_LABEL, byId, projectOf, repoOf, agentOf, teamsOf, teamName, agentsOfTeam, agentsOfProject,
+  usableSubscription, HARNESSES, PERMISSION_MODES, KIND_LABEL, byId, projectOf, repoOf, agentOf, teamsOf, teamName, agentsOfTeam, agentsOfProject,
   machineOf, subOf, subLabel, agentStatus, routeForAgent, routeForRequest, openRequests, hasEffort, harnessOfModel, WORK_KINDS, proposeAssignment,
 } from '../data.js';
 import * as act from '../actions.js';
@@ -279,12 +279,12 @@ registerDialog('add-repository', AddRepository);
 // ---- subscriptions ---------------------------------------------------------------
 function subState(x) {
   if (x.status === 'out-of-usage') return { word: 'Limit reached', tone: 'error', dot: 'failed' };
-  if (x.signInKnown === false) return { word: 'Not reported', tone: null, dot: 'idle' };
-  if (!x.signedIn) return { word: 'Signed out', tone: 'warn', dot: 'waiting' };
+  if (!usableSubscription(x)) return { word: 'Signed out', tone: 'warn', dot: 'waiting' };
   if (!x.enabled) return { word: 'Turned off', tone: null, dot: 'idle' };
   if (x.window && x.window.pct >= 100) return { word: 'Limit reached', tone: 'error', dot: 'failed' };
   if (x.usage && x.usage.pct >= 100) return { word: 'Weekly limit reached', tone: 'error', dot: 'failed' };
   if ((x.window && x.window.pct >= 80) || (x.usage && x.usage.pct >= 80)) return { word: 'Near its limit', tone: 'warn', dot: 'waiting' };
+  if (x.signInKnown === false) return { word: 'Not reported', tone: null, dot: 'idle' };
   return { word: 'Signed in', tone: null, dot: 'working' };
 }
 function SubRow({ s, x, now }) {
@@ -301,25 +301,25 @@ function SubRow({ s, x, now }) {
   return html`<div class=${cx('svc-sub', st.tone === 'warn' && 'warn', st.tone === 'error' && 'error', !x.enabled && 'dim')}>
     <div class="svc-sub-row">
       <div class="c-name"><button type="button" class=${cx('svc-twist', open && 'open')} aria-expanded=${open} aria-label=${(open ? 'Hide' : 'Show') + ' agents on ' + x.name} onClick=${() => act.toggleExpanded(k)}><${Icon} name="chevron-right" size=${13} /></button>
-        <div class="col"><span class="row" style="gap:6px"><b>${x.name}</b>${x.useForNew && x.signedIn && html`<span class="badge outline" data-tip=${`New ${h.name} agents on ${m.name} use it`}>Default</span>`}</span>
+        <div class="col"><span class="row" style="gap:6px"><b>${x.name}</b>${x.useForNew && usableSubscription(x) && html`<span class="badge outline" data-tip=${`New ${h.name} agents on ${m.name} use it`}>Default</span>`}</span>
           <span class="muted truncate" style="font-size:var(--text-sm)">${live.on ? '' : (x.account || 'No account') + ' · ' + m.name}</span></div></div>
       <div class="c-state"><span class="row" style="gap:6px"><i class=${cx('dot', st.dot)}></i><span class=${cx(st.tone === 'warn' && 'warn-text', st.tone === 'error' && 'error-text')} style=${st.tone ? 'font-weight:var(--weight-medium)' : ''}>${st.word}</span></span></div>
       <div class="c-use" data-label="5 hours">${live.on && s.accountLimits?.[x.id] ? html`<small class="muted">Resets in ${until(s.accountLimits[x.id], now)}</small>` : x.window ? html`<${Meter} pct=${x.window.pct} wide /><small class=${cx(x.window.pct >= 100 ? 'error-text' : 'muted')}>Resets in ${until(x.window.resetsAt, now)}</small>` : html`<span class="faint">Not reported</span>`}</div>
       <div class="c-use" data-label="This week">${x.usage ? html`<${Meter} pct=${x.usage.pct} wide /><small class="muted">Resets ${x.usage.resetsAt - now < DAY ? 'in ' + until(x.usage.resetsAt, now) : new Date(x.usage.resetsAt).toLocaleDateString('en-GB', { weekday: 'long' })}</small>` : html`<span class="faint">Not reported</span>`}</div>
       <div class="c-agents" data-label="Agents">${ags.length ? html`<button type="button" class="link" onClick=${() => act.toggleExpanded(k, true)}>${ags.length}</button><span class="muted"> · ${active} running</span>` : html`<span class="faint">None</span>`}</div>
-      <div class="c-model" data-label="Model for new agents"><select class="select" aria-label=${'Model for new agents on ' + x.name} value=${x.model} disabled=${!x.signedIn} onChange=${(e) => { const v = e.target.value; if (live.on) return liveGit.accountModel(x.harness, v); update(() => { x.model = v; }); markSaved(); }}>
+      <div class="c-model" data-label="Model for new agents"><select class="select" aria-label=${'Model for new agents on ' + x.name} value=${x.model} disabled=${!usableSubscription(x)} onChange=${(e) => { const v = e.target.value; if (live.on) return liveGit.accountModel(x.harness, v); update(() => { x.model = v; }); markSaved(); }}>
         ${live.on && !x.model && html`<option value=""></option>`}${h.models.map((mo) => html`<option value=${mo}>${mo}</option>`)}</select></div>
       <div class="c-act">
-        ${!x.signedIn ? html`<button type="button" class="btn sm primary" onClick=${signIn}>Sign in</button>` : null}
+        ${!usableSubscription(x) ? html`<button type="button" class="btn sm primary" onClick=${signIn}>Sign in</button>` : null}
         <${Menu} class="icon-btn sm" label=${'Actions for ' + x.name} align="end" width=${250} trigger=${html`<${Icon} name="ellipsis" size=${15} />`}
           items=${[
-            x.signedIn && { label: live.on ? 'Use for new project leads' : `Use for new agents on ${m.name}`, icon: 'star', checked: x.useForNew, disabled: !x.enabled, onSelect: makeDefault },
+            usableSubscription(x) && { label: live.on ? 'Use for new project leads' : `Use for new agents on ${m.name}`, icon: 'star', checked: x.useForNew, disabled: !x.enabled, onSelect: makeDefault },
             { label: x.enabled ? 'Turn off' : 'Turn on', icon: x.enabled ? 'pause' : 'play', hint: x.enabled ? 'No agent starts on it. Running agents finish their turn.' : null, onSelect: () => { if (live.on) return liveGit.accountAction(x.id, x.enabled ? 'disable' : 'set', { enabled: true }); update(() => { x.enabled = !x.enabled; if (!x.enabled) x.useForNew = false; }); act.toast(x.enabled ? 'Subscription turned on' : 'Subscription turned off'); } },
             { label: 'Rename', icon: 'pencil', onSelect: () => act.openDialog({ type: 'rename', title: 'Rename subscription', value: x.name, taken: s.subscriptions.filter((y) => y.harness === x.harness).map((y) => y.name), onRename: (v) => { if (live.on) return liveGit.accountAction(x.id, 'set', { displayName: v }); update(() => { x.name = v; }); act.toast('Subscription renamed'); } }) },
             { label: 'Check sign-in again', icon: 'refresh-cw', onSelect: () => act.openDialog({ type: 'harness-signin', account: x.id }) },
             live.on && { label: 'Account works again', icon: 'play', onSelect: () => liveGit.markAvailable(x.id) },
             { sep: true },
-            x.signedIn ? { label: 'Sign out', icon: 'log-out', onSelect: signOut } : { label: 'Sign in', icon: 'log-in', onSelect: signIn },
+            usableSubscription(x) ? { label: 'Sign out', icon: 'log-out', onSelect: signOut } : { label: 'Sign in', icon: 'log-in', onSelect: signIn },
             { label: 'Remove', icon: 'trash-2', danger: true, onSelect: remove },
           ].filter(Boolean)} />
       </div>
@@ -335,11 +335,12 @@ function SubRow({ s, x, now }) {
 export function Harnesses({ s }) {
   useEffect(() => liveGit.openScreen('harnesses'), []);
   const now = useNow(30_000);
+  const unknown = s.subscriptions.filter((x) => x.signInKnown === false).length;
   const signed = s.subscriptions.filter((x) => x.signedIn).length, limited = s.subscriptions.filter((x) => /limit reached/i.test(subState(x).word)).length;
   return html`<div class="view-body"><div class="page">
     <div class="page-head"><h1 class="page-title">Harnesses</h1><${Saved} s=${s} /><span class="grow"></span>
       <button type="button" class="btn" disabled=${live.on && liveGit.busy('read-service')} onClick=${() => live.on ? liveGit.checkHarnesses() : act.toast('Sample harnesses checked.')}><${Icon} name="refresh-cw" size=${14} />Check again</button></div>
-    <p class="muted">${signed} of ${s.subscriptions.length} signed in, ${limited} at its limit</p>
+    <p class="muted">${signed} of ${s.subscriptions.length - unknown} signed in${unknown ? `, ${unknown} Not reported` : ''}, ${limited} at its limit</p>
     ${(!live.on || s.ui.serviceReady) && html`<nav class="svc-jump" aria-label="Harnesses on this page">${Object.entries(HARNESSES).map(([hid, h]) => { const n = s.subscriptions.filter((x) => x.harness === hid).length;
       return html`<a key=${hid} class="svc-jump-item" href=${'#harness-' + hid} onClick=${(e) => { e.preventDefault(); document.getElementById('harness-' + hid)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
         <i class=${cx('dot', !h.installed ? 'waiting' : n ? 'working' : 'idle')}></i><b>${h.name}</b><span class="muted">${!h.installed ? 'Not installed' : n ? plural(n, 'account') : 'No account'}</span></a>`; })}</nav>`}
@@ -725,11 +726,12 @@ function WorkflowSettings({ s }) {
 }
 function GitMessages({ s }) {
   const set = s.settings; const m = set.gitModel || (live.on ? '' : 'Haiku 5.5'); const h = harnessOfModel(m) || (live.on ? '' : 'claude');
+  const usable = new Set(s.subscriptions.filter(usableSubscription).map((x) => x.harness));
   const signed = new Set(s.subscriptions.filter((x) => x.signedIn).map((x) => x.harness));
   return html`<div class="svc-rows">
     <${Row} label="Model" id="gm-model" hint="Writes commit messages from the staged diff, and pull request titles and descriptions from the commits.">
       <select id="gm-model" class="select" style="width:240px" value=${m} onChange=${(e) => setS({ gitModel: e.target.value })}>
-        ${live.on && html`<option value=""></option>`}${Object.entries(HARNESSES).map(([id, x]) => html`<optgroup label=${x.name + (signed.has(id) ? '' : ' (signed out)')}>${x.models.map((mo) => html`<option value=${mo} disabled=${!signed.has(id)}>${mo}</option>`)}</optgroup>`)}</select><//>
+        ${live.on && html`<option value=""></option>`}${Object.entries(HARNESSES).map(([id, x]) => html`<optgroup label=${x.name + (signed.has(id) ? '' : usable.has(id) ? ' (Not reported)' : ' (signed out)')}>${x.models.map((mo) => html`<option value=${mo} disabled=${!usable.has(id)}>${mo}</option>`)}</optgroup>`)}</select><//>
     <${Row} label="Runs on"><span>${HARNESSES[h]?.name || ''}</span><//>
     <${Row} label="Commit message"><span class="row" style="gap:6px"><span class="badge outline">Conventional commit</span><span class="badge outline">One line</span><span class="badge outline">No attribution</span></span><//>
     <${Row} label="Pull request title" id="gm-limit"><span class="row" style="gap:6px"><span class="num">${act.PR_TITLE_LIMIT}</span><span class="muted">characters at most</span></span><//>
@@ -821,7 +823,7 @@ export function ProjectSettings({ s, project: p }) {
         for (const k of ['agents', 'teams', 'sprints', 'tasks', 'requests', 'channels']) st[k] = st[k].filter((x) => x.project !== id);
         st.posts = st.posts.filter((x) => !ch.has(x.channel)); st.notifications = st.notifications.filter((n) => n.project !== id); });
       go('/r/' + r.id); act.toast(`Deleted ${p.name}`); return true; } });
-  const signed = new Set(s.subscriptions.filter((x) => x.signedIn && x.enabled).map((x) => x.harness));
+  const signed = new Set(s.subscriptions.filter((x) => usableSubscription(x) && x.enabled).map((x) => x.harness));
   const asg = p.assignment || { state: 'proposed', rows: proposeAssignment(s), changed: [] };
   const saveAsg = (next) => { if (live.on) { refuse(); return; } update(() => { p.assignment = next; }); markSaved(); };
   const setRow = (k, patch) => { const row = { ...asg.rows[k], ...patch };
@@ -833,7 +835,7 @@ export function ProjectSettings({ s, project: p }) {
     saveAsg({ ...asg, rows, changed: [...WORK_KINDS] }); act.toast(`Every row uses ${allModel}`); };
   const approve = () => { saveAsg({ ...asg, state: 'approved' }); act.toast('Assignment approved. The project lead was told.'); };
   const setPerm = (v) => { if (live.on) { refuse(); return; } update((st) => { for (const a of st.agents) if (a.project === p.id) a.permission = v; }); markSaved(); };
-  const setTeam = (t, patch) => { if (live.on) { refuse(); return; } update((st) => { for (const a of agentsOfTeam(st, t.id)) { if (patch.harness && patch.harness !== a.harness) { const hs = HARNESSES[patch.harness]; const sub = st.subscriptions.find((x) => x.harness === patch.harness && x.signedIn && x.machine === p.machine) || st.subscriptions.find((x) => x.harness === patch.harness && x.signedIn); a.harness = patch.harness; a.subscription = sub ? sub.id : a.subscription; a.model = hs.models[0]; a.effort = 'Medium'; } if (patch.model) a.model = patch.model; } if ('needToKnow' in patch) byId(st.teams, t.id).needToKnow = patch.needToKnow; }); markSaved(); };
+  const setTeam = (t, patch) => { if (live.on) { refuse(); return; } update((st) => { for (const a of agentsOfTeam(st, t.id)) { if (patch.harness && patch.harness !== a.harness) { const hs = HARNESSES[patch.harness]; const sub = st.subscriptions.find((x) => x.harness === patch.harness && usableSubscription(x) && x.machine === p.machine) || st.subscriptions.find((x) => x.harness === patch.harness && usableSubscription(x)); a.harness = patch.harness; a.subscription = sub ? sub.id : a.subscription; a.model = hs.models[0]; a.effort = 'Medium'; } if (patch.model) a.model = patch.model; } if ('needToKnow' in patch) byId(st.teams, t.id).needToKnow = patch.needToKnow; }); markSaved(); };
   return html`<div class="page svc-project" aria-busy=${projectBusy || configBusy}>
     <div class="page-head"><h1 class="page-title">Project settings</h1>${p.archived && html`<span class="badge">Archived</span>`}<${Saved} s=${s} /></div>
     ${p.archived && html`<div class="callout" style="align-items:center;margin-bottom:var(--space-3);max-width:860px"><${Icon} name="archive" size=${15} /><span class="grow">This project is archived. Its agents are stopped.</span><button type="button" class="btn sm" aria-busy=${projectBusy} disabled=${projectBusy} onClick=${() => act.archiveProject(p.id, false)}><${Icon} name="archive-restore" size=${13} />Restore</button></div>`}
@@ -869,7 +871,7 @@ export function ProjectSettings({ s, project: p }) {
         <${Row} label="Lead subscription" id="ps-sub" hint="The project lead runs on this subscription." top>
           <div class="svc-lead">
             <select id="ps-sub" class="select" value=${lead.subscription} onChange=${(e) => { if (live.on) { refuse(); return; } const x = subOf(s, e.target.value); update(() => { lead.subscription = x.id; if (lead.harness !== x.harness) { lead.harness = x.harness; lead.model = HARNESSES[x.harness].models[0]; lead.effort = hasEffort(x.harness, lead.model) ? 'High' : null; } }); markSaved(); }}>
-              ${subs.map((x) => html`<option value=${x.id} disabled=${!x.signedIn}>${subLabel(s, x.id)}${!x.signedIn ? ' (signed out)' : x.usage ? ` · ${x.usage.pct}% used` : ''}</option>`)}</select>
+              ${subs.map((x) => html`<option value=${x.id} disabled=${!usableSubscription(x)}>${subLabel(s, x.id)}${x.signInKnown === false ? ' (Not reported)' : !x.signedIn ? ' (signed out)' : x.usage ? ` · ${x.usage.pct}% used` : ''}</option>`)}</select>
             <select class="select" aria-label="Lead model" disabled=${configBusy} value=${lead.model} onChange=${(e) => { const v = e.target.value; if (live.on) return board.configureLead(p.lead, { model: v }); update(() => { lead.model = v; lead.effort = hasEffort(lead.harness, v) ? lead.effort || 'High' : null; }); markSaved(); }}>
               ${(live.on ? choices?.models || [] : HARNESSES[lead.harness].models.map((id) => ({ id, label: id }))).map((mo) => html`<option value=${mo.id}>${mo.label}</option>`)}</select>
             ${(live.on ? choices?.efforts.length > 0 : hasEffort(lead.harness, lead.model))

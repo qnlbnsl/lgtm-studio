@@ -505,7 +505,7 @@ export function AgentsTab({ s, project }) {
       <div class=${needs ? 'warn' : ''}><dt>Waiting on you</dt><dd><b>${needs}</b><span>${needs === 1 ? 'agent' : 'agents'}</span></dd></div>
       <div class=${stuck ? 'warn' : ''}><dt>May be stuck</dt><dd><b>${stuck}</b><span>${live.on ? '' : stuck ? 'no output for 10 min' : 'all printing'}</span></dd></div>
       <div><dt>Tokens so far</dt><dd><b>${live.on ? '—' : fmtTokens(tokens)}</b><span>${live.on ? '' : turns.toLocaleString('en-GB') + ' turns'}</span></dd></div>
-      <div class="subs"><dt>Subscriptions in use</dt><dd>${subs.map((id) => { const x = byId(s.subscriptions, id); return html`<a key=${id} class=${cx('sub-use', x.usage && x.usage.pct >= 85 && 'high')} href=${href('/subscriptions')} title="Weekly usage">${subLabel(s, id)} <b class="num">${x.usage ? x.usage.pct + '%' : live.on ? (x.signedIn ? '' : 'signed out') : 'signed out'}</b></a>`; })}</dd></div>
+      <div class="subs"><dt>Subscriptions in use</dt><dd>${subs.map((id) => { const x = byId(s.subscriptions, id); return html`<a key=${id} class=${cx('sub-use', x.usage && x.usage.pct >= 85 && 'high')} href=${href('/subscriptions')} title="Weekly usage">${subLabel(s, id)} <b class="num">${x.usage ? x.usage.pct + '%' : x.signInKnown === false ? 'Not reported' : live.on ? (x.signedIn ? '' : 'signed out') : 'signed out'}</b></a>`; })}</dd></div>
     </dl>
     <div class="ag-bar">
       <div class="seg" role="group" aria-label="Layout">

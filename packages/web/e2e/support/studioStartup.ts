@@ -21,7 +21,7 @@ import { decisionSetup } from '../../../engine/test/support/projectDecisionFixtu
 import { buildStudio } from '../../../studio/scripts/build.ts'
 import { completedSetup } from './completedSetup.ts'
 
-export async function exerciseStartup(page: Page, kind: 'startup' | 'drafts' | 'plans' | 'mock-drafts') {
+export async function exerciseStartup(page: Page, kind: 'startup' | 'drafts' | 'plans' | 'mock-drafts' | 'mock-unknown') {
   const rig = makeRig(), previous = process.env.LGTM_HOME
   process.env.LGTM_HOME = rig.stateFolder
   const password = randomBytes(32).toString('base64url'), port = await unusedPort()
@@ -29,7 +29,7 @@ export async function exerciseStartup(page: Page, kind: 'startup' | 'drafts' | '
   page.on('pageerror', error => errors.push(error.message))
   try {
     const staticRoot = await buildStudio(join(rig.root, 'studio'))
-    if (kind === 'mock-drafts') {
+    if (kind.startsWith('mock-')) {
       // Serve an isolated copy of the sample through the test engine's root.
       // The sample entry point never opens the engine connection.
       cpSync(fileURLToPath(new URL('../../../../design/mock/js/', import.meta.url)), join(staticRoot, 'js'), { recursive: true })
@@ -54,9 +54,38 @@ export async function exerciseStartup(page: Page, kind: 'startup' | 'drafts' | '
         yield* serve({ password: Redacted.make(password), staticRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } }).pipe(Effect.provideService(Restart, recovery))
         yield* Effect.promise(async () => {
           const root = `http://127.0.0.1:${port}/`
-          await page.goto(kind === 'mock-drafts' ? root + '#/p/console/chat/console-lead' : root)
-          if (kind === 'mock-drafts') {
+          await page.goto(kind.startsWith('mock-') ? root + '#/p/console/chat/console-lead' : root)
+          if (kind.startsWith('mock-')) {
             const chatRoute = `${root}#/p/console/chat/console-lead`
+            if (kind === 'mock-unknown') {
+              const account = await page.evaluate(async () => {
+                const path = '/js/lib.js'; const { store, update } = await import(path)
+                const agent = store.state.agents.find((a: any) => a.id === 'console-lead')
+                const x = store.state.subscriptions.find((x: any) => x.id === agent.subscription)
+                update(() => { for (const y of store.state.subscriptions.filter((y: any) => y.harness === x.harness)) { y.signInKnown = false; y.signedIn = false } x.useForNew = true })
+                return { name: x.name, harness: x.harness, unknown: store.state.subscriptions.filter((y: any) => y.signInKnown === false).length }
+              })
+              await page.goto(`${root}#/harnesses`)
+              const row = page.locator('.svc-sub').filter({ has: page.getByRole('button', { name: 'Actions for ' + account.name, exact: true }) }).first()
+              await expect(row.locator('.c-state')).toContainText('Not reported')
+              await expect(row.getByText('Default', { exact: true })).toBeVisible()
+              await expect(row.locator('select[aria-label="Model for new agents on ' + account.name + '"]')).toBeEnabled()
+              await expect(row.getByRole('button', { name: 'Sign in', exact: true })).toHaveCount(0)
+              await row.getByRole('button', { name: 'Actions for ' + account.name, exact: true }).click()
+              await expect(page.getByRole('menuitemradio', { name: /Use for new agents/ })).toBeEnabled()
+              await expect(page.getByRole('menuitem', { name: 'Sign out', exact: true })).toBeVisible()
+              await page.keyboard.press('Escape')
+              await expect(page.locator('.page').first()).toContainText(account.unknown + ' Not reported')
+              await page.goto(`${root}#/settings?section=git`)
+              const group = page.locator('#gm-model optgroup').filter({ has: page.locator(`option[value="${account.harness === 'claude' ? 'Haiku 5.5' : 'GPT-5.3-Codex'}"]`) }).first()
+              await expect(group).toHaveAttribute('label', /Not reported/)
+              expect(await group.locator('option').first().isDisabled()).toBe(false)
+              await page.goto(chatRoute)
+              await page.getByRole('button', { name: 'Subscription', exact: true }).click()
+              const option = page.getByRole('menuitemradio').filter({ hasText: account.name }).first()
+              await expect(option).toBeEnabled(); await expect(option).not.toContainText('Signed out')
+              return
+            }
             const composer = page.locator('.chat-main .composer textarea')
             await composer.fill('Sample agent draft')
             await page.reload(); await expect(composer).toHaveValue('Sample agent draft')
@@ -79,10 +108,15 @@ export async function exerciseStartup(page: Page, kind: 'startup' | 'drafts' | '
             await expect(page.getByRole('button', { name: 'Connection: Starting · 0/2', exact: true })).toBeVisible()
             await page.reload()
             await expect(page.getByRole('button', { name: 'Connection: Starting · 0/2', exact: true })).toBeVisible()
+            await expect(page.locator('.main [role=status]')).toHaveText('Loading…')
+            await expect(page.locator('.main')).not.toContainText('No projects yet')
+            await page.goto(root + '#/setup')
+            await expect(page.locator('.main [role=status]')).toHaveText('Loading…')
+            await page.goto(root)
             recovered = 1
             const connection = page.getByRole('button', { name: 'Connection: Starting · 1/2', exact: true })
             await expect(connection).toBeVisible(); await connection.click()
-            await expect(page.getByText('The service is starting. 1 of 2 agents recovered.', { exact: true })).toBeVisible()
+            await expect(page.getByText('The service is starting. 1 of 2 recovery attempts finished.', { exact: true })).toBeVisible()
             ready = true; await Effect.runPromise(Deferred.succeed(gate, undefined))
             await expect(page.getByRole('button', { name: 'Connection: Live', exact: true })).toBeVisible()
             await expect(page.getByText('The service is starting.', { exact: false })).toHaveCount(0)
@@ -124,6 +158,22 @@ export async function exerciseStartup(page: Page, kind: 'startup' | 'drafts' | '
             await page.goto(boardRoute); await expect(board).toHaveValue('Unsent channel draft')
             await board.press('Enter'); await expect(board).toHaveValue('')
             await page.reload(); await expect(board).toHaveValue('')
+            await page.goto(chatRoute); await composer.fill('Remove on logout')
+            await page.getByRole('button', { name: 'Log out', exact: true }).click()
+            await expect(page.locator('#login-password')).toBeVisible()
+            expect(await page.evaluate(() => sessionStorage.getItem('lgtm:composer:live'))).toBeNull()
+            await page.locator('#login-password').fill(password)
+            await page.getByRole('button', { name: 'Sign in', exact: true }).click()
+            await expect(page.locator('#login-password')).toHaveCount(0)
+            await expect(page.getByRole('button', { name: 'Connection: Live', exact: true })).toBeVisible()
+            await page.goto(chatRoute); await expect(composer).toHaveValue('')
+            const long = 'x'.repeat(8193)
+            await composer.fill(long); await expect(composer).toHaveValue(long)
+            await expect(page.locator('.toasts .toast').filter({ hasText: 'This draft is too long to keep after a reload.' })).toHaveCount(1)
+            await composer.press('End'); await composer.press('y')
+            await expect(page.locator('.toasts .toast').filter({ hasText: 'This draft is too long to keep after a reload.' })).toHaveCount(1)
+            expect(await page.evaluate(() => sessionStorage.getItem('lgtm:composer:live'))).toBeNull()
+            await page.reload(); await expect(composer).toHaveValue('')
           }
         })
       })).pipe(Effect.provide(buildServices(rig, engineLists).pipe(Layer.provide(dependencies))), Effect.provide(runner.layer))

@@ -18,7 +18,7 @@ it('the real snapshot handler needs successful-session evidence and replays it w
   yield* appendSetup([eventOf({ _tag: 'AccountNeedsSignIn', accountId: 'primary', reason: 'signed out' })])
   expect(account(yield* read('client.snapshot'))).toMatchObject({ signedIn: false })
   yield* appendSetup([eventOf({ _tag: 'AccountAvailable', accountId: 'primary', cause: 'owner cleared' })])
-  expect(account(yield* read('client.snapshot'))).toMatchObject({ signedIn: false })
+  expect(account(yield* read('client.snapshot'))).not.toHaveProperty('signedIn')
   yield* seedAgent({ id: 'opened-again' })
   expect(account(yield* read('client.snapshot'))).toMatchObject({ signedIn: true })
   const original = (yield* (yield* Views).snapshot).accounts.primary!
