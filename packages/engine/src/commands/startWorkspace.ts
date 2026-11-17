@@ -4,7 +4,7 @@ import { ProjectId, WorkspaceId, parseRole, defaultChildPermission, type Permiss
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { start } from "./start.ts";
-import { refused, type Input, type Payload, type Planner } from "./internal.ts";
+import { readHarnesses, refused, type Input, type Payload, type Planner } from "./internal.ts";
 import { own, projectView, workspaceInProject, allocatedWorkspaceInProject } from "../project/view.ts";
 import { gitCall, localMachine, safePath, withGit, workspacePath } from "../project/gitApi.ts";
 import { inside, slug } from "../project/git/paths.ts";
@@ -71,9 +71,15 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 const attempts = (input: Input, path: string) => Object.values(input.snapshot.agents).filter((agent) => agent.folder === path);
 const failedAttempt = (input: Input, p: Payload<"start">, agent: Input["snapshot"]["agents"][string]) => agent.name === p.name
   && same(agent.parent, input.actor) && agent.state._tag === "stopped" && agent.startFailure !== undefined && agent.session === undefined;
+const normalize = (input: Input, raw: Record<string, unknown>) => Effect.gen(function* () {
+  if (raw.permission !== undefined) return raw as Payload<"start">;
+  const harness = (yield* readHarnesses(input.runtime)).find(row => row.id === raw.harness);
+  return { ...raw, permission: defaultChildPermission(input.actor._tag === "agent" ? input.snapshot.agents[input.actor.agentId]?.permission as PermissionLevel : undefined,
+    harness?.defaultPermission) } as Payload<"start">;
+});
 
 export const prepareStartWorkspace = (input: Input, raw: Record<string, unknown>, allocated: (release: Effect.Effect<void>) => void) => Effect.gen(function* () {
-  const p = { ...raw, permission: raw.permission ?? defaultChildPermission(input.actor._tag === "agent" ? input.snapshot.agents[input.actor.agentId]?.permission as PermissionLevel : undefined) } as Payload<"start">;
+  const p = yield* normalize(input, raw);
   const selection = yield* context(input, p);
   const projectId = selection?.project.projectId;
   const starterFolder = input.actor._tag === "agent" ? input.snapshot.agents[input.actor.agentId]?.folder : selection?.base?.path;
@@ -81,10 +87,10 @@ export const prepareStartWorkspace = (input: Input, raw: Record<string, unknown>
   const admission = { ...p, ...(projectId === undefined ? {} : { projectId }), folder };
   // Full permission, protected-folder, account and instruction checks precede
   // Git. Protected starts cannot create an orphan.
-  yield* start(input, admission);
+  yield* start(input, admission, undefined, selection?.allocate === true);
   if (selection === undefined || !selection.allocate && selection.selected === undefined)
     return ((current, payload) => Effect.gen(function* () {
-      const normalized = { ...payload, permission: payload.permission ?? p.permission } as Payload<"start">;
+      const normalized = yield* normalize(current, payload);
       const now = yield* context(current, normalized);
       return yield* start(current, { ...normalized, ...(now === undefined ? {} : { projectId: now.project.projectId }) });
     })) satisfies Planner;
@@ -145,7 +151,7 @@ export const prepareStartWorkspace = (input: Input, raw: Record<string, unknown>
   }));
   const checked = workspace, newWorkspace = created, retryWorkspace = reused;
   return ((current, payload) => Effect.gen(function* () {
-    const normalized = { ...payload, permission: payload.permission ?? p.permission } as Payload<"start">;
+    const normalized = yield* normalize(current, payload);
     const now = yield* context(current, normalized);
     if (projectView(current.snapshot).settings?.workspaceFolder !== projectView(input.snapshot).settings?.workspaceFolder
       || now === undefined || now.project.projectId !== projectId || !same(now.base, base) || !same(now.selected, selection.selected)

@@ -602,7 +602,7 @@ const PERMISSION_HINT = {
   'Read only': 'The agent reads and searches. Every change and command is refused.',
   'Ask before every change': 'Each edit and each command becomes an approval for you.',
   'Edit files without asking': 'Edits inside the worktree are free. Commands still ask.',
-  'Automatic review': 'The harness reviews routine actions automatically and asks about risky actions. Uses edit mode when automatic review is unavailable.',
+  'Automatic review': 'The harness may approve, ask or refuse an action. Uses edit mode when no automatic mapping is configured.',
   'Full access': 'Edits and commands inside the worktree run without asking.',
 };
 function PermissionPicker({ value, onChange, name }) {

@@ -20,6 +20,7 @@ export function permissionForOptionKind(kind: string): { readonly level: Permiss
   }
 }
 
-// Omitted child levels use auto without exceeding the starter's ceiling.
-export const defaultChildPermission = (parent?: PermissionLevel): PermissionLevel =>
-  parent !== undefined && comparePermission(parent, "auto") < 0 ? parent : "auto"
+// Omitted levels honor the saved harness default and starter's ceiling,
+// with auto as the widest implicit choice.
+export const defaultChildPermission = (parent?: PermissionLevel, harnessDefault: PermissionLevel = "auto"): PermissionLevel =>
+  ([parent ?? "auto", harnessDefault, "auto"] as ReadonlyArray<PermissionLevel>).reduce((lowest, level) => comparePermission(level, lowest) < 0 ? level : lowest)

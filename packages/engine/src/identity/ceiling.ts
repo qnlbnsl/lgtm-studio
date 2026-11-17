@@ -30,6 +30,7 @@ interface FolderRequest {
   readonly pluginRoot: string;
   // Engine-owned live views, evaluated again immediately before each spawn.
   readonly registeredWorktrees?: Effect.Effect<ReadonlyArray<string>>;
+  readonly projectWorktrees?: Effect.Effect<{ readonly allowed: ReadonlyArray<string>; readonly boundaries: ReadonlyArray<string> }>;
   readonly harnessHomes?: Effect.Effect<ReadonlyArray<string>>;
 }
 
@@ -233,7 +234,7 @@ const containsMountedProtected = (
   return false;
 };
 
-const check = (request: FolderRequest, dependencies: Dependencies, registered: ReadonlyArray<string>, harnessHomes: ReadonlyArray<string>): FolderGrant => {
+const check = (request: FolderRequest, dependencies: Dependencies, registered: ReadonlyArray<string>, harnessHomes: ReadonlyArray<string>, boundaries: ReadonlyArray<string> = [], allocationSource = false): FolderGrant => {
   const real = realDirectory(request.folder, "folder is not an existing directory");
   const identity = identityOf(real);
   if (request.caller._tag === "owner") return new FolderGrant(real, request, dependencies, identity);
@@ -267,24 +268,46 @@ const check = (request: FolderRequest, dependencies: Dependencies, registered: R
     for (const protectedRoot of protectedRoots) {
       if (line.some((ancestor) => sameIdentity(ancestor, protectedRoot.identity)))
         throw new Refusal("folder is, or is inside, a protected folder");
-      if (protectedRoot.line.some((ancestor) => sameIdentity(ancestor, id)))
+      if (!allocationSource && protectedRoot.line.some((ancestor) => sameIdentity(ancestor, id)))
         throw new Refusal("folder contains a protected folder");
     }
-    if (containsMountedProtected(dependencies, folder, protectedLines))
+    if (!allocationSource && containsMountedProtected(dependencies, folder, protectedLines))
       throw new Refusal("folder contains a mounted protected folder");
   };
   protect(real);
-  if (inHome) {
-    const root = registered.flatMap((path) => {
+  const roots = registered.flatMap((path) => {
       try {
         const resolved = realDirectory(path, "registered worktree is unavailable");
-        return own.some((ancestor) => sameIdentity(ancestor, identityOf(resolved))) ? [resolved] : [];
+        if (resolved !== path || homeLine.some((ancestor) => sameIdentity(ancestor, identityOf(resolved)))) return [];
+        const distance = own.findIndex((ancestor) => sameIdentity(ancestor, identityOf(resolved)));
+        return distance < 0 ? [] : [{ path: resolved, distance }];
       } catch { return []; }
-    }).find((path) => !homeLine.some((ancestor) => sameIdentity(ancestor, identityOf(path))));
-    if (root === undefined) throw new Refusal("This folder inside home is not a registered worktree of the starter's project. Ask the owner to restore its registration before retrying.");
-    // Checking the registration root too prevents a child subfolder from
-    // concealing a protected directory or mount elsewhere in that worktree.
-    protect(root);
+  }).sort((a, b) => a.distance - b.distance);
+  const root = roots[0];
+  if (inHome && root === undefined) throw new Refusal("This folder inside home is not a registered worktree of the starter's project. Ask the owner to restore its registration before retrying.");
+  if (root !== undefined) {
+    for (const path of [...registered, ...boundaries]) {
+      let resolved: string;
+      try { resolved = realDirectory(path, "registered worktree is unavailable"); } catch { continue; }
+      // A registration is a canonical path, never a movable symbolic alias.
+      // Spelling is used only to refuse an alias, never to grant admission.
+      const supplied = resolve(request.folder);
+      if (resolved !== path && (supplied === path || supplied.startsWith(path + sep)))
+        throw new Refusal("The registered worktree path is now a symbolic link. Ask the owner to restore its directory before retrying.");
+      const distance = own.findIndex(ancestor => sameIdentity(ancestor, identityOf(resolved)));
+      if (distance >= 0 && distance < root.distance)
+        throw new Refusal("This folder belongs to a nested worktree outside the starter's project.");
+    }
+    // A linked checkout without a registration must not inherit an enclosing
+    // main checkout's grant. The nearest own registration is the boundary.
+    for (let path = real, depth = 0; depth < root.distance; path = dirname(path), depth++) {
+      try { lstatSync(join(path, ".git")); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw new Refusal("A nested checkout cannot be checked.");
+      }
+      throw new Refusal("This nested checkout is not registered to the starter's project.");
+    }
   }
 
   // Containment (decision row 35a), by identity rather than by spelling.
@@ -315,10 +338,22 @@ export const checkFolder = (
 ): Effect.Effect<FolderGrant, FolderRefused> =>
   Effect.gen(function* () {
     if (request.caller._tag === "owner") return yield* run(() => check(request, dependencies, [], []));
-    const registered = yield* (request.registeredWorktrees ?? Effect.succeed([]));
+    const scope = yield* (request.projectWorktrees ?? Effect.succeed(undefined));
+    const registered = scope?.allowed ?? (yield* (request.registeredWorktrees ?? Effect.succeed([])));
     const homes = yield* (request.harnessHomes ?? Effect.succeed([]));
-    return yield* run(() => check(request, dependencies, registered, homes));
+    return yield* run(() => check(request, dependencies, registered, homes, scope?.boundaries));
   });
+
+// Pre-allocation validation may use a source containing a protected sibling.
+// It never produces a grant that a runner can use. The actual child still
+// needs ordinary admission and live revalidation after allocation.
+export const checkAllocationSource = (request: FolderRequest): Effect.Effect<void, FolderRefused> => Effect.gen(function* () {
+  if (request.caller._tag === "owner") return yield* checkFolder(request).pipe(Effect.asVoid);
+  const scope = yield* (request.projectWorktrees ?? Effect.succeed(undefined));
+  const registered = scope?.allowed ?? (yield* (request.registeredWorktrees ?? Effect.succeed([])));
+  const homes = yield* (request.harnessHomes ?? Effect.succeed([]));
+  yield* run(() => check(request, {}, registered, homes, scope?.boundaries, true));
+});
 
 // Called immediately before every spawn, `resume` and reload (decision rows
 // 56 and 65). The original request is checked again from the start, the

@@ -1389,13 +1389,14 @@ Recovery and resume refresh the registration before spawning.
 State: Implemented in unit s26, under the owner's decision of 2026-11-17.
 
 New harness defaults use `auto` for project leads.
-A worker start without a permission level uses `auto`, capped at its starter's level.
+A worker start without a permission level uses the lowest of `auto`, the saved harness default and its starter's level.
 The ordered levels are `read-only`, `ask`, `edit`, `auto` and `full`.
 Claude uses its `auto` mode.
 Codex uses its `agent` automatic review mode.
 An unsupported or historical mapping falls back to edit and reports that fact in harness status.
 The website offers Automatic review alongside the existing choices.
-Existing agents and saved defaults keep their levels.
+Existing agents and owner-edited settings keep their levels.
+An exact previous factory harness setting receives the effective new defaults at read time.
 
 ## Reconciliation of interrupted worker allocations
 

@@ -120,3 +120,20 @@ it("preserves historical harness settings and falls back from auto to edit witho
     expect(permissionModeFor(decoded, level)).toBe(old.permissionMapping[level]);
   expect(defaultChildPermission()).toBe("auto");
 });
+
+it('s26 r2 M1: status distinguishes an older mapping from an unsupported automatic mode', () => {
+  const legacy = Schema.decodeUnknownSync(HarnessSettings)({ id: 'claude', runMode: 'acp', adapterPath: '/tmp/adapter', adapterArguments: [],
+    permissionMapping: { 'read-only': 'plan', ask: 'default', edit: 'acceptEdits', full: 'bypassPermissions' }, reportedModes: [], defaultPermission: 'ask', models: [], efforts: [], denyReadMechanism: { _tag: 'none' } });
+  expect(autoPermissionStatus(legacy)).toMatch(/stored.*mapping.*no auto/i);
+  expect(autoPermissionStatus({ ...legacy, permissionMapping: { ...legacy.permissionMapping, auto: 'acceptEdits' } })).toMatch(/no separate automatic review mode/);
+});
+
+it('s26 r2 M2: security documentation states the automatic reviewer and folder-ceiling limits', () => {
+  const security = readFileSync(new URL('../../../SECURITY.md', import.meta.url), 'utf8');
+  const decisions = readFileSync(new URL('../../../.plans/plans/lgtm-engine/decisions.md', import.meta.url), 'utf8');
+  for (const text of [security, decisions]) {
+    expect(text).toContain('Only requests the harness raises reach the engine');
+    expect(text).toContain('The folder ceiling limits the start folder');
+    expect(text).toContain('2026-11-17');
+  }
+});

@@ -9,7 +9,7 @@ import * as Schema from "effect/Schema";
 
 import { projectFolderScope } from "../project/folderScope.ts";
 import { pickAccount } from "../accounts/pick.ts";
-import { canUseMode, checkFolder, folderForSpawn } from "../identity/ceiling.ts";
+import { canUseMode, checkAllocationSource, checkFolder, folderForSpawn } from "../identity/ceiling.ts";
 import { mintAgentToken } from "../identity/tokens.ts";
 import type { LogWriteFailed } from "../log/EventLog.ts";
 import { agentText, senderOf } from "../routing/envelope.ts";
@@ -20,12 +20,14 @@ import { own, projectView } from "../project/view.ts";
 import { freshRequest, readHarnesses, refused, type Input, type Payload, type Plan } from "./internal.ts";
 import { validChoiceId } from "../runner/choices.ts";
 
-export const start = (input: Input, payload: Payload<"start">, pendingWorkspace?: Workspace): Effect.Effect<Plan, ReturnType<typeof refused> | LogWriteFailed> =>
+export const start = (input: Input, payload: Payload<"start">, pendingWorkspace?: Workspace, allocationSource = false): Effect.Effect<Plan, ReturnType<typeof refused> | LogWriteFailed> =>
   Effect.gen(function* () {
     const { runtime, actor, snapshot } = input;
     if (actor._tag !== "owner" && actor._tag !== "agent") return yield* refused();
     const parent = actor._tag === "agent" ? snapshot.agents[actor.agentId] : undefined;
-    const permission = payload.permission ?? defaultChildPermission(parent?.permission as PermissionLevel | undefined);
+    const harness = (yield* readHarnesses(runtime)).find((settings) => settings.id === payload.harness);
+    if (harness === undefined || (payload.runMode !== undefined && payload.runMode !== harness.runMode)) return yield* refused();
+    const permission = payload.permission ?? defaultChildPermission(parent?.permission as PermissionLevel | undefined, harness.defaultPermission);
     if (parent !== undefined) {
       yield* requireAgentBuilding(input, parent.agentId);
       const view = projectView(snapshot), id = own(view.agentProjects, parent.agentId);
@@ -35,8 +37,6 @@ export const start = (input: Input, payload: Payload<"start">, pendingWorkspace?
     if (actor._tag === "agent" && (parent === undefined || !canUseMode(actor, Schema.decodeUnknownSync(PermissionLevel)(parent.permission), permission))) {
       return yield* refused();
     }
-    const harness = (yield* readHarnesses(runtime)).find((settings) => settings.id === payload.harness);
-    if (harness === undefined || (payload.runMode !== undefined && payload.runMode !== harness.runMode)) return yield* refused();
     const model = payload.model ?? harness.defaultModel;
     const effort = payload.effort ?? harness.defaultEffort;
     for (const value of [model, effort]) {
@@ -46,7 +46,13 @@ export const start = (input: Input, payload: Payload<"start">, pendingWorkspace?
       || (effort !== undefined && harness.efforts.length > 0 && !harness.efforts.includes(effort))) return yield* refused();
     const account = pickAccount(snapshot, payload.harness, payload.account);
     if (account === undefined) return yield* refused("no usable account");
-    const grant = yield* checkFolder({ ...runtime, ...projectFolderScope(runtime, parent?.agentId, pendingWorkspace === undefined ? undefined : { workspace: pendingWorkspace, sequence: snapshot.sequence }), caller: actor, parentFolder: parent?.folder ?? payload.folder, folder: payload.folder }).pipe(
+    const request = { ...runtime, ...projectFolderScope(runtime, parent?.agentId, pendingWorkspace === undefined ? undefined : { workspace: pendingWorkspace, sequence: snapshot.sequence }), caller: actor, parentFolder: parent?.folder ?? payload.folder, folder: payload.folder };
+    if (allocationSource) {
+      yield* checkAllocationSource(request).pipe(Effect.mapError(error => refused(`Start folder: ${error.reason}`)));
+      yield* composeInstructions(runtime, snapshot, payload.role);
+      return { events: [] };
+    }
+    const grant = yield* checkFolder(request).pipe(
       Effect.mapError((error) => refused(`Start folder: ${error.reason}`)),
     );
     const folder = yield* folderForSpawn(grant, "start").pipe(Effect.mapError(() => refused()));

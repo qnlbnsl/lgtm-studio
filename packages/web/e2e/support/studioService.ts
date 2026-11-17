@@ -63,6 +63,7 @@ export async function exerciseStudioService(page: Page, origin: string) {
   await expect(page.getByRole('radio', { name: /^Edit files without asking/ })).toBeChecked()
 
   await page.getByRole('radio', { name: /^Automatic review/ }).click()
+  await expect(page.getByText('The harness may approve, ask or refuse an action. Uses edit mode when no automatic mapping is configured.', { exact: true })).toBeVisible()
   await expect(page.getByRole('radio', { name: /^Automatic review/ })).toBeChecked()
   await page.reload()
   await expect(page.getByRole('radio', { name: /^Automatic review/ })).toBeChecked()

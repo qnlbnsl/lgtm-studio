@@ -87,6 +87,6 @@ The report holds these parts:
 Never send this report before step 1 and step 2 are complete.
 
 The permission levels, from lowest to highest, are `read-only`, `ask`, `edit`, `auto`, and `full`.
-A start without a permission level defaults to `auto`, limited by your own ceiling.
+A start without a permission level defaults to `auto`, limited by the saved harness default and your own ceiling.
 Automatic review uses the harness's automatic mode, or its edit mode when unavailable.
 Use `read-only` explicitly when selecting another agent's checkout.

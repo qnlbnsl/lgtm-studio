@@ -60,8 +60,17 @@ The engine enumerates immediate home dotdirectories and resolves directory alias
 These directories and existing configured account login folders receive the same protection.
 Login paths include account homes and harness home-variable overrides, including resolved secret references.
 They also include login-store fallbacks under an alternate `HOME` and Cursor's `XDG_CONFIG_HOME`.
-Both the requested folder and its trusted worktree root must pass the protection checks.
-The Linux mount-table check also runs against that root, so a clean subfolder cannot conceal a protected mount elsewhere in the worktree.
+The child's own folder must pass the protection checks, including the Linux mount-table check.
+A protected sibling elsewhere in the registered root does not refuse a clean child folder.
+The main checkout containing the service remains refused as a child folder.
+A worker allocated beside the service checkout may start.
+Before allocation, the source may contain a protected folder but cannot be one or be inside one.
+That preliminary check returns no spawn grant.
+The allocated child receives ordinary admission before registration and again before spawn.
+The nearest registered workspace across all projects sets the boundary.
+A nested foreign or unregistered checkout cannot inherit a broader project root's grant.
+Registered paths must still be canonical real directories.
+Relative login paths and regular files are excluded from login-directory discovery.
 The engine reads the current project views again before every spawn, recovery reload and resume.
 The allocator may validate its own pending registration at the same log head before the atomic append.
 After that append, the grant relies exclusively on the committed registration.
@@ -70,11 +79,18 @@ The owner caller keeps the existing exception.
 The spawn race and non-Linux mount limits in issue 49 remain unchanged.
 
 The owner also chose the `auto` default on 2026-11-17.
-Automatic review delegates routine approvals to the harness's own reviewer.
-It does not bypass the engine's permission ceiling or the owner-only routing for persistent settings.
+The owner's decision of 2026-11-17 accepts the harness's own reviewer approving routine commands at `auto`.
+Only requests the harness raises reach the engine and its owner-only routing for persistent settings.
+A command approved within the harness can change `.claude/settings.json` or `.mcp.json` without an owner prompt.
+Codex's automatic reviewer may approve a sandbox escalation without asking the owner.
+Automatic review may also refuse an action.
+The folder ceiling limits the start folder, not the paths touched by approved commands.
+The declared permission-level ceiling still applies to child starts and modes the adapter reports.
 The scale is `read-only`, `ask`, `edit`, `auto`, then `full`.
-An omitted child permission is capped at its starter's level.
-Existing agents and saved owner defaults retain their levels.
+An omitted child permission uses the lowest of `auto`, the saved harness default and its starter's level.
+Existing agents retain their levels.
+An exact previous factory harness setting receives the new effective default at read time.
+Every setting with an owner edit remains unchanged.
 An older harness mapping without `auto` falls back to its `edit` mode.
 Harness status reports that fallback.
 

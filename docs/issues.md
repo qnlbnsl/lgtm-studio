@@ -18775,7 +18775,10 @@ The project worktree, team worktrees and engine allocations now grant that excep
 An arbitrary manually registered descendant grants nothing.
 The engine compares real device and inode identities.
 The home itself, its ancestors, the state folder, plugin root, immediate home dotdirectories and existing configured login folders stay protected.
-Both the requested folder and trusted registration root are checked, including mounted protected folders.
+Under the round 2 clarification, protection applies to the child folder, including mounted protected folders.
+A protected sibling elsewhere in the registration does not refuse a clean child.
+The nearest registered workspace across all projects sets the boundary.
+Foreign and unregistered nested checkouts cannot inherit a broader grant.
 The current engine records are consulted on each start, recovery reload and resume.
 The allocation's private pending registration is accepted only at its validated precommit log head.
 After append, only the committed registration grants admission.
@@ -19470,10 +19473,12 @@ State: Handled with an explicit edit fallback in unit s26.
 The pinned Claude and Codex adapters expose automatic review.
 Historical harness events have only the original four mappings.
 Those events still decode without migration.
+Round 2 upgrades the effective value of an exact previous factory setting when read.
+An owner-edited historical mapping remains unchanged.
 An `auto` request falls back to the stored edit mapping when no automatic mapping is configured.
 Gemini and Cursor defaults also use the edit fallback because this unit verifies no separate automatic review mode for them.
 The harness status reports the fallback.
-Existing agents and saved permission defaults are not changed.
+Existing agents and owner-edited permission defaults are not changed.
 
 ## s26-3. Alternate environment homes can place harness login stores inside a worktree.
 
@@ -19515,3 +19520,100 @@ It tried to read the fake child's PID file after the session ended, but the file
 The failure was `ENOENT` at the existing `readFileSync(pidfile)` assertion setup.
 The exact case passed when rerun alone with its existing assertions and timing limits.
 This unit changes no sign-in session or process-group cleanup implementation.
+
+## s26-6. Stored factory defaults kept new leads at ask after the upgrade.
+
+State: Fixed in round 2 of unit s26.
+
+The first implementation changed only defaults for fresh installations.
+An exact previous factory setting now receives the current effective automatic mapping, reported mode and default when read.
+The stored log and existing agents remain unchanged.
+An owner-edited setting remains unchanged.
+Status distinguishes an older stored mapping from a harness with no separate automatic mode.
+Pre-unit-log regressions cover Claude and Codex through a service restart and a real start handler.
+
+## s26-7. Automatic review can approve commands without raising an engine permission request.
+
+State: Documented as an accepted limit under the owner's decision of 2026-11-17.
+
+The engine's persistent-settings routing applies only to requests the harness raises.
+A command approved inside the harness may touch settings files without asking the owner.
+The folder ceiling constrains the start folder rather than the paths those commands touch.
+SECURITY.md and decision row 56 now state these limits.
+The website's Automatic review description no longer promises that risky actions ask.
+
+## s26-8. A broad project registration admitted nested foreign or unregistered checkouts.
+
+State: Fixed in round 2 of unit s26.
+
+A main checkout can contain linked worktrees belonging to another project.
+The nearest registered workspace across all projects now sets the boundary.
+A nested checkout without its own project registration cannot inherit the broad root's grant.
+A registration that becomes a symbolic link cannot follow another checkout.
+Real directory identities grant admission.
+Path spelling is used only to refuse a replaced registration.
+Two-project and hand-made linked-worktree regressions cover this distinction.
+
+## s26-9. Invalid login paths blocked unrelated agent starts and recovery.
+
+State: Fixed in round 2 of unit s26.
+
+Login-folder discovery now excludes relative paths, missing paths and regular files.
+Existing absolute login directories remain protected.
+Regressions cover a relative Codex home and a regular file through start and resume.
+
+## s26-10. Protecting an entire registration blocked the self-hosted build loop.
+
+State: Fixed under the owner's round 2 clarification of the decision of 2026-11-17.
+
+A registration can contain the service checkout and a clean worker worktree beside it.
+Protection now tests the child's own folder and the protected mounts it contains.
+The nearest registration is selected without depending on record order.
+A main-checkout source may contain the service while allocating a worker.
+That preliminary source check returns no spawn grant.
+A source that is or is inside a protected folder remains refused before Git runs.
+The actual allocated child passes ordinary folder admission before registration and before spawn.
+Regressions preserve the no-Git and unchanged-inventory assertions for a protected start.
+A real Git allocation beside a synthetic service checkout also survives fresh resume.
+
+## s26-11. An omitted worker level ignored the owner's saved harness default.
+
+State: Fixed in round 2 of unit s26.
+
+An omitted permission uses the lowest of automatic review, the saved harness default and the starter's ceiling.
+An explicit permission remains subject to the starter's ceiling.
+A full-permission lead therefore respects a saved ask default when it omits the worker level.
+The role instructions and start-tool description state this rule.
+
+## s26-12. The whole round-two unit run failed a secret-carry stop check that passed alone.
+
+State: Open as a whole-run-only failure observed during round 2 of unit s26.
+
+The whole unit run failed the existing stop case in `packages/engine/test/runner/secret-carry-s19.test.ts`.
+The case is "s19 stop flushes a genuine secret prefix and its queued tool".
+It observed no delivery updates immediately after stopping the runner.
+It expected the message and queued tool updates.
+The exact case passed alone with its existing assertions and timing limits.
+This round changes no stop or redaction implementation.
+
+## s26-13. The round-two browser run had eight failures, and merge-to-main still failed alone.
+
+State: Open as browser failures observed during round 2 of unit s26.
+
+The whole browser suite passed 67 journeys and failed eight journeys.
+The affected cases are `git.spec.ts:183` for main, `git.spec.ts:253`, `git.spec.ts:316`, `new-project.spec.ts:113`, `new-project.spec.ts:324`, `studio.spec.ts:372`, `studio.spec.ts:970`, and `studio.spec.ts:1200` under `packages/web/e2e/`.
+The main merge button stayed disabled in the whole run.
+The stale-evidence review button stayed disabled in the whole run.
+The temporary-remote case did not observe its pull result in time.
+The project-placement case exceeded its total time limit.
+The exhausted-recovery case did not find its expected browser test hook.
+The projects-and-board case did not observe its expected topbar text.
+The extended Git case exceeded its six-minute limit while refreshing.
+The file-editor case remained busy after saving.
+Seven of these cases passed individually with their existing assertions and time limits.
+The extended Git case passed in 5.3 minutes.
+The stale-evidence case failed its first individual run while the unit suite was active and passed its final individual run after that suite finished.
+The merge-to-main case failed both individual runs while waiting for the merged destination message.
+Its final individual run had no competing whole suite.
+The browser gate therefore remains failing.
+This round changes no Git merge implementation or existing browser assertion.

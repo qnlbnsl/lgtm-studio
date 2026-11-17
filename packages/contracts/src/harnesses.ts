@@ -46,5 +46,7 @@ export const permissionModeFor = (harness: HarnessSettings, level: PermissionLev
   level === "auto" ? harness.permissionMapping.auto ?? harness.permissionMapping.edit : harness.permissionMapping[level]
 
 export const autoPermissionStatus = (harness: HarnessSettings): string | undefined =>
-  harness.permissionMapping.auto === undefined || harness.permissionMapping.auto === harness.permissionMapping.edit
-    ? "Automatic review is unavailable; auto uses this harness's edit mode." : undefined
+  harness.permissionMapping.auto === undefined
+    ? "This stored permission mapping has no auto entry; auto uses this harness's edit mode."
+    : harness.permissionMapping.auto === harness.permissionMapping.edit
+      ? "This harness has no separate automatic review mode; auto uses this harness's edit mode." : undefined

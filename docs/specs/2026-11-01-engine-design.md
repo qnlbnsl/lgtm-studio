@@ -237,8 +237,9 @@ scale, because each harness names its modes differently. The scale, from
 narrowest to widest, is: read only, ask before every change, edit files
 without asking, automatic review, and full access.
 The owner added automatic review on 2026-11-17 as the default for new leads and workers.
-An omitted child level is limited by the starter's ceiling.
-Existing agents and saved owner defaults keep their levels.
+An omitted child level is limited by the saved harness default and the starter's ceiling.
+Existing agents and owner-edited settings keep their levels.
+An exact previous factory harness setting receives the effective automatic defaults at read time.
 Each harness maps its own modes onto this scale in its settings.
 Claude uses `auto`, and Codex uses `agent` for automatic review.
 An older or unsupported automatic mapping falls back to `edit` and reports that fact in harness status.
@@ -631,7 +632,14 @@ The owner chose fully automatic recovery (row 49). In order:
   The home itself and its ancestors remain refused.
   The state folder, plugin root, immediate home dotdirectories and existing configured login folders remain protected with their ancestors and descendants.
   The engine resolves directory aliases and compares device and inode identities along real ancestors.
-  It checks both the requested folder and the registration root, including protected mounts.
+  It checks the child folder, including protected mounts.
+  A protected sibling elsewhere in a registration does not refuse a clean child.
+  The source of a new allocation may contain the service checkout.
+  The source cannot be a protected folder or be inside one.
+  That source check returns no spawn grant.
+  The nearest registered workspace across all projects sets the boundary.
+  A foreign or unregistered nested checkout cannot inherit a broader grant.
+  Registered paths must remain canonical directories.
   The trusted records are refreshed at every spawn, recovery and resume.
   The allocator's pending registration is usable only at its validated log head before append.
   The committed registration is required after append.

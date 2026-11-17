@@ -1,5 +1,5 @@
 import { statSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import type { AgentId, Workspace } from "@lgtm/contracts";
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
@@ -11,18 +11,21 @@ import { allocatedWorkspaceInProject, own, projectView } from "./view.ts";
 // A manual descendant in the Git read scope is not a folder grant.
 export const projectFolderScope = (runtime: Runtime, starterId: AgentId | undefined,
   pending?: { readonly workspace: Workspace; readonly sequence: Snapshot["sequence"] }) => ({
-  registeredWorktrees: runtime.views.snapshot.pipe(Effect.map((snapshot) => {
+  projectWorktrees: runtime.views.snapshot.pipe(Effect.map((snapshot) => {
     const view = projectView(snapshot), id = starterId === undefined ? undefined : own(view.agentProjects, starterId);
     const project = id === undefined ? undefined : own(view.projects, id);
-    if (!project || project.archiving || project.archivedAt !== undefined) return [];
+    const boundaries = Object.values(view.workspaces).filter(row => row.machineId === "local").map(row => row.path);
+    if (!project || project.archiving || project.archivedAt !== undefined) return { allowed: [], boundaries };
     const paths = Object.values(view.workspaces).filter((row) => row.machineId === "local" && row.repoId === project.repoId
       && (row.worktreeId === project.worktreeId || Object.values(view.teams).some((team) => team.projectId === id && team.worktreeId === row.worktreeId)
         || allocatedWorkspaceInProject(view, row, id!))).map((row) => row.path);
     // The allocator's private, precommit registration is usable only at its
     // validated log head. After append, only the live registration grants it.
     if (pending && snapshot.sequence === pending.sequence && pending.workspace.projectId === id
-      && pending.workspace.repoId === project.repoId && pending.workspace.machineId === "local") paths.push(pending.workspace.path);
-    return paths;
+      && pending.workspace.repoId === project.repoId && pending.workspace.machineId === "local") {
+      paths.push(pending.workspace.path); boundaries.push(pending.workspace.path);
+    }
+    return { allowed: paths, boundaries };
   })),
   harnessHomes: Effect.gen(function* () {
     const snapshot = yield* runtime.views.snapshot;
@@ -47,8 +50,9 @@ export const projectFolderScope = (runtime: Runtime, starterId: AgentId | undefi
       if (account.harness === "cursor") homes.push(join(home, ".config", "cursor"), join(resolved.XDG_CONFIG_HOME ?? join(home, ".config"), "cursor"));
     }
     return homes.filter(path => {
-      try { statSync(path); return true; }
-      catch (error) { return (error as NodeJS.ErrnoException).code !== "ENOENT"; }
+      if (!isAbsolute(path)) return false;
+      try { return statSync(path).isDirectory(); }
+      catch (error) { return !["ENOENT", "ENOTDIR"].includes((error as NodeJS.ErrnoException).code ?? ""); }
     });
   }),
 });

@@ -145,3 +145,31 @@ it.effect("A16 filled lists: catches a start that accepts a model the harness do
     expect(failureOf(yield* call(ownerCredential, "start", startPayload(rig, { model: "unlisted", effort: "high" })))?._tag).toBe("CommandRefused");
     expect(fakes.runner.callsOf("start")).toHaveLength(0);
   })).pipe(Effect.orDie));
+
+for (const id of ['claude', 'codex'] as const) it.effect(`s26 r2 M1: an untouched pre-unit ${id} log gets effective auto defaults without rewriting old agents`, () => Effect.gen(function* () {
+  const native = id === 'claude' ? 'auto' : 'agent';
+  const mappings = id === 'claude' ? { 'read-only': 'plan', ask: 'default', edit: 'acceptEdits', full: 'bypassPermissions' }
+    : { 'read-only': 'read-only', ask: 'read-only', edit: 'workspace-write', full: 'agent-full-access' };
+  const reportedModes = Object.entries(mappings).filter(([level]) => level !== 'ask' || id !== 'codex').map(([level, mode]) => ({ id: mode, level }));
+  const legacy = decode(harnessSettings(id, { adapterPath: '/opt/adapters/' + id, adapterArguments: [], models: [], efforts: [], permissionMapping: mappings, reportedModes }));
+  const updated = decode({ ...legacy, defaultPermission: 'auto', permissionMapping: { ...mappings, auto: native }, reportedModes: [...legacy.reportedModes, { id: native, level: 'auto' }] });
+  yield* serviceStart({}, () => Effect.gen(function* () {
+    success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: legacy }));
+    yield* seedAgent({ id: 'old-agent', permission: 'ask' });
+  }));
+  yield* serviceStart({ defaults: Effect.succeed([updated]) }, fakes => Effect.gen(function* () {
+    expect(yield* listed).toEqual([updated]);
+    expect(yield* harnessEvents).toHaveLength(1);
+    yield* seedAccount('native-account', id);
+    const payload: Record<string, unknown> = { ...startPayload(rig), harness: id, role: 'lead:project', account: { _tag: 'any' } };
+    delete payload.permission;
+    success(yield* call(ownerCredential, 'start', payload));
+    expect(fakes.runner.callsOf('start').at(-1)!.input).toMatchObject({ permission: 'auto', harness: updated });
+    expect((yield* readLog).find(row => row.event._tag === 'AgentStarted' && row.event.agentId === 'old-agent')!.event).toMatchObject({ permission: 'ask' });
+  }));
+  const edited = decode({ ...legacy, defaultModel: 'owner-model' });
+  yield* serviceStart({}, () => call(ownerCredential, 'harnesses', { operation: 'set', harness: edited }));
+  yield* serviceStart({ defaults: Effect.succeed([updated]) }, () => Effect.gen(function* () {
+    expect(yield* listed).toEqual([edited]);
+  }));
+}).pipe(Effect.orDie));

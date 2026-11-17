@@ -291,7 +291,7 @@ it.effect("s26: home admission requires a live registration and checks aliases b
   const project = directory(join(ownerHome, "repository"));
   const nested = directory(join(project, "src"));
   const alias = join(root, "registered-alias"); symlinkSync(project, alias);
-  let paths = [alias];
+  let paths = [project];
   const request = { ...options(nested, agent, project), registeredWorktrees: Effect.sync(() => paths) };
   const grant = yield* checkFolder(request);
   expect(yield* folderForSpawn(grant, "start")).toBe(nested);
@@ -319,32 +319,33 @@ it.effect.each(["home", "ancestor", "state", "state-child", "state-ancestor", "p
   }),
 );
 
-it.effect.each([".lgtm", ".ssh", ".claude", ".codex", ".other"])("s26: a registered root containing home dotfolder %s refuses its clean subfolder", (name) => Effect.gen(function* () {
+it.effect.each([".lgtm", ".ssh", ".claude", ".codex", ".other"])("s26 r2: a home dotfolder elsewhere in a registered root permits its clean subfolder", (name) => Effect.gen(function* () {
   const project = directory(join(ownerHome, "repository"));
   const nested = directory(join(project, "src"));
   const hidden = directory(join(project, "private"));
   // An immediate home dotfolder may resolve into a manually registered tree.
   symlinkSync(hidden, join(ownerHome, name));
-  expect(Result.isFailure(yield* checkFolder({ ...options(nested, agent, project), registeredWorktrees: Effect.succeed([project]) }).pipe(Effect.result))).toBe(true);
+  expect((yield* checkFolder({ ...options(nested, agent, project), registeredWorktrees: Effect.succeed([project]) })).realPath).toBe(nested);
 }));
 
 it.effect("s26: a registered alias redirected into a protected folder cannot grant home admission", () => Effect.gen(function* () {
   const project = directory(join(ownerHome, "repository"));
   const alias = join(root, "alias"); symlinkSync(project, alias);
-  const request = { ...options(alias, agent, ownerHome), registeredWorktrees: Effect.succeed([alias]) };
+  const request = { ...options(alias, agent, ownerHome), registeredWorktrees: Effect.succeed([project]) };
   const grant = yield* checkFolder(request);
   rmSync(alias); symlinkSync(directory(join(ownerHome, ".lgtm")), alias);
   expect(Result.isFailure(yield* folderForSpawn(grant, "resume").pipe(Effect.result))).toBe(true);
 }));
 
-it.effect("s26: a mounted protected identity anywhere in the registered root refuses a nested start", () => Effect.gen(function* () {
+it.effect("s26 r2: a mounted protected identity elsewhere in the root permits a clean sibling", () => Effect.gen(function* () {
   const project = directory(join(ownerHome, "repository"));
   const nested = directory(join(project, "src"));
   // Listing an alias as the mount point models the kernel's bound identity,
   // without mounting in the host namespace or mocking stat.
   const mount = join(project, "mounted"); symlinkSync(stateFolder, mount);
   const request = { ...options(nested, agent, project), registeredWorktrees: Effect.succeed([project]) };
-  expect(Result.isFailure(yield* checkFolder(request, { readMountInfo: () => `1 0 0:1 / ${mount} rw - tmpfs tmpfs rw` }).pipe(Effect.result))).toBe(true);
+  expect((yield* checkFolder(request, { readMountInfo: () => `1 0 0:1 / ${mount} rw - tmpfs tmpfs rw` })).realPath).toBe(nested);
+  expect(Result.isFailure(yield* checkFolder({ ...request, folder: project }, { readMountInfo: () => `1 0 0:1 / ${mount} rw - tmpfs tmpfs rw` }).pipe(Effect.result))).toBe(true);
 }));
 
 it.effect("s26: the owner bypasses project scope and login-directory discovery", () => Effect.gen(function* () {
@@ -352,4 +353,15 @@ it.effect("s26: the owner bypasses project scope and login-directory discovery",
     harnessHomes: Effect.die("owner must not read login folders") };
   const grant = yield* checkFolder(request);
   expect(yield* folderForSpawn(grant, "start")).toBe(ownerHome);
+}));
+
+it.effect('s26 r2 m2: nearest canonical registration is independent of record order and protected siblings', () => Effect.gen(function* () {
+  const project = directory(join(ownerHome, 'repository'));
+  const checkout = directory(join(project, 'checkout')), child = directory(join(checkout, 'src'));
+  writeFileSync(join(checkout, '.git'), 'nested checkout boundary');
+  const hidden = directory(join(project, 'private')); symlinkSync(hidden, join(ownerHome, '.ssh'));
+  for (const paths of [[project, checkout], [checkout, project]]) {
+    const request = { ...options(child, agent, project), registeredWorktrees: Effect.succeed(paths) };
+    expect((yield* checkFolder(request)).realPath).toBe(child);
+  }
 }));
