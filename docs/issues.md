@@ -18700,6 +18700,104 @@ This is the load sensitivity that issue 1139 and the issues it names record.
 
 State: open. Recorded on 2026-11-16.
 
+## 1250. Project workers shared their starter's checkout.
+
+State: Fixed in unit s23-worktrees on 2026-11-16.
+
+The start command previously opened its supplied folder without allocating a checkout.
+Project workers now receive a registered child worktree by default.
+The start command accepts an existing registered worktree for intentional reuse.
+The owner's start accepts an explicit project identifier.
+An agent cannot use that identifier to join another project.
+
+## 1251. Integration and terminal choices assumed a worker belonged beneath a team.
+
+State: Fixed in unit s23-worktrees on 2026-11-16.
+
+The integration admission previously accepted workers only beneath a registered team.
+A worker directly beneath the project lead could not integrate through that path.
+The Terminal chooser omitted that worker too.
+Both paths now include registered workers beneath their recorded project parent.
+The worker retains the same existing controls in the website.
+
+## 1252. Lead instructions must describe automatic worker allocation.
+
+State: Fixed in round 2 of unit s23-worktrees on 2026-11-16.
+
+The role instruction files arrived in merge commit `4491aa7a`.
+The shared lead, build lead and orchestrator instructions contradicted automatic worker allocation.
+They now describe the default checkout and the last committed source.
+They explain that the required `folder` field does not choose a project worker's checkout.
+A lead finds the builder's identifier in the `owner` field of the project workspaces returned by `client.snapshot`.
+It passes that row's `worktreeId` with `read-only` permission for review or testing.
+The instructions describe the lead's own Git merge and the owner's Integrate action.
+Instruction contract and real delivery tests cover the composed text and its bounds.
+
+## 1253. Retained worker checkouts need an owner-directed cleanup path.
+
+State: Open.
+
+Stopping a worker does not remove its checkout or branch.
+Deleting a team preserves its registered worktrees too.
+This preserves uncommitted changes and commits that have not reached the parent.
+An optional cleanup command should prove that the exact registered checkout is clean and merged before removal.
+The internal rollback for a refused new allocation is not a general removal command.
+
+## 1254. A hard service crash can leave an allocation without a registration.
+
+State: Open.
+
+Git allocation happens before the atomic worktree registration and agent start append.
+Normal refusal, interruption, and writer failure run a guarded rollback.
+A process kill or power loss in that interval cannot run the rollback.
+The resulting Git checkout is preserved as recovery evidence.
+The engine does not adopt or delete it on a later start.
+A retry chooses another safe numeric name.
+A durable allocation intent would allow this interval to be reconciled on startup.
+
+## 1255. A failed worker allocation could retain its reserved empty folder.
+
+State: Fixed in unit s23-worktrees on 2026-11-16.
+
+The first rollback implementation attempted to delete an expected branch even when Git had not created it.
+Git refused the missing reference before the reserved folder was removed.
+Rollback now checks whether the reference exists.
+The reserved folder has an exclusive directory identity and is removed only when it is still that empty directory.
+Injected failures before checkout, after branch creation, and after checkout cover the cleanup.
+
+## 1256. The existing home-folder ceiling blocks lead starts in home-hosted repositories.
+
+State: Open, preserving the existing security rule.
+
+The folder ceiling refuses an agent-started child anywhere inside the owner's home folder.
+The existing ceiling tests explicitly require that refusal for protected folders and their descendants.
+A project stored under the owner's home therefore cannot start workers through its lead.
+An owner-started worker still has the existing owner exception.
+A temporary-directory reproduction returned `FolderRefused` with the protected-folder reason.
+This unit does not weaken that rule.
+Using a repository outside the protected home permits lead-started workers under the current policy.
+Changing that policy requires the owner's explicit security decision.
+The independent review confirmed that `service.ts` supplies the actual `HOME` as the ceiling's home folder.
+The ceiling also refuses ancestors of protected folders and descendants of the state and plugin folders.
+Its owner exception returns before those checks.
+A round 2 regression places the whole repository inside a synthetic home.
+It asserts the exact existing protected-folder reason before any Git process, agent event or allocation.
+The ceiling implementation remains unchanged.
+
+## 1257. The installer process-tree test can observe a live descendant after timeout cleanup.
+
+State: Open, observed during the full unit s23-worktrees suite.
+
+The full suite failed the existing timeout and cancellation test in `packages/engine/test/client/harness-toolchain.test.ts`.
+Its immediate process-state assertion found a state other than absent or zombie after the recipe returned.
+The same unchanged file passed when run alone with its original timing.
+The installer sends the kill signal to the process group and resolves when the direct child closes.
+It does not explicitly await every descendant's exit.
+Neither the installer nor that test was changed in this unit.
+The full-run result was 9,921 passed tests, one failed test, and two skipped tests.
+A subsequent whole-suite run passed all 638 files, with 9,922 tests passed and two skipped.
+That run used the unchanged installer test and its original timing.
+
 ## 1239. In one live check of three, the small Claude lead did not attempt the exact commands it was asked to run.
 
 The live check starts a Claude Code lead on the smallest model at low effort.
@@ -18730,6 +18828,201 @@ The test passed when its file was run alone.
 The role instruction unit does not change that code.
 
 State: open. Recorded on 2026-11-16.
+
+
+## 1300. Named worktrees could grant an agent write access to another checkout.
+
+State: Fixed in round 2 of unit s23-worktrees on 2026-11-16.
+
+An agent selecting a checkout other than its own must now request read-only permission.
+The refusal uses a typed command error with a full sentence.
+The owner retains every permission level for its project checkout choices.
+Tests cover a builder selecting its lead's, a sibling's and another team's checkout at every permission level.
+Existing permission ceilings still apply to read-only starts.
+
+## 1301. Starts that needed no checkout change ran Git admission anyway.
+
+State: Fixed in round 2 of unit s23-worktrees on 2026-11-16.
+
+A lead retaining its supplied folder no longer runs the Git gate or registered-checkout checks.
+The compatibility tests cover a subfolder, a changed branch, absent workspace settings and a remote project record.
+A worker starter in a subfolder now allocates from its containing registered checkout.
+Worker allocation on a remote machine has a clear refusal before Git runs.
+Machine pairing remains outside this unit.
+
+## 1302. Raw role prefixes disagreed with the engine's authority parser.
+
+State: Fixed in round 2 of unit s23-worktrees on 2026-11-16.
+
+Allocation now uses `parseRole`.
+Tests distinguish `leadership-builder`, `orchestratorx`, legacy `project-lead` and `lead:builder`.
+
+## 1303. Worker allocation unnecessarily refused an uncommitted source.
+
+State: Fixed in round 2 of unit s23-worktrees on 2026-11-16.
+
+Allocation starts from the starter's committed head even when that checkout has edits or untracked files.
+The starter's files are preserved.
+Lead instructions explain that those uncommitted changes are not copied.
+Integration still requires clean endpoints.
+
+## 1304. A failed harness start could exhaust worker allocation names on retries.
+
+State: Fixed for clean sessionless retries in round 2 of unit s23-worktrees on 2026-11-16.
+
+A new allocation records its source commit in the optional `workerSourceHead` workspace field.
+The same starter and agent name can reuse it when every earlier attempt has failed without opening a session.
+Its checkout must be clean and still at that source commit.
+The parent's current head must still match the recorded source.
+Reuse preserves the workspace identifier and refreshes its owner in the atomic start append.
+Repeated failures therefore retain one checkout instead of allocating numeric siblings.
+The failed agent records remain in the log and roster.
+Historical allocations without a recorded source remain preserved and are not adopted.
+Changed, missing or previously used checkouts remain preserved too.
+The general cleanup gap remains issue 1253.
+The unregistered crash interval remains issue 1254.
+
+## 1305. Names without usable slug characters could not allocate a worker.
+
+State: Fixed in round 2 of unit s23-worktrees on 2026-11-16.
+
+An empty safe project slug falls back to the project identifier.
+An empty safe agent slug falls back to the allocated workspace identifier.
+Tests cover Chinese project and agent names and punctuation-only agent names.
+Numeric collision handling remains unchanged.
+
+## 1306. Rollback failures could replace the original allocation error.
+
+State: Fixed in round 2 of unit s23-worktrees on 2026-11-16.
+
+A changed partial checkout made rollback refuse removal.
+Removing the nonempty reservation then replaced the original failure with an invalid-path error.
+Both cleanup steps are now best effort and preserve the original error.
+Tests inject both a nonzero Git reply and a thrown timeout after an external edit.
+The partial checkout and its external file remain intact.
+
+## 1307. Ancestry alone widened project agents' worktree visibility.
+
+State: Fixed in round 2 of unit s23-worktrees on 2026-11-16.
+
+Project Git access retains the original project, team and direct team-child scope.
+The only added scope is an engine allocation with matching project, owner and parent records.
+The project snapshot retains its original project and team rows plus those engine allocations.
+A manually registered child of the project root stays private to the owner.
+Tests also pin the original direct team-child Git access and its absence from the project snapshot.
+
+## 1308. The worker start table repeated cases and accepted broad refusal prefixes.
+
+State: Fixed in round 2 of unit s23-worktrees on 2026-11-16.
+
+The table now has 50 distinct rows.
+Named project rows select another lead's checkout with the required permission.
+The two intentional policy changes for dirty sources and empty slugs have positive tests.
+Every remaining refusal row asserts its exact typed reason.
+A uniqueness assertion prevents duplicate non-project rows from returning.
+
+## 1309. Containing-folder inference could attach unrelated owner starts to a historical project.
+
+State: Fixed in round 2 of unit s23-worktrees on 2026-11-16.
+
+The subfolder allocation change initially applied containing-folder lookup to implicit owner project discovery too.
+Two existing conversation recovery tests registered a historical project at `/tmp`.
+Their unrelated owner starts then entered Git admission and failed because workspace settings were absent.
+Implicit owner discovery again requires an exact registered folder match.
+Inherited agent membership and an explicitly named project still support subfolder allocation.
+A new regression pins the exact-match boundary without any Git process.
+Both existing recovery tests retain their original assertions and waits.
+
+## 1310. Slug conversion must retain the original secret-bearing name check.
+
+State: Fixed in round 2 of unit s23-worktrees on 2026-11-16.
+
+The identifier fallback refactor initially checked only the converted agent slug.
+That omitted the original guard on the caller's raw agent name.
+A planted mixed-case secret could then be lowercased into a branch name before redaction checked it.
+A new regression failed on that refactor before the original raw-name guard was restored.
+The guard runs before allocation or retry reuse.
+Checks on the derived slug and resulting folder remain in place too.
+
+## 1311. An engine allocation below a legacy team child needs project visibility.
+
+State: Fixed in round 2 of unit s23-worktrees on 2026-11-16.
+
+The original Git scope includes a manually registered direct child of a team checkout.
+The first narrowed ancestry helper did not let that existing scope anchor a new engine allocation.
+A regression allocated a worker there and then failed its project snapshot visibility check.
+That legacy checkout can now anchor an engine allocation without becoming a new snapshot row itself.
+The manual project-root child remains private.
+Every allocated start-table row now checks its project snapshot visibility too.
+
+## 1312. Implicit owner starts could attach leads to a project before approval.
+
+State: Fixed in round 3 of unit s23-worktrees on 2026-11-16.
+
+Folder-based project inference now applies only to worker roles.
+An owner must name the project explicitly to attach a new lead or orchestrator.
+Tests cover both role kinds with and without an explicit project identifier.
+
+## 1313. Test runner instructions requested a permission that prevented their work.
+
+State: Fixed in round 3 of unit s23-worktrees on 2026-11-16.
+
+A read-only harness cannot run all required test commands and write their logs.
+The lead first merges the builder's branch into its own checkout.
+It then starts the test runner without selecting an existing worktree.
+The runner receives its own worktree at that integration commit and an authorized writable permission.
+The brief places its log folder inside that worktree.
+All five worktree guides and the test runner instructions now describe that sequence.
+The lead keeps its registered branch because allocation refuses a checkout switched to a temporary branch.
+A real repository test checks the inherited commit, separate folder and local log writes.
+
+## 1314. A supplied folder could bypass the foreign checkout permission rule.
+
+State: Fixed in round 3 of unit s23-worktrees on 2026-11-16.
+
+A builder could start a lead with edit permission in a sibling's registered checkout.
+The engine now resolves the supplied folder before comparing registered checkout identities.
+Foreign folders receive the same read-only requirement as an explicit worktree selection.
+Tests cover direct paths, symbolic links, subfolders and the caller's own checkout.
+The existing folder ceiling still refuses a foreign checkout's subfolder even with read-only permission.
+That ceiling remains unchanged.
+
+## 1315. Ordinary lead starts lost the existing archived project refusal.
+
+State: Fixed in round 3 of unit s23-worktrees on 2026-11-16.
+
+A start that neither allocates nor selects a checkout now returns to ordinary start admission.
+Tests preserve its original reason for both an archived project and an archive in progress.
+
+## 1316. A failed agent could resume into a checkout reassigned to its retry.
+
+State: Fixed in round 3 of unit s23-worktrees on 2026-11-16.
+
+Resume now refuses a folder whose registered checkout belongs to another agent.
+The refusal tells the caller to start a new agent in its own worktree.
+A regression reuses a failed allocation and checks that the earlier agent cannot open a fresh session there.
+
+## 1317. A visitor could allocate workers from another agent's checkout.
+
+State: Fixed in round 3 of unit s23-worktrees on 2026-11-16.
+
+An agent that is not a lead must own its registered checkout before allocating from it.
+A read-only reviewer in a builder's checkout receives an actionable refusal before any allocation.
+An owning worker can still allocate from its own checkout.
+Existing lead and owner allocation cases remain covered.
+The recorded project lead retains its authority even when a historical record uses a worker role name.
+The first full run exposed that case in three existing channel tests.
+A new failing regression pinned the recorded lead's authority before the guard was corrected.
+The existing channel assertions and waits remain unchanged.
+
+## 1318. Two checkout refusals did not explain recovery in full sentences.
+
+State: Fixed in round 3 of unit s23-worktrees on 2026-11-16.
+
+An unregistered starter is told to ask its parent or the owner to register the checkout.
+A changed branch is told to restore the registered branch before retrying.
+The lead instructions name who can register a checkout.
+The shared branch refusal and its public reason list use the same wording everywhere.
 
 ## 1280. An oversized current secret set rebuilt its forms on every call.
 
@@ -18858,5 +19151,15 @@ The file passed three times in a row when run alone, and the unit does not chang
 In the whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:361` and `studio.spec.ts:1189` failed, and each passed when run alone.
 Three live checks before round five gave 13, 13 and 19 of 23 steps; in the two short runs the Codex worker ended its turn without asking for permission, which is issue 272.
 Two live checks after round five gave 19 of 23, and three on `master` gave 19, 18 and 19.
+
+State: open. Recorded on 2026-11-16.
+
+## 1325. The full check of the worker worktree unit met four load-sensitive journeys and two short live checks.
+
+In the whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:959` and `studio.spec.ts:1189` failed, and each passed when run alone.
+Six live checks on the branch gave 13, 19, 11, 19, 19 and 19 of 23 steps.
+In both short runs the Codex worker ended its turn without asking for permission, which is issue 272.
+In the run of 11, the small Claude lead also did not attempt two commands and made an unexpected tool call during the reload step, as in issue 1239.
+The live check starts no project, so it does not exercise worker worktrees.
 
 State: open. Recorded on 2026-11-16.

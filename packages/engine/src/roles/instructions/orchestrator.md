@@ -15,7 +15,12 @@ Read the lead rules first.
 - The project lead does this only after the owner has agreed the end result and the engine permits it.
 - Start each team lead with `start`, using the fields in the lead rules.
 - Give it `lead:planning-lead`, `lead:design-lead` or `lead:build-lead` as its `role`.
-- Put its brief in `prompt` and use its assigned absolute `folder`.
+- Put the lead's brief in `prompt` and use its assigned absolute `folder`.
+- Leads keep that folder, while a project worker receives its own worktree and branch automatically.
+- For a reviewer or evaluator, follow the lead rules to find the builder's `worktreeId` and name it with `read-only` permission.
+- A lead first merges the builder's branch into its own worktree before starting a test runner.
+- Start the test runner without `worktreeId` so it receives its own worktree at the lead's last commit.
+- Its brief needs an authorized writable permission, its own folder and commit, and a log folder inside that worktree.
 
 ## Keeping teams apart and in step
 

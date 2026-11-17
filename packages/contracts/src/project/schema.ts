@@ -42,7 +42,8 @@ export const Workspace = Schema.Struct({
   worktreeId: WorkspaceId, repoId: RepositoryId, machineId: ProjectName, branch: ProjectName, path: ProjectPath,
   checkout: Schema.optionalKey(Schema.Literals(["main", "worktree"])),
   projectId: Schema.optionalKey(ProjectId), teamId: Schema.optionalKey(TeamId), parentId: Schema.optionalKey(WorkspaceId),
-  owner: Schema.optionalKey(ProjectName), activity: Schema.optionalKey(ProjectText)
+  owner: Schema.optionalKey(ProjectName), activity: Schema.optionalKey(ProjectText),
+  workerSourceHead: Schema.optionalKey(Schema.NullOr(Schema.String.check(Schema.isPattern(/^[a-f0-9]{40,64}$/))))
 })
 export type Workspace = typeof Workspace.Type
 export const LeadPermission = Schema.Literals(["planning", "starting-work"])

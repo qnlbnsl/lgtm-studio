@@ -64,7 +64,8 @@ export interface GitService {
   register(folder: string): GitOperation<Repository>;
   branches(folder: string): GitOperation<Bounded<Branch>>;
   worktrees(folder: string): GitOperation<Bounded<Worktree>>;
-  createWorktree(folder: string, name: string, from?: string): GitOperation<Worktree>;
+  createWorktree(folder: string, name: string, from?: string, branchPrefix?: string): GitOperation<Worktree>;
+  rollbackWorktree(folder: string, worktree: Worktree): GitOperation<void>;
   changes(folder: string, agentRead?: boolean): GitOperation<Bounded<Change>>;
   diff(folder: string, options?: { readonly path?: string; readonly staged?: boolean; readonly commit?: string; readonly agentRead?: boolean }): GitOperation<Diff>;
   history(folder: string, limit?: number): GitOperation<Bounded<Commit>>;

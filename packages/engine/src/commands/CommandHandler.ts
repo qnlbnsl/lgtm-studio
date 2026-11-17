@@ -1,3 +1,4 @@
+import { prepareStartWorkspace } from "./startWorkspace.ts";
 import { withProjectProgress } from '../project/progress.ts';
 import { closeChangedPermissionQuestions } from '../project/permissionQuestions.ts';
 import { closeSignIns, setTerminalSwitch } from "../harnesses/signinRequests.ts";
@@ -306,11 +307,12 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
 
     type Step = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>;
     const executeMutation: CommandHandler["Service"]["execute"] = (credential, name, rawPayload) => Effect.suspend(() => {
+      let releaseStartWorkspace: Effect.Effect<void> = Effect.void;
       const prepare = (step: Step) => Effect.gen(function* () {
         if (serviceRestartPending() && !["stop", "client.service.restart"].includes(name)) return yield* refused("service restarting");
         if (Option.isSome(recovery) && !(yield* recovery.value.ready)) return yield* refused("recovering");
         let external: { readonly plan?: Plan; readonly finalize?: Planner; readonly failure?: CommandRefused | LogWriteFailed; readonly finished?: Event } | undefined;
-        if (Object.hasOwn(gitPlanners, name) || Object.hasOwn(registrationPlanners, name)
+        if (name === "start" || Object.hasOwn(gitPlanners, name) || Object.hasOwn(registrationPlanners, name)
           || ["project.design.record", "project.mocks.record", "project.mocks.approve"].includes(name)
           || (name === "prompt" || name === "board.post") && typeof rawPayload === "object" && rawPayload !== null
             && "context" in rawPayload && Array.isArray(rawPayload.context)
@@ -335,6 +337,9 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
               return { actor, payload, bodyHash, snapshot: yield* views.snapshot };
             }));
             if (admitted === undefined) return undefined;
+            if (name === "start") return { finalize: yield* prepareStartWorkspace(
+              { runtime, actor: admitted.actor, snapshot: admitted.snapshot }, admitted.payload,
+              (release) => { releaseStartWorkspace = release; }) };
             if (Object.hasOwn(registrationPlanners, name)) return { finalize: yield* prepareRegistration(
               { runtime, actor: admitted.actor, snapshot: admitted.snapshot }, name as keyof typeof registrationPlanners, admitted.payload) };
             const input = { runtime, actor: admitted.actor, snapshot: admitted.snapshot };
@@ -517,8 +522,9 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
         Effect.catchTag("LogWriteFailed", (error) => Effect.fail(error instanceof InvalidEvent ? refused(error.reason) : error)),
         Effect.catchTag("SqlError", () => Effect.fail(new LogWriteFailed({ reason: "database read failed" }))),
       ), (settle) => settle);
+      const cleaned = name === "start" ? settled.pipe(Effect.ensuring(Effect.suspend(() => releaseStartWorkspace))) : settled;
       const recoverable = name === "project.mocks.editor.save" && credential._tag === "owner"
-        ? settled.pipe(Effect.onExit(() => settleMockEditorSave(runtime, rawPayload))) : settled;
+        ? cleaned.pipe(Effect.onExit(() => settleMockEditorSave(runtime, rawPayload))) : cleaned;
       // Lifecycle ownership precedes requests, and requests precede process
       // lanes (including archive members). Runner/recovery paths take only
       // process lanes and short writer transactions, never request lanes.

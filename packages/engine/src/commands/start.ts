@@ -45,7 +45,7 @@ export const start = (input: Input, payload: Payload<"start">): Effect.Effect<Pl
     const account = pickAccount(snapshot, payload.harness, payload.account);
     if (account === undefined) return yield* refused("no usable account");
     const grant = yield* checkFolder({ ...runtime, caller: actor, parentFolder: parent?.folder ?? payload.folder, folder: payload.folder }).pipe(
-      Effect.mapError(() => refused()),
+      Effect.mapError((error) => refused(`Start folder: ${error.reason}`)),
     );
     const folder = yield* folderForSpawn(grant, "start").pipe(Effect.mapError(() => refused()));
     const instructions = yield* composeInstructions(runtime, snapshot, payload.role);
@@ -54,7 +54,7 @@ export const start = (input: Input, payload: Payload<"start">): Effect.Effect<Pl
     const token = mintAgentToken();
     const event: Event = {
       _tag: "AgentStarted", agentId, name: payload.name, role: payload.role, groups: payload.groups ?? [],
-      parent: actor, harness: harness.id, account: account.id, permission: payload.permission,
+      parent: actor, ...(payload.projectId === undefined ? {} : { projectId: payload.projectId }), harness: harness.id, account: account.id, permission: payload.permission,
       folder, runMode: payload.runMode ?? harness.runMode,
       ...(model === undefined ? {} : { model }), ...(effort === undefined ? {} : { effort }),
       ...(payload.prompt === undefined ? {} : {

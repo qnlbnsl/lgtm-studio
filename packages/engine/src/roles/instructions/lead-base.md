@@ -29,7 +29,11 @@ A brief is the only context the agent has. Write it so that it stands alone.
 - Run board.acknowledge when starting to respond to a post.
 - Start an agent with `start`.
 - Supply `name`, `role`, `folder`, `harness`, `account`, `permission` and the brief in `prompt`.
-- Use an absolute `folder` inside your allowed folder.
+- Supply an absolute `folder` for the required start field.
+- The `folder` does not select a project worker's checkout.
+- A worker started inside a project gets its own worktree and branch automatically.
+- A lead keeps its supplied folder.
+- A worker outside a project uses the supplied folder under the existing folder rule.
 - Use the harness and account choices in your brief.
 - An account is either `{ "_tag": "any" }` or `{ "_tag": "named", "accountId": "<account identifier>" }`.
 - The permission must not exceed your own permission.
@@ -83,9 +87,19 @@ A brief is the only context the agent has. Write it so that it stands alone.
 - A worker may update the state of its own task with `project.task.update`.
 - A task owner or the actual project lead may add `project.task.note`, with `projectId`, `taskId`, `title` and `detail`.
 - Send notes for another agent's task to the project lead.
-- A team record does not create a separate folder for each builder.
-- Use only the branches and folders your brief provides.
-- Ask your parent to arrange an isolated folder when the assignment needs one.
+- A project worker starts from the last commit in your registered checkout, including when your folder is a subfolder of it.
+- Uncommitted changes in your checkout are not included in the worker's folder.
+- If your checkout is unregistered, ask your parent or the owner to register the checkout before starting a worker.
+- Call `client.snapshot` and read project.workspaces to find a builder's worktree.
+- Match its `owner` to the builder's agent identifier returned by `start`, then use its `worktreeId`.
+- To let a reviewer or evaluator inspect that builder's work, pass that `worktreeId` to `start` with `permission` set to `read-only`.
+- Before starting a test runner, merge the builder's branch into your own worktree and commit any conflict resolution.
+- Start the test runner without `worktreeId` so it receives its own worktree from your last commit.
+- Use an authorized writable permission for the test runner, and name a log folder inside its own worktree in its brief.
+- Send test requests for the runner's own folder and its exact commit.
+- Naming another agent's checkout with a wider permission is refused.
+- Merge the worker's branch into your own worktree with your own Git commands, or ask the owner to use Integrate.
+- Moving the project's branch into the base branch still requires the owner's approval.
 
 ## Permission requests and questions
 

@@ -12,6 +12,7 @@ import { Views } from "../views/Views.ts";
 import { nextState } from "../views/apply.ts";
 import { refused, type Agent, type Input, type Payload, type Plan } from "./internal.ts";
 import { own, projectView } from "../project/view.ts";
+import { inside } from "../project/git/paths.ts";
 
 // Rows 52 and 66. `resume` reloads the agent's session and then runs
 // recovery's step 10 for this one agent: a delivery sent but not accepted is
@@ -25,6 +26,10 @@ export const resume = ({ runtime, snapshot, actor }: Input, agent: Agent, payloa
     const project = id === undefined ? undefined : own(view.projects, id);
     if (project?.archiving || project?.archivedAt !== undefined) return yield* refused("project is archived or archiving");
     if (project !== undefined && agent.agentId !== project.leadAgentId) yield* requireBuilding({ runtime, snapshot, actor }, project);
+    const workspace = Object.values(view.workspaces).filter((row) => inside(row.path, agent.folder))
+      .sort((a, b) => b.path.length - a.path.length)[0];
+    if (workspace?.owner !== undefined && workspace.owner !== agent.agentId)
+      return yield* refused("This worktree now belongs to another agent. Start a new agent in its own worktree.");
     const fresh = payload.fresh === true;
     const reloads = runtime.runner.capabilities.loadSession || runtime.runner.capabilities.resumeSession;
     if (!fresh && (agent.reloadable !== true || agent.session === undefined || !reloads)) return yield* refused("cannot reload");

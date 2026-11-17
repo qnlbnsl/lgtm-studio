@@ -4,14 +4,15 @@ import { agentCredential, appendSetup, call, eventOf, seedAccount, seedAgent, se
 // Historical project records enter through the real typed writer. New requests,
 // teams, sprints and tasks use the authenticated handler. Lifecycle launch is
 // exercised separately by the real-child notification journey.
-export const decisionProject = (prefix = "one") => Effect.gen(function* () {
+export const decisionProject = (prefix = "one", folder?: string) => Effect.gen(function* () {
   const leadId = `${prefix}-lead`, workerId = `${prefix}-worker`
-  const lead = yield* seedAgent({ id: leadId, state: "working" })
-  const worker = yield* seedAgent({ id: workerId, parent: leadId, state: "working" })
+  const lead = yield* seedAgent({ id: leadId, state: "working", ...(folder === undefined ? {} : { folder }) })
+  const worker = yield* seedAgent({ id: workerId, parent: leadId, state: "working", ...(folder === undefined ? {} : { folder }) })
   const projectId = `${prefix}-project`, repoId = `${prefix}-repo`, worktreeId = `${prefix}-workspace`
   yield* appendSetup([
-    eventOf({ _tag: "project.RepositoryAdded", repoId, name: "Repository", path: "/tmp" }),
-    eventOf({ _tag: "project.WorktreeCreated", repoId, worktreeId, branch: "topic", path: "/tmp", machineId: "local" }),
+    eventOf({ _tag: "project.RepositoryAdded", repoId, name: "Repository", path: folder ?? "/tmp" }),
+    ...(folder === undefined ? [] : [eventOf({ _tag: "project.RepositoryLocated", repoId, machineId: "local", path: folder })]),
+    eventOf({ _tag: "project.WorktreeCreated", repoId, worktreeId, branch: "topic", path: folder ?? "/tmp", machineId: "local" }),
     eventOf({ _tag: "project.Created", projectId, repoId, worktreeId, leadAgentId: leadId, machineId: "local", name: "Project", goal: "Real decisions" }),
     eventOf({ _tag: "project.ApprovalDecided", projectId, questionId: `${prefix}-scope`, approval: "end-result", approved: true }),
     eventOf({ _tag: "project.ApprovalDecided", projectId, questionId: `${prefix}-build`, approval: "build", approved: true }),
@@ -23,4 +24,4 @@ export const decisionProject = (prefix = "one") => Effect.gen(function* () {
   const task = { projectId, teamId: team.teamId, sprintId, worktreeId, owner: workerId, title: "Work", state: "active" }
   return { projectId, repoId, worktreeId, leadId, workerId, lead, worker, leadCredential: credential, workerCredential: agentCredential(worker.token), sprintId, team, task }
 })
-export const decisionSetup = () => Effect.gen(function* () { yield* seedAccount(); yield* seedHarness(); return yield* decisionProject() })
+export const decisionSetup = (folder?: string) => Effect.gen(function* () { yield* seedAccount(); yield* seedHarness(); return yield* decisionProject("one", folder) })

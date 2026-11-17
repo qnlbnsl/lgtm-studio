@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { constants } from "node:fs";
-import { lstat, mkdir, mkdtemp, open, opendir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, open, opendir, realpath, rename, rm, rmdir, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import * as Effect from "effect/Effect";
@@ -220,6 +220,23 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     }
     if (current !== undefined) items.push(current);
     return list(items);
+  };
+  const rollbackAllocation = async (path: string, allocation: Worktree, signal: AbortSignal) => {
+    const rows = await worktrees(path, signal);
+    if (rows.truncated) return fail("output_limit");
+    const row = rows.items.find((row) => row.path === allocation.path);
+    if (row) {
+      if (row.branch !== allocation.branch || row.head !== allocation.head) return fail("stale_state");
+      if ((await git(row.path, ["status", "--porcelain=v1", "--untracked-files=all"], signal)).trim()) return fail("dirty_source");
+      await git(path, ["worktree", "remove", "--", row.path], signal);
+    }
+    // An unregistered failed checkout can still have created its branch.
+    // The expected old value refuses deletion if somebody has committed on it.
+    if (allocation.branch && allocation.head && !rows.items.some((other) => other.path !== allocation.path && other.branch === allocation.branch)) {
+      const present = await run(path, ["show-ref", "--verify", "--quiet", `refs/heads/${allocation.branch}`], signal);
+      if (present.code === 0) await git(path, ["update-ref", "-d", `refs/heads/${allocation.branch}`, allocation.head], signal);
+      else if (present.code !== 1) throw processFailure(present);
+    }
   };
   const resetPaths = async (folder: string, paths: string[], signal: AbortSignal) => {
     if (paths.length === 0) return;
@@ -563,28 +580,56 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       }));
     }),
     worktrees: (folder) => withRepo(folder, worktrees),
-    createWorktree: (folder, name, from = "HEAD") => withRepo(folder, async (path, signal) => {
+    createWorktree: (folder, name, from = "HEAD", branchPrefix) => withRepo(folder, async (path, signal) => {
       const repo = await repository(path, signal);
       const currentHead = await head(path, signal);
       const start = currentHead === null && (from === "HEAD" || from === await branch(path, signal)) ? null : await ref(path, from, signal);
       const stem = slug(name);
+      const prefix = branchPrefix === undefined ? "" : branchPrefix.split("/").map(slug).join("/") + "/";
       const main = dirname(repo.commonDirectory), directoryPath = join(main, ".worktrees");
       if (await exists(directoryPath)) {
         if ((await lstat(directoryPath)).isSymbolicLink() || await directory(await root(), directoryPath) !== directoryPath) return fail("invalid_path");
       } else await mkdir(directoryPath, { mode: 0o700 });
       await excludeManagedWorktrees(repo.commonDirectory);
       for (let i = 1; i <= 100; i++) {
-        const name = i === 1 ? stem : `${stem}-${i}`, target = join(directoryPath, name);
+        const leaf = i === 1 ? stem : `${stem}-${i}`, name = prefix + leaf;
+        const target = join(directoryPath, prefix.replaceAll("/", "-") + leaf);
         if (await exists(target) || (await run(path, ["show-ref", "--verify", "--quiet", `refs/heads/${name}`], signal)).code === 0) continue;
-        const reply = await run(path, ["worktree", "add", ...(start === null ? ["--orphan"] : []), "-b", name, "--", target, ...(start === null ? [] : [start])], signal);
+        // Reserve an empty directory exclusively. On refusal we can remove
+        // that exact empty directory without touching a competing allocation.
+        try { await mkdir(target, { mode: 0o700 }); }
+        catch (error) { if ((error as NodeJS.ErrnoException).code === "EEXIST") continue; throw error; }
+        const identity = await lstat(target);
+        const clearEmpty = async () => {
+          if (!await exists(target)) return;
+          const now = await lstat(target);
+          if (now.dev === identity.dev && now.ino === identity.ino) await rmdir(target);
+        };
+        let reply: ProcessReply;
+        try {
+          reply = await run(path, ["worktree", "add", ...(start === null ? ["--orphan"] : []), "-b", name, "--", target, ...(start === null ? [] : [start])], signal);
+        } catch (error) {
+          // A cancelled/timed-out child has already exited. Cleanup has its own
+          // finite budget, rather than inheriting its exhausted signal.
+          // Cleanup is best effort. A changed partial checkout is evidence,
+          // and neither that refusal nor ENOTEMPTY may replace this failure.
+          try { await rollbackAllocation(path, { path: target, branch: name, head: start, locked: false, available: true }, AbortSignal.timeout(10_000)); } catch { /* preserve external work */ }
+          try { await clearEmpty(); } catch { /* keep a changed reservation */ }
+          throw error;
+        }
         if (reply.code !== 0) {
-          if (/already exists|already registered/i.test(reply.stderr)) continue;
+          if (/already exists|already registered/i.test(reply.stderr)) { await clearEmpty(); continue; }
+          try { await rollbackAllocation(path, { path: target, branch: name, head: start, locked: false, available: true }, AbortSignal.timeout(10_000)); } catch { /* preserve external work */ }
+          try { await clearEmpty(); } catch { /* keep a changed reservation */ }
           throw processFailure(reply);
         }
         return { path: target, branch: name, head: start, locked: false, available: true };
       }
       return fail("collision");
     }),
+    // Only an unchanged, clean checkout allocated by a failed start is eligible.
+    // Never force removal: external edits or commits keep their recovery evidence.
+    rollbackWorktree: (folder, worktree) => withRepo(folder, (path, signal) => rollbackAllocation(path, worktree, signal)),
     changes: (folder, agentRead = false) => withRepo(folder, async (path, signal) => {
       const changes = parseChanges(await git(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none"], signal));
       return list(agentRead ? changes.filter(readable) : changes);

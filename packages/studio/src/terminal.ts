@@ -4,7 +4,7 @@ export function terminalSize(width: number, height: number, cellWidth: number, c
 }
 interface Worktree { id: string; repo: string; project?: string | null; machine: string; checkout?: string; parentId?: string | null }
 export function terminalWorktrees<W extends Worktree>(state: { worktrees?: ReadonlyArray<W>; teams?: ReadonlyArray<{ project: string; worktree?: string }> }, project: { id: string; repo: string; worktree?: string }) {
-  return (state.worktrees ?? []).filter(w => w.repo === project.repo && (w.id === project.worktree || w.checkout === 'main'
+  return (state.worktrees ?? []).filter(w => w.repo === project.repo && (w.id === project.worktree || w.project === project.id || w.checkout === 'main'
     || state.teams?.some(t => t.project === project.id && (t.worktree === w.id || t.worktree === w.parentId && w.checkout === 'worktree'))))
 }
 export function terminalState(enabled: boolean, connection: string, machine: string) {

@@ -3,7 +3,7 @@ import { projectAgentStatus, type Caller, type ProjectSnapshot, type Task } from
 import type { Snapshot } from "../commands/internal.ts"
 import { projectedTask } from "./decisions.ts"
 import { canReadProject } from "./access.ts"
-import { own, projectView } from "./view.ts"
+import { own, projectView, allocatedWorkspaceInProject } from "./view.ts"
 
 export const projectNeedsOwner = (snapshot: Snapshot, projectId: string) => {
   const view = projectView(snapshot)
@@ -41,7 +41,7 @@ export const snapshotFor = (caller: Caller, snapshot: Snapshot): typeof ProjectS
   fill(section.projects, projects)
   fill(section.repositories, Object.values(view.repositories).filter((row) => caller._tag === "owner" || repos.has(row.repoId)))
   const workspaceIds = new Set([...projects.map((row) => row.worktreeId), ...Object.values(view.teams).filter((row) => ids.has(row.projectId)).map((row) => row.worktreeId)])
-  fill(section.workspaces, Object.values(view.workspaces).filter((row) => caller._tag === "owner" || workspaceIds.has(row.worktreeId)))
+  fill(section.workspaces, Object.values(view.workspaces).filter((row) => caller._tag === "owner" || workspaceIds.has(row.worktreeId) || projects.some((project) => allocatedWorkspaceInProject(view, row, project.projectId))))
   fill(section.teams, Object.values(view.teams).filter((row) => ids.has(row.projectId)))
   fill(section.sprints, Object.values(view.sprints).filter((row) => ids.has(row.projectId)))
   fill(section.tasks, Object.values(view.tasks).filter((row) => ids.has(row.projectId)).map((task) => taskMetadata(projectedTask(snapshot, task))))

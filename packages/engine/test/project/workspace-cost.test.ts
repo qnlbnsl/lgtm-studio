@@ -87,5 +87,5 @@ it.live('one linked state request adds target counts to its own check in nine Gi
 it.live('a state request preserves the branch refusal before an invalid target refusal', () => provideBoard(rig, Effect.gen(function* () {
   yield* registerRebuildCheck(); yield* seedScreens(rig)
   git(rig.work, 'checkout', '-b', 'changed')
-  expect(failureOf(yield* call(ownerCredential, 'project.git.state', { projectId: 'project', worktreeId: 'workspace', target: '--invalid' }))?.reason).toBe('registered workspace branch changed; restore the registered branch')
+  expect(failureOf(yield* call(ownerCredential, 'project.git.state', { projectId: 'project', worktreeId: 'workspace', target: '--invalid' }))?.reason).toBe('The registered workspace branch has changed. Restore the registered branch before retrying.')
 })))

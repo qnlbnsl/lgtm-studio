@@ -36,3 +36,12 @@ describe('project terminal mapping and build boundary', () => {
     expect(() => xtermSource('')).toThrow()
   })
 })
+
+it('includes allocated project workers and excludes another project in the same repository', () => {
+  const state = { worktrees: [
+    { id: 'project', repo: 'r', project: 'p', machine: 'local', checkout: 'worktree' },
+    { id: 'worker', repo: 'r', project: 'p', machine: 'local', checkout: 'worktree', parentId: 'project' },
+    { id: 'other-worker', repo: 'r', project: 'other', machine: 'local', checkout: 'worktree', parentId: 'other' },
+  ] }
+  expect(terminalWorktrees(state, { id: 'p', repo: 'r', worktree: 'project' }).map(w => w.id)).toEqual(['project', 'worker'])
+})

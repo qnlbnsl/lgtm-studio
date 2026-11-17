@@ -114,6 +114,46 @@ See [remote access](docs/remote-access.md) before using a proxy or a phone.
 An installer, startup at login, and loading project configuration from
 `.lgtm` are the next piece of work.
 
+## Worker worktrees
+
+A worker started inside a project receives its own registered Git worktree.
+The engine creates its folder under the repository's `.worktrees/` folder.
+The branch name has the form `worker/<project>/<agent>`.
+The engine makes safe slugs from the names and adds a number when a name is taken.
+The branch starts at the head of the starter's registered worktree.
+Uncommitted changes in the starter's checkout are not copied into the worker's folder.
+The new worktree records that starter's worktree as its parent.
+The existing Git integration action merges the worker into that parent.
+The project's final merge into the base branch still requires the owner's review.
+
+The `start` client API accepts an optional `projectId` for owner starts.
+An agent's start inherits its project membership.
+The optional `worktreeId` selects an existing registered worktree in that project.
+A reviewer or evaluator can use that field with the existing
+`read-only` permission to inspect another worker's checkout.
+Before starting a test runner, the lead merges the builder's branch into its own worktree.
+The test runner starts without `worktreeId` and receives its own worktree at the lead's last commit.
+Its brief names an authorized writable permission and a log folder inside its own worktree.
+The permission level is still an explicit start option.
+Roles parsed as leads or orchestrators keep their supplied folder.
+For an agent caller, selecting a checkout other than its own requires `read-only` permission.
+The owner can select a registered project checkout at any permission level.
+Worker allocation currently requires the local machine.
+A clean registered allocation whose harness never opened a session can be reused on a retry by the same starter with the same agent name.
+Reuse requires an unchanged source commit and no session or work from any previous attempt.
+An agent outside every project keeps the existing folder-based start behaviour.
+Manual worktree registration remains restricted to the owner.
+The existing folder ceiling refuses agent-started children inside the owner's home folder.
+Lead-started workers therefore need a repository outside that protected folder.
+
+The worker's stored folder is reused on recovery and either kind of resume.
+A missing folder is reported as unavailable instead of being recreated.
+Stopping a worker preserves its folder and branch.
+Deleting a team preserves its registered worktrees and branches.
+The engine does not automatically remove even a clean, merged worker checkout.
+Registered worker worktrees appear in the existing Git, Files, and Terminal choices.
+
+
 ## Documents
 
 - [AGENTS.md](AGENTS.md): rules for coding agents working in this repository.

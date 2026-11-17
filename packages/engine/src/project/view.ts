@@ -1,4 +1,4 @@
-import type { Event, ProjectRecord, ProjectView, ProjectTaskRecord, TaskHistoryEntry } from "@lgtm/contracts"
+import type { Event, Workspace, ProjectRecord, ProjectView, ProjectTaskRecord, TaskHistoryEntry } from "@lgtm/contracts"
 import type { Snapshot } from "../commands/internal.ts"
 
 export const own = <T>(rows: Readonly<Record<string, T>>, id: string): T | undefined => Object.hasOwn(rows, id) ? rows[id] : undefined
@@ -83,7 +83,7 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
     case "project.MainReviewDecided": return { ...view, gitReviews: { ...view.gitReviews, [event.review.worktreeId]: event.review } }
     case "AgentStarted": {
       const parent = event.parent._tag === "agent" ? event.parent.agentId : undefined
-      const projectId = parent === undefined ? undefined : own(view.agentProjects, parent)
+      const projectId = event.projectId ?? (parent === undefined ? undefined : own(view.agentProjects, parent))
       return { ...view, ...(parent === undefined ? {} : { parents: { ...view.parents, [event.agentId]: parent } }),
         ...(projectId === undefined ? {} : { agentProjects: { ...view.agentProjects, [event.agentId]: projectId } }) }
     }
@@ -215,3 +215,35 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
     default: return view
   }
 }
+
+// Manual registration cannot supply projectId or owner. Those fields, together
+// with the owning agent's membership, identify an engine allocation, including
+// allocations written before workerSourceHead was introduced.
+export const allocatedWorkspaceInProject = (view: ProjectView, workspace: Workspace, projectId: string): boolean => {
+  const project = own(view.projects, projectId);
+  if (!project || workspace.repoId !== project.repoId) return false;
+  const teams = new Set(Object.values(view.teams).filter((team) => team.projectId === projectId).map((team) => team.worktreeId));
+  const roots = new Set([project.worktreeId, ...teams]);
+  const seen = new Set<string>();
+  let row: Workspace | undefined = workspace;
+  while (row && row.repoId === project.repoId && !seen.has(row.worktreeId)) {
+    // A direct team child was already readable on the base. It can anchor an
+    // engine allocation without becoming a new snapshot row itself.
+    if (roots.has(row.worktreeId)) return row !== workspace;
+    if (row !== workspace && row.checkout === "worktree" && row.parentId !== undefined && teams.has(row.parentId)) return true;
+    if (row.owner === undefined || row.projectId !== projectId || own(view.agentProjects, row.owner) !== projectId) return false;
+    seen.add(row.worktreeId);
+    row = row.parentId === undefined ? undefined : own(view.workspaces, row.parentId);
+  }
+  return false;
+};
+
+// Preserve the original project/team/direct-team-child Git scope and add only
+// engine allocations. An arbitrary manual descendant is not a project grant.
+export const workspaceInProject = (view: ProjectView, workspace: Workspace, projectId: string): boolean => {
+  const project = own(view.projects, projectId);
+  return project !== undefined && workspace.repoId === project.repoId && (project.worktreeId === workspace.worktreeId
+    || Object.values(view.teams).some((team) => team.projectId === projectId
+      && (team.worktreeId === workspace.worktreeId || workspace.checkout === "worktree" && team.worktreeId === workspace.parentId))
+    || allocatedWorkspaceInProject(view, workspace, projectId));
+};

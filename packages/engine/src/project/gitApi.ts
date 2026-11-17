@@ -7,7 +7,7 @@ import { type Runtime, type Input, refused, CommandUncertain } from "../commands
 import type { Workspace } from "@lgtm/contracts"
 import { agentReadReply } from "../api/reads.ts"
 import { canReadProject } from "./access.ts"
-import { own, projectView } from "./view.ts"
+import { own, projectView, workspaceInProject } from "./view.ts"
 import { makeGitService, type GitService, type GitOperation, type Conflict, type Repository } from "./git/index.ts"
 
 // One queue owner per command runtime. The gate survives settings replacement,
@@ -53,7 +53,7 @@ export const workspaceReference = (input: Input, raw: Record<string, unknown>, o
     const id = raw.projectId as string
     const project = own(view.projects, id)
     if (project === undefined || !canReadProject(input.snapshot, input.actor, id) || project.repoId !== workspace.repoId
-      || !(project.worktreeId === workspace.worktreeId || options.ownerMain === true && input.actor._tag === "owner" && workspace.checkout === "main" || Object.values(view.teams).some((team) => team.projectId === id && (team.worktreeId === workspace.worktreeId || team.worktreeId === workspace.parentId && workspace.checkout === "worktree")))) {
+      || !(workspaceInProject(view, workspace, id) || options.ownerMain === true && input.actor._tag === "owner" && workspace.checkout === "main")) {
       return yield* refused("project is unavailable to this caller")
     }
   }
@@ -90,7 +90,7 @@ const checkedWorkspace = (input: Input, workspace: Workspace, git: GitService) =
   const checkout = yield* register(workspace.path)
   if (main.commonDirectory !== local.commonDirectory || main.commonDirectory !== checkout.commonDirectory) return yield* refused("checkout belongs to a different repository")
   const state = yield* gitCall(git.state(checkout.path, undefined, checkout))
-  if (state.branch !== workspace.branch) return yield* refused("registered workspace branch changed; restore the registered branch")
+  if (state.branch !== workspace.branch) return yield* refused("The registered workspace branch has changed. Restore the registered branch before retrying.")
   return { workspace, state, registration: checkout }
 })
 // Repository Design is shared within one repository. Agents must identify an
