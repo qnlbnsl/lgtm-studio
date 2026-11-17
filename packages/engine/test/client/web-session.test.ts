@@ -54,3 +54,16 @@ it("s28 fixed expiry refuses a cookie after thirty days", async () => withWeb((c
     (clock) => Effect.sync(() => clock.mockRestore()));
   expect((yield* Effect.promise(() => post(ctx, "/api/session", undefined, { Cookie: cookie }))).status).toBe(401);
 })));
+
+it('r3 a ninth HTTP login closes only the oldest browser sockets and preserves the others', async () => withWeb(ctx => Effect.gen(function* () {
+  const cookies: string[] = []
+  for (let n = 0; n < 8; n++) cookies.push((yield* login(ctx)).cookie)
+  const oldest = yield* connected(ctx, cookies[0]!), second = yield* connected(ctx, cookies[1]!)
+  const ninth = yield* login(ctx)
+  yield* eventually(() => oldest.readyState, state => state === 3, 'evicted browser kept its socket')
+  expect(second.readyState).toBe(1)
+  expect((yield* Effect.promise(() => post(ctx, '/api/session', undefined, { Cookie: cookies[0]! }))).status).toBe(401)
+  for (const cookie of [...cookies.slice(1), ninth.cookie]) expect((yield* Effect.promise(() => post(ctx, '/api/session', undefined, { Cookie: cookie }))).status).toBe(204)
+  expect((yield* Effect.promise(() => post(ctx, '/api/logout', undefined, { Cookie: ninth.cookie }))).status).toBe(204)
+  expect(second.readyState).toBe(1)
+})))

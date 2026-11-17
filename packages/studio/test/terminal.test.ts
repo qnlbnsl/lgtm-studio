@@ -69,3 +69,16 @@ it('r2 offers reattachment only after connection loss and keeps takeover input e
   helpers.outputEnded(item, 'The shell exited.')
   expect(item.terminal.options.disableStdin).toBe(true)
 })
+
+it('r3 a displaced tab learns that its live shell has exited without taking output back', () => {
+  const source = readFileSync('design/mock/js/live/terminal.js', 'utf8').replace(/^import .*;$/gm, '').replace(/export /g, '')
+  const helpers = new Function('persist', 'notify', `${source}; return { outputEnded, reconcileTerminals };`)(() => 13, () => {})
+  const item = { id: 'shell', ended: '', terminal: { options: { disableStdin: false } } }
+  helpers.outputEnded(item, 'Output is open in another owner connection. Typing still works.')
+  helpers.reconcileTerminals({ sessions: [item] }, [{ sessionId: 'shell' }])
+  expect(item.ended).toBe('')
+  expect(item.terminal.options.disableStdin).toBe(false)
+  helpers.reconcileTerminals({ sessions: [item] }, [])
+  expect(item.ended).toBe('This shell has ended. Open a new session.')
+  expect(item.terminal.options.disableStdin).toBe(true)
+})

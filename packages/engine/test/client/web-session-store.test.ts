@@ -7,12 +7,13 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { makeSession } from '../../src/client/web/session.ts'
 import { registerRebuildCheck } from '../support/rebuildCheck.ts'
 registerRebuildCheck({ noLog: true })
-vi.mock('node:fs', async original => { const actual = await original<typeof fs>(); return { ...actual, renameSync: vi.fn(actual.renameSync), fsyncSync: vi.fn(actual.fsyncSync), unlinkSync: vi.fn(actual.unlinkSync) } })
+vi.mock('node:fs', async original => { const actual = await original<typeof fs>(); return { ...actual, renameSync: vi.fn(actual.renameSync), fsyncSync: vi.fn(actual.fsyncSync), unlinkSync: vi.fn(actual.unlinkSync), fchmodSync: vi.fn(actual.fchmodSync) } })
 afterEach(async () => {
   const actual = await vi.importActual<typeof fs>('node:fs')
   vi.mocked(fs.renameSync).mockReset().mockImplementation(actual.renameSync)
   vi.mocked(fs.fsyncSync).mockReset().mockImplementation(actual.fsyncSync)
   vi.mocked(fs.unlinkSync).mockReset().mockImplementation(actual.unlinkSync)
+  vi.mocked(fs.fchmodSync).mockReset().mockImplementation(actual.fchmodSync)
 })
 const password = Redacted.make('synthetic-r2-password')
 const fixture = (run: (folder: string) => void) => { const folder = fs.mkdtempSync(join(tmpdir(), 'lgtm-s28-store-')); try { run(folder) } finally { fs.rmSync(folder, { recursive: true, force: true }) } }
@@ -35,11 +36,11 @@ it('r2 eight independent cookies survive restart and signing out one preserves t
 it('r2 salted memory-hard bindings replace the public-key HMAC oracle', () => fixture(folder => {
   const session = open(folder), cookie = mint(session)
   const saved = fs.readFileSync(join(folder, 'web-session.json'), 'utf8'), snapshot = JSON.parse(saved)
-  expect(snapshot.version).toBe(2)
+  expect(snapshot.version).toBe(3)
   expect(snapshot.sessions[0].passwordSalt).toMatch(/^[a-f0-9]{32}$/)
   const record = snapshot.sessions[0]
   const key = scryptSync(Redacted.value(password), Buffer.from(record.passwordSalt, 'hex'), 32, { N: 65536, r: 8, p: 1, maxmem: 80 * 1024 * 1024 })
-  expect(record.passwordBinding).toBe(createHmac('sha256', key).update('lgtm-web-password-v2\0').update(record.verifier).digest('hex'))
+  expect(record.passwordBinding).toBe(createHmac('sha256', key).update('lgtm-web-password-v3\0').update(record.verifier).update('\0').update(String(record.createdAt)).digest('hex'))
   mint(session)
   const next = JSON.parse(fs.readFileSync(join(folder, 'web-session.json'), 'utf8'))
   expect(next.sessions[1].passwordSalt).not.toBe(record.passwordSalt)
@@ -84,4 +85,66 @@ it('r2 sessions expire independently at their own thirty-day boundary', () => fi
     expect(restored.valid(first)).toBe(false)
     expect(restored.valid(second)).toBe(true)
   } finally { clock.mockRestore() }
+}))
+
+it('r3 a small backward clock step preserves every cookie across load', () => fixture(folder => {
+  const session = open(folder), first = mint(session), second = mint(session), now = Date.now()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(now - 2 * 60000)
+  try {
+    const restored = open(folder)
+    expect(restored.valid(first)).toBe(true)
+    expect(restored.valid(second)).toBe(true)
+  } finally { clock.mockRestore() }
+}))
+it('r3 periodic expiry does not delete records after the clock moves backward', () => fixture(folder => {
+  const session = open(folder), cookie = mint(session), now = Date.now()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(now - 2 * 60000)
+  try {
+    session.expire()
+    expect(session.valid(cookie)).toBe(true)
+    expect(session.takeRevoked()).toEqual([])
+    clock.mockReturnValue(now + 1000)
+    expect(open(folder).valid(cookie)).toBe(true)
+  } finally { clock.mockRestore() }
+}))
+it('r3 changing a stored creation time without its binding cannot extend a cookie', () => fixture(folder => {
+  const session = open(folder), cookie = mint(session), path = join(folder, 'web-session.json')
+  const record = JSON.parse(fs.readFileSync(path, 'utf8'))
+  record.sessions[0].createdAt -= 1000
+  fs.writeFileSync(path, JSON.stringify(record))
+  expect(open(folder).valid(cookie)).toBe(false)
+}))
+it('r3 loading a record that cannot be checkpointed or invalidated accepts no cookie', () => fixture(folder => {
+  const session = open(folder), cookie = mint(session)
+  const chmod = vi.mocked(fs.fchmodSync).getMockImplementation()!
+  vi.mocked(fs.fchmodSync).mockImplementation(() => { throw new Error('synthetic read-only storage') })
+  try { expect(open(folder).valid(cookie)).toBe(false) }
+  finally { vi.mocked(fs.fchmodSync).mockImplementation(chmod) }
+}))
+it('r3 failed load invalidation keeps that service blocked after storage becomes writable', () => fixture(folder => {
+  const session = open(folder), cookie = mint(session)
+  const chmod = vi.mocked(fs.fchmodSync).getMockImplementation()!
+  vi.mocked(fs.fchmodSync).mockImplementation(() => { throw new Error('synthetic read-only storage') })
+  let refused: ReturnType<typeof open>
+  try { refused = open(folder, Redacted.make('changed-r3-password')) }
+  finally { vi.mocked(fs.fchmodSync).mockImplementation(chmod) }
+  expect(refused.valid(cookie)).toBe(false)
+  expect(() => mint(refused)).toThrow('Web session storage is unavailable.')
+  expect(refused.ids).toEqual([])
+}))
+
+it('r3 restoring an authentic old state-folder backup can restore a signed-out cookie', () => fixture(folder => {
+  const session = open(folder), cookie = mint(session), path = join(folder, 'web-session.json')
+  const backup = fs.readFileSync(path, 'utf8')
+  session.revoke(cookie)
+  expect(open(folder).valid(cookie)).toBe(false)
+  fs.writeFileSync(path, backup)
+  expect(open(folder).valid(cookie)).toBe(true)
+}))
+
+for (const [minutes, accepted] of [[5, true], [6, false]] as const) it(`r3 startup skew boundary: ${minutes} minutes ahead`, () => fixture(folder => {
+  const session = open(folder), cookie = mint(session), now = Date.now()
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(now - minutes * 60000)
+  try { expect(open(folder).valid(cookie)).toBe(accepted) }
+  finally { clock.mockRestore() }
 }))

@@ -19548,8 +19548,8 @@ A browser journey covers two tabs and an independently signed-in phone using the
 Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
 The original sign-out sweep included terminals and harness sign-ins without a web session.
 Web login, logout, expiry, and eviction now clean only the affected web sessions.
-An affected shell survives only when another live web session is reading it.
-That reader becomes the shell's owner for subsequent logout cleanup.
+Round 2 kept an affected shell only when another live web session was reading it.
+Round 3 removes that reader condition, as recorded in s28-20 below.
 The last web session's logout closes every web shell.
 Local socket terminals and unrelated harness sign-ins remain alive.
 Display cleanup also tracked only one global service.
@@ -19608,3 +19608,73 @@ A following run with the exact round 2 source restored failed the five-second ma
 The test uses the local socket and does not start a web listener.
 These observations do not establish the cause of the difference.
 State: open with the failure unresolved.
+
+
+## s28-15. A backward clock step invalidated valid web sessions.
+
+Found in the second review and fixed during s28-session round 3 on 2026-11-17.
+Startup rejected every record if one creation time was ahead of the current clock.
+Periodic expiry also deleted a session after a backward step.
+Startup now permits five minutes of skew.
+Runtime expiry deletes only records that have reached their 30-day wall-clock boundary.
+A clock moving backward can delay that boundary.
+
+## s28-16. The stored password binding did not authenticate its creation time.
+
+Found in the second review and fixed during s28-session round 3 on 2026-11-17.
+Changing a record's creation time previously left its binding valid.
+Version 3 includes that time in the hash-based message authentication code (HMAC) input.
+Earlier development records are refused rather than migrated.
+SECURITY.md records the deliberate choice of scrypt N=65536, r=8, and p=1 and the tradeoff against the higher common recommendation.
+
+## s28-17. An empty replay left a transferred terminal paused.
+
+Found in the second review and fixed during s28-session round 3 on 2026-11-17.
+An incomplete terminal escape string could make the safe replay empty.
+Replacing a full unread queue with that empty replay previously left the pseudoterminal paused forever.
+Replacing the queue now resumes reads even when replay has no text.
+
+## s28-18. A detached verbose shell kept consuming output until its grace limit.
+
+Found in the second review and fixed during s28-session round 3 on 2026-11-17.
+The replay parser built per-character array literals while reading detached output without backpressure.
+It now uses constant comparisons.
+A detached shell pauses reads when the bounded ring first turns over.
+Reattachment resumes reads.
+The native-exit watcher still drains a finite tail before the pseudoterminal closes.
+
+## s28-19. A displaced browser never learned that its shell ended.
+
+Found in the second review and fixed during s28-session round 3 on 2026-11-17.
+A takeover ended the old output stream without a later shell-exit update.
+The existing notice bar now explains how to take output back.
+A displayed displaced shell checks the existing terminal list once per second without taking over its output.
+An absent shell gets the existing ended bar and disabled input.
+Opening the Terminal tab still attaches listed shells automatically.
+The browser-engine sign-out comment now describes per-session logout.
+
+## s28-20. A typing-only or reloading browser could lose a shared web shell.
+
+Found in the second review and fixed during s28-session round 3 on 2026-11-17.
+Round 2 required another browser to be actively reading when the creating session ended.
+A web shell now stays alive while any signed-in owner web session remains, subject to its detached grace period.
+The last session ending still closes all web shells.
+The owner approved restart survival and reload reattachment on 2026-11-17.
+Sharing shells across that owner's sessions is this unit's design choice for the single-owner product.
+Simultaneous signed-in browsers preserve the earlier product behaviour.
+
+## s28-21. Failed startup invalidation could leave usable records on storage.
+
+Found in the second review and fixed during s28-session round 3 on 2026-11-17.
+The earlier service could accept a valid file without proving it could update that file.
+Startup now checkpoints validated records before accepting any cookie.
+If checkpoint and invalidation both fail, that service accepts no session and refuses sign-in until restart.
+No process can durably invalidate an unchanged file while every storage mutation fails.
+SECURITY.md now states that limit and explains that restoring an old state-folder backup can restore a signed-out cookie.
+
+## s28-22. Revoked-owner guards and real ninth-login eviction lacked direct coverage.
+
+Found in the second review and covered during s28-session round 3 on 2026-11-17.
+The existing guards were present in start, lookup, and list.
+Dedicated cases now test each guard while another owner session keeps the shell alive.
+A real web-server case logs in nine times and requires only the oldest browser's sockets and cookie to be rejected.

@@ -99,7 +99,9 @@ Signing out ends only that browser's session.
 Changing or removing the password ends every session.
 The Terminal tab restores the owner's web shells and recent output after a reload within five minutes.
 Another signed-in device can pick up the same shell.
-Signing out closes that browser's shells unless another signed-in session is reading them.
+Web shells stay alive while any signed-in owner session remains, subject to the five-minute detached grace limit.
+The last session ending closes every web shell.
+A displaced tab explains how to take output back and learns when its shell ends.
 A service restart closes all shells.
 The engine's default state folder is `~/.local/state/lgtm`.
 Set `LGTM_HOME` on the service and command processes to use another folder.

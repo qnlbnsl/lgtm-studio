@@ -119,27 +119,44 @@ These rules apply to every change. A change that breaks one is a security bug.
    A login carries it in the request body, never in a URL. One person uses
    LGTM Studio, and the owner chose no rate limits and no lockouts on 2026-11-03.
 4. **Up to eight web sessions survive service restarts for at most 30 days each.**
-   The owner approved persistent sessions and simultaneous devices on 2026-11-17.
+   The owner approved survival across a service restart on 2026-11-17.
+   Several signed-in browsers at once preserve the behaviour from before this unit.
    Each sign-in creates an independent random 256-bit token.
    A ninth sign-in evicts the oldest session.
    Signing out ends only the presenting browser's session.
    Changing or removing `LGTM_WEB_PASSWORD` invalidates every session before the listener starts.
-   Restoring an earlier password does not restore invalidated sessions.
+   A successfully committed invalidation survives restoring an earlier password.
+   Restoring an older copy of the state folder can restore signed-out sessions while their original password and 30-day lifetime still match.
+   There is no revocation authority outside that folder to detect a restored backup.
    Each session expires 30 days after its own sign-in.
    The browser holds its token in an `HttpOnly`, `SameSite=Strict` cookie with that maximum age.
    The cookie is `Secure` on a public request when the public address is `https`.
    The private `web-session.json` file holds one record per session.
    Each record contains only a Secure Hash Algorithm 256 (SHA-256) token verifier, a creation time, an independent random 16-byte salt, and a keyed password binding.
    The binding key comes from scrypt with fixed parameters N=65536, r=8, and p=1.
-   The binding authenticates a fixed domain label and the token verifier.
+   The binding authenticates a fixed domain label, the token verifier, and its creation time.
+   Version 3 records replace the earlier development format, which is refused rather than migrated.
+   These scrypt parameters deliberately use less work than the common N=131072, r=8, p=1 recommendation.
+   This unit keeps N=65536 to bound synchronous startup verification of at most eight records to about two seconds on the review host, with about 64 mebibytes per derivation.
+   The derivations run before the listener starts, and sign-in performs one derivation.
+   This choice trades password-guessing cost for startup latency and does not claim to meet that higher recommendation.
+   The reference is the [Open Worldwide Application Security Project password storage guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
    Checking a stored binding requires about 64 mebibytes of derivation memory for each password guess.
    A file reader cannot forge a cookie from a verifier or test a password with a single fast digest.
    The service verifies every password binding at startup.
+   It checkpoints the validated collection before accepting any cookie.
+   If that checkpoint and invalidation both fail, this service accepts no session and refuses sign-ins until restart.
+   If all writes fail, the service cannot promise durable invalidation of the unchanged file.
+   A later restart with an earlier password can then accept an unchanged record if storage becomes writable.
+   Repairing storage and restarting with the intended password is required to commit invalidation.
    Each update replaces the entire bounded collection through an exclusive mode-0600 temporary file, a file flush, a rename, and a directory flush.
    Memory changes only after that update succeeds.
    A failed update attempts an empty snapshot and then a mode-zero fallback before rejecting the old in-memory sessions.
    If storage cannot be invalidated, the request fails without claiming a successful revocation or clearing the pre-operation memory state.
-   Invalid, expired, unreadable, wrongly permissioned, symbolic-link, hard-linked, oversized, or future-dated records do not authenticate a browser.
+   Invalid, expired, unreadable, wrongly permissioned, symbolic-link, hard-linked, oversized, or more than five minutes future-dated records do not authenticate a browser.
+   Startup permits five minutes of clock skew.
+   A backward clock step while running does not expire or delete a record.
+   The 30-day boundary still uses wall-clock time, so a backward clock step can delay expiry.
 5. **An encrypted channel for remote access is the owner's setup**, such as TLS, a
    Tailscale tailnet, or an SSH tunnel. LGTM Studio serves plain HTTP on loopback and
    does not offer it to a non-loopback address. A configured public address must use
@@ -213,7 +230,8 @@ These rules apply to every change. A change that breaks one is a security bug.
    nor `false`, and is not a plain number.
    On 2026-11-14, the owner authorized ephemeral output for the project terminal and the harness sign-in terminal.
    The owner ruled: "what you echo on terminal is none of our business. just keep it away from log. if they use tmux or something and it hold this in the buffer then that is not on us."
-   On 2026-11-17, the owner allowed every authenticated owner web session to reattach the owner's web project terminals.
+   On 2026-11-17, the owner approved reattachment after a page reload by the signed-in owner.
+   Sharing web project terminals among that owner's signed-in browsers is this unit's design choice for a single-owner product.
    Harness sign-in output remains restricted to its opening owner connection.
    Both terminals send the program's output byte for byte, with no redaction, hold, or idle timer.
    Project terminals retain at most 64 kibibytes of recent output in memory for reattachment.
@@ -255,11 +273,15 @@ The stored project terminal switch starts off in Service settings.
 While it is off, every open request is refused before a shell can start.
 Only an authenticated owner may open a terminal.
 Agent and service credentials are refused.
-On 2026-11-17, the owner approved shared web terminals across the owner's authenticated web sessions.
+On 2026-11-17, the owner approved terminal reattachment after a page reload.
+Sharing web terminals across authenticated sessions is this unit's design choice for the single-owner product.
 Any such session may list the web project terminals, read output, type into them, resize them, or close them.
 A new output subscription takes over from the previous reader and replays recent output.
 The previous stream ends cleanly even when its connection is half-open.
 The last reader wins, while both signed-in connections may still type.
+The displaced tab uses the existing notice bar to explain how to take output back.
+While that tab displays the shell, it checks the existing terminal list once per second and learns when the shell ends.
+Opening the Terminal tab still attaches listed shells automatically.
 An agent, a service credential, an unauthenticated caller, or a local socket connection cannot use web terminals.
 A local socket terminal remains bound to its opening connection.
 A web session cannot use a local socket terminal.
@@ -276,9 +298,10 @@ The service closes it after that grace period.
 A local socket terminal keeps its five-second connection grace.
 A shell has no time limit.
 The service kills its live process groups on close, switch-off, connection loss past the grace period, and engine shutdown.
-When a web session ends, its shells close unless another live web session is reading them.
-A surviving shell becomes that reader's shell for subsequent sign-out cleanup.
-When a reader signs out of another session's shell, that shell detaches with its usual grace period.
+A web shell survives while any signed-in owner web session remains, subject to its detached grace period.
+The remaining browser may be typing without reading or reloading.
+Cleanup assigns a surviving shell to a remaining session without requiring a current reader.
+When its reader signs out, the shell detaches with its usual grace period.
 The last web session's sign-out closes all web shells.
 Web sign-in, sign-out, eviction, and expiry do not close local socket shells.
 On Linux, the service reads `/proc` to find and kill jobs in the shell's operating-system session.
@@ -294,6 +317,9 @@ If the former leader's process identifier exists again after exit, discovery sto
 Input and output are ephemeral.
 The service retains at most 64 kibibytes of recent output per project terminal in memory.
 Reattachment sends that recent output before subsequent live output.
+A detached shell pauses reads when its replay ring first turns over.
+Kernel backpressure then bounds processing until reattachment or the grace limit.
+Reattachment resumes reads even when the retained output has no complete escape-safe prefix.
 Input is not retained for replay.
 Neither stream is written to disk, logged, posted, sent as events, or included in snapshots or protocol logs.
 The owner's ruling of 2026-11-14 covers both this stream and the harness sign-in stream.

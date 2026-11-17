@@ -1,3 +1,4 @@
+import { createHmac, scryptSync } from 'node:crypto'
 import { chmodSync, linkSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as Effect from 'effect/Effect'
@@ -5,6 +6,17 @@ import { expect, it } from 'vitest'
 import { registerRebuildCheck } from '../support/rebuildCheck.ts'
 import { login, post, withWeb } from '../support/webRig.ts'
 registerRebuildCheck({ noLog: true })
+
+// Synthetic fixture records must stay authentic when advancing their age.
+// Otherwise expiry would accidentally test tampering and discard other devices.
+const ageRecord = (stored: string, password: string) => {
+  const snapshot = JSON.parse(stored), record = snapshot.sessions[0]
+  record.createdAt = Date.now() - 31 * 86400000
+  const key = scryptSync(password, Buffer.from(record.passwordSalt, 'hex'), 32, { N: 65536, r: 8, p: 1, maxmem: 80 * 1024 * 1024 })
+  try { record.passwordBinding = createHmac('sha256', key).update('lgtm-web-password-v3\0').update(record.verifier).update('\0').update(String(record.createdAt)).digest('hex') }
+  finally { key.fill(0) }
+  return JSON.stringify(snapshot)
+}
 
 for (const change of ['none', 'password', 'removed', 'expired', 'tampered', 'mode', 'unreadable', 'symlink', 'hardlink', 'oversized', 'future', 'logout'] as const) {
   it(`s28 real listener restart: ${change}`, async () => withWeb(ctx => Effect.gen(function* () {
@@ -17,7 +29,7 @@ for (const change of ['none', 'password', 'removed', 'expired', 'tampered', 'mod
     expect(stored.includes(ctx.password)).toBe(false)
     if (change === 'logout') expect((yield* Effect.promise(() => post(ctx, '/api/logout', undefined, { Cookie: cookie }))).status).toBe(204)
     yield* ctx.close
-    if (change === 'expired') { const record = JSON.parse(stored); record.sessions[0].createdAt = Date.now() - 31 * 86400000; writeFileSync(file, JSON.stringify(record), { mode: 0o600 }) }
+    if (change === 'expired') writeFileSync(file, ageRecord(stored, ctx.password), { mode: 0o600 })
     if (change === 'tampered') writeFileSync(file, '{broken')
     if (change === 'mode') chmodSync(file, 0o644)
     if (change === 'unreadable') chmodSync(file, 0o000)
@@ -47,7 +59,7 @@ for (const change of ['none', 'password', 'removed', 'expired', 'tampered', 'log
       const file = join(process.root.state, 'web-session.json')
       if (change === 'logout') expect((yield* Effect.promise(() => post(process.ctx, '/api/logout', undefined, { Cookie: cookie }))).status).toBe(204)
       yield* process.service.stop
-      if (change === 'expired') { const record = JSON.parse(readFileSync(file, 'utf8')); record.sessions[0].createdAt = Date.now() - 31 * 86400000; writeFileSync(file, JSON.stringify(record)) }
+      if (change === 'expired') writeFileSync(file, ageRecord(readFileSync(file, 'utf8'), process.ctx.password))
       if (change === 'tampered') writeFileSync(file, '{broken')
       if (change === 'password') yield* process.restart('changed-s28-password')
       else if (change === 'removed') yield* process.restart(undefined)

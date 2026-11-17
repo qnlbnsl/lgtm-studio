@@ -324,7 +324,7 @@ live('s28 scrollback stays below 64 KiB and sign-out kills the reattached shell'
   expect((yield* web.upgrade(endpoint, { Cookie: cookie })).status).toBe(401)
 })), ['S28_OLD_OUTPUT', 'S28_RECENT_OUTPUT']))
 
-live('r2 a phone takes over a half-open desktop stream, both can type, and logout preserves only an attached handoff', () => withPtyPrivacy(withServer(({ client, rig }) => Effect.gen(function* () {
+live('r2 a phone takes over a half-open desktop stream, both can type, and logout preserves the attached handoff', () => withPtyPrivacy(withServer(({ client, rig }) => Effect.gen(function* () {
   yield* enabled(client, true)
   const local = yield* open(client)
   const localPid = vi.mocked(Pty.spawn).mock.results.at(-1)!.value.pid
@@ -371,3 +371,18 @@ live('r2 a phone takes over a half-open desktop stream, both can type, and logou
   expect(alive(localPid)).toBe(true)
   yield* req(client, 'close', { sessionId: local.sessionId })
 })), ['R2_HANDOFF_BEFORE', 'R2_DESKTOP_KEYS', 'R2_PHONE_KEYS', 'R2_INHERITED']))
+
+live('r3 a typing-only phone keeps a detached desktop shell through logout and reload', () => withWebTerminal(({ web, endpoint, cookie }) => Effect.gen(function* () {
+  const desktop = yield* web.connected(endpoint, cookie), opened = yield* webOpen(web, desktop)
+  const sessionId = opened.value.sessionId, pid = vi.mocked(Pty.spawn).mock.results.at(-1)!.value.pid
+  const phone = yield* web.login(endpoint), typing = yield* web.connected(endpoint, phone.cookie)
+  expect((yield* web.rpc(typing, 'client.terminal.write', { requestId: 'typing-only', sessionId, text: "printf 'R3_%s\\n' TYPED\r" }))._tag).toBe('Success')
+  desktop.terminate(); typing.terminate()
+  expect((yield* Effect.promise(() => web.post(endpoint, '/api/logout', undefined, { Cookie: cookie }))).status).toBe(204)
+  expect(alive(pid)).toBe(true)
+  const reloaded = yield* web.connected(endpoint, phone.cookie)
+  expect((yield* web.rpc(reloaded, 'client.terminal.list', { requestId: 'reload-list' })).value.sessions).toContainEqual({ sessionId, projectId: 'terminal-project', worktreeId: 'terminal-worktree' })
+  expect((yield* web.rpc(reloaded, 'client.terminal.write', { requestId: 'reload-write', sessionId, text: "printf 'R3_%s\\n' RELOADED\r" }))._tag).toBe('Success')
+  expect((yield* Effect.promise(() => web.post(endpoint, '/api/logout', undefined, { Cookie: phone.cookie }))).status).toBe(204)
+  yield* waitFor('last session ends a shell with no reader', () => !alive(pid))
+})))

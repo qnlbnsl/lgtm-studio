@@ -50,21 +50,16 @@ export class SignInSessions {
       }
       if (session.kind === 'project') {
         // Retain at most 64 KiB of UTF-8 output, in this object only.
-        session.history.append(text)
-        if (session.detached) return
+        const turnedOver = session.history.append(text)
+        if (session.detached) {
+          if (turnedOver) this.pause(session)
+          return
+        }
       }
       session.bytes += Buffer.byteLength(text); session.queue.push({ _tag: 'output', text })
       // Stop reading the PTY so the kernel applies backpressure to the shell.
       // The queue can exceed the high mark by at most the current native chunk.
-      if (session.kind === 'project' && !session.draining && !session.paused && session.bytes >= 128 * 1024) {
-        session.paused = true; child.pause()
-        // node-pty destroys an unread socket 200 ms after native exit. Resume
-        // before that deadline and drain the finite tail without pausing again.
-        session.exitWatch = setInterval(() => {
-          if ((child as IPty & { _boundClose: boolean })._boundClose) this.processExit(session)
-        }, 15)
-        session.exitWatch.unref()
-      }
+      if (session.kind === 'project' && session.bytes >= 128 * 1024) this.pause(session)
       session.wake?.()
     })
     child.onExit(() => { this.processExit(session); resolveExit(); this.finish(session, session.kind === 'project' ? 'The shell exited.' : 'The sign-in program exited.') })
@@ -74,6 +69,20 @@ export class SignInSessions {
     return { id, pid: child.pid }
   }
   private graceMs(s: Session) { return this.options.graceMs ?? (s.kind === 'project' && s.ownerSessionId !== undefined ? 5 * 60_000 : 5000) }
+  private pause(s: Session) {
+    if (s.paused || s.draining || s.ending) return
+    s.paused = true; s.child.pause()
+    // node-pty destroys an unread socket 200 ms after native exit. Resume
+    // before that deadline and drain the finite tail without pausing again.
+    s.exitWatch = setInterval(() => {
+      if ((s.child as IPty & { _boundClose: boolean })._boundClose) this.processExit(s)
+    }, 15)
+    s.exitWatch.unref()
+  }
+  private resume(s: Session) {
+    if (!s.paused) return
+    s.paused = false; clearInterval(s.exitWatch); s.exitWatch = undefined; s.child.resume()
+  }
   private get(id: string, connection: string, kind?: 'project', ownerSessionId?: string) {
     const s = this.sessions.get(id), reasons = kind === 'project' ? terminalReasons : signInReasons;
     if (!s || s.kind !== kind) throw new Error(reasons.missing);
@@ -140,10 +149,10 @@ export class SignInSessions {
       if (s.ownerSessionId === undefined) continue;
       if (s.kind === 'project') {
         if (!remaining.size) { s.history.clear(); this.finish(s, 'The owner signed out.'); }
-        else if (s.ownerSessionId === ownerSessionId) {
-          if (s.attached && s.attachedOwnerSessionId !== undefined && remaining.has(s.attachedOwnerSessionId)) s.ownerSessionId = s.attachedOwnerSessionId;
-          else { s.history.clear(); this.finish(s, 'The owner signed out.'); }
-        } else if (s.attachedOwnerSessionId === ownerSessionId) this.detach(s.id, s.connectionId);
+        else {
+          if (s.ownerSessionId === ownerSessionId) s.ownerSessionId = s.attachedOwnerSessionId !== undefined && remaining.has(s.attachedOwnerSessionId) ? s.attachedOwnerSessionId : remaining.values().next().value!;
+          if (s.attachedOwnerSessionId === ownerSessionId) this.detach(s.id, s.connectionId);
+        }
       } else if (s.ownerSessionId === ownerSessionId) this.finish(s, 'The owner signed out.');
     }
   }
@@ -154,7 +163,7 @@ export class SignInSessions {
     clearTimeout(s.grace)
     if (s.kind === 'project') {
       s.attached = false; s.attachedOwnerSessionId = undefined; s.detached = true; s.reader++; s.queue = []; s.bytes = 0; s.wake?.()
-      if (s.paused) { s.paused = false; clearInterval(s.exitWatch); s.exitWatch = undefined; s.child.resume() }
+      this.resume(s)
     }
     s.grace = setTimeout(() => this.finish(s, 'The terminal disconnected.'), this.graceMs(s)); s.grace.unref()
   }
@@ -165,20 +174,24 @@ export class SignInSessions {
       if (kind !== 'project' || ownerSessionId === undefined) throw new Error(kind ? terminalReasons.stream : signInReasons.stream);
       s.reader++; s.wake?.();
     }
-    if (kind === 'project' && (s.everAttached || s.detached) && !s.ending) {
+    const replaying = kind === 'project' && (s.everAttached || s.detached) && !s.ending
+    if (replaying) {
       const replay = s.history.replay();
       s.queue = replay ? [{ _tag: 'output', text: replay }] : []; s.bytes = Buffer.byteLength(replay)
     }
     s.connectionId = connection; s.detached = false; s.everAttached = true
     const reader = ++s.reader
     s.attached = true; s.attachedOwnerSessionId = ownerSessionId; onAttached?.(reader); clearTimeout(s.grace); s.grace = undefined
+    // A replay is below the high mark, including an empty escape-safe replay.
+    // Resume only after clearing detached, so new data enters the live queue.
+    if (replaying) this.resume(s)
     try { for (;;) {
       if (s.reader !== reader) {
         if (kind === 'project' && s.attached && !s.ending) yield { _tag: 'ended', reason: terminalReasons.takeover, check: { state: 'unavailable' } };
         return;
       }
       if (!s.queue.length) { if (s.done) return; let wake!: () => void; await new Promise<void>(resolve => { wake = resolve; s.wake = resolve }); if (s.wake === wake) s.wake = undefined; continue }
-      const item = s.queue.shift()!; if (item._tag === 'output') { s.bytes -= Buffer.byteLength(item.text); if (s.paused && !s.ending && s.bytes <= 32 * 1024) { s.paused = false; clearInterval(s.exitWatch); s.exitWatch = undefined; s.child.resume() } } yield item; if (item._tag === 'ended') return
+      const item = s.queue.shift()!; if (item._tag === 'output') { s.bytes -= Buffer.byteLength(item.text); if (!s.ending && s.bytes <= 32 * 1024) this.resume(s) } yield item; if (item._tag === 'ended') return
     } } finally { if (s.reader === reader) { s.attached = false; s.queue = []; s.bytes = 0; if (s.done) this.sessions.delete(id); else this.detach(id, connection) } }
   }
   close() { this.closed = true; for (const s of this.sessions.values()) this.finish(s, 'The service stopped.'); this.sessions.clear() }

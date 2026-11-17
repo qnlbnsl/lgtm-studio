@@ -135,6 +135,17 @@ export async function exerciseStudioTerminal(page: Page) {
           expect(await page.evaluate(() => (window as any).terminalViolations)).toEqual([])
           const nonce = await page.evaluate(() => { const n = document.querySelector('meta[name="lgtm-style-nonce"]')!.getAttribute('content'); return [...document.querySelectorAll('.xterm style')].every(s => (s as HTMLStyleElement).nonce === n) })
           expect(nonce).toBe(true)
+          const finalReader = await page.context().newPage()
+          try {
+            await finalReader.goto(url)
+            await expect(finalReader.locator('.term-tab')).toHaveCount(1)
+            await expect(page.locator('.term-bar')).toContainText('Reload to take back its output.')
+            await finalReader.locator('.xterm-helper-textarea').focus()
+            await finalReader.keyboard.type('exit'); await finalReader.keyboard.press('Enter')
+            await expect(finalReader.locator('.term-bar')).toContainText('The shell exited.')
+            await expect(page.locator('.term-bar')).toContainText('This shell has ended. Open a new session.')
+            await expect(page.locator('.term-bar')).not.toContainText('Reload to reattach')
+          } finally { await finalReader.close() }
           await page.getByRole('button', { name: /^Close / }).last().click()
           await expect(page.locator('.term')).toContainText('No sessions are open')
           await folder.selectOption({ label: (await folder.locator('option').filter({ hasText: /^main ·/ }).textContent())! })

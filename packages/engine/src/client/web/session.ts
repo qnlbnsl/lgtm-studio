@@ -8,12 +8,13 @@ const digest = (text: string) => createHash("sha256").update(text).digest();
 export const cookieName = "lgtm_session";
 export const sessionMaxAge = 30 * 24 * 60 * 60;
 export const sessionLimit = 8;
+const clockSkewMs = 5 * 60 * 1000;
 type Record = { verifier: string; passwordSalt: string; passwordBinding: string; createdAt: number };
 // A file reader must perform the memory-hard derivation for every password
 // guess. Salts are independent, and parameters cannot be supplied by the file.
-const binding = (r: Pick<Record, 'verifier' | 'passwordSalt'>, password: string) => {
+const binding = (r: Record, password: string) => {
   const key = scryptSync(password, Buffer.from(r.passwordSalt, 'hex'), 32, { N: 65536, r: 8, p: 1, maxmem: 80 * 1024 * 1024 });
-  try { return createHmac('sha256', key).update('lgtm-web-password-v2\0').update(r.verifier).digest('hex'); }
+  try { return createHmac('sha256', key).update('lgtm-web-password-v3\0').update(r.verifier).update('\0').update(String(r.createdAt)).digest('hex'); }
   finally { key.fill(0); }
 };
 const equal = (a: string, b: string) => timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
@@ -22,9 +23,10 @@ export const makeSession = (password: Redacted.Redacted<string> | undefined, reg
   options: { stateFolder?: string | undefined; registerHash?: ((hash: string) => void) | undefined } = {}) => {
   const plain = password === undefined ? "" : Redacted.value(password), expected = digest(plain);
   const file = options.stateFolder === undefined ? undefined : join(options.stateFolder, 'web-session.json');
-  let records: Record[] = [], latestToken = '';
+  let records: Record[] = [], latestToken = '', loadFailed = false;
   const revoked = new Set<string>(), registered = new Set<string>();
-  const live = (r: Record) => Date.now() >= r.createdAt && Date.now() - r.createdAt < sessionMaxAge * 1000;
+  // A backward wall-clock step delays expiry; it must not revoke every device.
+  const live = (r: Record) => Date.now() - r.createdAt < sessionMaxAge * 1000;
   const write = (next: Record[]) => {
     if (file === undefined) return;
     const temporary = file + '.' + randomBytes(16).toString('hex');
@@ -32,7 +34,7 @@ export const makeSession = (password: Redacted.Redacted<string> | undefined, reg
     try {
       fd = openSync(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
       fchmodSync(fd, 0o600);
-      writeFileSync(fd, JSON.stringify({ version: 2, sessions: next })); fsyncSync(fd); closeSync(fd); fd = undefined;
+      writeFileSync(fd, JSON.stringify({ version: 3, sessions: next })); fsyncSync(fd); closeSync(fd); fd = undefined;
       renameSync(temporary, file);
       const directory = openSync(options.stateFolder!, constants.O_RDONLY | constants.O_DIRECTORY);
       try { fsyncSync(directory); } finally { closeSync(directory); }
@@ -75,21 +77,24 @@ export const makeSession = (password: Redacted.Redacted<string> | undefined, reg
       const stat = fstatSync(fd);
       if (!stat.isFile() || (stat.mode & 0o7777) !== 0o600 || stat.uid !== process.getuid?.() || stat.nlink !== 1 || stat.size > 4096) throw new Error('invalid');
       const saved = JSON.parse(readFileSync(fd, 'utf8'));
-      if (saved.version !== 2 || !Array.isArray(saved.sessions) || saved.sessions.length > sessionLimit || plain.length < 8) throw new Error('invalid');
+      if (saved.version !== 3 || !Array.isArray(saved.sessions) || saved.sessions.length > sessionLimit || plain.length < 8) throw new Error('invalid');
       const parsed: Record[] = saved.sessions;
       const seen = new Set<string>();
       for (const r of parsed) {
         if (r === null || !hex(r.verifier, 64) || !hex(r.passwordSalt, 32) || !hex(r.passwordBinding, 64)
-          || !Number.isSafeInteger(r.createdAt) || r.createdAt > Date.now() || seen.has(r.verifier)
+          || !Number.isSafeInteger(r.createdAt) || r.createdAt > Date.now() + clockSkewMs || seen.has(r.verifier)
           || !equal(r.passwordBinding, binding(r, plain))) throw new Error('invalid');
         seen.add(r.verifier);
       }
-      records = parsed.filter(live);
-      if (records.length !== parsed.length) write(records);
+      const next = parsed.filter(live);
+      // Prove this file can be updated before accepting its cookies. If both
+      // checkpoint and invalidation fail, this instance stays closed to login.
+      write(next);
+      records = next;
       for (const r of records) options.registerHash?.(r.verifier);
     } catch {
       records = [];
-      try { invalidate(); } catch {}
+      try { invalidate(); } catch { loadFailed = true; }
     } finally { if (fd !== undefined) closeSync(fd); }
   }
   const identify = (cookie: string | undefined) => {
@@ -103,6 +108,7 @@ export const makeSession = (password: Redacted.Redacted<string> | undefined, reg
   };
   return {
     rotate: () => {
+      if (loadFailed) throw new Error('Web session storage is unavailable.');
       if (plain.length < 8) throw new Error('Web session unavailable.');
       const minted = mintCredential('shp_w_'), next = Redacted.value(minted.token);
       const r = { verifier: minted.tokenHash, passwordSalt: randomBytes(16).toString('hex'), passwordBinding: '', createdAt: Date.now() };

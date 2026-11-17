@@ -155,19 +155,24 @@ An enabled terminal uses the registered local worktree folder and the service's 
 The xterm.js renderer handles colours, cursor movement, and full-screen programs.
 The build adds the page's style nonce before the renderer attaches its style elements.
 The content security policy is unchanged.
-Live output reaches the attached owner connection unchanged, under the owner's rulings of 2026-11-14 and 2026-11-17.
+Live output reaches the attached owner connection unchanged, under the owner's output ruling of 2026-11-14.
+The owner approved reattachment after reload on 2026-11-17.
+Sharing web shells across the owner's signed-in sessions is this unit's design choice for a single-owner product.
 A printed secret appears on the owner's screen and in any scrollback the owner's tools keep.
 The service writes neither output nor input to disk.
 The live Terminal tab reattaches the owner's web shells automatically after a page reload.
 Any signed-in owner device can pick up the same shell.
 The newest reader takes over the output stream.
-The previous tab explains that output moved and keeps its input enabled.
+The previous tab says, “This terminal is open in another browser or tab. Reload to take back its output. Typing still works.”
+It checks for shell exit without taking the stream back.
+When the shell disappears, the existing bar says, “This shell has ended. Open a new session.”
+Opening the Terminal tab still attaches listed shells automatically.
 A disconnected web shell remains available for five minutes.
 The engine retains at most 64 kibibytes of recent output per shell in memory for replay.
 At most eight shells may be live, including detached shells.
 Shells end when their connection grace expires, the switch turns off, or the service stops.
-When a browser signs out, its shells close unless another signed-in session is reading them.
-A surviving shell becomes that reader's shell for subsequent sign-out cleanup.
+A web shell stays alive while any signed-in owner session remains, subject to its detached grace limit.
+A remaining browser need not be reading output.
 The last web session's sign-out closes every web shell.
 The standalone mock continues to use sample data.
 Remote shells, agent terminal watching, and agent terminal takeover need engine support.

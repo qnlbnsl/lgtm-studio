@@ -31,6 +31,14 @@ export function outputEnded(item, reason) {
 export function outputClosed(item) {
   if (!item.readingElsewhere) end(item, 'The connection ended. Reconnecting checks for this shell.');
 }
+export function reconcileTerminals(state, rows) {
+  const live = new Set(rows.map(row => row.sessionId));
+  for (const item of state.sessions) {
+    if (live.has(item.id)) continue;
+    if (isConnectionLoss(item.ended)) { item.ended = 'This shell has ended. Open a new session.'; notify(); }
+    else if (item.readingElsewhere) end(item, 'This shell has ended. Open a new session.');
+  }
+}
 async function load() {
   if (loading) return loading;
   loading = engine.request('client.web.settings').then(settings => { enabled = settings.terminalEnabled === true; notify(); }).finally(() => { loading = null; });
@@ -124,20 +132,33 @@ export function LiveTerminalTab({ s, project }) {
     let cancelled = false;
     engine.request('client.terminal.list').then(reply => {
       if (cancelled) return;
-      for (const item of state.sessions) {
-        if (item.ended.startsWith('The connection ended.') && !reply.sessions.some(row => row.sessionId === item.id)) item.ended = 'This shell has ended. Open a new session.';
-      }
-      notify();
+      reconcileTerminals(state, reply.sessions);
       for (const { sessionId, worktree } of mapping.terminalAttachments(reply.sessions, worktrees, project.id)) {
         if (state.dismissed.has(sessionId)) continue;
         const existing = state.sessions.find(item => item.id === sessionId);
-        if (existing && !existing.ended) continue;
+        if (existing && !existing.ended && !existing.readingElsewhere) continue;
         if (existing) { existing.cancel?.(); existing.terminal.dispose(); state.sessions = state.sessions.filter(item => item !== existing); }
         attach(worktree, sessionId);
       }
     }).catch(e => { if (!cancelled) setNotice(errorText(e)); });
     return () => { cancelled = true; };
   }, [s.conn.status, enabled, worktrees.map(worktree => worktree.id).join(',')]);
+  useEffect(() => {
+    if (s.conn.status !== 'live' || !enabled) return;
+    let cancelled = false, pending = false;
+    // The displaced output stream has ended. Check only status, without
+    // subscribing again and taking the other browser's output back.
+    const timer = setInterval(async () => {
+      if (pending || !state.sessions.some(item => item.readingElsewhere && !item.ended)) return;
+      pending = true;
+      try {
+        const reply = await engine.request('client.terminal.list');
+        if (!cancelled) reconcileTerminals(state, reply.sessions);
+      } catch {} // Connection and session observers handle transport loss.
+      finally { pending = false; }
+    }, 1000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [s.conn.status, enabled, project.id]);
   const selected = mapping.terminalSelection(worktrees, state.openIn, project.worktree);
   const options = worktrees.map(w => ({ value: w.id, label: (w.kind === 'project' ? project.name : w.branch) + ' · ' + (machineOf(s, w.machine)?.name || w.machine), folder: w.folder, reason: w.machine !== 'local' ? 'Engine work needed: local machine only' : null }));
   const newSession = (className = 'btn sm') => html`<${TerminalLaunch} options=${options} value=${selected?.id}
@@ -163,7 +184,7 @@ export function LiveTerminalTab({ s, project }) {
       { sep: true }, { label: 'Close session', icon: 'x', danger: true, onSelect: () => close(session) }
     ]} /></div></div>
     ${ended && html`<div class="term-bar warn"><${Icon} name="wifi-off" size=${14} /><span class="grow">${session.ended || 'The machine is offline.'}${canReattach && ' Disconnected shells stay available for five minutes. Reload to reattach.'}</span><button type="button" class="btn sm" disabled title=${canReattach ? 'Reload to reattach within five minutes.' : 'A closed shell cannot be restarted.'}>Reconnect</button></div>`}
-    ${!ended && session.readingElsewhere && html`<div class="term-bar warn"><${Icon} name="monitor" size=${14} /><span class="grow">Output is open in another tab or device. Typing still works. Reload to read output here.</span></div>`}
+    ${!ended && session.readingElsewhere && html`<div class="term-bar warn"><${Icon} name="monitor" size=${14} /><span class="grow">This terminal is open in another browser or tab. Reload to take back its output. Typing still works.</span></div>`}
     ${notice && html`<div class="term-bar error" role="status">${notice}</div>`}
     ${state.sessions.map(item => html`<${TerminalView} key=${item.id} session=${item} active=${item === session} sizeChanged=${redraw} />`)}
     <div class="term-keys only-phone-keys" role="group" aria-label="Extra keys">${keys.map(([label, key]) => html`<button type="button" aria-label=${label} disabled=${!!ended} aria-pressed=${key === null ? !!session.ctrl : null} onPointerDown=${e => e.preventDefault()} onClick=${() => { if (key === null) { session.ctrl = !session.ctrl; redraw(); } else { write(key); session.terminal.focus(); } }}>${label}</button>`)}</div>

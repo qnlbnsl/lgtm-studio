@@ -72,8 +72,9 @@ Project terminals reattach after a page reload within a five-minute disconnect g
 They replay at most 64 kibibytes of recent output from memory.
 Any signed-in owner device can pick up the same web shell.
 The newest output reader takes over, while other signed-in tabs can still type.
-Logging out closes that browser's shells unless another live session is reading them.
-Such a shell becomes the reader's shell for subsequent logout cleanup.
+Web shells stay alive while any signed-in owner session remains, subject to the five-minute detached grace limit.
+A remaining browser can be reloading or typing without reading output.
+The displaced tab explains how to take output back and checks for shell exit without taking over again.
 Logging out of the last web session closes all web shells.
 A service restart still closes the terminals.
 
