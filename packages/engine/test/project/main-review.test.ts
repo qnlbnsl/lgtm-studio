@@ -1039,3 +1039,148 @@ it.live("GitHub push never forces a remote branch that has advanced independentl
   expect(git(rig.work, "rev-parse", "HEAD")).toBe(f.baseHead)
   expect(git(f.source, "rev-parse", "HEAD")).toBe(f.head)
 })).pipe(Effect.orDie))
+
+it.live("s27 R2 M1: live base movement refuses even when the pull request base snapshot is unchanged", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  const { review } = (yield* prepare(f)).result
+  git(gh.bare, "update-ref", "refs/heads/main", f.head)
+  expect(gh.read().creationBase).toBe(f.baseHead)
+  expect((yield* approve(f, review)).result).toMatchObject({ outcome: "refused", reason: "stale_state" })
+  expect(readFileSync(gh.calls, "utf8")).not.toContain('"PUT"')
+})).pipe(Effect.orDie))
+
+it.live("s27 R2 M1: a reused request can be prepared and approved after another base merge", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  yield* prepare(f)
+  save(rig.work, "other-project.txt", "Other project\n"); const updated = commit(rig.work, "Other project merged")
+  git(gh.bare, "fetch", rig.work, "main:main")
+  const { review } = (yield* prepare(f)).result
+  expect(gh.read().creationBase).toBe(f.baseHead)
+  expect(review.delivery.remoteBaseHead).toBe(updated)
+  expect((yield* approve(f, review)).result.outcome).toBe("merged")
+})).pipe(Effect.orDie))
+
+for (const localUpdated of [false, true]) it.live(`s27 R2 M2/m8: a lost successful GitHub merge receipt reconciles with local update ${localUpdated}`, () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  const { review } = (yield* prepare(f)).result
+  const original = GitProcesses.ghProcess
+  const boundary = vi.spyOn(GitProcesses, "ghProcess").mockImplementation((folder, args, limits, signal) => original(folder, args, { ...limits, ...(args.includes("PUT") ? { timeoutMs: 1500 } : {}) }, signal))
+  yield* Effect.addFinalizer(() => Effect.sync(() => boundary.mockRestore()))
+  const requestId = freshRequest()
+  gh.set({ hangAt: "merge" })
+  expect(yield* refusal(approve(f, review, { requestId }))).toBe("Git outcome is uncertain; refresh Git state")
+  yield* noGitReceipt(requestId)
+  const merged = gh.read().mergeCommit
+  expect(gh.read().state).toBe("MERGED")
+  gh.set({ hangAt: null }); boundary.mockRestore()
+  expect(yield* refusal(approve(f, review, { requestId }))).toBe("Git outcome is uncertain; refresh Git state")
+  yield* run(f.api, "project.git.state", { projectId: f.projectId, worktreeId: f.worktreeId })
+  expect(Object.values(projectView(yield* snapshot).gitAttempts)).toHaveLength(0)
+  expect(yield* refusal(approve(f, review, { requestId }))).toBe("Git outcome is uncertain; refresh Git state")
+  if (localUpdated) { git(rig.work, "fetch", gh.bare, "main"); git(rig.work, "merge", "--ff-only", merged) }
+  const result = (yield* approve(f, review)).result
+  expect(result).toMatchObject({ outcome: "merged", mergeHead: merged, delivery: { state: "MERGED" } })
+  expect(git(rig.work, "rev-parse", "HEAD")).toBe(merged)
+  expect(readFileSync(gh.calls, "utf8").split('\n').filter(line => line.includes('"PUT"'))).toHaveLength(1)
+})).pipe(Effect.orDie))
+
+it.live("s27 R2 m2: a non-GitHub push URL refuses before branch publication", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  for (const rewrite of [false, true]) {
+    if (rewrite) {
+      git(rig.work, "config", "--unset", "remote.origin.pushurl")
+      git(rig.work, "config", "url.https://elsewhere.invalid/fixture/product.git.insteadOf", "https://github.com/fixture/product.git")
+    } else git(rig.work, "config", "remote.origin.pushurl", "https://elsewhere.invalid/fixture/product.git")
+    expect(yield* refusal(prepare(f))).toContain("GitHub")
+    expect(git(gh.bare, "branch", "--list", git(f.source, "branch", "--show-current"))).toBe("")
+  }
+  expect(readFileSync(gh.gitCalls, "utf8").split('\n').filter(Boolean).map(line => JSON.parse(line) as string[]).some(args => args.includes("push"))).toBe(false)
+})).pipe(Effect.orDie))
+
+for (const fork of [false, true]) it.live(`s27 R2 m3/m4/m8: numeric project branches ignore fork requests and never become pull request numbers (${fork})`, () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work), branch = "123"
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  git(f.source, "branch", "-m", branch)
+  yield* appendSetup([eventOf({ _tag: "project.WorktreeCreated", repoId: f.repoId, worktreeId: f.worktreeId, branch, path: f.source, machineId: "local", checkout: "worktree" })])
+  gh.set({ fork })
+  const { review } = (yield* prepare(f)).result
+  expect(review.delivery).toMatchObject({ mode: "github", number: 17 })
+  const refreshed = (yield* prepare(f)).result.review
+  expect(refreshed.delivery.number).toBe(17)
+  expect((yield* approve(f, refreshed)).result.outcome).toBe("merged")
+  expect(readFileSync(gh.calls, "utf8")).not.toContain('["pr","view","123"')
+})).pipe(Effect.orDie))
+
+it.live("s27 R2 m5: unreachable GitHub refuses with a sentence instead of offering local approval", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  gh.set({ offline: true, secret: "synthetic-network-secret-987654" })
+  expect(yield* refusal(prepare(f))).toMatch(/GitHub.*[.]$/)
+  expect(projectView(yield* snapshot).gitReviews[f.worktreeId]).toBeUndefined()
+  expect(JSON.stringify(yield* readLog)).not.toContain("synthetic-network-secret-987654")
+})).pipe(Effect.orDie))
+
+it.live("s27 R2 m6: forbidden SCP paths are normalized before any push", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  for (const url of ["git@github.com:vitalysim//herdr-synapse.git", "git@github.com:./vitalysim/./herdr-synapse.git", "git@github.com:any/../vitalysim/herdr-synapse.git"]) {
+    git(rig.work, "config", "remote.origin.pushurl", url)
+    expect(yield* refusal(prepare(f))).toBe("Git: forbidden_remote")
+  }
+})).pipe(Effect.orDie))
+
+it.live("s27 R2 m1: delivery disables configured signing and remote programs while retaining a real push and fetch", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work), marker = join(rig.root, "program-ran"), program = join(rig.root, "unwanted-program")
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  writeFileSync(program, `#!/bin/sh\ntouch '${marker}'\nexit 1\n`, { mode: 0o700 })
+  git(rig.work, "config", "remote.origin.mirror", "true"); git(rig.work, "config", "push.followTags", "true")
+  git(f.source, "tag", "-a", "unpublished-tag", "-m", "Do not publish")
+  git(rig.work, "config", "push.gpgSign", "true"); git(rig.work, "config", "gpg.program", program)
+  git(rig.work, "config", "remote.origin.receivepack", program); git(rig.work, "config", "remote.origin.uploadpack", program)
+  const { review } = (yield* prepare(f)).result
+  expect((yield* approve(f, review)).result.outcome).toBe("merged")
+  expect(existsSync(marker)).toBe(false)
+  expect(git(gh.bare, "tag", "--list")).toBe("")
+  const calls = readFileSync(gh.gitCalls, "utf8").split('\n').filter(Boolean).map(line => JSON.parse(line) as string[]).filter(args => args.includes("push") || args.includes("fetch"))
+  expect(calls).toHaveLength(2)
+  for (const args of calls) for (const option of ["protocol.ext.allow=never", "push.gpgSign=false", "core.askPass="]) expect(args).toContain(option)
+})).pipe(Effect.orDie))
+
+it.live("s27 R2 m8: a stalled create is bounded after the real branch push", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`); gh.set({ hangAt: "create" })
+  const service = makeGitService({ workspaceFolder: rig.root, networkTimeoutMs: 1000 }), review = yield* service.reviewMain(f.source, rig.work)
+  const failed = yield* service.prepareDelivery(f.source, review, { title: "Bounded create", body: "Data" }, { _tag: "owner" }).pipe(Effect.result)
+  expect(failed).toMatchObject({ _tag: "Failure", failure: { reason: "timeout", uncertain: true } })
+  expect(git(gh.bare, "rev-parse", `refs/heads/${review.branch}`)).toBe(f.head)
+  expect(gh.read().branch).toBeUndefined()
+})).pipe(Effect.orDie))
+
+for (const phase of ['prepare', 'approve'] as const) it.live(`s27 R2 m5: an unreachable GitHub timeout has a sentence during ${phase}`, () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv('PATH', `${gh.bin}:${process.env.PATH}`)
+  const review = phase === 'approve' ? (yield* prepare(f)).result.review : undefined
+  const original = GitProcesses.ghProcess
+  const boundary = vi.spyOn(GitProcesses, 'ghProcess').mockImplementation((folder, args, limits, signal) => original(folder, args, { ...limits, timeoutMs: 500 }, signal))
+  yield* Effect.addFinalizer(() => Effect.sync(() => boundary.mockRestore()))
+  gh.set({ hang: true })
+  const reason = phase === 'prepare' ? yield* refusal(prepare(f)) : (yield* approve(f, review)).result.reason
+  expect(reason).toMatch(/GitHub.*[.]$/)
+  expect(git(rig.work, 'rev-parse', 'HEAD')).toBe(f.baseHead)
+  expect(Object.values(projectView(yield* snapshot).gitAttempts)).toHaveLength(0)
+})).pipe(Effect.orDie))
+
+it.live('s27 R2 m5: unreachable approval reports availability instead of claiming a failed pull request condition', () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv('PATH', `${gh.bin}:${process.env.PATH}`)
+  const { review } = (yield* prepare(f)).result
+  gh.set({ offline: true })
+  const result = (yield* approve(f, review)).result
+  expect(result).toMatchObject({ outcome: 'refused', reason: expect.stringContaining('availability') })
+  expect(git(rig.work, 'rev-parse', 'HEAD')).toBe(f.baseHead)
+  expect(readFileSync(gh.calls, 'utf8')).not.toContain('"PUT"')
+})).pipe(Effect.orDie))

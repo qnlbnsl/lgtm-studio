@@ -272,6 +272,10 @@ The agent tool list does not expose an owner merge tool.
 The engine uses the service user's existing GitHub command-line interface (CLI) identity for authentication status, pull request reads, creation, and merging.
 It never asks the CLI for a token.
 It never reads or stores the CLI's configuration or credential files.
+The authentication query returns only active-account state values through a CLI filter.
+It never requests token values.
+An empty active-account list permits the signed-out fallback.
+A network error or an ambiguous authentication result refuses with a sentence.
 Authentication diagnostics and unused command output are discarded.
 Selected pull request metadata passes through the production redactor before entering a log, an event, or a client reply.
 The project name, goal, and reported evidence are redacted before they become a pull request title or description.
@@ -288,11 +292,27 @@ It never forces a push or pushes tags or submodules with that operation.
 The engine checks the configured and resolved remote URLs before preparing a pull request.
 It refuses the repository path `vitalysim/herdr-synapse`, including a resolved push URL with that path.
 The existing owner Git push also refuses that path.
+The configured fetch and push destinations must resolve to the same GitHub.com repository.
+A local mirror, a different host, or a different repository is refused.
+Offline tests replace the transport executable on a private search path.
+Production has no setting to bypass destination validation.
+Delivery commands disable the external transport protocol, push signing, and Git's configured password-prompt program.
+They also disable tag following, submodule recursion, automatic HTTP redirects, and custom remote receive and upload programs.
+The push also disables mirror mode and force mode.
+The fetch disables pruning and configured destination ref mappings.
+The engine preserves the owner's credential helpers, Secure Shell (SSH) configuration, and proxy configuration because normal authentication and connectivity can depend on them.
+An agent that can write the repository's Git configuration can still configure a credential helper or SSH command to run arbitrary code as the service user when the owner prepares or approves.
+Such an agent can also change proxies, credential handling, or configuration between validation and execution to redirect traffic or expose the owner's GitHub identity.
+A configured checkout filter can run when a fast-forward writes local files.
+These command limits do not isolate hostile repository configuration.
+The owner must trust that configuration until agents run in the planned external sandbox.
 
 Approval pins the reviewed head in GitHub's merge request and requests a merge commit.
 It does not request administrative bypass, automatic merging, or a merge queue.
 The preflight refuses a closed pull request or a GitHub merge status other than ready.
-It checks that the remote base still matches Prepare.
+It reads the live base branch through GitHub’s reference endpoint at Prepare and immediately before an open pull request merge.
+The pull request’s `baseRefOid` metadata is not used as a live branch head.
+It checks that the live remote base still matches Prepare and the reviewed local base.
 GitHub enforces the merge request against its current server state.
 The remote base can move between the preflight and the merge request because GitHub offers a head condition but no base condition on that endpoint.
 The local checkout is updated only after GitHub confirms the merge.
@@ -302,3 +322,6 @@ The reply states that the local update could not complete.
 A timeout after an external effect can have an uncertain outcome.
 The durable operation attempt prevents a retry from blindly repeating that effect.
 The owner must refresh and inspect the recorded pull request before continuing.
+A new approval request can reconcile an already merged pull request with the exact reviewed head and a valid recorded merge commit.
+It records that confirmed merge and attempts the same safe local update without requesting another remote merge.
+The original uncertain request keeps its uncertain receipt.

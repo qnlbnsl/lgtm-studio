@@ -24,6 +24,8 @@ export interface GitConfiguration {
   readonly operationTimeoutMs?: number;
   readonly networkTimeoutMs?: number;
 }
+const deliveryOptions = ["-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always",
+  "-c", "protocol.ext.allow=never", "-c", "push.gpgSign=false", "-c", "core.askPass=", "-c", "http.followRedirects=false"];
 const fail = (reason: GitFailureReason): never => { throw new GitFailure({ reason }); };
 const determinate = (reason: GitFailureReason): never => { throw new GitFailure({ reason, determinate: true }); };
 const hash = (...parts: ReadonlyArray<string | Buffer>) => {
@@ -740,48 +742,62 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       const mode = await deliveryMode((args) => run(from.path, args, signal), gh.run);
       if (mode.mode === "local") return mode;
       if (!cleanText(text.title, 1024) || Buffer.byteLength(text.body) > 32 * 1024 || text.body.includes("\0")) return fail("invalid_message");
-      await mutateGit(from.path, ["-c", "push.followTags=false", "push", "--no-follow-tags", "--recurse-submodules=no", "--", mode.remote,
+      await mutateGit(from.path, [...deliveryOptions, "-c", `remote.${mode.remote}.mirror=false`, "-c", "push.followTags=false", "push", "--no-mirror", "--no-force", "--receive-pack=git-receive-pack", "--no-follow-tags", "--recurse-submodules=no", "--", mode.remote,
         `${reviewed.head}:refs/heads/${reviewed.branch}`], signal, "push");
       const args = ["--repo", mode.repository];
-      const found = await gh.json(["pr", "list", ...args, "--head", reviewed.branch, "--base", reviewed.base, "--state", "open", "--json", gh.fields]);
-      if (!Array.isArray(found) || found.length > 1) return fail("github_refused");
+      const list = async () => {
+        const values = await gh.json(["pr", "list", ...args, "--head", reviewed.branch, "--base", reviewed.base, "--state", "open", "--json", gh.fields]);
+        if (!Array.isArray(values)) return fail("github_refused");
+        const own = values.filter((value) => value?.isCrossRepository === false);
+        if (own.length > 1) return fail("github_refused");
+        return own;
+      };
+      let found = await list();
       if (found.length === 0) {
         const created = await gh.run(["pr", "create", ...args, "--head", reviewed.branch, "--base", reviewed.base, "--title", text.title, "--body", text.body]);
         if (created.code !== 0) return fail("github_refused");
+        // Branch strings can be numeric; never pass one as a PR selector.
+        found = await list();
       }
-      const pr = found[0] ?? await gh.json(["pr", "view", reviewed.branch, ...args, "--json", gh.fields]);
-      return checkedPullRequest(pr, mode.repository, mode.remote, reviewed.branch, reviewed.base, reviewed.head);
+      const delivery = checkedPullRequest(found[0], mode.repository, mode.remote, reviewed.branch, reviewed.base, reviewed.head);
+      return { ...delivery, remoteBaseHead: await gh.baseHead(mode.repository, reviewed.base) };
     }, true),
     approveDelivery: (source, destination, reviewed, delivery, caller, confirmed) => operation(async (signal) => {
       if (caller?._tag !== "owner") return fail("owner_required");
       if (!confirmed) return fail("confirmation_required");
       const from = await repository(source, signal), to = await repository(destination, signal);
       if (from.commonDirectory !== to.commonDirectory || from.path === to.path) return fail("invalid_path");
-      if (await branch(from.path, signal) !== reviewed.branch || await localBranch(from.path, reviewed.branch, signal) !== reviewed.head
-        || await localBranch(from.path, reviewed.base, signal) !== reviewed.baseHead) return fail("stale_state");
+      if (await branch(from.path, signal) !== reviewed.branch || await localBranch(from.path, reviewed.branch, signal) !== reviewed.head) return fail("stale_state");
       const gh = githubCommands(from.path, signal, networkMs);
       const mode = await deliveryMode((args) => run(from.path, args, signal), gh.run);
       if (mode.mode !== "github" || mode.repository !== delivery.repository || mode.remote !== delivery.remote) return fail("stale_state");
       const pr = await gh.json(["pr", "view", String(delivery.number), "--repo", mode.repository, "--json", gh.fields]);
       const fresh = checkedPullRequest(pr, mode.repository, mode.remote, reviewed.branch, reviewed.base, reviewed.head);
-      if (fresh.state !== "OPEN" || pr.mergeable !== "MERGEABLE" || pr.mergeStateStatus !== "CLEAN") throw new GitFailure({ reason: "github_refused", determinate: true, pullRequestState: fresh.state });
-      // Remote movement after Prepare invalidates approval, just like a changed local head.
-      if (fresh.remoteBaseHead !== delivery.remoteBaseHead || fresh.remoteBaseHead !== reviewed.baseHead) return fail("stale_state");
-      mutations.add(signal);
-      // The REST merge endpoint cannot silently enable auto-merge or enqueue work.
-      // Its SHA parameter atomically binds the reviewed head at GitHub.
-      const merged = await gh.json(["api", "--method", "PUT", `repos/${mode.repository}/pulls/${delivery.number}/merge`,
-        "-f", "merge_method=merge", "-f", `sha=${reviewed.head}`]);
-      if (merged.merged !== true || typeof merged.sha !== "string" || !/^[a-f0-9]{40,64}$/.test(merged.sha)) return fail("github_refused");
-      const result = { head: merged.sha, delivery: { ...fresh, state: "MERGED" as const }, localSync: "The local base checkout was left alone because it is dirty, on another branch, or cannot fast-forward." };
+      let mergedHead: string;
+      if (fresh.state === "MERGED") {
+        // A new owner request reconciles a confirmed remote effect without
+        // replaying the original uncertain command or issuing another merge.
+        if (typeof pr.mergeCommit?.oid !== "string" || !/^[a-f0-9]{40,64}$/.test(pr.mergeCommit.oid)) return fail("github_refused");
+        mergedHead = pr.mergeCommit.oid;
+      } else {
+        if (fresh.state !== "OPEN" || pr.mergeable !== "MERGEABLE" || pr.mergeStateStatus !== "CLEAN") throw new GitFailure({ reason: "github_refused", determinate: true, pullRequestState: fresh.state });
+        const liveBase = await gh.baseHead(mode.repository, reviewed.base);
+        if (await localBranch(from.path, reviewed.base, signal) !== reviewed.baseHead || liveBase !== delivery.remoteBaseHead || liveBase !== reviewed.baseHead) return fail("stale_state");
+        mutations.add(signal);
+        const merged = await gh.json(["api", "--method", "PUT", `repos/${mode.repository}/pulls/${delivery.number}/merge`,
+          "-f", "merge_method=merge", "-f", `sha=${reviewed.head}`]);
+        if (merged.merged !== true || typeof merged.sha !== "string" || !/^[a-f0-9]{40,64}$/.test(merged.sha)) return fail("github_refused");
+        mergedHead = merged.sha;
+      }
+      const result = { head: mergedHead, delivery: { ...fresh, remoteBaseHead: delivery.remoteBaseHead, state: "MERGED" as const }, localSync: "The local base checkout was left alone because it is dirty, on another branch, or cannot fast-forward." };
       try {
         if (await branch(to.path, signal) !== reviewed.base || (await completeChanges(to.path, signal)).length > 0 || await mergeHead(to.path, signal) !== null) return result;
-        await mutateGit(from.path, ["fetch", "--no-tags", mode.remote, `refs/heads/${reviewed.base}`], signal, "fetch");
-        await ref(from.path, merged.sha, signal);
-        if ((await run(to.path, ["merge-base", "--is-ancestor", (await head(to.path, signal))!, merged.sha], signal)).code !== 0) return result;
+        await mutateGit(from.path, [...deliveryOptions, "fetch", "--upload-pack=git-upload-pack", "--no-tags", "--no-prune", "--no-recurse-submodules", "--refmap=", "--", mode.remote, `refs/heads/${reviewed.base}`], signal, "fetch");
+        await ref(from.path, mergedHead, signal);
+        if ((await run(to.path, ["merge-base", "--is-ancestor", (await head(to.path, signal))!, mergedHead], signal)).code !== 0) return result;
         if (await branch(to.path, signal) !== reviewed.base || (await completeChanges(to.path, signal)).length > 0 || await mergeHead(to.path, signal) !== null) return result;
-        await mutateGit(to.path, ["-c", `branch.${reviewed.base}.mergeOptions=`, "merge", "--ff-only", "--no-squash", "--commit", "--no-edit", "--no-autostash", merged.sha], signal);
-        if (await head(to.path, signal) !== merged.sha) return result;
+        await mutateGit(to.path, ["-c", `branch.${reviewed.base}.mergeOptions=`, "merge", "--ff-only", "--no-squash", "--commit", "--no-edit", "--no-autostash", mergedHead], signal);
+        if (await head(to.path, signal) !== mergedHead) return result;
         return { ...result, localSync: "The local base checkout was fast-forwarded." };
       } catch { return { ...result, localSync: "GitHub merged the pull request. The local base checkout could not be updated; refresh it before continuing." }; }
     }, true),

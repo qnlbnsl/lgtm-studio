@@ -1,3 +1,5 @@
+export const githubRequestFailureReason = "GitHub could not complete or verify the request. Check its availability, authentication, and pull request status, then refresh."
+
 // Fixed public reasons contain no caller-controlled text or host error output.
 export const projectRefusalReasons = new Set([
   "Archive the project before deleting it.",
@@ -21,6 +23,7 @@ export const projectRefusalReasons = new Set([
   "the file contains private data and cannot be saved here",
   "Git outcome is uncertain; refresh Git state",
   "Git attempt metadata is unavailable",
+  githubRequestFailureReason,
   "project placement cannot change before machine pairing",
   "only a project lead or owner can change the stage",
   "context reply exceeds the read budget",

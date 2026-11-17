@@ -539,13 +539,15 @@ async function loadGitDetail(id, selectedCommit, automatic = false, force = fals
 }
 export function refreshGit(project = screen?.project) { return run('git', async () => {
   for (const r of gitController?.records.values() || []) supersedeGit(r);
-  const w = S().worktrees.find((w) => w.project === project && w.kind === 'project' && w.review?.delivery?.mode === 'github' && w.review.status === 'open');
+  await loadGit(project, undefined, true);
+  const w = S().worktrees.find((w) => w.project === project && w.kind === 'project' && !w.stale && w.head && w.review?.delivery?.mode === 'github' && w.review.status === 'open' && w.head !== w.review.head);
   if (w) {
-    const target = destination(w);
-    const prepared = read(await request('project.review.prepare', { ...scope(w), projectId: project, destinationId: target.id }));
-    writeWt(w.id, { review: mapping.mapMainReview(prepared.review, prepared.comparison, S().projects.find((p) => p.id === project)?.lead || '') });
+    try {
+      const target = destination(w);
+      const prepared = read(await request('project.review.prepare', { ...scope(w), projectId: project, destinationId: target.id }));
+      writeWt(w.id, { review: mapping.mapMainReview(prepared.review, prepared.comparison, S().projects.find((p) => p.id === project)?.lead || '') });
+    } catch (error) { act.toast(error, 'error', 'Git was refreshed, but the pull request could not be prepared.'); }
   }
-  return loadGit(project, undefined, true);
 }); }
 export function gitDetail(id, commit) { return run('git', () => loadGitDetail(id, commit)); }
 export function selectGit(id, tab, commit) {

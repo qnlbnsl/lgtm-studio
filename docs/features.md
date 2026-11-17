@@ -905,6 +905,9 @@ Approval requests a merge commit and conditionally fast-forwards the local base.
 The existing review area shows the mode, provider link, state, and local update result.
 Missing GitHub support keeps the explained local merge fallback.
 Automatic push triggers and manual provider text editing below remain planned.
+The pull request flow reads the live remote base independently of stored pull request metadata.
+A fresh owner approval reconciles a confirmed remote merge after a lost receipt.
+Refresh always reads Git state and pushes only a changed project head.
 
 The owner raised this on 2026-11-12 and decided its shape the same day. It is
 **agreed**, and it is not built in the engine or the mock. Agents merge their work

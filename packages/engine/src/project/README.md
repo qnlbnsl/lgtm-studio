@@ -120,6 +120,12 @@ A local delivery contains a sentence explaining the fallback.
 Old events without that optional field retain local merge behaviour.
 Prepare is a durable external operation because a push or pull request creation can outlive a missing receipt.
 There is no force-local setting.
+Refresh always reads Git state before considering a new Prepare.
+It prepares again only when the project head differs from the recorded reviewed head.
+A failed Prepare is reported without discarding the refreshed Git state.
+GitHub connectivity or ambiguous authentication failures refuse the request instead of enabling a local merge.
+A new owner approval can reconcile a confirmed GitHub merge after a lost receipt.
+The live base head comes from GitHub's reference endpoint rather than pull request metadata.
 The origin GitHub remote is preferred.
 A sole GitHub remote with another name is also supported.
 Several GitHub remotes without origin require the owner to resolve the ambiguity. Binary or truncated comparison data refuses. A newer preparation

@@ -173,3 +173,10 @@ An explicit Git refresh pushes newer commits for an open GitHub review and repla
 Automatic background reads remain read-only.
 Approval records the remote merge and reports whether the local base was updated.
 The sample screens continue to work without an engine or a GitHub connection.
+
+Refresh always reads Git state before considering a new Prepare.
+It prepares again only when the project head differs from the recorded reviewed head.
+A failed Prepare is reported without discarding the refreshed Git state.
+GitHub connectivity or ambiguous authentication failures refuse the request instead of enabling a local merge.
+A new owner approval can reconcile a confirmed GitHub merge after a lost receipt.
+The live base head comes from GitHub's reference endpoint rather than pull request metadata.

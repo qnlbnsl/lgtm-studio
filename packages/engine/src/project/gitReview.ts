@@ -1,3 +1,4 @@
+import { githubRequestFailureReason } from "./errors.ts"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
@@ -89,7 +90,7 @@ const prepare: PiecePlanner = (input, raw) => Effect.gen(function* () {
     openedAt: yield* Clock.currentTimeMillis, decision: null, outcome: "open", mergeHead: null, reason: null, decidedAt: null })
   // Reserve space for bounded provider metadata before an external effect starts.
   yield* gitReply(input, p.requestId, { review: draft, comparison }, false, 192 * 1024)
-  const delivery = yield* withGit(input, (git) => gitCall(git.prepareDelivery(source.path, comparison, { title, body }, input.actor)))
+  const delivery = yield* withGit(input, (git) => gitCall(git.prepareDelivery(source.path, comparison, { title, body }, input.actor), true))
   const review = { ...draft, delivery }
   const reply = yield* Effect.gen(function* () {
     if (delivery.mode === "github") yield* identity(input, [delivery.repository, delivery.remote, delivery.url, delivery.remoteBaseHead])
@@ -122,7 +123,10 @@ const approve: PiecePlanner = (input, raw) => Effect.gen(function* () {
       outcome: result._tag === "Success" ? "merged" : "refused", mergeHead: result._tag === "Success" ? result.success.head : null,
       ...(result._tag === "Success" ? { delivery: result.success.delivery, localSync: result.success.localSync }
         : review.delivery?.mode === "github" && result.failure.pullRequestState !== undefined ? { delivery: { ...review.delivery, state: result.failure.pullRequestState } } : {}),
-      reason: result._tag === "Failure" ? result.failure.reason === "github_refused" ? "GitHub refused the merge. The pull request is closed, has conflicts, or its required checks or reviews are not passing. Refresh the review before trying again." : result.failure.reason : null }
+      reason: result._tag === "Failure" ? result.failure.reason === "github_refused"
+        ? result.failure.pullRequestState === undefined ? githubRequestFailureReason
+          : "GitHub refused the merge. The pull request is closed, has conflicts, or its required checks or reviews are not passing. Refresh the review before trying again."
+        : review.delivery?.mode === "github" && ["timeout", "network_failed"].includes(result.failure.reason) ? githubRequestFailureReason : result.failure.reason : null }
     const reply = yield* gitReply(input, p.requestId, decided).pipe(Effect.mapError((error) => result._tag === "Success" ? new CommandUncertain({ reason: "Git outcome is uncertain; refresh Git state" }) : error))
     return { events: [{ _tag: "project.MainReviewDecided", review: decided }] as Event[], reply: () => reply }
   }))

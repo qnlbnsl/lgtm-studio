@@ -12,7 +12,16 @@ export function fakeGithub(root: string, repository: string) {
   const refs = execFileSync("/usr/bin/git", ["--git-dir", bare, "for-each-ref", "--format=%(refname)", "refs/heads/"], { encoding: "utf8" }).trim().split("\n")
   for (const ref of refs) if (ref !== base) execFileSync("/usr/bin/git", ["--git-dir", bare, "update-ref", "-d", ref])
   git("remote", "add", "origin", "https://github.com/fixture/product.git")
-  git("config", `url.${bare}.insteadOf`, "https://github.com/fixture/product.git")
+  const gitCalls = join(root, "github-git-calls.jsonl")
+  // The private executable is the test transport seam. Repository configuration
+  // and get-url remain hosted URLs; only this fake transport reaches the bare repo.
+  writeFileSync(join(bin, "git"), `#!${process.execPath}
+const {appendFileSync}=require('node:fs'),{spawnSync,execFileSync}=require('node:child_process');
+const args=process.argv.slice(2);appendFileSync(${JSON.stringify(gitCalls)},JSON.stringify(args)+'\\n');
+const operation=args.findIndex(x=>x==='push'||x==='fetch');
+if(operation>=0){const remote=args.slice(operation+1).find(x=>x!=='--'&&!x.startsWith('-'));const target=execFileSync('/usr/bin/git',['remote','get-url',...(args[operation]==='push'?['--push']:[]),remote],{encoding:'utf8'}).trim();if(target!=='https://github.com/fixture/product.git'&&!target.startsWith(${JSON.stringify(root + "/")})){process.stderr.write('Fixture refuses non-fixture transport');process.exit(128);}}
+const result=spawnSync('/usr/bin/git',[...(args.includes('push')||args.includes('fetch')?['-c','protocol.file.allow=always','-c',${JSON.stringify(`url.${bare}.insteadOf=https://github.com/fixture/product.git`)}]:[]),...args],{stdio:'inherit'});process.exit(result.status??1);
+`, { mode: 0o700 })
   writeFileSync(state, JSON.stringify({ state: "OPEN", mergeStateStatus: "CLEAN" }))
   writeFileSync(join(bin, "gh"), `#!${process.execPath}
 const {readFileSync,writeFileSync,appendFileSync}=require('node:fs');
@@ -24,20 +33,20 @@ const git=(...a)=>execFileSync('/usr/bin/git',['--git-dir',bare,...a],{encoding:
 const arg=(name)=>args[args.indexOf(name)+1];
 if(s.hang){setInterval(()=>{},1000);return;}
 if(s.overflow){process.stdout.write('x'.repeat(3*1024*1024));return;}
-if(args[0]==='auth'){process.stdout.write(s.secret||'');process.exit(s.signedOut?1:0);}
-const pr=()=>({number:17,url:'https://github.com/fixture/product/pull/17',state:s.state,headRefName:s.branch,baseRefName:s.base,headRefOid:git('rev-parse','refs/heads/'+s.branch),baseRefOid:git('rev-parse','refs/heads/'+s.base),mergeStateStatus:s.mergeStateStatus,mergeable:s.mergeStateStatus==='DIRTY'?'CONFLICTING':'MERGEABLE',title:s.title,body:s.body,mergeCommit:s.mergeCommit?{oid:s.mergeCommit}:null});
-if(args[0]==='pr'&&args[1]==='list'){console.log(JSON.stringify(s.branch&&s.state==='OPEN'?[pr()]:[]));return;}
-if(args[0]==='pr'&&args[1]==='create'){s.state='OPEN';s.mergeCommit=null;s.branch=arg('--head');s.base=arg('--base');s.title=arg('--title');s.body=arg('--body');writeFileSync(file,JSON.stringify(s));console.log('https://github.com/fixture/product/pull/17');return;}
-if(args[0]==='pr'&&args[1]==='view'){console.log(JSON.stringify(pr()));return;}
-if(args[0]==='api'&&args.includes('PUT')){
+if(args[0]==='auth'){if(s.offline){process.stderr.write(s.secret||'GitHub unreachable');process.exit(1);}process.stdout.write(args.includes('--json')?JSON.stringify(s.signedOut?[]:['success']):(s.secret||''));process.exit(s.signedOut&&!args.includes('--json')?1:0);}
+const pr=(branch=s.branch,base=s.base)=>({isCrossRepository:false,number:17,url:'https://github.com/fixture/product/pull/17',state:s.state,headRefName:branch,baseRefName:base,headRefOid:git('rev-parse','refs/heads/'+branch),baseRefOid:s.creationBase||git('rev-parse','refs/heads/'+base),mergeStateStatus:s.mergeStateStatus,mergeable:s.mergeStateStatus==='DIRTY'?'CONFLICTING':'MERGEABLE',title:s.title,body:s.body,mergeCommit:s.mergeCommit?{oid:s.mergeCommit}:null});
+if(args[0]==='pr'&&args[1]==='list'){const own=s.branch&&s.state==='OPEN'?[pr()]:[];if(s.fork)own.push({...pr(arg('--head'),arg('--base')),isCrossRepository:true,number:99,url:'https://github.com/fixture/product/pull/99'});console.log(JSON.stringify(own));return;}
+if(args[0]==='pr'&&args[1]==='create'){if(s.hangAt==='create'){setInterval(()=>{},1000);return;}s.state='OPEN';s.mergeCommit=null;s.branch=arg('--head');s.base=arg('--base');s.creationBase=git('rev-parse','refs/heads/'+s.base);s.title=arg('--title');s.body=arg('--body');writeFileSync(file,JSON.stringify(s));console.log('https://github.com/fixture/product/pull/17');return;}
+if(args[0]==='pr'&&args[1]==='view'){if(/^\\d+$/.test(args[2])&&args[2]!=='17')process.exit(1);console.log(JSON.stringify(pr()));return;}
+if(args[0]==='api'&&!args.includes('PUT')){const base=decodeURIComponent(args[1].split('/git/ref/heads/')[1]||'');console.log(JSON.stringify({ref:'refs/heads/'+base,object:{type:'commit',sha:git('rev-parse','refs/heads/'+base)}}));return;}\nif(args[0]==='api'&&args.includes('PUT')){
  if(s.state!=='OPEN'||s.mergeStateStatus!=='CLEAN')process.exit(1);
  const p=pr();if(!args.includes('sha='+p.headRefOid))process.exit(1);
- const tree=git('merge-tree','--write-tree',p.baseRefOid,p.headRefOid).split('\\n')[0];
- const sha=git('commit-tree',tree,'-p',p.baseRefOid,'-p',p.headRefOid,'-m','Fixture GitHub merge');git('update-ref','refs/heads/'+s.base,sha,p.baseRefOid);
- s.state='MERGED';s.mergeCommit=sha;writeFileSync(file,JSON.stringify(s));console.log(JSON.stringify({merged:true,sha}));return;
+ const liveBase=git('rev-parse','refs/heads/'+s.base);const tree=git('merge-tree','--write-tree',liveBase,p.headRefOid).split('\\n')[0];
+ const sha=git('commit-tree',tree,'-p',liveBase,'-p',p.headRefOid,'-m','Fixture GitHub merge');git('update-ref','refs/heads/'+s.base,sha,liveBase);
+ s.state='MERGED';s.mergeCommit=sha;writeFileSync(file,JSON.stringify(s));if(s.hangAt==='merge'){setInterval(()=>{},1000);return;}console.log(JSON.stringify({merged:true,sha}));return;
 }
 process.exit(1);
 `, { mode: 0o700 })
-  return { bin, bare, state, calls, set: (patch: Record<string, unknown>) => writeFileSync(state, JSON.stringify({ ...JSON.parse(readFileSync(state, "utf8")), ...patch })),
+  return { bin, bare, state, calls, gitCalls, set: (patch: Record<string, unknown>) => writeFileSync(state, JSON.stringify({ ...JSON.parse(readFileSync(state, "utf8")), ...patch })),
     read: () => JSON.parse(readFileSync(state, "utf8")) }
 }

@@ -19495,3 +19495,91 @@ Every existing assertion and timeout was retained.
 The whole unit and browser runs overlapped for part of the run.
 This observation does not establish the cause of the failures.
 Issues 1367 and 1375 record similar earlier observations.
+
+
+## s27-4. Pull request metadata did not prove the live base branch head.
+
+State: fixed in round 2.
+Found: 2026-11-17, in the independent s27 review.
+Prepare and Approve previously treated `baseRefOid` as the live remote base.
+GitHub's schema documentation does not promise that this pull request metadata tracks the live branch head.
+The engine now reads the exact reference endpoint for the live base at Prepare and before an open request merge.
+The fake retains a creation-time base snapshot and merges against its actual current base.
+Regression tests cover remote movement and reusing a request after another project updates the base.
+The atomic base race in s27-2 still applies.
+
+## s27-5. A confirmed GitHub merge could remain refused after its receipt was lost.
+
+State: fixed in round 2.
+Found: 2026-11-17, in the independent s27 review.
+A new owner approval now recognizes a merged request with the exact reviewed head and a valid merge commit.
+It records the confirmed result and conditionally updates the local checkout.
+It does not issue another remote merge.
+Tests lose the merge response after a real remote merge and retry with both an unchanged and an already updated local base.
+The original uncertain request is never replayed.
+
+## s27-6. Refresh could push an unchanged head and skip its read after a failed Prepare.
+
+State: fixed in round 2.
+Found: 2026-11-17, in the independent s27 review.
+Refresh now reads Git state before considering a new Prepare.
+It prepares again only for a changed project head.
+Prepare failures use a separate notification and preserve the refreshed state.
+Tests cover unchanged and changed heads with successful and failed Prepare requests.
+
+## s27-7. GitHub delivery accepted redirected destinations and ambiguous authentication failures.
+
+State: fixed in round 2, within the existing trust limit for repository configuration.
+Found: 2026-11-17, in the independent s27 review.
+Resolved fetch and push destinations must now match the configured GitHub repository.
+A private fake executable supplies the offline test transport without a production exception.
+Forbidden paths are normalized before comparison, including repeated separators and dot segments in Secure Shell paths.
+Delivery commands disable external transports, push signing, custom remote programs, mirror pushes, pruning, and configured fetch destinations.
+The engine preserves credential helpers, Secure Shell commands, and proxies that the owner may need.
+An agent with write access to Git configuration can still cause code execution or credential exposure when an owner prepares or approves.
+SECURITY.md states that remaining limit.
+Authentication failures now refuse with a sentence unless the filtered account list proves sign-out.
+GitHub timeouts before a mutation also return a sentence during Prepare and Approve.
+An unreachable approval reports availability instead of claiming that pull request conditions failed.
+An uncertain outcome after a possible mutation retains the existing uncertainty receipt.
+The fake covers unreachable GitHub, signing and remote programs, and normalized forbidden destinations.
+
+## s27-8. Numeric branches and fork requests could select the wrong pull request.
+
+State: fixed in round 2.
+Found: 2026-11-17, in the independent s27 review.
+Prepare now lists requests again after creation instead of passing the branch as a positional request selector.
+It filters out cross-repository requests before selecting the project's request.
+Approval independently validates that the request is in the same repository.
+Separate numeric-branch tests run with and without a matching fork request.
+Tests also cover a stalled create and a lost response after the merge.
+
+
+## s27-9. The unit result omitted visible effects of the GitHub delivery change.
+
+State: fixed in round 2.
+Found: 2026-11-17, in the independent s27 review.
+The first list omitted the network effects of Open merge review.
+It also omitted forbidden-remote refusals, the replacement of branch-deletion advice, and the longer refusal reason.
+The result file now lists the whole unit against base d4fb1877 after walking the screen, dialog, live actions, typed mapping, API, and command-line consumers.
+
+
+## s27-10. Twelve browser journeys failed in the round 2 whole run.
+
+State: open.
+Found: 2026-11-17, during the required whole browser run for the s27 revisions.
+The whole browser run passed 64 journeys and failed twelve journeys in 21.4 minutes.
+The legacy Git cases for main approval, master approval, bulk changes, stale reviewed heads, evidence, and remote operations failed.
+The creation case across eight viewport sizes and the lost-socket creation case failed.
+The website projects-and-board, Git integration, file-editor, and GitHub cases failed.
+The GitHub failure waited for the approval control while its final snapshot showed a reconnecting connection.
+Ten failures passed when each case ran in its own invocation.
+Stale reviewed heads and the file-editor case failed again in those individual runs.
+Stale reviewed heads then passed in another unchanged one-test run.
+The file-editor case still failed in its second unchanged one-test run.
+Its individual failures waited for the first and second external-edit conflict panels.
+The file-editor failure remains unresolved.
+The website Git journey and the hosted GitHub journey both passed alone.
+The unit suite had finished before this browser run began.
+Every existing assertion and timeout was retained.
+These observations do not establish the cause of the failures.

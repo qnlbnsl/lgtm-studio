@@ -131,8 +131,8 @@ A proven overlapping-edit abort refusal returns `abort_blocked` without mutation
 
 ## GitHub delivery of the owner's main review
 
-`prepareDelivery` selects an existing GitHub.com remote and checks `gh` authentication by exit code.
-It returns an explicit local fallback when the CLI or sign-in is unavailable.
+`prepareDelivery` selects an existing GitHub.com remote and checks `gh` authentication through a query filtered to active-account states.
+It returns an explicit local fallback when the CLI is absent or no active account is configured.
 It pushes the pinned project head to that project's branch without force, tags, or submodules.
 It creates or reuses an open pull request with bounded redacted project text.
 `approveDelivery` checks the reviewed heads and provider identity before merging through the GitHub merge endpoint.
@@ -143,3 +143,10 @@ Neither method accepts agent authority.
 The project command layer authorizes the owner again and wraps Prepare in a durable mutation attempt.
 Provider diagnostics stay private.
 Structured provider metadata is redacted by the project command and event log boundaries.
+
+Refresh always reads Git state before considering a new Prepare.
+It prepares again only when the project head differs from the recorded reviewed head.
+A failed Prepare is reported without discarding the refreshed Git state.
+GitHub connectivity or ambiguous authentication failures refuse the request instead of enabling a local merge.
+A new owner approval can reconcile a confirmed GitHub merge after a lost receipt.
+The live base head comes from GitHub's reference endpoint rather than pull request metadata.

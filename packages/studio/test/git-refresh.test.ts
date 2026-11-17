@@ -464,3 +464,33 @@ it('the epoch rejects an uncancellable older reply before it can request changes
     expect(f.state.worktrees[0].head).toBe('fresh'); expect(changes).toBe(1);
   } finally { old.release(); close(); }
 });
+
+for (const changed of [false, true]) for (const prepareFails of [false, true]) it(`s27 R2 M3: Refresh always reads, pushes only a changed head, and isolates prepare failure (${changed}, ${prepareFails})`, async () => {
+  const calls: string[] = [];
+  const review = { id: 'review', status: 'open', head: 'reviewed', baseHead: 'base', delivery: { mode: 'github' }, evidence: {} };
+  let local = 'reviewed';
+  const f = fixture(async tag => {
+    calls.push(tag);
+    if (tag === 'project.git.state') return { result: { head: local, mergeHead: null } };
+    if (tag === 'project.changes') return { result: { items: [], truncated: false } };
+    if (tag === 'project.review.status') return { result: { review } };
+    if (tag === 'project.review.prepare') { if (prepareFails) throw new Error('GitHub cannot be reached.'); return { result: { review: { ...review, head: local } } }; }
+    throw new Error(tag);
+  });
+  f.state.worktrees[0].parentId = 'base';
+  f.state.worktrees.push({ id: 'base', repo: 'repo', branch: 'main', machine: 'local', kind: 'base', files: [] });
+  const close = f.actions.openScreen('git', 'project');
+  try {
+    await vi.waitFor(() => expect(f.actions.busy('git-read')).toBe(false));
+    calls.length = 0; local = changed ? 'new-head' : 'reviewed';
+    await f.actions.refreshGit('project');
+    expect(calls).toContain('project.git.state'); expect(calls).toContain('project.review.status');
+    expect(calls.filter(tag => tag === 'project.review.prepare')).toHaveLength(changed ? 1 : 0);
+    expect(f.state.worktrees[0].head).toBe(local);
+    expect(f.toasts.map(String).join(' ')).toBe(changed && prepareFails ? 'Error: GitHub cannot be reached.' : '');
+    if (changed && prepareFails) {
+      calls.length = 0; await f.actions.refreshGit('project');
+      expect(calls).toContain('project.git.state'); expect(calls).toContain('project.review.prepare');
+    }
+  } finally { close(); }
+});

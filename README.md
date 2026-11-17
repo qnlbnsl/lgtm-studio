@@ -162,7 +162,11 @@ Its title uses the project name.
 Its description uses the goal and the reported review evidence.
 An existing open pull request for that branch and base is reused.
 The review area shows its number, link, and state.
-Preparing again or explicitly refreshing Git pushes newer project commits and requires approval of the refreshed review.
+Preparing again pushes the reviewed project commits.
+Refresh always reads Git state.
+It prepares a new review only when the local project head differs from the recorded reviewed head.
+A failed Prepare is reported separately from that refresh.
+Approval is required for the refreshed review.
 Automatic background reads never push.
 
 Approve merges the reviewed pull request on GitHub with a merge commit.
@@ -171,8 +175,10 @@ A clean local base checkout on its registered base branch is fetched and fast-fo
 A dirty checkout or a checkout on another branch is preserved.
 The Git tab reports whether that local update completed.
 
-When the remote is unavailable for GitHub review, `gh` is missing, or the service user is not signed in, Prepare records the existing local merge mode and explains why.
+When no suitable GitHub remote is configured, `gh` is missing, or the service user is signed out, Prepare records the existing local merge mode and explains why.
 That mode merges locally without pushing the base branch.
+A network failure or ambiguous authentication result refuses the request instead of offering a local merge.
+After a lost merge receipt, a new owner approval can reconcile GitHub’s confirmed merge without merging twice.
 There is no setting to force local mode.
 Only the authenticated owner can prepare, push, or approve these changes.
 See [the project Git guide](packages/engine/src/project/README.md) for the typed client API.
