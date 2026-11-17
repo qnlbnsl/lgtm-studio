@@ -20,6 +20,7 @@ export async function run(key, work, success) {
     if (valid(state, connection)) toast(error, 'error', 'The service could not confirm the request.');
   } finally { if (S() === state) update((s) => { delete s.ui.boardBusy[key]; }); }
 }
+export function currentActivity(agent) { return maps().workPreview(agent, S().threads[agent.id] || []); }
 export async function pages(tag, payload = {}) {
   const rows = [], cursors = new Set(); let after;
   for (;;) {

@@ -9,7 +9,7 @@ export function gitActionsSource(path: string, source: string): string {
     replace("onClick=${() => setUi({ cfile: f.id })}", "onClick=${() => { setUi({ cfile: f.id }); if (live.on) liveGit.gitDetail(w.id); }}")
     replace("<div class=\"cf-body\">${(() =>", "<div class=\"cf-body\">${live.on && !sel.loaded && html`<div class=\"diff-note\" role=\"status\">Loading conflicts…</div>`}${(() =>")
     replace("f.resolved ? 'Resolved' : left(f)", "f.resolved ? 'Resolved' : live.on && !f.loaded ? 'Loading…' : left(f)")
-    replace("disabled=${sel.resolved} onClick=${() => choose", "disabled=${sel.resolved || (live.on && !sel.loaded)} onClick=${() => choose")
+    replace("disabled=${sel.resolved} onClick=${() => { if (p.choice !== id) choose", "disabled=${sel.resolved || (live.on && !sel.loaded)} onClick=${() => { if (p.choice !== id) choose")
     replace("function updateFromBase(wid) { if (live.on) return refuse();", "function updateFromBase(wid) { if (live.on) return liveGit.updateFromBase(wid);")
     replace("function abortMerge(s, w) { if (live.on) return refuse();", "function abortMerge(s, w) { if (live.on) return liveGit.abortMerge(w.id);")
   }

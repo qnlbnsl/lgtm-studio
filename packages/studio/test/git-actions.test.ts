@@ -97,3 +97,16 @@ it("review 4: reopening waits for confirmation and sends the captured file obser
   await confirmation.onConfirm();
   expect(requests).toEqual([["project.conflict.reopen", { worktreeId: "workspace", path: "file.txt", expectedHead: "head", expectedMergeHead: "merge", fingerprint: "last-seen", confirmed: true }]]);
 });
+
+it("choosing the selected conflict side again sends no request and shows no refusal", async () => {
+  const state = { session: { status: "in" }, ui: {}, worktrees: [{ id: "workspace", machine: "local", merge: { files: [
+    { id: "file", selection: { path: "file" }, parts: [{ id: "part", hunk: 0, choice: "ours" }] }
+  ] } }] };
+  const request = vi.fn(), toast = vi.fn();
+  const source = gitActionsSource("js/live/git.js", readFileSync(`${process.cwd()}/design/mock/js/live/git.js`, "utf8")).replace(/^import .*;$/gm, "").replace(/export /g, "");
+  const actions = new Function("store", "notify", "engine", "act", "refuse", `${source}\nreturn { choose };`)({ state }, () => {}, { request }, { toast }, toast);
+  await actions.choose("workspace", "file", "part", "ours");
+  await actions.choose("workspace", "file", "part", null);
+  expect(request).not.toHaveBeenCalled();
+  expect(toast).not.toHaveBeenCalled();
+});

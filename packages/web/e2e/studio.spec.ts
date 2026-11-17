@@ -27,7 +27,7 @@ import { Redactor } from "../../engine/src/log/Redactor.ts"
 import { unusedPort } from "../../engine/test/support/browserWeb.ts"
 import { incarnationOf, makeFakeRunner } from "../../engine/test/support/fakeRunner.ts"
 import { crash } from "../../engine/test/support/deliveryRig.ts"
-import { seedAccount, harnessSettings, agentCredential, appendSetup, eventOf, ownerCredential, success, call, makeFakeSecrets, makeRig, removeRig } from "../../engine/test/support/handlerRig.ts"
+import { seedAccount, harnessSettings, agentCredential, appendSetup, eventOf, ownerCredential, success, call, seedAgent, makeFakeSecrets, makeRig, removeRig } from "../../engine/test/support/handlerRig.ts"
 import { registerRebuildCheck } from "../../engine/test/support/rebuildCheck.ts"
 import { decisionSetup } from "../../engine/test/support/projectDecisionFixtures.ts"
 import { buildStudio } from "../../studio/scripts/build.ts"
@@ -82,6 +82,9 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
           eventOf({ _tag: 'project.WorktreeCreated', repoId: project.repoId, worktreeId: project.worktreeId, branch: 'topic', path: rig.work, machineId: 'local', checkout: 'main' }),
         ])
         const contextTask = success(yield* call(ownerCredential, 'project.task.create', { ...project.task, label: 'TASK-1', title: 'Use selected context' })).taskId
+        const unassigned = yield* seedAgent({ id: 's25-unassigned', parent: project.leadId, state: 'working' })
+        yield* appendSetup([eventOf({ _tag: 'ThreadItem', agentId: unassigned.agentId, itemId: 's25-preview-tool', replay: false,
+          content: { _tag: 'tool-call', callId: 's25-preview-tool', title: 'Inspect project requirements' } })])
         runner.script("choices", () => Effect.succeed({ models: { source: "negotiated", options: [{ id: "test-model", label: "Test model" }, { id: "other-model", label: "Other model" }] }, efforts: { source: "negotiated", options: [{ id: "high", label: "High" }, { id: "low", label: "Low" }] } }))
         runner.script("context", () => Effect.succeed({ _tag: "available", used: 25, window: 100, percent: 25, reportedAt: Date.now() }))
         runner.script("cancel", (input) => runner.emitRaw({ _tag: "turnEnded", ...input, stopped: true,
@@ -113,6 +116,14 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
           await expect(page.getByRole('button', { name: 'Not now', exact: true })).toBeVisible()
           await page.getByRole('button', { name: 'Not now', exact: true }).click()
           await expect(page.getByRole('button', { name: 'Not now', exact: true })).toHaveCount(0)
+
+          // The working agent's roster line uses its existing active task title.
+          await page.goto(`${origin}/#/p/${project.projectId}/agents`)
+          await page.getByRole('button', { name: 'Table', exact: true }).click()
+          await expect(page.locator('.ag-table tbody tr').filter({ hasText: 'TASK-1' }).locator('td').nth(4)).toHaveText('Use selected context')
+          await expect(page.locator('.ag-table tbody tr').filter({ hasText: 'name-s25-unassigned' }).locator('td').nth(4)).toHaveText('Inspect project requirements')
+          await page.getByRole('button', { name: 'Lanes', exact: true }).click()
+          await page.goto(`${origin}/#/home`)
 
           // Home answers real questions and harness permissions, including full input.
           await expect(page.locator('.rq-table')).toContainText('Choose the release branch')

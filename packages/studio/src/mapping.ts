@@ -59,6 +59,7 @@ export interface StoreAgent {
   readonly harness: string; readonly subscription: string; readonly model: string; readonly effort: string | null
   readonly folder?: string
   readonly crashed?: boolean
+  readonly doingNow?: string
   readonly permission: string; readonly state: StoreAgentState; readonly activity: string; readonly task: string | null
   readonly context: number; readonly turns: number; readonly tokens: number; readonly workState: string
   readonly stalled: boolean; readonly startedAt: number; readonly lastOutputAt: number

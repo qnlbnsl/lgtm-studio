@@ -169,7 +169,7 @@ it("integration also refreshes sibling counts when its destination head advances
     await vi.waitFor(() => expect(f.actions.busy("git-read")).toBe(false)); reads.length = 0;
     await f.actions.integrate("workspace");
     expect(reads).toEqual(["workspace", "team", "other"]);
-    expect(f.toasts).toEqual([]);
+    expect(f.toasts).toEqual(["Integrated into team"]);
   } finally { close(); }
 });
 
@@ -251,7 +251,7 @@ for (const action of narrowedActions) it(`${action} refreshes affected sibling c
     for (const id of expected) expect(f.state.worktrees.find((w: any) => w.id === id).behind).toBe(7);
     expect(f.state.worktrees.find((w: any) => w.id === "unaffected").behind).toBe(0);
     expect(f.state.worktrees.find((w: any) => w.id === "grandchild").behind).toBe(0);
-    expect(f.toasts).toEqual([]);
+    expect(f.toasts).toEqual(action === "integrate" ? ["Integrated into destination"] : []);
   } finally { close(); }
 });
 

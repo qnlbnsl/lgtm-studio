@@ -2,10 +2,19 @@ import { describe, it, expect } from "vitest"
 import * as board from "../src/board.ts"
 import { mapSnapshot } from "../src/mapping.ts"
 import { engineSnapshot } from "./fixtures.ts"
-import type { BoardPost, TaskHistoryEntry, Discovery, SetupState } from "@lgtm/contracts"
+import type { BoardPost, TaskHistoryEntry, Discovery, SetupState, ClientSnapshot } from "@lgtm/contracts"
 const section = engineSnapshot.project!
 
 describe("the real project board", () => {
+  it("shows only a working agent's active task as a bounded single line", () => {
+    const snapshot: ClientSnapshot = { ...engineSnapshot, agents: engineSnapshot.agents.map((a) => ({ ...a, state: { _tag: "working" as const }, displayedState: "Working" as const })),
+      project: { ...section, tasks: [{ ...section.tasks[0]!, title: "Check [REDACTED]\n" + "😀".repeat(180) }] } }
+    const agent = (s = snapshot) => board.mapBoardRecords(s, mapSnapshot(s, 1)).agents.find((a) => a.id === "ag-worker")!
+    expect(agent().doingNow).toBe("Check [REDACTED] " + "😀".repeat(142) + "…")
+    expect(agent({ ...snapshot, project: { ...snapshot.project!, tasks: snapshot.project!.tasks.map((t) => ({ ...t, state: "queue" as const })) } }).doingNow).toBe("")
+    expect(agent({ ...snapshot, agents: snapshot.agents.map((a) => ({ ...a, state: { _tag: "idle" as const }, displayedState: "Idle" as const })) }).doingNow).toBe("")
+    expect(agent({ ...snapshot, project: { ...snapshot.project!, tasks: [] } }).doingNow).toBe("")
+  })
   it("derives all four columns from completion and task state, independently of phase", () => {
     const { completion: _, ...row } = section.sprints[0]!
     const sprint = { ...row, phase: "Build" as const }
@@ -87,5 +96,17 @@ describe("engine stall records", () => {
     expect(board.mapStalls(roles(9))).toEqual({ agents: ["ag-worker"], posts: ["post"] })
     expect(board.mapStalls(roles(11))).toEqual({ agents: [], posts: [] })
     expect(board.mapStalls(undefined)).toEqual({ agents: [], posts: [] })
+  })
+})
+
+describe('work previews from existing thread rows', () => {
+  it('uses the latest tool or delivered text when a working agent has no active task', () => {
+    const agent = { state: 'working' as const, activity: 'Working', doingNow: '' }
+    const rows = [{ type: 'user', text: 'Read the project goal' }, { type: 'tools', summary: 'Read requirements.md' }]
+    expect(board.workPreview(agent, rows)).toBe('Read requirements.md')
+    expect(board.workPreview(agent, [...rows, { type: 'user', text: 'Check [REDACTED]\nnext' }])).toBe('Check [REDACTED] next')
+    expect(board.workPreview({ ...agent, doingNow: 'The active task' }, rows)).toBe('The active task')
+    expect(board.workPreview({ ...agent, state: 'idle', activity: 'Idle' }, rows)).toBe('Idle')
+    expect(board.workPreview(agent, [{ type: 'agent', text: 'A reply is not a work description.' }])).toBe('Working')
   })
 })
