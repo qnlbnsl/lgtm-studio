@@ -446,11 +446,13 @@ Machine coordination remains planned.
   The connected website provides owner-only shells in registered local worktrees.
   Service settings has a stored switch that starts off.
   The renderer supports colours, cursor movement, full-screen programs, and resizing.
-  Output reaches only the opening owner connection unchanged, under the owner's ruling of 2026-11-14.
-  The service never stores or logs input or output.
-  At most eight sessions may be open.
-  Reloading the page or losing its connection ends its sessions.
-  Reconnecting to an old shell and taking over an agent terminal remain planned.
+  Live output reaches the attached owner connection unchanged.
+  On 2026-11-17, the owner approved reattachment within the same web session.
+  A reload restores the shells and at most 64 kibibytes of recent output from memory.
+  The service never writes terminal input or output to disk or logs.
+  At most eight sessions may be open, including detached shells.
+  A detached web shell stays available for five minutes.
+  Taking over an agent terminal remains planned.
   The standalone mock still runs only its pretend shell. The owner requested normal product copy without repeated mock
   disclaimers on 2026-11-06. Prototype boundaries remain in design documentation.
 - Git combines a changed-file tree with unified and split diffs. Clicking a

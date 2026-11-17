@@ -61,3 +61,19 @@ it('a paused PTY resumes on native exit before its public exit closes the socket
     expect(text).toContain('END-MARK\r\n')
   } finally { f.exit(); f.manager.close() }
 })
+it('s28 a stale reader cleanup cannot detach its replacement on the same connection', async () => {
+  const f = await fixture([])
+  let reader: number | undefined
+  const original = f.manager.output(f.session.id, 'owner', 'project', value => { reader = value })
+  try {
+    const first = original.next(); f.data('FIRST'); await first
+    f.manager.detach(f.session.id, 'owner', reader)
+    const replacement = f.manager.output(f.session.id, 'owner', 'project')
+    expect((await replacement.next()).value).toMatchObject({ _tag: 'output', text: 'FIRST' })
+    f.manager.detach(f.session.id, 'owner', reader)
+    await original.return(undefined)
+    const next = replacement.next(); f.data('SECOND')
+    expect((await next).value).toMatchObject({ _tag: 'output', text: 'SECOND' })
+    await replacement.return(undefined)
+  } finally { f.exit(); f.manager.close() }
+})

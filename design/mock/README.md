@@ -155,10 +155,16 @@ An enabled terminal uses the registered local worktree folder and the service's 
 The xterm.js renderer handles colours, cursor movement, and full-screen programs.
 The build adds the page's style nonce before the renderer attaches its style elements.
 The content security policy is unchanged.
-Output reaches only the opening owner connection unchanged, under the owner's ruling of 2026-11-14.
+Live output reaches the attached owner connection unchanged, under the owner's rulings of 2026-11-14 and 2026-11-17.
 A printed secret appears on the owner's screen and in any scrollback the owner's tools keep.
-The service stores neither output nor input.
-Sessions end when the page reloads, its connection grace period expires, the owner signs out, the switch turns off, or the service stops.
-Remote shells, agent terminal watching, agent terminal takeover, and session reconnection need engine support.
+The service writes neither output nor input to disk.
+The live Terminal tab reattaches its shells automatically after a page reload.
+A disconnected web shell remains available for five minutes.
+The engine retains at most 64 kibibytes of recent output per shell in memory for replay.
+At most eight shells may be live, including detached shells.
+Shells end when their connection grace expires, the owner signs out, the switch turns off, or the service stops.
+The standalone mock continues to use sample data.
+Remote shells, agent terminal watching, and agent terminal takeover need engine support.
 Those controls are disabled in the live screen, with the tooltip “Engine work needed”.
+The disabled Reconnect control explains that a closed shell cannot be restarted.
 The sample screen and its pretend shell remain unchanged when opened without the engine.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { terminalSize, terminalWorktrees, terminalState, terminalSelection } from '../src/terminal.ts'
+import { terminalSize, terminalWorktrees, terminalState, terminalSelection, terminalAttachments } from '../src/terminal.ts'
 import { terminalSource, xtermSource } from '../scripts/terminalSource.ts'
 import { readFileSync } from 'node:fs'
 describe('project terminal mapping and build boundary', () => {
@@ -44,4 +44,13 @@ it('includes allocated project workers and excludes another project in the same 
     { id: 'other-worker', repo: 'r', project: 'other', machine: 'local', checkout: 'worktree', parentId: 'other' },
   ] }
   expect(terminalWorktrees(state, { id: 'p', repo: 'r', worktree: 'project' }).map(w => w.id)).toEqual(['project', 'worker'])
+})
+
+it('reattaches only the selected project even when projects share a main checkout', () => {
+  const main = { id: 'main' }
+  expect(terminalAttachments([
+    { sessionId: 'mine', projectId: 'p', worktreeId: 'main' },
+    { sessionId: 'other', projectId: 'q', worktreeId: 'main' },
+    { sessionId: 'removed', projectId: 'p', worktreeId: 'gone' }
+  ], [main], 'p')).toEqual([{ sessionId: 'mine', worktree: main }])
 })

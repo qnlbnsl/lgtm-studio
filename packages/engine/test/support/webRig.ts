@@ -54,7 +54,7 @@ export interface WebContext extends WebEndpoint {
   readonly runner: FakeRunner;
   readonly lists: EngineLists;
   readonly staticRoot: string;
-  readonly open: () => ReturnType<WebModule["serve"]>;
+  readonly open: (password?: string) => ReturnType<WebModule["serve"]>;
   readonly close: Effect.Effect<void, unknown>;
 }
 
@@ -200,7 +200,7 @@ export const withWeb = async (
       }));
       let run = Effect.gen(function* () {
         yield* registerRebuildCheck();
-        const open = () => module.serve({ password: password === undefined ? undefined : Redacted.make(password), settings, staticRoot, lists });
+        const open = (...override: [password?: string]) => { const value = override.length ? override[0] : password; return module.serve({ password: value === undefined ? undefined : Redacted.make(value), settings, staticRoot, lists }); };
         const listener = yield* open();
         return yield* body({ rig, runner, lists, password: password ?? "", staticRoot, settings,
           origin: `http://127.0.0.1:${settings.port}`, host: `127.0.0.1:${settings.port}`, open, close: listener.close });

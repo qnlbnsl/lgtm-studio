@@ -94,7 +94,7 @@ export const serviceControlReads: Record<string, ReadHandler> = {
 export const serviceControlPlanners = {
   'client.service.restart': (input, payload) => Effect.gen(function* () {
     if (input.actor._tag !== 'owner') return yield* refused()
-    if (payload.confirmed !== true) return yield* refused('Confirm that every signed-in page is signed out and running agents are stopped.')
+    if (payload.confirmed !== true) return yield* refused('Confirm that running agents are stopped and terminals close. Pages stay signed in.')
     if (pending) return yield* refused('service restarting')
     if (!restarter) return yield* refused('This service cannot restart itself on this platform.')
     if (!(yield* Effect.promise(() => checkRestartLaunch(launch)))) return yield* refused(restartLaunchReason)

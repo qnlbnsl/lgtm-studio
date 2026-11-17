@@ -16,3 +16,8 @@ export function terminalState(enabled: boolean, connection: string, machine: str
 export function terminalSelection<W extends { id: string }>(worktrees: ReadonlyArray<W>, selectedId: string | undefined, projectWorktree: string | undefined): W | undefined {
   return worktrees.find(w => w.id === selectedId) ?? worktrees.find(w => w.id === projectWorktree) ?? worktrees[0]
 }
+
+// Match engine identifiers to the same registered worktrees used by New session.
+export function terminalAttachments<W extends { id: string }>(sessions: ReadonlyArray<{ sessionId: string; projectId: string; worktreeId: string }>, worktrees: ReadonlyArray<W>, projectId: string) {
+  return sessions.filter(session => session.projectId === projectId).flatMap(session => { const worktree = worktrees.find(w => w.id === session.worktreeId); return worktree ? [{ sessionId: session.sessionId, worktree }] : [] })
+}

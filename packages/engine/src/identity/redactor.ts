@@ -24,7 +24,7 @@ interface Base64Probe {
   readonly alignment: number;
   readonly alphabet: RegExp;
 }
-const base64Probes: ReadonlyArray<Base64Probe> = ["shp_a_"].flatMap((prefix) =>
+const base64Probes: ReadonlyArray<Base64Probe> = ["shp_a_", "shp_w_"].flatMap((prefix) =>
   [0, 1, 2].flatMap((alignment) => {
     const run = base64Run(Buffer.from(prefix, "latin1"), alignment);
     return [
@@ -42,7 +42,7 @@ type Interval = readonly [start: number, end: number];
 const isStoredCredential = (candidate: string, tokenHashes: ReadonlySet<string>): boolean =>
   hasValidChecksum(candidate) && tokenHashes.has(sha256Hex(candidate));
 
-// Stored agent tokens, raw or encoded. Every
+// Stored agent and web session tokens, raw or encoded. Every
 // candidate is bounded: it starts at a prefix occurrence and has the fixed
 // length of its encoding.
 const findCredentials = (

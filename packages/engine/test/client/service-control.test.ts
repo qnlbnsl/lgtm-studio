@@ -18,7 +18,7 @@ test('version and confirmed restart deny agents with the exact reason; restart p
   for (const name of ['client.service.version', 'client.service.restart']) {
     expect(yield* readOutcome(name, { confirmed: true, check: true }, credentials)).toMatchObject({ _tag: 'Failure', failure: { reason: 'command refused' } })
   }
-  expect(yield* readOutcome('client.service.restart', { confirmed: false })).toMatchObject({ _tag: 'Failure', failure: { reason: 'Confirm that every signed-in page is signed out and running agents are stopped.' } })
+  expect(yield* readOutcome('client.service.restart', { confirmed: false })).toMatchObject({ _tag: 'Failure', failure: { reason: 'Confirm that running agents are stopped and terminals close. Pages stay signed in.' } })
   expect(yield* readOutcome('client.service.restart', { confirmed: true })).toMatchObject({ _tag: 'Failure', failure: { reason: 'This service cannot restart itself on this platform.' } })
   let restarts = 0
   installRestarter(() => { restarts++ })

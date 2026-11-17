@@ -74,7 +74,7 @@ live('terminal access is owner-only and isolated to the opening socket', () => w
   const handler = yield* CommandHandler
   for (const credential of [{ _tag: 'service', service: 'roles.stallWatch' } as const, { _tag: 'agent', agentId: 'worker' } as const]) {
     const input = { ...(yield* handler.input(credential as never)), connectionId: 'non-owner' }
-    for (const operation of ['open', 'write', 'resize', 'close', 'subscribe']) {
+    for (const operation of ['list', 'open', 'write', 'resize', 'close', 'subscribe']) {
       const reader = engineLists.reads['client.terminal.' + operation]!
       const result = reader(input, { requestId: 'authority-' + operation, projectId: 'terminal-project', worktreeId: 'terminal-worktree', sessionId, text: 'exit\r', cols: 80, rows: 24 })
       yield* failure((operation === 'subscribe' ? Stream.runDrain(result as Stream.Stream<any, any>) : result) as Effect.Effect<any, any>, 'Only the owner can run a project terminal.')
@@ -247,3 +247,87 @@ live('a settings save that omits the terminal switch preserves its stored value 
   yield* req(client, 'write', { sessionId, text: 'echo STILL_OPEN\r' })
   yield* req(client, 'close', { sessionId })
 })))
+
+live('s28 web owner session lists and reattaches a terminal with memory scrollback across connections', () => withPtyPrivacy(withServer(({ client, rig }) => Effect.gen(function* () {
+  yield* enabled(client, true)
+  const port = yield* Effect.promise(unusedPort), password = 'synthetic-s28-web-password'
+  const endpoint = { password, settings: { enabled: true, port, proxyMode: false, heartbeatSeconds: 25 }, origin: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}` }
+  const web = yield* importWeb(endpoint)
+  const { cookie } = yield* web.login(endpoint)
+  const one = yield* web.connected(endpoint, cookie)
+  const result = yield* web.rpc(one, 'client.terminal.open', { requestId: 's28-open', projectId: 'terminal-project', worktreeId: 'terminal-worktree', cols: 80, rows: 24 })
+  expect(result._tag).toBe('Success')
+  const sessionId = result.value.sessionId
+  yield* web.rpc(one, 'client.terminal.write', { requestId: 's28-print', sessionId, text: "printf 'S28_REATTACH_MARKER\\n'\r" })
+  yield* Effect.sleep(100)
+  one.terminate()
+  const two = yield* web.connected(endpoint, cookie)
+  const listed = yield* web.rpc(two, 'client.terminal.list', { requestId: 's28-list' })
+  expect(listed).toMatchObject({ _tag: 'Success', value: { sessions: [{ sessionId, worktreeId: 'terminal-worktree' }] } })
+  let text = ''
+  two.on('message', raw => { for (const line of String(raw).split('\n').filter(Boolean)) { const m = JSON.parse(line); if (m._tag === 'Chunk' && m.requestId === 's28-output') { for (const item of m.values) if (item._tag === 'output') text += item.text; two.send(JSON.stringify({ _tag: 'Ack', requestId: m.requestId })) } } })
+  two.send(requestFrame('s28-output', 'client.terminal.subscribe', { requestId: 's28-output', sessionId }))
+  yield* waitFor('replayed output', () => text.includes('S28_REATTACH_MARKER'))
+  expect((yield* web.rpc(two, 'client.terminal.write', { requestId: 's28-print-again', sessionId, text: "echo S28_STILL_SAME_SHELL\r" }))._tag).toBe('Success')
+  yield* waitFor('new output after reattach', () => text.includes('S28_STILL_SAME_SHELL'))
+  // A new sign-in rotates the web owner session and closes its terminals.
+  const next = yield* web.login(endpoint), other = yield* web.connected(endpoint, next.cookie)
+  const foreign = yield* web.rpc(other, 'client.terminal.write', { requestId: 's28-foreign', sessionId, text: 'exit\r' })
+  expect(foreign._tag).toBe('Failure')
+  expect((yield* web.rpc(other, 'client.terminal.list', { requestId: 's28-new-list' }))).toMatchObject({ _tag: 'Success', value: { sessions: [] } })
+})), ['S28_REATTACH_MARKER', 'S28_STILL_SAME_SHELL']))
+
+const importWeb = (endpoint: { password: string; settings: { enabled: boolean; port: number; proxyMode: boolean; heartbeatSeconds: number } }) => Effect.gen(function* () {
+  yield* serve({ password: Redacted.make(endpoint.password), staticRoot: '/does-not-exist', settings: endpoint.settings, lists: engineLists })
+  return yield* Effect.promise(() => import('../support/webRig.ts'))
+})
+
+const withWebTerminal = (body: (ctx: { web: typeof import('../support/webRig.ts'); endpoint: import('../support/webRig.ts').WebEndpoint; cookie: string; rig: ReturnType<typeof makeRig> }) => Effect.Effect<any, any, any>) => withServer(({ client, rig }) => Effect.gen(function* () {
+  yield* enabled(client, true)
+  const port = yield* Effect.promise(unusedPort), password = 'synthetic-s28-bounded-password'
+  const endpoint = { password, settings: { enabled: true, port, proxyMode: false, heartbeatSeconds: 25 }, origin: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}` }
+  const web = yield* importWeb(endpoint), { cookie } = yield* web.login(endpoint)
+  return yield* body({ web, endpoint, cookie, rig })
+}))
+const webOpen = (web: typeof import('../support/webRig.ts'), socket: import('ws').default) => web.rpc(socket, 'client.terminal.open', { requestId: randomBytes(8).toString('hex'), projectId: 'terminal-project', worktreeId: 'terminal-worktree', cols: 80, rows: 24 })
+live('s28 detached web terminals expire after the bounded grace and still count towards the eight-shell limit', () => withWebTerminal(({ web, endpoint, cookie }) => Effect.gen(function* () {
+  const handler = yield* CommandHandler
+  const { sessions } = yield* Effect.promise(() => import('../../src/harnesses/signinRequests.ts'))
+  const manager = sessions(yield* handler.input({ _tag: 'owner' }))
+  const grace = vi.spyOn(manager as any, 'graceMs')
+  const one = yield* web.connected(endpoint, cookie), ids: string[] = [], pids: number[] = []
+  try {
+    for (let i = 0; i < 8; i++) { const result = yield* webOpen(web, one); expect(result._tag).toBe('Success'); ids.push(result.value.sessionId); pids.push(vi.mocked(Pty.spawn).mock.results.at(-1)!.value.pid) }
+    expect(grace.mock.results.every(r => r.value === 300000)).toBe(true)
+    // Only the grace clock is shortened. The server, shell and socket remain real.
+    grace.mockReturnValue(600)
+    one.terminate()
+    const two = yield* web.connected(endpoint, cookie)
+    expect((yield* web.rpc(two, 'client.terminal.list', { requestId: 'detached-list' }))).toMatchObject({ _tag: 'Success', value: { sessions: expect.arrayContaining(ids.map(sessionId => ({ sessionId, projectId: 'terminal-project', worktreeId: 'terminal-worktree' }))) } })
+    expect((yield* webOpen(web, two))._tag).toBe('Failure')
+    yield* waitFor('detached grace closes process groups', () => pids.every(pid => !alive(pid)))
+    expect((yield* web.rpc(two, 'client.terminal.list', { requestId: 'expired-list' }))).toMatchObject({ _tag: 'Success', value: { sessions: [] } })
+  } finally { grace.mockRestore() }
+})))
+
+live('s28 scrollback stays below 64 KiB and sign-out kills the reattached shell', () => withPtyPrivacy(withWebTerminal(({ web, endpoint, cookie }) => Effect.gen(function* () {
+  const one = yield* web.connected(endpoint, cookie), opened = yield* webOpen(web, one)
+  const sessionId = opened.value.sessionId, pid = vi.mocked(Pty.spawn).mock.results.at(-1)!.value.pid
+  one.terminate()
+  const two = yield* web.connected(endpoint, cookie)
+  yield* web.rpc(two, 'client.terminal.write', { requestId: 'scrollback-print', sessionId, text: "printf 'S28_OLD_OUTPUT'; head -c 200000 /dev/zero | tr '\\000' x; printf '\\nS28_RECENT_OUTPUT\\n'\r" })
+  yield* Effect.sleep(500)
+  let text = '', firstBytes = -1
+  two.on('message', raw => { for (const line of String(raw).split('\n').filter(Boolean)) { const m = JSON.parse(line); if (m._tag === 'Chunk' && m.requestId === 'bounded-output') { for (const item of m.values) if (item._tag === 'output') { if (firstBytes < 0) firstBytes = Buffer.byteLength(item.text); text += item.text } two.send(JSON.stringify({ _tag: 'Ack', requestId: m.requestId })) } } })
+  two.send(requestFrame('bounded-output', 'client.terminal.subscribe', { requestId: 'bounded-output', sessionId }))
+  yield* waitFor('recent output in bounded scrollback', () => text.includes('S28_RECENT_OUTPUT'))
+  expect(firstBytes).toBeLessThanOrEqual(64 * 1024)
+  expect(text.includes('S28_OLD_OUTPUT')).toBe(false)
+  const third = yield* web.connected(endpoint, cookie)
+  yield* webOpen(web, third)
+  const detachedPid = vi.mocked(Pty.spawn).mock.results.at(-1)!.value.pid
+  third.terminate()
+  expect((yield* Effect.promise(() => web.post(endpoint, '/api/logout', undefined, { Cookie: cookie }))).status).toBe(204)
+  yield* waitFor('sign-out kills attached and detached shells', () => !alive(pid) && !alive(detachedPid))
+  expect((yield* web.upgrade(endpoint, { Cookie: cookie })).status).toBe(401)
+})), ['S28_OLD_OUTPUT', 'S28_RECENT_OUTPUT']))

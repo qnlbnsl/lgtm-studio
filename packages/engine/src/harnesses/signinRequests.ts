@@ -33,7 +33,7 @@ export const setTerminalSwitch = (log: object, enabled: boolean) => {
   if (!enabled) manager.stopTerminals('The project terminal was turned off.')
   else manager.terminalEnabled = true
 }
-export const signOutTerminals = (log: object) => { const manager = instances.get(log); if (manager) { const wasEnabled = manager.terminalEnabled; manager.stopTerminals('The owner signed out.'); manager.terminalEnabled = wasEnabled } }
+export const signOutTerminals = (log: object, ownerSessionId?: string) => { instances.get(log)?.signOut(ownerSessionId) }
 export const closeSignIns = (log: object) => { instances.get(log)?.close(); instances.delete(log) }
 const add = (input: Input, p: Record<string, unknown>) => Effect.gen(function* () {
   if (input.actor._tag !== 'owner') return yield* refused(signInReasons.owner)
@@ -94,8 +94,8 @@ const start = (input: Input, p: Record<string, unknown>) => Effect.gen(function*
   delete environment.LGTM_TOKEN; delete environment.LGTM_SOCKET
   if (account.harness === 'cursor') environment.NO_OPEN_BROWSER = '1'
   if (input.runtime.credentials) yield* input.runtime.credentials.open(credentialSourceFor({ harnessId: account.harness, home: input.runtime.home, variables: environment })).pipe(Effect.mapError(() => refused(signInReasons.failed)))
-  const manager = sessions(input), disconnected = () => manager.disconnect(connection)
-  const session = yield* Effect.tryPromise({ try: () => manager.start({ accountId: account.id, connectionId: connection, executable: installation.path!, args: recipe.signInArguments, cwd: input.runtime.home, environment,
+  const manager = sessions(input), generation = manager.terminalGeneration, disconnected = () => manager.disconnect(connection)
+  const session = yield* Effect.tryPromise({ try: () => manager.start({ ownerSessionId: input.ownerSessionId, allowed: () => manager.terminalGeneration === generation && !input.connectionSignal?.aborted, accountId: account.id, connectionId: connection, executable: installation.path!, args: recipe.signInArguments, cwd: input.runtime.home, environment,
     onEnd: () => input.connectionSignal?.removeEventListener('abort', disconnected),
     check: () => Effect.runPromise(Effect.gen(function* () { const current = (yield* input.runtime.views.snapshot).accounts[account.id]; return { state: current && harness ? yield* accountReadiness(input, harness, current) : 'unavailable' } as const })) }), catch: failure })
   input.connectionSignal?.addEventListener('abort', disconnected, { once: true })
@@ -110,13 +110,15 @@ const control = (method: 'write' | 'resize' | 'stop') => (input: Input, p: Recor
 export const terminalOutput = (input: Input, p: Record<string, unknown>, kind?: 'project') => Stream.unwrap(Effect.gen(function* () {
   const connection = yield* Effect.try({ try: () => { if (kind && input.actor._tag !== 'owner') throw refused(terminalReasons.owner); return owner(input) }, catch: e => e as ReturnType<typeof refused> })
   // Owner-authorized PTY output is ephemeral and goes byte for byte to its
-  // opening connection. It must never pass through logging or stored events.
+  // attached owner connection. It must never pass through logging or stored events.
   const manager = sessions(input), id = p.sessionId as string
-  let attached = false
-  return Stream.fromAsyncIterable(manager.output(id, connection, kind, () => { attached = true }), kind ? e => refused(e instanceof Error && Object.values(terminalReasons).includes(e.message as never) ? e.message : terminalReasons.failed) : failure).pipe(
+  let attached: number | undefined
+  const disconnected = () => { if (attached !== undefined) manager.detach(id, connection, attached) }
+  input.connectionSignal?.addEventListener('abort', disconnected, { once: true })
+  return Stream.fromAsyncIterable(manager.output(id, connection, kind, reader => { attached = reader }, input.ownerSessionId), kind ? e => refused(e instanceof Error && Object.values(terminalReasons).includes(e.message as never) ? e.message : terminalReasons.failed) : failure).pipe(
     // Async-generator return can wait behind a pending next(). Detach on
     // interruption too, but only if this subscription acquired the reader.
-    Stream.ensuring(Effect.sync(() => { if (attached) manager.detach(id, connection) }))
+    Stream.ensuring(Effect.sync(() => { input.connectionSignal?.removeEventListener('abort', disconnected); if (attached !== undefined) manager.detach(id, connection, attached) }))
   )
 }))
 export const signInReads = {

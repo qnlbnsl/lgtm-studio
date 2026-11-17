@@ -6,8 +6,8 @@ import { terminalReasons } from './terminalReasons.ts'
 import { signInReasons } from './signinReasons.ts'
 export type SignInItem = SignInOutput
 type Check = Extract<SignInOutput, { _tag: 'ended' }>['check']
-type Start = { kind?: 'project'; worktreeId?: string; cols?: number; rows?: number; allowed?: () => boolean; accountId: string; connectionId: string; executable: string; args: ReadonlyArray<string>; cwd: string; environment: Record<string, string>; check: () => Promise<Check>; onEnd?: () => void }
-type Session = { id: string; accountId: string; connectionId: string; child: IPty; queue: SignInItem[]; bytes: number; paused?: boolean; draining?: boolean; exitWatch?: ReturnType<typeof setInterval> | undefined; wake?: (() => void) | undefined; kind?: 'project'; worktreeId?: string; timer?: ReturnType<typeof setTimeout>; grace?: ReturnType<typeof setTimeout> | undefined; processExited: boolean; ending: boolean; done: boolean; attached: boolean; check: Start['check']; onEnd: Start['onEnd']; exited: Promise<void> }
+type Start = { ownerSessionId?: string | undefined; kind?: 'project'; projectId?: string; worktreeId?: string; cols?: number; rows?: number; allowed?: () => boolean; accountId: string; connectionId: string; executable: string; args: ReadonlyArray<string>; cwd: string; environment: Record<string, string>; check: () => Promise<Check>; onEnd?: () => void }
+type Session = { ownerSessionId: string | undefined; history: string; reader: number; everAttached: boolean; detached: boolean; id: string; accountId: string; connectionId: string; child: IPty; queue: SignInItem[]; bytes: number; paused?: boolean; draining?: boolean; exitWatch?: ReturnType<typeof setInterval> | undefined; wake?: (() => void) | undefined; kind?: 'project'; projectId?: string; worktreeId?: string; timer?: ReturnType<typeof setTimeout>; grace?: ReturnType<typeof setTimeout> | undefined; processExited: boolean; ending: boolean; done: boolean; attached: boolean; check: Start['check']; onEnd: Start['onEnd']; exited: Promise<void> }
 // Ephemeral only. No logger, event-store, board or alert dependency is available here.
 export class SignInSessions {
   private sessions = new Map<string, Session>()
@@ -21,7 +21,7 @@ export class SignInSessions {
     let spawn: typeof import('@lydell/node-pty')['spawn']
     try { ({ spawn } = await import('@lydell/node-pty')) } catch { throw new Error(reasons.failed) }
     // Recheck after loading, so concurrent starts cannot exceed either limit.
-    if (this.closed) throw new Error(reasons.ended)
+    if (this.closed || input.kind !== 'project' && input.allowed?.() === false) throw new Error(reasons.ended)
     if (input.kind === 'project' && (!this.terminalEnabled || input.allowed?.() === false)) throw new Error(terminalReasons.off)
     if (input.kind === 'project' && [...this.sessions.values()].filter(s => s.kind === 'project' && !s.ending).length >= 8) throw new Error(terminalReasons.busy)
     if (input.kind !== 'project' && [...this.sessions.values()].some(s => s.kind !== 'project' && s.accountId === input.accountId && !s.done)) throw new Error(signInReasons.busy)
@@ -37,7 +37,7 @@ export class SignInSessions {
     let resolveExit!: () => void
     const exited = new Promise<void>(resolve => { resolveExit = resolve })
     const id = randomUUID()
-    const session: Session = { id, ...(input.kind ? { kind: input.kind } : {}), ...(input.worktreeId === undefined ? {} : { worktreeId: input.worktreeId }), accountId: input.accountId, connectionId: input.connectionId, child, queue: [], bytes: 0, processExited: false, ending: false, done: false, attached: false, check: input.check, onEnd: input.onEnd, exited,
+    const session: Session = { ownerSessionId: input.ownerSessionId, history: '', reader: 0, everAttached: false, detached: false, id, ...(input.kind ? { kind: input.kind } : {}), ...(input.worktreeId === undefined ? {} : { worktreeId: input.worktreeId }), ...(input.projectId === undefined ? {} : { projectId: input.projectId }), accountId: input.accountId, connectionId: input.connectionId, child, queue: [], bytes: 0, processExited: false, ending: false, done: false, attached: false, check: input.check, onEnd: input.onEnd, exited,
       ...(input.kind === 'project' ? {} : { timer: setTimeout(() => this.finish(session, 'The sign-in reached its time limit.'), this.options.limitMs ?? 5 * 60_000) }) }
     session.timer?.unref()
     this.sessions.set(id, session)
@@ -45,6 +45,11 @@ export class SignInSessions {
       if (session.ending) return
       if (session.kind !== 'project' && session.bytes + Buffer.byteLength(text) > 64 * 1024) {
         this.finish(session, 'The sign-in produced too much unread output.'); return
+      }
+      if (session.kind === 'project') {
+        // Retain at most 64 KiB of UTF-8 output, in this object only.
+        session.history = Buffer.from(session.history + text).subarray(-64 * 1024).toString('utf8').replace(/^\uFFFD+/, '')
+        if (session.detached) return
       }
       session.bytes += Buffer.byteLength(text); session.queue.push({ _tag: 'output', text })
       // Stop reading the PTY so the kernel applies backpressure to the shell.
@@ -62,11 +67,12 @@ export class SignInSessions {
     })
     child.onExit(() => { this.processExit(session); resolveExit(); this.finish(session, session.kind === 'project' ? 'The shell exited.' : 'The sign-in program exited.') })
     // A start whose caller never attaches cannot leave a process behind.
-    session.grace = setTimeout(() => this.finish(session, 'The terminal disconnected.'), this.options.graceMs ?? 5000)
+    session.grace = setTimeout(() => this.finish(session, 'The terminal disconnected.'), this.graceMs(session))
     session.grace.unref()
     return { id, pid: child.pid }
   }
-  private get(id: string, connection: string, kind?: 'project') { const s = this.sessions.get(id); const reasons = kind === 'project' ? terminalReasons : signInReasons; if (!s || s.kind !== kind) throw new Error(reasons.missing); if (s.connectionId !== connection) throw new Error(reasons.connection); return s }
+  private graceMs(s: Session) { return this.options.graceMs ?? (s.kind === 'project' && s.ownerSessionId !== undefined ? 5 * 60_000 : 5000) }
+  private get(id: string, connection: string, kind?: 'project', ownerSessionId?: string) { const s = this.sessions.get(id); const reasons = kind === 'project' ? terminalReasons : signInReasons; if (!s || s.kind !== kind) throw new Error(reasons.missing); if (s.connectionId !== connection && !(kind === 'project' && ownerSessionId !== undefined && s.ownerSessionId === ownerSessionId)) throw new Error(reasons.connection); return s }
   private processExit(s: Session) {
     if (s.processExited) return
     s.processExited = true; clearInterval(s.exitWatch); s.exitWatch = undefined
@@ -107,20 +113,39 @@ export class SignInSessions {
     }
     void s.exited.then(() => s.check()).catch(() => ({ state: 'unavailable' as const })).then(check => { s.queue.push({ _tag: 'ended', reason, check }); s.done = true; s.wake?.(); s.grace = setTimeout(() => this.sessions.delete(s.id), 5000); s.grace.unref() })
   }
-  write(id: string, connection: string, text: string, kind?: 'project') { const s = this.get(id, connection, kind); if (s.ending) throw new Error(kind ? terminalReasons.ended : signInReasons.ended); if (Buffer.byteLength(text) > 4096) throw new Error(kind ? terminalReasons.bounds : signInReasons.bounds); s.child.write(text) }
-  resize(id: string, connection: string, cols: number, rows: number, kind?: 'project') { const s = this.get(id, connection, kind); if (s.ending) throw new Error(kind ? terminalReasons.ended : signInReasons.ended); if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 20 || cols > 240 || rows < 5 || rows > 100) throw new Error(kind ? terminalReasons.bounds : signInReasons.bounds); s.child.resize(cols, rows) }
-  stop(id: string, connection: string, kind?: 'project') { this.finish(this.get(id, connection, kind), kind ? 'The owner closed the terminal.' : 'The owner stopped the sign-in.') }
+  write(id: string, connection: string, text: string, kind?: 'project', ownerSessionId?: string) { const s = this.get(id, connection, kind, ownerSessionId); if (s.ending) throw new Error(kind ? terminalReasons.ended : signInReasons.ended); if (Buffer.byteLength(text) > 4096) throw new Error(kind ? terminalReasons.bounds : signInReasons.bounds); s.child.write(text) }
+  resize(id: string, connection: string, cols: number, rows: number, kind?: 'project', ownerSessionId?: string) { const s = this.get(id, connection, kind, ownerSessionId); if (s.ending) throw new Error(kind ? terminalReasons.ended : signInReasons.ended); if (!Number.isInteger(cols) || !Number.isInteger(rows) || cols < 20 || cols > 240 || rows < 5 || rows > 100) throw new Error(kind ? terminalReasons.bounds : signInReasons.bounds); s.child.resize(cols, rows) }
+  stop(id: string, connection: string, kind?: 'project', ownerSessionId?: string) { this.finish(this.get(id, connection, kind, ownerSessionId), kind ? 'The owner closed the terminal.' : 'The owner stopped the sign-in.') }
   hasProjectTerminal(worktrees: ReadonlySet<string>) { return [...this.sessions.values()].some(s => s.kind === 'project' && !s.ending && s.worktreeId !== undefined && worktrees.has(s.worktreeId)) }
   stopTerminals(reason: string) { this.terminalGeneration++; this.terminalEnabled = false; for (const s of this.sessions.values()) if (s.kind === 'project') this.finish(s, reason) }
-  detach(id: string, connection: string) { const s = this.sessions.get(id); if (s && s.connectionId === connection && !s.ending && !s.grace) { s.grace = setTimeout(() => this.finish(s, 'The terminal disconnected.'), this.options.graceMs ?? 5000); s.grace.unref() } }
+  list(ownerSessionId: string) { return [...this.sessions.values()].filter(s => s.kind === 'project' && !s.ending && (s.ownerSessionId ?? s.connectionId) === ownerSessionId).map(s => ({ sessionId: s.id, projectId: s.projectId!, worktreeId: s.worktreeId! })) }
+  signOut(ownerSessionId?: string) { this.terminalGeneration++; for (const s of this.sessions.values()) if (ownerSessionId === undefined || s.ownerSessionId === undefined || s.ownerSessionId === ownerSessionId) { s.history = ''; this.finish(s, 'The owner signed out.') } }
+  detach(id: string, connection: string, reader?: number) {
+    const s = this.sessions.get(id)
+    if (!s || s.connectionId !== connection || s.ending || reader !== undefined && s.reader !== reader) return
+    if (s.grace && (s.kind !== 'project' || s.detached)) return
+    clearTimeout(s.grace)
+    if (s.kind === 'project') {
+      s.attached = false; s.detached = true; s.reader++; s.queue = []; s.bytes = 0; s.wake?.()
+      if (s.paused) { s.paused = false; clearInterval(s.exitWatch); s.exitWatch = undefined; s.child.resume() }
+    }
+    s.grace = setTimeout(() => this.finish(s, 'The terminal disconnected.'), this.graceMs(s)); s.grace.unref()
+  }
   disconnect(connection: string) { for (const s of this.sessions.values()) this.detach(s.id, connection) }
-  async *output(id: string, connection: string, kind?: 'project', onAttached?: () => void): AsyncGenerator<SignInItem> {
-    const s = this.get(id, connection, kind)
+  async *output(id: string, connection: string, kind?: 'project', onAttached?: (reader: number) => void, ownerSessionId?: string): AsyncGenerator<SignInItem> {
+    const s = this.get(id, connection, kind, ownerSessionId)
     if (s.attached) throw new Error(kind ? terminalReasons.stream : signInReasons.stream)
-    s.attached = true; onAttached?.(); clearTimeout(s.grace); s.grace = undefined
-    try { for (;;) { if (!s.queue.length) { if (s.done) return; await new Promise<void>(resolve => { s.wake = resolve }); s.wake = undefined; continue }
+    if (kind === 'project' && (s.everAttached || s.detached) && !s.ending) {
+      s.queue = s.history ? [{ _tag: 'output', text: s.history }] : []; s.bytes = Buffer.byteLength(s.history)
+    }
+    s.connectionId = connection; s.detached = false; s.everAttached = true
+    const reader = ++s.reader
+    s.attached = true; onAttached?.(reader); clearTimeout(s.grace); s.grace = undefined
+    try { for (;;) {
+      if (s.reader !== reader) return
+      if (!s.queue.length) { if (s.done) return; let wake!: () => void; await new Promise<void>(resolve => { wake = resolve; s.wake = resolve }); if (s.wake === wake) s.wake = undefined; continue }
       const item = s.queue.shift()!; if (item._tag === 'output') { s.bytes -= Buffer.byteLength(item.text); if (s.paused && !s.ending && s.bytes <= 32 * 1024) { s.paused = false; clearInterval(s.exitWatch); s.exitWatch = undefined; s.child.resume() } } yield item; if (item._tag === 'ended') return
-    } } finally { s.queue = []; s.bytes = 0; if (s.done) this.sessions.delete(id); else this.detach(id, connection) }
+    } } finally { if (s.reader === reader) { s.attached = false; s.queue = []; s.bytes = 0; if (s.done) this.sessions.delete(id); else this.detach(id, connection) } }
   }
   close() { this.closed = true; for (const s of this.sessions.values()) this.finish(s, 'The service stopped.'); this.sessions.clear() }
 }

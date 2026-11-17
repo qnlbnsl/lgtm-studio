@@ -16,17 +16,17 @@ export class CredentialCheckFailed extends Data.TaggedError("CredentialCheckFail
   readonly reason: "credential check failed";
 }> {}
 
-// The wire form of an agent token (decision row 73):
+// The wire form of an agent token (decision row 73) or web session token:
 // a fixed prefix, 32 random bytes in base64url (43 characters, no padding),
 // an underscore, and the first eight lowercase hexadecimal digits of the
 // SHA-256 digest of those bytes. The checksum lets a malformed value be
 // refused before any table is read, and the prefix is what the redactor
 // searches for before it hashes anything.
-export type CredentialPrefix = "shp_a_";
+export type CredentialPrefix = "shp_a_" | "shp_w_";
 
 export const credentialLength = 6 + 43 + 1 + 8;
 
-const shape = /^shp_a_[A-Za-z0-9_-]{43}_[a-f0-9]{8}$/;
+const shape = /^shp_[aw]_[A-Za-z0-9_-]{43}_[a-f0-9]{8}$/;
 
 export const sha256Hex = (value: string | Uint8Array): string => createHash("sha256").update(value).digest("hex");
 

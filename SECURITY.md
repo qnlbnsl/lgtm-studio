@@ -118,11 +118,19 @@ These rules apply to every change. A change that breaks one is a security bug.
 3. **The password is checked in constant time and is not kept by the browser.**
    A login carries it in the request body, never in a URL. One person uses
    LGTM Studio, and the owner chose no rate limits and no lockouts on 2026-11-03.
-4. **A session is one random token per engine start, held in memory only.**
-   Logging out replaces the token, which signs out every client. Changing the
-   password means restarting the engine, which also ends the session. A browser
-   holds the token in an `HttpOnly`, `SameSite=Strict` cookie, which is `Secure`
-   on a public request when the public address is `https`.
+4. **The web session lasts at most 30 days and survives a service restart.**
+   The owner approved this change on 2026-11-17.
+   A new sign-in creates a fresh random 256-bit token and invalidates the previous session.
+   Signing out, changing `LGTM_WEB_PASSWORD`, or removing that variable ends the session.
+   The browser holds the token in an `HttpOnly`, `SameSite=Strict` cookie with a 30-day maximum age.
+   The cookie is `Secure` on a public request when the public address is `https`.
+   The service atomically writes only the token's Secure Hash Algorithm 256 (SHA-256) verifier, its creation time, and a keyed password digest to `web-session.json` in the state folder.
+   The file has mode 0600.
+   The password digest uses the verifier as its key and includes a fixed domain label.
+   A reader of the file cannot use its contents as a cookie or recover the random token from its verifier.
+   The digest permits password guesses by a reader of the state folder.
+   It does not change the existing limit against processes running as the same user, which can already read the password or rewrite state files.
+   Invalid, expired, unreadable, wrongly permissioned, or symbolic-link records do not authenticate a browser.
 5. **An encrypted channel for remote access is the owner's setup**, such as TLS, a
    Tailscale tailnet, or an SSH tunnel. LGTM Studio serves plain HTTP on loopback and
    does not offer it to a non-loopback address. A configured public address must use
@@ -196,9 +204,11 @@ These rules apply to every change. A change that breaks one is a security bug.
    nor `false`, and is not a plain number.
    On 2026-11-14, the owner authorized ephemeral output for the project terminal and the harness sign-in terminal.
    The owner ruled: "what you echo on terminal is none of our business. just keep it away from log. if they use tmux or something and it hold this in the buffer then that is not on us."
-   Only the authenticated owner connection that opens a session may receive its output.
+   On 2026-11-17, the owner allowed project terminals to reattach from another connection of the same authenticated web session.
+   Harness sign-in output remains restricted to its opening owner connection.
    Both terminals send the program's output byte for byte, with no redaction, hold, or idle timer.
-   Neither output nor typed keys are stored, logged, traced, posted, sent as alerts, or included in error messages, crash reports, snapshots, or protocol logs.
+   Project terminals retain at most 64 kibibytes of recent output in memory for reattachment.
+   Neither output nor typed keys are written to disk, logged, traced, posted, sent as alerts, or included in error messages, crash reports, snapshots, or protocol logs.
    A secret printed in either terminal appears on the owner's screen and in any scrollback the owner's own tools keep.
    Rule 6 continues to apply without these exceptions to every other path.
 
@@ -214,6 +224,9 @@ For Gemini without a managed install, the executable comes from the owner's harn
 The service uses the same login folder that the account gives its agents.
 Resolved `secret:` values in the account environment are passed to the child.
 Only the initiating owner connection may read output, type keys, resize the terminal, or stop it.
+Sign-in terminals do not reattach after reload because their credential flow stays bound to that initiating connection.
+Their five-minute total time limit and five-second connection grace remain unchanged.
+Sign-out also closes them.
 Agent and service credentials cannot use these requests.
 The service kills a live process group when the owner stops it, the connection grace period ends, the time limit passes, or engine shutdown begins.
 After the child exits, the service does not signal its former process group because the identifier may be reused.
@@ -232,7 +245,11 @@ The stored project terminal switch starts off in Service settings.
 While it is off, every open request is refused before a shell can start.
 Only an authenticated owner may open a terminal.
 Agent and service credentials are refused.
-Only the connection that opened a session may read its output, type into it, resize it, or close it.
+On 2026-11-17, the owner approved reattachment within the same authenticated web session.
+Any connection of that session may list its project terminals, read output, type into them, resize them, or close them.
+Only one output stream may attach to a terminal at a time.
+Another web session, an agent, or an unauthenticated caller cannot use them.
+A local socket terminal remains bound to its opening connection.
 The request names a project and a registered worktree by their engine identifiers.
 It cannot supply a path, command, executable, argument, environment variable, or shell expression.
 Only a worktree on the local machine can open a shell.
@@ -240,7 +257,10 @@ The executable is the owner's shell from the service environment, when it is an 
 Otherwise, the executable is `/bin/sh`.
 The shell inherits the service environment with every `LGTM_` entry removed.
 An environment entry containing any registered secret is removed too.
-At most eight project terminals may be live at once.
+At most eight project terminals may be live at once, including detached terminals.
+A detached web terminal remains available for five minutes.
+The service closes it after that grace period.
+A local socket terminal keeps its five-second connection grace.
 A shell has no time limit.
 The service kills its live process groups on close, sign-out, switch-off, connection loss past the grace period, and engine shutdown.
 On Linux, the service reads `/proc` to find and kill jobs in the shell's operating-system session.
@@ -254,10 +274,13 @@ The scan stops when no member is found or after five passes.
 A process that continues to fork beyond that bound may survive.
 If the former leader's process identifier exists again after exit, discovery stops without signalling that new session.
 Input and output are ephemeral.
-They are never stored by the service, logged, posted, sent as events, or included in snapshots or protocol logs.
+The service retains at most 64 kibibytes of recent output per project terminal in memory.
+Reattachment sends that recent output before subsequent live output.
+Input is not retained for replay.
+Neither stream is written to disk, logged, posted, sent as events, or included in snapshots or protocol logs.
 The owner's ruling of 2026-11-14 covers both this stream and the harness sign-in stream.
-The program's output reaches the opening connection byte for byte, with no redaction, hold, or idle timer.
-The output never goes to another subscriber or agent.
+The program's live output reaches the attached connection byte for byte, with no redaction, hold, or idle timer.
+The output never goes to an unrelated session or an agent.
 Neither output nor typed keys are traced or included in an error message.
 A secret printed in the terminal appears on the owner's screen and in any scrollback the owner's own tools keep.
 The shell runs as the owner and can change files with that user's permissions.

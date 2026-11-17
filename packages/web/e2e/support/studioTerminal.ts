@@ -91,6 +91,15 @@ export async function exerciseStudioTerminal(page: Page) {
           await page.keyboard.type("printf '\\033[38;2;255;100;0mTRUE_FORE\\033[0m \\033[48;2;12;34;56mTRUE_BACK\\033[0m\\n'"); await page.keyboard.press('Enter')
           await expect(page.locator('.xterm-rows span').filter({ hasText: /^TRUE_FORE$/ }).first()).toHaveCSS('color', 'rgb(255, 100, 0)')
           await expect(page.locator('.xterm-rows span').filter({ hasText: /^TRUE_BACK$/ }).first()).toHaveCSS('background-color', 'rgb(12, 34, 56)')
+          // The shell variable and PID prove this is the same process after reload.
+          await page.keyboard.type("S28_SHELL=$$; echo S28_BEFORE_RELOAD:$S28_SHELL"); await page.keyboard.press('Enter')
+          await expect(page.locator('.xterm-rows')).toContainText(/S28_BEFORE_RELOAD:\d+/)
+          const prior = (await page.locator('.xterm-rows').innerText()).match(/S28_BEFORE_RELOAD:(\d+)/)![1]
+          await page.reload()
+          await expect(page.locator('.term-tab')).toHaveCount(1)
+          await expect(page.locator('.xterm-rows')).toContainText('BROWSER_TERMINAL_OK')
+          await input.focus(); await page.keyboard.type('echo S28_AFTER_RELOAD:$S28_SHELL:$$'); await page.keyboard.press('Enter')
+          await expect(page.locator('.xterm-rows')).toContainText('S28_AFTER_RELOAD:' + prior + ':' + prior)
           const before = await page.locator('.term-status').innerText()
           await page.setViewportSize({ width: 1100, height: 740 })
           await expect(page.locator('.term-status')).not.toHaveText(before)

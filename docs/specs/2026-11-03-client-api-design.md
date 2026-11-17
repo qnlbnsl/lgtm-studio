@@ -255,9 +255,11 @@ replaces pairing codes and per-device credentials, and nothing is kept for them.
 
 - A login carries the password in the request body, and the server compares it
   in constant time. On a match, the reply sets a session cookie.
-- The session is one random token per engine start, held in memory only. There is
-  no session table, no user, no expiry timer and no renewal. A logout replaces the
-  token, and a restart or a changed password means logging in again.
+- The owner revised the session decision on 2026-11-17.
+  A sign-in rotates the random token.
+  The service stores its verifier and keyed password binding in a private file.
+  The session survives a restart with the same password for at most 30 days.
+  Logout or a changed or removed password ends the session.
 - A logged-in session is the owner. No command is computer-only.
 - If the variable is not set, the web server does not start, and the engine says
   why. The engine and its Unix socket run as normal.

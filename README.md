@@ -92,6 +92,10 @@ The `read` command above works in Bash and Zsh.
 Enter a long, random password at its prompt, then press Enter.
 Open `http://127.0.0.1:8787` and log in with that password.
 The web password must contain at least eight characters.
+A browser stays signed in across service restarts for at most 30 days from sign-in.
+Changing or removing the password, signing out, or signing in again ends the previous session.
+The Terminal tab restores its shells and recent output after a reload within five minutes.
+Signing out or restarting the service closes those shells.
 The engine's default state folder is `~/.local/state/lgtm`.
 Set `LGTM_HOME` on the service and command processes to use another folder.
 With `serve --detach`, the service continues running after the launching terminal closes.

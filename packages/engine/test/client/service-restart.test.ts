@@ -1,3 +1,5 @@
+import { once } from 'node:events'
+import WebSocket from 'ws'
 import { spawn } from 'node:child_process'
 import { chmodSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -23,9 +25,9 @@ const poll = async <T>(probe: () => Promise<T>, accept: (value: T) => boolean) =
   }
   throw new Error('The isolated service did not return in time.')
 }
-test('the executable restarts with the same arguments and environment and invalidates every signed-in page', { timeout: 60_000 }, async () => {
+test('the executable restarts with the same arguments and environment and preserves the signed-in web session', { timeout: 60_000 }, async () => {
   const rig = makeRig(), port = await unusedPort(), password = 'synthetic-restart-password'
-  let child: ReturnType<typeof spawn> | undefined
+  let child: ReturnType<typeof spawn> | undefined, watcher: WebSocket | undefined
   try {
     chmodSync(rig.stateFolder, 0o700)
     const runner = await Effect.runPromise(makeFakeRunner())
@@ -46,15 +48,22 @@ test('the executable restarts with the same arguments and environment and invali
     const origin = `http://127.0.0.1:${port}`
     const login = () => fetch(origin + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ password }) })
     const response = await poll(async () => { if (child!.exitCode !== null) throw new Error(diagnostics); const reply = await login(); lastStatus = reply.status; return reply }, (reply) => reply.status === 204).catch(() => { throw new Error('Startup diagnostics, last HTTP status ' + lastStatus + ': ' + diagnostics.slice(-3000)) })
-    const cookie = response.headers.get('set-cookie')!.split(';')[0]!
+    let cookie = response.headers.get('set-cookie')!.split(';')[0]!
     const session = () => fetch(origin + '/api/session', { method: 'POST', headers: { Cookie: cookie, Origin: origin } })
     expect((await session()).status).toBe(204)
-    expect((await login()).headers.get('set-cookie')!.split(';')[0]).toBe(cookie)
+    const rotatedCookie = (await login()).headers.get('set-cookie')!.split(';')[0]!
+    expect(rotatedCookie === cookie).toBe(false)
+    expect((await session()).status).toBe(401)
+    cookie = rotatedCookie
+    watcher = new WebSocket(origin.replace('http:', 'ws:') + '/api', { headers: { Cookie: cookie, Origin: origin } })
+    await once(watcher, 'open')
+    const disconnected = once(watcher, 'close')
     await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
       const client = yield* connect(join(rig.stateFolder, 'engine.sock'), ownerBearer(rig.stateFolder))
       expect(yield* client['client.service.restart']({ requestId: 'restart-process' as RequestId, confirmed: true })).toMatchObject({ restarting: true })
     })))
-    await poll(session, (reply) => reply.status === 401)
+    await disconnected
+    await poll(session, (reply) => reply.status === 204)
     expect(child.exitCode).toBeNull()
     expect(readFileSync(`/proc/${child.pid}/cmdline`, 'utf8')).toContain('--trace-warnings\0')
     expect(readFileSync(`/proc/${child.pid}/environ`, 'utf8').includes('LGTM_RESTART_MARKER=preserved-value\0')).toBe(true)
@@ -69,6 +78,7 @@ test('the executable restarts with the same arguments and environment and invali
     expect((await fetch(origin + '/api/session', { method: 'POST', headers: { Cookie: freshCookie, Origin: origin } })).status).toBe(204)
     expect((await session()).status).toBe(401)
   } finally {
+    watcher?.terminate()
     if (child && child.exitCode === null) {
       const exited = new Promise((resolve) => child!.once('exit', resolve))
       child.kill('SIGTERM')

@@ -11608,10 +11608,11 @@ Found: 2026-11-13, by hand on the first real project.
 State: fixed in `packages/studio/src/connection.ts`, which asks the session route after a lost connection and shows sign-in when the session has ended, though no browser journey covers a real restart. Verified against the code on 2026-11-16.
 Earlier state: open.
 
-A restart of the service ends the browser's session.
-An open page of the live website then shows "Offline" and stays there.
-Only a reload brings up the Login page.
-The page should notice that the service answers again and ask the owner to sign in.
+Before the owner's decision of 2026-11-17, a restart ended the browser's session.
+The session now survives a restart with the same password for up to 30 days.
+At the time of the original report, an open page showed "Offline" and stayed there.
+Only a reload brought up the Login page.
+The page needed to notice that the service answered again and ask the owner to sign in.
 
 ## 659. The live Mocks tab did not read recorded bundles.
 
@@ -14510,16 +14511,16 @@ It cannot attach to an agent's terminal or transfer that terminal's keyboard.
 The live Session actions menu draws Watch agent session and Take over agent session disabled.
 Both controls show “Engine work needed” on hover.
 
-## 907. Ended project shells cannot reconnect.
+## 907. Project shells could not reattach after a reload.
 
-State: open. Checked by s20-controls on 2026-11-16. Reconnect remains disabled with Engine work needed. The engine has no resumed terminal attachment or ownership transfer for a replacement connection. An ended shell cannot be resumed. Kind: visible to the owner.
+State: fixed by s28-session on 2026-11-17 for a live shell within the five-minute disconnect grace period.
+The owner approved reattachment on 2026-11-17.
 
-A project shell belongs to its opening connection.
-Reloading the page or losing that connection ends the shell after the grace period.
-The live Reconnect control is disabled, with “Engine work needed” on hover.
-A New session control opens a fresh shell instead.
-Remote worktree menu items are disabled because remote terminal transport is unbuilt.
-They show “Engine work needed” on hover.
+The live Terminal tab lists and reattaches shells belonging to the same authenticated web session.
+It restores at most 64 kibibytes of recent output from memory.
+A closed or expired shell cannot be resumed.
+Remote terminal transport remains unbuilt.
+The remote worktree choices remain disabled with “Engine work needed” on hover.
 
 ## 908. Interactive shell jobs use separate process groups.
 
@@ -19085,7 +19086,8 @@ Read: retaining oversized states fixes repeated compilation rather than this lit
 Found: 2026-11-16, while reproducing the owner's round-five thread failure.
 State: the product already appends both deltas under the same item identifier. The acceptance helper now uses the product's grouping function.
 
-Read: the service creates and registers a random web-session token even when no web password is configured.
+Read: before s28-session, the service created and registered a random web-session token even when no web password was configured.
+Read: s28-session creates a web token only after a successful sign-in.
 Read: that token and the agent token are the scenario's two random registered credentials.
 Read: its owner credential is fixed.
 Read: its account has no secret reference and its temporary login stores do not exist.
@@ -19451,3 +19453,52 @@ The browser check that a repeated conflict choice shows no refusal compares the 
 In the orchestrator's whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:372` and `studio.spec.ts:1200` failed under load, and each passed when run alone.
 
 State: open. Recorded on 2026-11-17.
+
+## s28-1. A disconnect before the first terminal subscription retained its unread queue.
+
+Found and fixed during s28-session on 2026-11-17.
+The initial attachment timer prevented disconnect cleanup from switching the project terminal to bounded replay memory.
+A detached shell could pause on its unread queue instead of continuing during the grace period.
+Disconnect cleanup now releases that queue and resumes the pseudo-terminal while retaining only bounded recent output.
+Real server tests cover disconnect before subscription, scrollback bounds, and the detached shell limit.
+
+## s28-2. A resumed session needs redaction before its first browser request.
+
+Found and fixed during s28-session on 2026-11-17.
+The existing hash-based redactor recognized only structured agent tokens.
+A stored hash of an arbitrary web token would not protect that token before the browser authenticated again.
+Web tokens now use a separate `shp_w_` prefix with the existing 256-bit payload and checksum construction.
+The redactor recognizes that prefix against the stored session hash.
+The agent verifier continues to accept only the agent prefix.
+A real engine restart test prints the token through a synthetic agent before presenting its cookie again.
+
+## s28-3. Shared repository checkouts need project identity when terminals reattach.
+
+Found and fixed during s28-session on 2026-11-17.
+Two projects in one repository can both offer its main checkout in Terminal.
+Matching restored terminals only by their checkout could display the same shell in both projects.
+The terminal list now includes the project identifier used to open each shell.
+The page restores only the selected project's shells.
+A mapping regression covers a shared main checkout.
+
+## s28-4. Service settings assumed that a restarted service must refuse its cookie.
+
+Found and fixed during s28-session on 2026-11-17.
+The restart poller waited only for an unauthorized session response.
+Persistent sessions can return a successful response instead.
+The poller now reconnects for a successful session probe while retaining the revoked-session path.
+The service hint, confirmation, refusal, and progress toast now describe the preserved sign-in and closed terminals.
+A focused regression exercises both session responses.
+
+## s28-5. The full browser run had failures that passed when rerun.
+
+Observed during s28-session on 2026-11-17.
+The whole browser suite passed 67 journeys and failed eight journeys.
+The failures covered the legacy merge to main, legacy Git evidence, legacy remote Git operations, project creation at eight sizes, live projects and board, workflows, Files, and Terminal.
+A rerun of only those eight failures with one worker passed six journeys, including the final terminal reload journey.
+The Git evidence and Files journeys still timed out on five-second busy-state checks in that batch.
+Each then passed in a separate one-test run with its original assertions and timeout.
+The six journeys that failed only in the whole run were the merge to main, remote Git operations, project creation, live projects and board, workflows, and Terminal.
+The whole run overlapped review edits, so it does not establish that every transient failure was caused by load.
+Earlier issues 1374 and 1375 record similar Git, board, workflow, and Files waits.
+State: open as a record of batch-run failures, with every failed journey passing on the final source in a rerun.

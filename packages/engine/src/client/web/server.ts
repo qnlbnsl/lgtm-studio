@@ -27,7 +27,7 @@ import { installWebRuntime, settingsOf, type ClientWebView } from "../settings.t
 import { initializeAlerts } from "../alerts/reactor.ts";
 import { clientPieceView } from "../alerts/view.ts";
 import { makeSession } from "./session.ts";
-import { webCaller } from "./webCaller.ts";
+import { loginOwner, webCaller } from "./webCaller.ts";
 import { requestPolicy } from "./proxy.ts";
 import { staticResponse } from "./static.ts";
 import { CommandHandler } from "../../commands/CommandHandler.ts";
@@ -47,6 +47,8 @@ export const serve = (options: {
   readonly password: Redacted.Redacted<string> | undefined;
   // The website's built files. The service passes the folder that packages/studio builds from design/mock.
   readonly staticRoot: string;
+  readonly stateFolder?: string;
+  readonly registerSessionHash?: (hash: string) => void;
   readonly settings?: WebSettings;
   readonly lists?: EngineLists;
   readonly registerSecret?: (secret: Redacted.Redacted<string>) => void;
@@ -69,10 +71,10 @@ export const serve = (options: {
   const port = settings.port;
   const usable = options.password !== undefined && Redacted.value(options.password).length >= 8;
   let state: "off" | "no-password" | "running" | "port-taken" = settings.enabled ? (usable ? "port-taken" : "no-password") : "off";
-  const session = makeSession(options.password, options.registerSecret ?? (() => {}));
+  const session = makeSession(options.password, options.registerSecret ?? (() => {}), { stateFolder: options.stateFolder ?? process.env.LGTM_HOME, registerHash: options.registerSessionHash });
   const rpc = yield* application({ debug: false, lists, webIdentity: (request) => {
     const credential = webCaller(session, request.headers);
-    return credential === undefined ? undefined : { credential };
+    return credential === undefined ? undefined : { credential, ownerSessionId: session.id! };
   } });
   let stopped = false;
   let listener: { readonly stop: Effect.Effect<void>; readonly close: Effect.Effect<void> } | undefined;
@@ -118,6 +120,17 @@ export const serve = (options: {
     return { service: display, generation: displayGeneration };
   }));
 
+  const expiry = yield* Effect.forever(Effect.sleep(1000).pipe(Effect.andThen(Effect.suspend(() => {
+    if (!session.expired) return Effect.void;
+    return Effect.gen(function* () {
+      const expiredSession = session.id;
+      yield* Effect.try(() => session.revoke()).pipe(Effect.option);
+      signOutTerminals((yield* handler.input(loginOwner())).runtime.log, expiredSession);
+      yield* disconnect;
+      yield* lifecycle.withPermits(1)(stopDisplay);
+    });
+  })))).pipe(Effect.forkScoped);
+
   const ready = Option.isSome(recovery) ? recovery.value.whenReady : Effect.void;
   const outage = (down: boolean) => ready.pipe(Effect.andThen(writePieceBatch({ namespace: "client", kind: "reactor", sourceSequence: 0,
     build: (snapshot) => {
@@ -146,7 +159,15 @@ export const serve = (options: {
       let value: unknown;
       try { value = (JSON.parse(text) as { password?: unknown }).password; } catch { value = undefined; }
       if (!session.checkPassword(value)) return HttpServerResponse.empty({ status: 401 });
-      return HttpServerResponse.empty({ status: 204, headers: { "set-cookie": session.cookie(policy.secure) } });
+      const previousSession = session.id;
+      // Revoke before any asynchronous cleanup so an old connection cannot
+      // start another terminal while the login is being completed.
+      const rotated = yield* Effect.try(() => { session.rotate(); return session.cookie(policy.secure); }).pipe(Effect.option);
+      signOutTerminals((yield* handler.input(loginOwner())).runtime.log, previousSession);
+      yield* disconnect;
+      const cleaned = yield* lifecycle.withPermits(1)(stopDisplay);
+      if (Option.isNone(rotated) || !cleaned) return HttpServerResponse.empty({ status: 503 });
+      return HttpServerResponse.empty({ status: 204, headers: { "set-cookie": rotated.value } });
     }
     if (navigation) {
       const configuration = yield* Effect.try(() => configuredDisplay(settings, port)).pipe(Effect.orElseSucceed(() => undefined));
@@ -167,9 +188,11 @@ export const serve = (options: {
     }
     if (path === "/api/session" && request.method === "POST" && !upgrade) return HttpServerResponse.empty({ status: 204 });
     if (path === "/api/logout" && request.method === "POST" && !upgrade) {
-      session.rotate(); signOutTerminals((yield* handler.input(caller)).runtime.log); yield* disconnect;
+      const previousSession = session.id;
+      const revoked = yield* Effect.try(() => session.revoke()).pipe(Effect.option);
+      signOutTerminals((yield* handler.input(caller)).runtime.log, previousSession); yield* disconnect;
       const cleaned = yield* lifecycle.withPermits(1)(stopDisplay);
-      return HttpServerResponse.empty({ status: cleaned ? 204 : 503 });
+      return HttpServerResponse.empty({ status: cleaned && Option.isSome(revoked) ? 204 : 503 });
     }
     if ((path === "/api/display/open" || path === "/api/display/close") && !upgrade) {
       if (request.method !== "POST" || request.url !== path) return HttpServerResponse.empty({ status: 405 });
@@ -307,6 +330,7 @@ export const serve = (options: {
     if (stopped) return;
     stopped = true; removeRuntime();
     if (retry !== undefined) yield* Fiber.interrupt(retry);
+    yield* Fiber.interrupt(expiry);
     yield* disconnect;
     yield* lifecycle.withPermits(1)(stopDisplay);
     if (listener !== undefined) { yield* listener.close; listener = undefined; }
