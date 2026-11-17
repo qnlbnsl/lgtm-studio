@@ -19513,6 +19513,21 @@ Main approval also failed at its merge-completion wait when the changed producti
 The original assertions and timeouts remain unchanged.
 State: open with the repeated failures above still unresolved.
 
+Round 3 ran the whole unit and browser suites sequentially on signed source.
+The whole unit suite passed all 678 files and 10,363 tests.
+The whole browser suite passed 68 journeys and failed seven journeys.
+The seven failures were main approval, stale reviewed heads, reported-evidence approval, remote Git, eight-size goal/project creation, live projects and board, and Files.
+Each passed in a separate one-test invocation with one worker.
+Those seven failed only in the Round 3 whole run.
+The extended Terminal journey passed in the whole run.
+Five isolated runs per journey on the base passed two main approvals, three master approvals, four remote Git journeys, five Welcome journeys, and four throttled-state journeys.
+The same five-run batches on signed Round 3 passed every attempt.
+The base was the unmodified source at d4fb1877.
+All existing assertions and timeouts were retained.
+The host remained shared and busy despite serial comparison runs.
+These counts reproduce intermittent base failures without establishing a controlled latency benchmark.
+State: open for the whole-run failures, with all seven passing individually in Round 3.
+
 ## s28-6. A sign-in displaced the owner's other browsers.
 
 Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
@@ -19609,6 +19624,15 @@ The test uses the local socket and does not start a web listener.
 These observations do not establish the cause of the difference.
 State: open with the failure unresolved.
 
+Round 3 selected this test alone five times on the unmodified base at d4fb1877.
+Four base runs passed.
+The failed base run reached the same five-second subprocess-marker assertion.
+All five runs on signed Round 3 passed.
+The complete 45-test main-review file also passed in the whole unit suite.
+The Git implementation and this fixture have no diff from the base.
+No assertion or timeout was changed.
+The earlier single-control difference therefore does not establish a regression from this unit.
+State: reproduced on the base as an intermittent setup failure.
 
 ## s28-15. A backward clock step invalidated valid web sessions.
 
