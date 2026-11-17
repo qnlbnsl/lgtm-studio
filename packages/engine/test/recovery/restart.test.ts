@@ -628,3 +628,23 @@ test("6.7 R22 issue 119: catches retaining abandoned or replaced secrets, or col
     expect(JSON.stringify([yield* readLog, yield* snapshot, lines])).not.toContain("private-value-for-");
   }), { secrets, logLines: lines });
 }));
+
+live("s24 recovery progress counts completed reloads while the next agent is still loading", () => Effect.gen(function* () {
+  yield* history(() => Effect.gen(function* () { yield* seedAgent({ id: "progress-one" }); yield* seedAgent({ id: "progress-two" }); }));
+  const runner = yield* makeFakeRunner();
+  const entered = yield* Deferred.make<void>(), release = yield* Deferred.make<void>();
+  runner.script("load", input => Effect.gen(function* () {
+    if (input.agentId === "progress-two") { yield* Deferred.succeed(entered, undefined); yield* Deferred.await(release); }
+    return { ...sessionFor(input.agentId), session: input.session };
+  }));
+  yield* restart(runner, Effect.gen(function* () {
+    const service = yield* Restart.Restart;
+    const fiber = yield* recover.pipe(Effect.forkChild);
+    yield* Deferred.await(entered);
+    expect(yield* service.ready).toBe(false);
+    expect(yield* service.progress!).toEqual({ _tag: "ServiceStarting", recovered: 1, total: 2 });
+    yield* Deferred.succeed(release, undefined); yield* Fiber.join(fiber);
+    expect(yield* service.ready).toBe(true);
+    expect(yield* service.progress!).toEqual({ _tag: "ServiceStarting", recovered: 2, total: 2 });
+  }));
+}));

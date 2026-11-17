@@ -96,6 +96,7 @@ type DeliveryRow = Delivery & {
 };
 
 type AccountRow = Account & {
+  readonly signedIn?: boolean;
   readonly status: "available" | "out-of-usage" | "needs-sign-in";
   readonly resetAt?: number;
   readonly reason?: string;
@@ -387,12 +388,20 @@ const accountsAfter = (state: State, event: Event): State["accounts"] => {
       return put(state.accounts, event.accountId, {
         ...event.account,
         status: existing?.status ?? "available",
+        ...(existing?.signedIn === undefined || existing.harness !== event.account.harness
+          || existing.home !== event.account.home || existing.secret !== event.account.secret
+          || JSON.stringify(existing.environment) !== JSON.stringify(event.account.environment)
+          ? {} : { signedIn: existing.signedIn }),
         ...(existing?.resetAt === undefined ? {} : { resetAt: existing.resetAt }),
         ...(existing?.reason === undefined ? {} : { reason: existing.reason }),
       });
     }
+    case "SessionOpened": {
+      const agent = state.agents[event.agentId];
+      return agent === undefined ? state.accounts : change(state.accounts, agent.account, row => ({ ...row, signedIn: true }));
+    }
     case "AccountNeedsSignIn": return change(state.accounts, event.accountId, ({ resetAt: _resetAt, ...row }) => ({
-      ...row, status: "needs-sign-in", reason: event.reason,
+      ...row, signedIn: false, status: "needs-sign-in", reason: event.reason,
     }));
     case "AccountOutOfUsage": return change(state.accounts, event.accountId, ({ reason: _reason, resetAt: _resetAt, ...row }) => ({
       ...row, status: "out-of-usage", ...(event.resetAt === undefined ? {} : { resetAt: event.resetAt }),

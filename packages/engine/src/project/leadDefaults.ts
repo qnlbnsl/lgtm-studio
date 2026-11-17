@@ -1,3 +1,4 @@
+import { recordSignInCheck } from "../accounts/signInEvidence.ts"
 import { constants } from "node:fs"
 import { access, stat } from "node:fs/promises"
 import * as NodeServices from "@effect/platform-node/NodeServices"
@@ -57,7 +58,7 @@ export const accountReadiness = (input: Input, harness: HarnessSettings, account
   // A key must belong to this harness and reach its actual spawn environment.
   // Unknown harnesses have no established local authentication evidence.
   return fileCredential || (login.keyVariable !== undefined && Boolean(effective[login.keyVariable]?.trim())) ? "local-credential" as const : "signed-out" as const
-}).pipe(Effect.catch(() => Effect.succeed("unavailable" as const)))
+}).pipe(Effect.catch(() => Effect.succeed("unavailable" as const)), Effect.tap(state => Effect.sync(() => recordSignInCheck(account, state))))
 
 export const leadDefaults = (input: Input, saved?: typeof ProjectLeadDefaults.Type) => Effect.gen(function* () {
   const harnesses = (yield* readHarnesses(input.runtime)).filter((row) => saved === undefined || row.id === saved.harness)

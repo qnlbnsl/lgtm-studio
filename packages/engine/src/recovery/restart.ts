@@ -78,6 +78,11 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
   const canReload = runner.capabilities.loadSession || runner.capabilities.resumeSession;
   const ready = yield* Deferred.make<void>();
   const running = yield* Semaphore.make(1);
+  const initial = yield* views.snapshot;
+  let recoveredCount = 0;
+  let recoveryTotal = Object.values(initial.agents).filter(agent =>
+    ["starting", "working", "idle", "interrupted"].includes(agent.state._tag)
+    || agent.state._tag === "paused").length;
   let completed = false;
   let attempted = false;
   let timersStarted = false;
@@ -209,7 +214,7 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
   // An account's return, in two parts. Agents whose process still runs go
   // idle in one transaction (accounts/available.ts); each agent without one
   // is then reloaded on its own. Returns the agents reloaded.
-  const returnPaused = (accountId: string, cause: AvailableCause) => Effect.gen(function* () {
+  const returnPaused = (accountId: string, cause: AvailableCause, countRecovery = false) => Effect.gen(function* () {
     const processless = yield* log.transact((append) => Effect.gen(function* () {
       const snapshot = yield* views.snapshot;
       if (snapshot.accounts[accountId]?.status !== "available") return [];
@@ -221,7 +226,9 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
       return [...skip] as ReadonlyArray<AgentId>;
     })).pipe(ignoreReused([] as ReadonlyArray<AgentId>));
     const reloaded: Array<AgentId> = [];
-    for (const agentId of processless) if (yield* reloadPaused(agentId, accountId, cause)) reloaded.push(agentId);
+    for (const agentId of processless) if (yield* reloadPaused(agentId, accountId, cause)) {
+      reloaded.push(agentId); if (countRecovery) recoveredCount++;
+    }
     return reloaded;
   });
 
@@ -253,7 +260,7 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
       const cause = causes.get(account.id);
       if (account.status !== "available" || cause === undefined) continue;
       if (!Object.values(snapshot.agents).some((agent) => returnable(agent, account.id, cause))) continue;
-      reloaded.push(...yield* returnPaused(account.id, cause));
+      reloaded.push(...yield* returnPaused(account.id, cause, true));
     }
     return reloaded;
   });
@@ -297,8 +304,13 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
       }
     }
     const recovered = new Set<string>();
-    for (const agent of Object.values((yield* views.snapshot).agents)) {
-      if (agent.state._tag === "interrupted" && (yield* reloadInterrupted(agent.agentId))) recovered.add(agent.agentId);
+    const snapshot = yield* views.snapshot;
+    recoveryTotal = Object.values(snapshot.agents).filter(agent => agent.state._tag === "interrupted"
+      || agent.state._tag === "paused").length;
+    for (const agent of Object.values(snapshot.agents)) {
+      if (agent.state._tag === "interrupted" && (yield* reloadInterrupted(agent.agentId))) {
+        recovered.add(agent.agentId); recoveredCount++;
+      }
     }
     for (const agentId of yield* returnAccounts) recovered.add(agentId);
     yield* reevaluate;
@@ -308,6 +320,7 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
   }).pipe(Effect.provide(services));
 
   return Restart.of({
+    progress: Effect.sync(() => ({ _tag: "ServiceStarting" as const, recovered: recoveredCount, total: recoveryTotal })),
     ready: Deferred.isDone(ready),
     whenReady: Deferred.await(ready),
     // Ruling 3 of fix round 1: one attempt per service (see `Restart.recover`).

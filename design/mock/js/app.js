@@ -1,3 +1,4 @@
+import { connectionWord } from './live/startup.js';
 import { Workflows } from './screens/workflows.js';
 import * as liveGit from './live/git.js';
 import * as chat from './live/chat.js';
@@ -186,7 +187,7 @@ function Bell({ s }) {
 }
 function Live({ s }) {
   const now = useNow(5000); const c = s.conn;
-  const word = { live: 'Live', reconnecting: 'Reconnecting', offline: 'Offline' }[c.status];
+  const word = connectionWord(c);
   return html`<${Menu} class=${cx('live', c.status)} align="end" width=${280} label=${'Connection: ' + word}
     trigger=${html`<i class=${cx('dot', c.status === 'live' ? 'working' : c.status === 'reconnecting' ? 'waiting' : 'failed')}></i><span class="not-phone">${word}</span>`}
     header=${html`<div style="padding:8px 8px 6px;line-height:1.5"><b>${word}</b><div class="muted" style="font-size:var(--text-sm)">${c.notice || (c.status === 'live' ? `Connected to the service on ${(s.machines.find((m) => m.here) || s.machines[0])?.name || 'this computer'}.` : c.lastHeard ? `Last heard from the service ${ago(c.lastHeard, now)} ago. You can read, and changes wait until it is back.` : 'The service has not answered yet.')}</div></div>`}

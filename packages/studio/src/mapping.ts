@@ -35,7 +35,7 @@ export interface StoreRepo {
 }
 export interface StoreSubscription {
   readonly id: string; readonly harness: string; readonly name: string; readonly machine: string; readonly enabled: boolean
-  readonly signedIn: boolean; readonly useForNew: boolean; readonly usage: null; readonly window: null
+  readonly signedIn: boolean; readonly signInKnown?: boolean; readonly useForNew: boolean; readonly usage: null; readonly window: null
   readonly account: null; readonly model: string
 }
 export type StoreStage = "Define" | "Design" | "Plan" | "Build" | "Review" | "Hand over"
@@ -97,7 +97,7 @@ export interface StoreTask {
   readonly files: ReadonlyArray<never>; readonly history: ReadonlyArray<never>
 }
 export type ConnectionStatus = "live" | "reconnecting" | "offline"
-export interface StoreConn { readonly status: ConnectionStatus; readonly lastHeard: number; readonly notice?: string }
+export interface StoreConn { readonly status: ConnectionStatus; readonly lastHeard: number; readonly notice?: string; readonly starting?: { readonly recovered: number; readonly total: number } }
 
 // What one snapshot gives the store. Every key replaces the store's key of the same name.
 export interface EngineRecords {
@@ -261,7 +261,8 @@ export function mapSubscriptions(accounts: ClientSnapshot["accounts"], agents: R
     if (harness === undefined) return []
     const row = accounts?.find((account) => account.id === id)
     return [{
-      id, harness, name: id, machine, enabled: row?.enabled ?? true, signedIn: row === undefined || row.status !== "needs-sign-in",
+      id, harness, name: id, machine, enabled: row?.enabled ?? true, signedIn: row?.status !== "needs-sign-in" && row?.signedIn === true,
+      signInKnown: row?.status === "needs-sign-in" || row?.signedIn !== undefined,
       useForNew: false, usage: null, window: null, account: null, model: ""
     }]
   })

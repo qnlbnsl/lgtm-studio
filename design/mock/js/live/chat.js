@@ -25,7 +25,7 @@ async function attempt(key, fn) {
 }
 export function reset() {
   generation++; accountNames = []; accountRead = null; oversized.clear(); histories.clear(); details.clear(); sources.clear(); actions = []; loadingRequests = null; requestVersion++;
-  if (S()?.ui) { S().ui.chatBusy = {}; S().drafts = {}; }
+  if (S()?.ui) { S().ui.chatBusy = {}; }
 }
 export function enrich(patch) {
   if (!mapping) return patch;

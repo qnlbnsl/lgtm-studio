@@ -26,10 +26,11 @@ export function mapInstalledHarnesses(bases: ReturnType<typeof mapHarnesses>, in
 
 export function mapAccounts(accounts: ReadonlyArray<Account>, statuses: ClientSnapshot["accounts"], harnesses: ReadonlyArray<HarnessSettings>, settings?: ProjectSettings, reports?: ReadonlyArray<HarnessChoices>) {
   return accounts.map((a) => {
-    const status = statuses?.find((s) => s.id === a.id)?.status
+    const evidence = statuses?.find((s) => s.id === a.id)
+    const status = evidence?.status
     const report = reports?.find((r) => r.harnessId === a.harness && r.accountId === a.id)
     return { id: a.id, home: a.home ?? "", name: a.displayName ?? a.id, harness: a.harness, machine: LOCAL_MACHINE, enabled: a.enabled !== false,
-      signedIn: status !== "needs-sign-in", status: status ?? "", useForNew: settings?.lead?.account._tag === "named" && settings.lead.account.accountId === a.id,
+      signedIn: status !== "needs-sign-in" && evidence?.signedIn === true, signInKnown: status === "needs-sign-in" || evidence?.signedIn !== undefined, status: status ?? "", useForNew: settings?.lead?.account._tag === "named" && settings.lead.account.accountId === a.id,
       model: harnesses.find((h) => h.id === a.harness)?.defaultModel ?? "", account: null, usage: null, window: null,
       ...(reports ? { models: report?.models.options.map((o) => o.id) ?? [], reason: report?.reason ?? "This harness did not report model choices.",
         modelLabels: Object.fromEntries(report?.models.options.map((o) => [o.id, o.label ?? o.id]) ?? []) } : {}) }

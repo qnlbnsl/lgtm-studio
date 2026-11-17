@@ -1,6 +1,7 @@
 // The mock's sample data and the functions that read it.
 // The data is plain objects. It is a design aid, not a contract for the engine.
 // Agents have no personal names: an agent is known by its role and its team.
+import { composerDrafts } from './drafts.js';
 import { MIN, HOUR, DAY, persist, FRAMED, live } from './lib.js';
 
 const T = Date.now();
@@ -343,7 +344,7 @@ function base() {
       sidebarFolded: persist('sidebarFolded', false), sidebarWidth: persist('sidebarWidth', 264),
       panelWidth: persist('panelWidth', 420), panelOpen: persist('panelOpen', true), onlyNeedingYou: false,
     },
-    drafts: {}, pending: {}, expanded: {}, inspecting: {}, toasts: [], dialog: null, phoneOffer: persist('phoneOffer', 'open'),
+    drafts: composerDrafts(live.on ? 'live' : 'mock', FRAMED), pending: {}, expanded: {}, inspecting: {}, toasts: [], dialog: null, phoneOffer: persist('phoneOffer', 'open'),
     settings: {
       ntfyServer: '', ntfyTopic: '', ntfyToken: '', tokenSet: false, ntfyEnabled: false, email: { enabled: false, tokenSet: false },
       webEnabled: true, port: 8787, checkIn: 15, proxyMode: false, publicAddress: '',

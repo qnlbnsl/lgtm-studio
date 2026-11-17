@@ -158,7 +158,7 @@ export const installHarness = async (harnessId) => {
 export const checkHarnesses = () => run('read-service', () => loadService('harnesses', true));
 export const checkAccount = async (accountId) => {
   const result = await request('client.harness.account.check', { accountId });
-  engineWrite({ subscriptions: S().subscriptions.map((a) => a.id === accountId ? { ...a, signedIn: result.state === 'local-credential' } : a) });
+  if (['local-credential', 'signed-out'].includes(result.state)) engineWrite({ subscriptions: S().subscriptions.map((a) => a.id === accountId ? { ...a, signInKnown: true, signedIn: result.state === 'local-credential' } : a) });
   return result;
 };
 export const harnessSetting = (harnessId, patch) => run('subscriptions', async () => {

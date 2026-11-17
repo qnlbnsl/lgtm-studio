@@ -6,6 +6,8 @@ import type * as Scope from "effect/Scope";
 
 import type { LogWriteFailed } from "../log/EventLog.ts";
 
+import type { ServiceStarting } from "@lgtm/contracts/client/startup";
+
 type Cause = Extract<Event, { _tag: "AccountAvailable" }>["cause"];
 
 // Fix round 1, ruling 3: a second `recover` after an earlier one started and
@@ -22,6 +24,7 @@ export class RecoveryAttempted extends Data.TaggedError("RecoveryAttempted")<{
 // start-up behaviour. It lives apart from `restart.ts` so the followers can
 // name it without importing recovery itself.
 export class Restart extends Context.Service<Restart, {
+  readonly progress?: Effect.Effect<ServiceStarting>;
   readonly ready: Effect.Effect<boolean>;
   readonly whenReady: Effect.Effect<void>;
   // Steps 3 to 10, run at most once per service. After a run completed,

@@ -19163,3 +19163,50 @@ In the run of 11, the small Claude lead also did not attempt two commands and ma
 The live check starts no project, so it does not exercise worker worktrees.
 
 State: open. Recorded on 2026-11-16.
+
+## s24-1. Recovery hid the website and its sign-in form.
+
+The web server returned an empty service-unavailable response for static files before checking the request policy or session.
+Agent recovery can wait up to 120 seconds for each adapter setup.
+The website now loads during recovery.
+Login now checks the password during recovery.
+Authenticated data requests and socket upgrades return a typed starting state with recovery counts until the full recovery gate opens.
+The existing connection badge and menu show the progress.
+Authenticated starting replies count as contact, so a long recovery does not become an offline warning.
+Data waits because recovery changes agent credentials, lifecycle states, and request holders.
+The total includes interrupted and paused agents.
+A failed or unsupported reload does not count as a successful recovery.
+
+## s24-2. Reloading a tab discarded unsent chat messages.
+
+Agent and board composers kept their text only in memory.
+The shared mock and website draft store now uses per-tab session storage for composer keys.
+The stored data is limited to 32 drafts, 8,192 characters per draft, and 65,536 serialized characters in total.
+A successful send removes its draft from storage.
+Password fields, secret fields, sign-in fields, and terminal input do not use this store.
+
+## s24-3. Availability was mistaken for sign-in evidence.
+
+Both account adapters treated an available account as signed in without evidence.
+The account view now derives positive evidence from successful session events.
+The existing local credential check keeps its result in memory for the current account row.
+The snapshot exposes only the resulting boolean.
+A changed login configuration invalidates the evidence.
+An account without evidence uses the existing neutral wording, “Not reported”.
+An explicit sign-out remains signed out after the owner clears an availability pause.
+
+## s24-4. Plan updates accumulated as separate chat rows.
+
+The thread adapter appended every plan update as a new message.
+The view now updates the first plan row of a turn with the latest entries.
+The same fold handles live events and replay.
+Stored plan events have no plan identifier.
+Separate plans within one turn therefore share a row.
+A turn or session boundary starts a separate row.
+
+## s24-5. The full startup check encountered the known shutdown-test failure.
+
+The final whole unit-test run failed the interruption-only shutdown test in `packages/cli/test/serve.test.ts`.
+Issue 1295 already records this load-sensitive failure.
+The same test passed immediately when run alone.
+This change does not modify the command-line shutdown code or its test.

@@ -1,3 +1,5 @@
+import { ServiceStarting } from "@lgtm/contracts/client/startup"
+import { startingNotice } from "./startup.ts"
 import { isReadRequest } from "./readRequests.ts"
 // The live website's connection to the engine.
 //
@@ -133,6 +135,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
   let accountLimits: Record<string, number | null> = {}
   let lastHeard = 0
   let connectionStatus: ConnectionStatus = "reconnecting"
+  let starting: ServiceStarting | undefined
   let snapshotNotice: string | undefined
 
   let readState: 'connecting' | 'live' | 'failed' | 'ended' = 'connecting'
@@ -161,15 +164,23 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
 
   const setConn = (status: ConnectionStatus) => {
     if (status === "live") {
+      starting = undefined
       setReadState("live")
       clearTimeout(offlineTimer)
       offlineTimer = undefined
       lastHeard = now()
+    } else if (starting) {
+      // A starting service is answering authenticated probes. Keep the
+      // existing waiting state, even when agent recovery takes minutes.
+      clearTimeout(offlineTimer)
+      offlineTimer = undefined
+      lastHeard = now()
+      status = "reconnecting"
     } else if (connectionStatus === "offline") status = "offline"
     connectionStatus = status
-    write({ conn: { ...mapConnection(status, lastHeard), ...(snapshotNotice === undefined ? {} : { notice: snapshotNotice }) } })
+    write({ conn: { ...mapConnection(status, lastHeard), ...(starting ? { notice: startingNotice(starting), starting } : snapshotNotice === undefined ? {} : { notice: snapshotNotice }) } })
     // Retries share one outage deadline, and never count as contact with the service.
-    if (status === "reconnecting" && offlineTimer === undefined) offlineTimer = setTimeout(() => setConn("offline"), 30_000)
+    if (status === "reconnecting" && starting === undefined && offlineTimer === undefined) offlineTimer = setTimeout(() => setConn("offline"), 30_000)
   }
   const setSession = (status: SessionStatus) => {
     if (status !== 'in' && status !== 'checking') setReadState(status === 'unavailable' ? 'failed' : 'ended')
@@ -184,8 +195,15 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
         method: "POST", credentials: "same-origin", cache: "no-store",
         ...(body === undefined ? {} : { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       })
+      starting = undefined
+      if (response.status === 503) {
+        const value = await response.text()
+        if (value.length <= 1024) {
+          try { const decoded = Schema.decodeUnknownSync(ServiceStarting)(JSON.parse(value)); if (decoded.recovered <= decoded.total) starting = decoded } catch { /* an ordinary outage */ }
+        }
+      }
       return response.status
-    } catch { return undefined }
+    } catch { starting = undefined; return undefined }
   }
 
   const clearSnapshotNotice = () => {
@@ -304,6 +322,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
           const status = yield* Effect.promise(() => post("/api/session"))
           if (signal.aborted) return
           if (status === 401) { clearSnapshotNotice(); ended = true; setReadState("ended"); current = undefined; forget(); setSession("expired") }
+          else if (starting) setConn("reconnecting")
           else if (status === 204 && snapshotRefusal !== undefined) {
             snapshotNotice = snapshotRefusal
             setConn("reconnecting")
@@ -342,7 +361,7 @@ export function engineConnection(options: ConnectionOptions = {}): LiveConnectio
     const attempt = ++sessionAttempt
     const status = await post("/api/session")
     if (closed || attempt !== sessionAttempt) return
-    if (status === 204) { setReadState("connecting"); setSession("in"); follow() }
+    if (status === 204 || starting) { setReadState("connecting"); setSession("in"); setConn("reconnecting"); follow() }
     else if (status === undefined || status >= 500) setSession("unavailable")
     else setSession("out")
   }

@@ -279,6 +279,7 @@ registerDialog('add-repository', AddRepository);
 // ---- subscriptions ---------------------------------------------------------------
 function subState(x) {
   if (x.status === 'out-of-usage') return { word: 'Limit reached', tone: 'error', dot: 'failed' };
+  if (x.signInKnown === false) return { word: 'Not reported', tone: null, dot: 'idle' };
   if (!x.signedIn) return { word: 'Signed out', tone: 'warn', dot: 'waiting' };
   if (!x.enabled) return { word: 'Turned off', tone: null, dot: 'idle' };
   if (x.window && x.window.pct >= 100) return { word: 'Limit reached', tone: 'error', dot: 'failed' };
@@ -292,11 +293,11 @@ function SubRow({ s, x, now }) {
   const makeDefault = () => { if (live.on) return liveGit.makeDefault(x.id); update((stt) => { for (const y of stt.subscriptions) if (y.harness === x.harness && y.machine === x.machine) y.useForNew = y.id === x.id; }); act.toast(`New ${h.name} agents on ${m.name} use ${x.name}`); };
   const signOut = () => live.on ? refuse() : act.confirm({ title: `Sign out of ${h.name} · ${x.name}?`, body: `The sign-in on ${m.name} is removed. Sign in again at any time.`, action: 'Sign out',
     lost: ags.length ? [`${plural(ags.length, 'agent')} ${ags.length === 1 ? 'uses' : 'use'} it and will pause at the next turn`] : [],
-    onConfirm: () => { update(() => { x.signedIn = false; x.usage = null; x.window = null; x.useForNew = false; }); act.toast(`Signed out of ${h.name} · ${x.name}`); } });
+    onConfirm: () => { update(() => { x.signInKnown = true; x.signedIn = false; x.usage = null; x.window = null; x.useForNew = false; }); act.toast(`Signed out of ${h.name} · ${x.name}`); } });
   const remove = () => act.confirm({ title: `Remove ${h.name} · ${x.name}?`, body: live.on ? 'The account is removed. Its sign-in and running agents are kept.' : 'The subscription and its sign-in are removed from LGTM Studio.', action: 'Remove subscription',
     lost: ags.length ? [`${plural(ags.length, 'agent')} will need another subscription`] : [],
     onConfirm: () => { if (live.on) return liveGit.accountAction(x.id, 'remove'); update((stt) => { stt.subscriptions = stt.subscriptions.filter((y) => y.id !== x.id); }); act.toast('Subscription removed'); } });
-  const signIn = () => { if (live.on) return act.openDialog({ type: 'harness-signin', account: x.id }); update(() => { x.signedIn = true; x.account = 'owner@example.com'; }); act.toast(`Signed in to ${h.name} · ${x.name}`); };
+  const signIn = () => { if (live.on) return act.openDialog({ type: 'harness-signin', account: x.id }); update(() => { x.signInKnown = true; x.signedIn = true; x.account = 'owner@example.com'; }); act.toast(`Signed in to ${h.name} · ${x.name}`); };
   return html`<div class=${cx('svc-sub', st.tone === 'warn' && 'warn', st.tone === 'error' && 'error', !x.enabled && 'dim')}>
     <div class="svc-sub-row">
       <div class="c-name"><button type="button" class=${cx('svc-twist', open && 'open')} aria-expanded=${open} aria-label=${(open ? 'Hide' : 'Show') + ' agents on ' + x.name} onClick=${() => act.toggleExpanded(k)}><${Icon} name="chevron-right" size=${13} /></button>
@@ -324,7 +325,7 @@ function SubRow({ s, x, now }) {
       </div>
     </div>
     ${!live.on && st.word === 'Limit reached' && html`<div class="svc-sub-note error-text"><${Icon} name="circle-alert" size=${14} /><span>The five-hour limit is used up. Agents on this subscription wait, and try again every ${s.settings.capacityBackoff} minutes until ${clock(x.window.resetsAt)}.</span></div>`}
-    ${!x.signedIn && html`<div class="svc-sub-note warn-text"><${Icon} name="triangle-alert" size=${14} /><span>No sign-in on ${m.name}. ${ags.length ? `${plural(ags.length, 'agent')} cannot start until you sign in.` : 'No agent can start on it.'}</span></div>`}
+    ${!x.signedIn && x.signInKnown !== false && html`<div class="svc-sub-note warn-text"><${Icon} name="triangle-alert" size=${14} /><span>No sign-in on ${m.name}. ${ags.length ? `${plural(ags.length, 'agent')} cannot start until you sign in.` : 'No agent can start on it.'}</span></div>`}
     ${open && html`<div class="svc-sub-agents">${ags.length === 0 ? html`<span class="muted">No agent uses this subscription.</span>` : ags.map((a) => { const as = agentStatus(s, a);
       return html`<a key=${a.id} class="list-row" href=${href(routeForAgent(s, a))}><${Avatar} agent=${a} s=${s} size="sm" /><b style="font-weight:var(--weight-medium)">${a.name}</b><span class="muted truncate grow">${projectOf(s, a.project).name}</span>
         <span class="muted not-phone">${a.model} · ${a.effort}</span><span style="min-width:110px;text-align:right;font-size:var(--text-sm)"><${StateWord} status=${as} /></span></a>`; })}</div>`}
