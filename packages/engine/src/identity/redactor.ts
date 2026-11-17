@@ -6,14 +6,14 @@ import * as Redacted from "effect/Redacted";
 import { Redactor, type RedactionPart } from "../log/Redactor.ts";
 import { eventStructure, fieldStructure, type RedactionStructure } from "../log/redactionStructure.ts";
 import { credentialLength, hasValidChecksum, sha256Hex } from "./credential.ts";
-import { addForms, base64Run, compileForms, toBase64url, maximumCachedFormCharacters, type FormLists } from "./redactionForms.ts";
+import { addForms, base64Run, compileForms, toBase64url, maximumCachedFormCharacters, type FormLists, type Tail, foldHex, foldEscapes } from "./redactionForms.ts";
 
 const replacement = "[REDACTED]";
 
 const longestCredentialForm = 3 * credentialLength;
 interface Forms extends FormLists {
   readonly publicLengths: ReadonlyMap<string, number>;
-  readonly match: (text: string, found: Array<Interval>, hexFolded: string) => void;
+  readonly match: (text: string, found: Array<Interval>) => string;
 }
 
 // Where an encoded credential can start (fix round 1, ruling 3): the
@@ -35,14 +35,6 @@ const base64Probes: ReadonlyArray<Base64Probe> = ["shp_a_"].flatMap((prefix) =>
 const hexPrefix = Buffer.from("shp_", "latin1").toString("hex");
 
 type Interval = readonly [start: number, end: number];
-
-// A copy of the text, of the same length, with A-F folded to lower case.
-const foldHex = (text: string): string => text.replace(/[A-F]/g, (letter) => letter.toLowerCase());
-
-// A copy of the text, of the same length, with only the digits of each
-// `%xx` escape folded to lower case.
-const foldEscapes = (text: string): string =>
-  text.replace(/%[0-9A-Fa-f]{2}/g, (escape) => escape.toLowerCase());
 
 // The fixed-cost gate before any credential hash (decision row 73): only a
 // decoded candidate with a credential prefix, the exact shape and a matching
@@ -114,8 +106,7 @@ const findCredentials = (
 // repeated secrets releases one marker per secret as it goes.
 const findMatches = (text: string, forms: Forms, tokenHashes: ReadonlySet<string>): Array<Interval> => {
   const found: Array<Interval> = [];
-  const hexFolded = forms.hex.length > 0 || tokenHashes.size > 0 ? foldHex(text) : text;
-  forms.match(text, found, hexFolded);
+  const hexFolded = forms.match(text, found);
   if (tokenHashes.size > 0) findCredentials(text, hexFolded, tokenHashes, found);
   found.sort((a, b) => a[0] - b[0]);
   const merged: Array<[number, number]> = [];
@@ -176,72 +167,9 @@ const publicPrefixes = [...new Set([
   ...publicBase64.flatMap(inner => [0, 1, 2].map(alignment => base64Run(Buffer.from(inner, "ascii"), alignment))),
 ])].sort((a, b) => b.length - a.length);
 const publishedContextLength = publicPrefixes.reduce((longest, prefix) => Math.max(longest, prefix.length), 0) + 3;
-interface Tail { readonly held: number; readonly context: number }
-const noTail: Tail = { held: 0, context: 0 };
-const largerTail = (a: Tail, b: Tail): Tail => a.held > b.held || a.held === b.held && a.context >= b.context ? a : b;
+const noTail: Tail = { held: 0 };
+const largerTail = (a: Tail, b: Tail): Tail => a.held >= b.held ? a : b;
 
-// This automaton contains only the fixed public token prefixes. It is built
-// once, independently of registered secrets, and scans only its bounded suffix.
-const prefixMatcher = (forms: ReadonlyArray<string>, publicLengths: ReadonlyMap<string, number>) => {
-  const capacity = 1 + forms.reduce((sum, form) => sum + Math.max(0, form.length - 1), 0);
-  const head = new Uint32Array(capacity), sibling = new Uint32Array(capacity);
-  const chars = new Uint16Array(capacity), failure = new Uint32Array(capacity);
-  const held = new Uint32Array(capacity), context = new Uint8Array(capacity);
-  const root = new Uint32Array(128);
-  let size = 1, longest = 0;
-  const child = (at: number, c: number): number => {
-    if (at === 0 && c < root.length) return root[c]!;
-    for (let next = head[at]!; next !== 0; next = sibling[next]!) if (chars[next] === c) return next;
-    return 0;
-  };
-  for (const form of forms) {
-    let at = 0;
-    const publicLength = publicLengths.get(form) ?? 0;
-    longest = Math.max(longest, form.length - 1);
-    for (let length = 1; length < form.length; length++) {
-      const c = form.charCodeAt(length - 1);
-      let next = child(at, c);
-      if (next === 0) {
-        next = size++;
-        chars[next] = c;
-        sibling[next] = head[at]!;
-        head[at] = next;
-        if (at === 0 && c < root.length) root[c] = next;
-      }
-      at = next;
-      const candidate = length > publicLength ? length : 0;
-      if (candidate > held[at]! || candidate === held[at]! && Math.min(length, publicLength) > context[at]!) {
-        held[at] = candidate;
-        context[at] = Math.min(length, publicLength);
-      }
-    }
-  }
-  const queue = new Uint32Array(size);
-  let end = 0;
-  for (let next = head[0]!; next !== 0; next = sibling[next]!) queue[end++] = next;
-  for (let i = 0; i < end; i++) {
-    const at = queue[i]!, fail = failure[at]!;
-    if (held[fail]! > held[at]! || held[fail] === held[at] && context[fail]! > context[at]!) {
-      held[at] = held[fail]!; context[at] = context[fail]!;
-    }
-    for (let next = head[at]!; next !== 0; next = sibling[next]!) {
-      let fail = failure[at]!, target = child(fail, chars[next]!);
-      while (fail > 0 && target === 0) { fail = failure[fail]!; target = child(fail, chars[next]!); }
-      failure[next] = target;
-      queue[end++] = next;
-    }
-  }
-  return (text: string): Tail => {
-    let at = 0;
-    for (let i = Math.max(0, text.length - longest); i < text.length; i++) {
-      const c = text.charCodeAt(i);
-      let next = child(at, c);
-      while (at > 0 && next === 0) { at = failure[at]!; next = child(at, c); }
-      at = next;
-    }
-    return { held: held[at]!, context: context[at]! };
-  };
-};
 const hashPrefixes = [
   { prefix: "shp_", max: credentialLength, alphabet: /^[A-Za-z0-9_-]*$/, fold: false },
   { prefix: hexPrefix, max: 2 * credentialLength, alphabet: /^[0-9a-f]*$/, fold: true },
@@ -250,29 +178,27 @@ const hashPrefixes = [
     alphabet: /^[A-Za-z0-9_+/=-]*$/, fold: false,
   }))),
 ];
-const hashPublicMatcher = prefixMatcher(publicPrefixes.map(prefix => prefix + "\u0000"), new Map(publicPrefixes.map(prefix => [prefix + "\u0000", prefix.length])));
 const hashTail = (text: string): Tail => {
   const suffix = text.slice(-(longestCredentialForm - 1));
   const hex = foldHex(suffix);
-  let tail = hashPublicMatcher(suffix);
+  let tail = noTail;
   for (const spec of hashPrefixes) {
     const view = spec.fold ? hex : suffix;
     for (let start = view.indexOf(spec.prefix); start !== -1; start = view.indexOf(spec.prefix, start + 1)) {
       if (view.length - start >= spec.max) continue;
       const rest = view.slice(start + spec.prefix.length);
-      if (spec.alphabet.test(rest)) tail = largerTail(tail, { held: rest.length > 0 ? spec.prefix.length + rest.length : 0, context: spec.prefix.length });
+      if (spec.alphabet.test(rest)) tail = largerTail(tail, { held: rest.length > 0 ? spec.prefix.length + rest.length : 0 });
     }
   }
   // Mixed literal and percent-escaped public prefixes are public too. Partial
   // escapes after the prefix stay held until their decoded byte is known.
   const percent = foldEscapes(suffix).replace(/%[0-9A-Fa-f]$/, escape => escape.toLowerCase());
-  tail = largerTail(tail, hashPublicMatcher(percent));
   for (const prefix of publicPercent) {
     for (let start = percent.indexOf(prefix); start !== -1; start = percent.indexOf(prefix, start + 1)) {
       const rest = percent.slice(start + prefix.length);
       const decoded = rest.replace(/%[0-9a-f]{2}/g, escape => String.fromCharCode(parseInt(escape.slice(1), 16)));
       if (/^[A-Za-z0-9_-]*(?:%[0-9a-f]?)?$/.test(decoded) && decoded.replace(/%[0-9a-f]?$/, "").length < credentialLength - 4) {
-        tail = largerTail(tail, { held: rest.length > 0 ? prefix.length + rest.length : 0, context: prefix.length });
+        tail = largerTail(tail, { held: rest.length > 0 ? prefix.length + rest.length : 0 });
       }
     }
   }
@@ -345,12 +271,11 @@ export const makeRedactor = (registry: {
     const forms = { ...lists, publicLengths, match: matcher.match };
     const tail = matcher.tail;
     const state = { values, forms, tail, characters: matcher.formCharacters };
-    // Oversized form lists are used for this call and not retained. The
-    // accelerator has its own smaller budget and falls back without a trie.
-    if (state.characters <= maximumCachedFormCharacters) {
-      compiled.unshift(state);
-      while (compiled.length > 4 || compiled.reduce((sum, state) => sum + state.characters, 0) > maximumCachedFormCharacters) compiled.pop();
-    }
+    // Always retain the newest state, including one larger than the budget.
+    // The budget evicts older states; it must not force every subsequent
+    // chunk to regenerate the current list. The index has its own cap.
+    compiled.unshift(state);
+    while (compiled.length > 1 && (compiled.length > 4 || compiled.reduce((sum, state) => sum + state.characters, 0) > maximumCachedFormCharacters)) compiled.pop();
     return state;
   };
 

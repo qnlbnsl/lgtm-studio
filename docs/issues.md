@@ -18483,7 +18483,7 @@ Ran: the extended stream reference includes the review's three exact schedules.
 ## 1271. First-use matching allocated large automatons synchronously.
 
 Found: 2026-11-16, from round-three review finding M2.
-State: ordinary-set compilation and accelerator memory are bounded in round four. Large-set synchronous form construction remains open.
+State: ordinary-set compilation and accelerator memory are bounded. Round five retains the newest form list even above the cache budget. Large-set first-use form construction remains open.
 
 Read: the previous implementation built full-form and prefix automatons before the first result.
 Read: round four uses one four-character candidate index for complete and prefix matching.
@@ -18493,12 +18493,13 @@ Read: the index accepts at most 262144 form characters and 32768 head characters
 Read: its expression source is limited to 32768 characters.
 Read: larger sets use literal searches over every form without an accelerator.
 Read: no form is dropped to meet a resource budget.
-Read: cached states retain at most 1048576 form characters in total and at most four states.
-Read: a larger state is used only for its current call.
+Read: up to four states share a 1048576-character cache budget.
+Read: round five always retains the newest state, even when it alone exceeds that budget.
+Read: older states are evicted until only that state remains or the total fits.
 Read: these are bounds on derived indexes and cached text, not a fixed bound on process memory.
 Read: constructing every supported spelling still needs memory and time proportional to registered input.
 Ran: the final time and memory table is in the round-four result.
-Read: very large uncached sets rebuild their forms on later calls.
+Read: a state evicted by a different secret set must rebuild when selected again.
 Read: the first long query can still pay for native expression compilation.
 
 ## 1272. Whole-text strategies disagreed on percent escapes and had no naive reference test.
@@ -18533,14 +18534,14 @@ Ran: high, low, and separated surrogate fixtures are checked whole and at every 
 Found: 2026-11-16, from round-three review finding m5.
 State: recorded without a separate cache-policy fix, as assigned.
 
-Read: the cache retains at most four states and now also enforces a total text budget.
+Read: the cache retains at most four states under a total text budget, with an exception for the newest state alone.
 Read: five or more alternating sets cannot all remain cached.
 Read: each miss reconstructs its supported forms.
 Read: the registry is still compared by string values rather than wrapper identities.
 Read: this affects latency and does not reuse the wrong secret set.
 Read: today's runner supplies the combined secrets of all running processes to each stream.
 Read: that wiring does not independently cycle five per-agent additional sets on successive items.
-Read: oversized uncached sets also rebuild on every call, as recorded in issue 1271.
+Read: round five fixes repeated rebuilding of a single oversized current set.
 
 ## 1275. Several wrapped encoding pipelines remain outside the bounded form set.
 
@@ -18729,3 +18730,59 @@ The test passed when its file was run alone.
 The role instruction unit does not change that code.
 
 State: open. Recorded on 2026-11-16.
+
+## s19-1. An oversized current secret set rebuilt its forms on every call.
+
+Found: 2026-11-16, from round-four review finding M1.
+State: fixed by retaining the newest state and evicting older states to the cache budget.
+
+Ran: all four new cache regressions failed before the change.
+Ran: twelve calls compiled twelve times for each oversized set.
+Read: an oversized newest state may exceed the cache text budget by itself.
+Read: the independent index and expression limits are unchanged.
+Ran: the same calls now compile once for fourteen and twenty 2000-character values, two hundred 134-character values, and one hundred 2000-character values.
+Read: the round-five result records baseline and final steady-state call times.
+
+## s19-2. The reference tests missed two linear-tail mutations and encoded token-prefix reversions.
+
+Found: 2026-11-16, from round-four review finding m1.
+State: fixed with a naive proper-prefix reference and additional encoded stream plants.
+
+Ran: removing one-character linear holds now fails with a required hold of one character.
+Ran: removing long linear holds now fails with a required hold of two hundred characters.
+Read: both indexed and literal paths are asserted directly.
+Read: the reference also checks public prefixes, percent escapes, Unicode, and longer suffixes.
+Ran: independently reverting the hexadecimal and base64 candidate loops now fails the extended stream reference.
+
+## s19-3. Matching depended on a caller folding the candidate query correctly.
+
+Found: 2026-11-16, from round-four review finding m2.
+State: fixed by folding inside the matcher and sharing normalization helpers.
+
+Read: the earlier caller could pass unfolded text when no hexadecimal forms or token hashes existed.
+Read: current form generation made that path unreachable in the product.
+Read: the matcher now normalizes its own query and returns that view for hash-token matching.
+Read: the unused tail-context value was removed.
+Read: the public-prefix automaton only returned zero held characters and was removed with that value.
+Read: the independent already-published context remains intact.
+
+## s19-4. Repeated candidate heads make adversarial whole-text scans slow.
+
+Found: 2026-11-16, from round-four review finding m3.
+State: recorded without an unrequested matcher redesign.
+
+Ran by the reviewer: twenty-five secrets beginning with s19- took 209 milliseconds on s19- repeated sixty thousand times.
+Ran by the reviewer: the original baseline took five milliseconds on that input.
+Read: those are the reviewer's measurements, not fresh round-five timings.
+Read: every matching head still causes full-form verification for its bucket.
+
+## s19-5. Cached literal scans on a mebibyte cost more than the original baseline.
+
+Found: 2026-11-16, from round-four review finding m4.
+State: recorded without expanding this round's cache fix into a matching redesign.
+
+Ran by the reviewer: sixty 134-character secrets took 156 milliseconds on one mebibyte of whole text.
+Ran by the reviewer: the original baseline took 39 milliseconds.
+Read: the reviewer observed a four-to-five-times slowdown beginning around forty such secrets.
+Read: a mebibyte contains 1048576 bytes.
+Read: retaining oversized states fixes repeated compilation rather than this literal scanning cost.

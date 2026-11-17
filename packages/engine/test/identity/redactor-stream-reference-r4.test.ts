@@ -171,6 +171,14 @@ const mkText = (set: ReturnType<typeof mkSet>) => {
       : undefined;
     check(set, text, plants, directed);
   }
+  // An inner public prefix at the same encoding alignment must not shadow
+  // the token's real start in hexadecimal or base64 either.
+  const aligned = tokenFor(Buffer.from("A".repeat(18) + "shp_" + "B".repeat(21), "base64url"));
+  const hashSet = { r: makeRedactor({ secrets: () => [], tokenHashes: () => new Set([nested, aligned].map(sha256Hex)) }), tokens: [nested, aligned], values: [] };
+  for (const token of hashSet.tokens) for (const encoding of ["hex", "base64"] as const) {
+    const encoded = Buffer.from(token).toString(encoding), text = "pre " + encoded + " ok";
+    check(hashSet, text, [{ start: 4, end: 4 + encoded.length, allowed: encoding === "hex" ? 8 : 5, kind: "tok-" + encoding }]);
+  }
   expect(oracleMismatch, `seed=${seedValue}`).toBe(0);
   expect(missing, `whole plant misses, seed=${seedValue}`).toBe(0);
   expect(unsafe, `seed=${seedValue}; ${firstFailure}`).toBe(0);

@@ -105,10 +105,10 @@ export interface FormLists {
   readonly hex: ReadonlyArray<string>;
   readonly percent: ReadonlyArray<string>;
 }
-interface Tail { readonly held: number; readonly context: number }
-const emptyTail: Tail = { held: 0, context: 0 };
-const foldHex = (text: string) => text.replace(/[A-F]/g, c => c.toLowerCase());
-const foldEscapes = (text: string) => text.replace(/%[0-9A-Fa-f]{2}/g, e => e.toLowerCase());
+export interface Tail { readonly held: number }
+const emptyTail: Tail = { held: 0 };
+export const foldHex = (text: string) => text.replace(/[A-F]/g, c => c.toLowerCase());
+export const foldEscapes = (text: string) => text.replace(/%[0-9A-Fa-f]{2}/g, e => e.toLowerCase());
 interface Pattern { readonly form: string; readonly kind: Kind; readonly publicLength: number }
 interface Node { readonly children: Map<string, Node>; terminal: boolean }
 
@@ -124,7 +124,7 @@ export const compileForms = (forms: FormLists, publicLengths: ReadonlyMap<string
   }
   let indexed = formCharacters <= maximumIndexFormCharacters && headCharacters <= maximumIndexHeadCharacters;
   const buckets = new Map<string, Array<Pattern>>();
-  const short = new Map<string, Tail>();
+  const short = new Map<string, number>();
   let candidates: RegExp | undefined, candidateSource: string | undefined;
   if (indexed && patterns.length > 0) {
     const root: Node = { children: new Map(), terminal: false };
@@ -142,8 +142,7 @@ export const compileForms = (forms: FormLists, publicLengths: ReadonlyMap<string
       node.terminal = true;
       for (let length = 1; length < Math.min(headLength, form.length); length++) {
         const key = kind + form.slice(0, length), held = length > publicLength ? length : 0;
-        const context = Math.min(length, publicLength), previous = short.get(key);
-        if (previous === undefined || held > previous.held || held === previous.held && context > previous.context) short.set(key, { held, context });
+        short.set(key, Math.max(short.get(key) ?? 0, held));
       }
     }
     const expression = (node: Node): string => {
@@ -182,14 +181,15 @@ export const compileForms = (forms: FormLists, publicLengths: ReadonlyMap<string
       candidates.lastIndex = start + 1;
     }
   };
-  const match = (text: string, found: Array<readonly [number, number]>, hex = foldHex(text)): void => {
-    const view = views(text, hex);
+  const match = (text: string, found: Array<readonly [number, number]>): string => {
+    const view = views(text), hex = view.hex;
     if (indexed) visit(hex, (start, { kind, form }) => {
       if (view[kind].startsWith(form, start)) found.push([start, start + form.length]);
     });
     else for (const { kind, form } of patterns) {
       for (let start = view[kind].indexOf(form); start !== -1; start = view[kind].indexOf(form, start + 1)) found.push([start, start + form.length]);
     }
+    return hex;
   };
   const tail = (text: string): Tail => {
     if (longest === 0) return emptyTail;
@@ -200,13 +200,13 @@ export const compileForms = (forms: FormLists, publicLengths: ReadonlyMap<string
     view.percent = view.percent.replace(/%[0-9A-Fa-f]$/, e => e.toLowerCase());
     let result = emptyTail;
     const take = (length: number, publicLength: number) => {
-      const held = length > publicLength ? length : 0, context = Math.min(length, publicLength);
-      if (held > result.held || held === result.held && context > result.context) result = { held, context };
+      const held = length > publicLength ? length : 0;
+      if (held > result.held) result = { held };
     };
     if (indexed) {
       for (const kind of kinds) for (let length = 1; length <= Math.min(headLength - 1, longest, suffix.length); length++) {
         const candidate = short.get(kind + view[kind].slice(-length));
-        if (candidate !== undefined) take(length, candidate.held > 0 ? 0 : candidate.context);
+        if (candidate !== undefined && candidate > 0) take(candidate, 0);
       }
       visit(hex, (start, { kind, form, publicLength }) => {
         const length = suffix.length - start;
