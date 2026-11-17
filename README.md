@@ -157,10 +157,14 @@ Registered worker worktrees appear in the existing Git, Files, and Terminal choi
 ## Finish project work through a pull request
 
 The Git tab's existing merge review prepares a GitHub pull request when the repository has a GitHub.com remote and the service user has a signed-in GitHub command-line interface (CLI), `gh`.
+Prepare fetches the live remote base without changing the owner's checkout.
+Its comparison, commit list, and file totals use that fetched commit.
+A dirty local base can remain behind GitHub while hosted reviews continue.
 Prepare pushes only the project's registered branch without force.
 Its title uses the project name.
 Its description uses the goal and the reported review evidence.
 An existing open pull request for that branch and base is reused.
+Its description is refreshed with the current reviewed head, base, and evidence summary.
 The review area shows its number, link, and state.
 Preparing again pushes the reviewed project commits.
 Refresh always reads Git state.
@@ -179,6 +183,11 @@ When no suitable GitHub remote is configured, `gh` is missing, or the service us
 That mode merges locally without pushing the base branch.
 A network failure or ambiguous authentication result refuses the request instead of offering a local merge.
 After a lost merge receipt, a new owner approval can reconcile GitHub’s confirmed merge without merging twice.
+An unverified approval failure leaves the review open.
+Prepare can also record an exact-head request already merged elsewhere, including after a prior refusal.
+The local update also refreshes the explicit remote-tracking base reference.
+Update the remote URL after a GitHub repository rename because hosted delivery does not follow repository redirects.
+An explicit pull request creation refusal reports that the branch was pushed and explains how to retry.
 There is no setting to force local mode.
 Only the authenticated owner can prepare, push, or approve these changes.
 See [the project Git guide](packages/engine/src/project/README.md) for the typed client API.

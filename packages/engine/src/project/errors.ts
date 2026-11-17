@@ -1,5 +1,10 @@
 export const githubRequestFailureReason = "GitHub could not complete or verify the request. Check its availability, authentication, and pull request status, then refresh."
 
+export const githubRemoteChangedReason = "GitHub returned a different repository. If it was renamed, update the remote URL, then prepare again."
+export const githubCreateRefusedReason = "The project branch was pushed, but the GitHub CLI reported a pull request creation failure. Check permissions, commits, and existing pull requests, then prepare again."
+export const githubPublicReason = (reason: string): string | undefined => reason === "github_refused" ? githubRequestFailureReason
+  : reason === "github_remote_changed" ? githubRemoteChangedReason : reason === "github_create_refused" ? githubCreateRefusedReason : undefined
+
 // Fixed public reasons contain no caller-controlled text or host error output.
 export const projectRefusalReasons = new Set([
   "Archive the project before deleting it.",
@@ -23,7 +28,7 @@ export const projectRefusalReasons = new Set([
   "the file contains private data and cannot be saved here",
   "Git outcome is uncertain; refresh Git state",
   "Git attempt metadata is unavailable",
-  githubRequestFailureReason,
+  githubRequestFailureReason, githubRemoteChangedReason, githubCreateRefusedReason,
   "project placement cannot change before machine pairing",
   "only a project lead or owner can change the stage",
   "context reply exceeds the read budget",

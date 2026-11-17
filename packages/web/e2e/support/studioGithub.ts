@@ -23,7 +23,7 @@ import { completedSetup } from './completedSetup.ts'
 
 const expect = baseExpect.configure({ timeout: 30_000 })
 
-export async function exerciseStudioGithub(page: Page) {
+export async function exerciseStudioGithub(page: Page, dirtyBase = false) {
   const rig = makeRig(), previousHome = process.env.LGTM_HOME, previousPath = process.env.PATH
   process.env.LGTM_HOME = rig.stateFolder
   const git = (folder: string, ...args: string[]) => execFileSync('/usr/bin/git', ['-C', folder, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
@@ -51,6 +51,11 @@ export async function exerciseStudioGithub(page: Page) {
         yield* completedSetup(project.projectId)
         writeFileSync(join(source.path, 'feature.txt'), 'Feature\n'); commit(source.path, 'Feature')
         const original = git(rig.work, 'rev-parse', 'HEAD')
+        const remoteBase = dirtyBase ? git(gh.bare, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit-tree', `${original}^{tree}`, '-p', original, '-m', 'Another hosted merge') : original
+        if (dirtyBase) {
+          git(gh.bare, 'update-ref', 'refs/heads/main', remoteBase)
+          writeFileSync(join(rig.work, 'owner-notes.txt'), 'Owner notes must remain.\n')
+        }
         yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
           const url = `http://127.0.0.1:${port}/#/p/${project.projectId}/git`
@@ -62,6 +67,7 @@ export async function exerciseStudioGithub(page: Page) {
           await expect(dialog.getByRole('link', { name: '#17', exact: true })).toHaveAttribute('href', 'https://github.com/fixture/product/pull/17')
           await expect(page.locator('#pr-title')).toHaveValue('GitHub project')
           await expect(page.locator('#pr-body')).toHaveValue(/Deliver through a pull request/)
+          await expect(page.locator('#pr-body')).toHaveValue(new RegExp(`Reviewed base: ${remoteBase}`))
           expect(git(rig.work, 'rev-parse', 'HEAD')).toBe(original)
           await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
           const unchangedCalls = readFileSync(gh.calls, 'utf8')
@@ -76,10 +82,18 @@ export async function exerciseStudioGithub(page: Page) {
           await dialog.getByRole('button', { name: 'Approve without evidence', exact: true }).click()
           await expect(dialog).toHaveCount(0); await expect(page.locator('.git')).toHaveAttribute('aria-busy', 'false')
           await expect(page.locator('.git-integrate')).toContainText('MERGED')
-          await expect(page.locator('.git-integrate')).toContainText('fast-forwarded')
-          expect(readFileSync(join(rig.work, 'later.txt'), 'utf8')).toBe('Later commit\n')
-          expect(git(rig.work, 'rev-list', '--parents', '-n', '1', 'HEAD').split(' ')).toHaveLength(3)
-          expect(git(rig.work, 'rev-parse', 'HEAD')).toBe(git(gh.bare, 'rev-parse', 'refs/heads/main'))
+          if (dirtyBase) {
+            await expect(page.locator('.git-integrate')).toContainText('left alone')
+            expect(git(rig.work, 'rev-parse', 'HEAD')).toBe(original)
+            expect(readFileSync(join(rig.work, 'owner-notes.txt'), 'utf8')).toBe('Owner notes must remain.\n')
+            expect(git(gh.bare, 'rev-list', '--parents', '-n', '1', 'refs/heads/main').split(' ')).toHaveLength(3)
+          } else {
+            await expect(page.locator('.git-integrate')).toContainText('fast-forwarded')
+            expect(readFileSync(join(rig.work, 'later.txt'), 'utf8')).toBe('Later commit\n')
+            expect(git(rig.work, 'rev-list', '--parents', '-n', '1', 'HEAD').split(' ')).toHaveLength(3)
+            expect(git(rig.work, 'rev-parse', 'HEAD')).toBe(git(gh.bare, 'rev-parse', 'refs/heads/main'))
+          }
+          expect(git(rig.work, 'rev-parse', 'refs/remotes/origin/main')).toBe(git(gh.bare, 'rev-parse', 'refs/heads/main'))
           expect(errors).toEqual([])
         })
       })).pipe(Effect.provide(buildServices(rig, engineLists).pipe(Layer.provide(dependencies))), Effect.provide(runner.layer))

@@ -3,7 +3,7 @@ import * as Data from "effect/Data";
 import type { Caller, GitMutationIdentity, GitReviewDelivery } from "@lgtm/contracts";
 
 export type GitFailureReason =
-  | "gh_unavailable" | "github_refused" | "forbidden_remote" | "invalid_path" | "not_repository" | "invalid_ref" | "output_limit" | "timeout" | "cancelled"
+  | "gh_unavailable" | "github_refused" | "github_remote_changed" | "github_create_refused" | "forbidden_remote" | "invalid_path" | "not_repository" | "invalid_ref" | "output_limit" | "timeout" | "cancelled"
   | "git_unavailable" | "git_failed" | "busy" | "collision" | "dirty_destination" | "dirty_source"
   | "conflicts" | "confirmation_required" | "stale_state" | "nothing_staged" | "invalid_message"
   | "missing_remote" | "missing_upstream" | "authentication_required" | "network_failed" | "push_rejected"
@@ -55,6 +55,7 @@ export type FileRead =
   | { readonly kind: "image"; readonly path: string; readonly size: number; readonly version: string; readonly mediaType: FileImageType; readonly data: string }
   | { readonly kind: "binary" | "large"; readonly path: string; readonly size: number };
 export interface DiscardPlan { readonly fingerprint: string; readonly paths: ReadonlyArray<string> }
+export interface PreparedDelivery { readonly delivery: GitReviewDelivery; readonly merged?: { readonly head: string; readonly localSync: string } }
 export interface GitService {
   mutationIdentity(folder: string): GitOperation<GitMutationIdentity>;
   readonly contextFiles: (folder: string, query: string) => GitOperation<Bounded<string>>;
@@ -91,11 +92,13 @@ export interface GitService {
   updateFromParent(source: string, destination: string, expectedHead: string): GitOperation<string>;
   review(folder: string, base: string, agentRead?: boolean): GitOperation<Review>;
   prepareDelivery(source: string, reviewed: Pick<Review, "head" | "baseHead" | "branch" | "base">,
-    text: { title: string; body: string }, caller: Caller): GitOperation<GitReviewDelivery>;
+    text: { title: string; body: string }, caller: Caller, destination: string): GitOperation<PreparedDelivery>;
   approveDelivery(source: string, destination: string, reviewed: Pick<Review, "head" | "baseHead" | "branch" | "base">,
     delivery: Extract<GitReviewDelivery, { mode: "github" }>, caller: Caller, confirmed: boolean):
       GitOperation<{ head: string; delivery: GitReviewDelivery; localSync: string }>;
-  reviewMain(source: string, destination: string): GitOperation<Review>;
+  // Supplying the authenticated owner enables a live hosted-base fetch.
+  // Caller-less comparisons and local approval stay entirely local.
+  reviewMain(source: string, destination: string, caller?: Caller): GitOperation<Review>;
   // A distinct execution boundary, never a bypass on mergeTeam. The engine
   // supplies the authenticated caller, not a field from the command payload.
   approveMain(source: string, destination: string, reviewed: Pick<Review, "head" | "baseHead" | "branch" | "base">,

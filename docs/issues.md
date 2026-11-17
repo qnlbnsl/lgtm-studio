@@ -19583,3 +19583,87 @@ The website Git journey and the hosted GitHub journey both passed alone.
 The unit suite had finished before this browser run began.
 Every existing assertion and timeout was retained.
 These observations do not establish the cause of the failures.
+
+
+## s27-11. A dirty local base could block every later hosted approval.
+
+State: fixed in round 3.
+Found: 2026-11-17, in the second independent s27 review.
+Hosted Prepare now fetches the live remote base into an explicit tracking reference.
+Its commit list, file totals, and patch use that fetched commit.
+Hosted approval checks the recorded remote base instead of the local branch head.
+A dirty local checkout is preserved while successive hosted merges continue.
+A regression also prevents a sign-out between comparison and delivery from labelling a remote-base comparison as local.
+The local fallback still reviews the local base.
+
+## s27-12. A refusal record could prevent reconciliation of a merge performed elsewhere.
+
+State: fixed in round 3.
+Found: 2026-11-17, in the second independent s27 review.
+An approval failure without a verified provider verdict now returns a command refusal and leaves the review open.
+Prepare also recognizes an already merged request with the exact project head.
+It records that result after a prior verified refusal without another push or remote merge.
+The same conditional local synchronization runs for that confirmed merge.
+Tests cover an externally performed merge, a deleted remote project branch, and a squash merge.
+The original uncertain receipt remains uncertain.
+
+## s27-13. Delivery synchronization did not update the remote-tracking base.
+
+State: fixed in round 3.
+Found: 2026-11-17, in the second independent s27 review.
+The bounded fetch now writes the selected base to its explicit remote-tracking reference.
+It continues to ignore configured fetch mappings.
+A regression found that Git also consults that mapping after a successful push.
+An empty configuration override did not remove that multivalued mapping.
+The delivery push now uses the validated push URL to prevent unrelated local reference updates.
+The test verifies accurate ahead and behind counts after synchronization.
+It also verifies that a hostile configured mapping creates no unrelated branch.
+
+## s27-14. Reused pull requests retained an outdated reviewed head in their descriptions.
+
+State: fixed in round 3.
+Found: 2026-11-17, in the second independent s27 review.
+Prepare refreshes the description of a reused open request with the current redacted text.
+The description includes the reviewed project head and the fetched base.
+The CLI receives that bounded text through standard input.
+It receives no caller-selected body filename.
+
+## s27-15. Repository renames and explicit creation refusals lacked useful outcomes.
+
+State: fixed in round 3, with repository redirects remaining unsupported.
+Found: 2026-11-17, in the second independent s27 review.
+A canonical repository-name mismatch returns a fixed explanation to update the remote URL.
+The transport can refuse an old-name redirect before canonical metadata is available.
+The owner must update a renamed repository's remote URL before hosted delivery.
+An explicit positive nonzero creation exit now reports a determinate refusal after the successful branch push.
+A timeout after possible creation still remains uncertain.
+Provider diagnostics remain private.
+
+## s27-16. Provider edge cases and final-code verification lacked coverage.
+
+State: fixed in round 3.
+Found: 2026-11-17, in the second independent s27 review.
+The fake now requires the authentication filter and supplies zero-exit error and timeout states.
+Tests cover those states, a different merged head, a squash merge, and an encoded slash in a base name.
+The transport test checks the complete delivery option set.
+The required whole unit run must follow the final behavior changes in this round.
+
+## s27-17. The file-editor browser failure also occurs on the unit's base commit.
+
+State: open.
+Found: 2026-11-17, during the round 3 baseline comparison required by the owner.
+Five sequential one-test invocations on d4fb1877 passed four times and failed once.
+The failure waited for the first external-edit conflict panel.
+That is also a failure point recorded for round 2 in s27-10.
+This worker ran no other test job during those trials.
+Host load observations were retained because other users' processes are outside this worker's control.
+The file-editor implementation and its assertions have not been changed by this unit.
+
+## s27-18. An existing writer test intermittently misses its Git hold marker.
+
+State: open.
+Found: 2026-11-17, during round 3 focused verification.
+The issue 579/583 queued-registration test failed its existing five-second hold-marker assertion in two focused runs.
+It passed unchanged when rerun alone.
+The local approval path and its assertion timeout have not changed in this round.
+The failure does not yet establish its cause.

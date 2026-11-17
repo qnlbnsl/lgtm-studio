@@ -1,3 +1,4 @@
+import { githubCommands } from "../../src/project/git/github.ts"
 import { fakeGithub } from "../support/fakeGithub.ts"
 import { randomBytes } from "node:crypto"
 import { execFileSync } from "node:child_process"
@@ -1000,7 +1001,7 @@ for (const failure of ["hang", "overflow"] as const) it.live(`GitHub ${failure} 
   gh.set({ [failure]: true })
   const service = makeGitService({ workspaceFolder: rig.root, networkTimeoutMs: failure === "hang" ? 100 : 5000 })
   const comparison = yield* service.reviewMain(f.source, rig.work)
-  const result = yield* service.prepareDelivery(f.source, comparison, { title: "Bounded", body: "Data" }, { _tag: "owner" }).pipe(Effect.result)
+  const result = yield* service.prepareDelivery(f.source, comparison, { title: "Bounded", body: "Data" }, { _tag: "owner" }, rig.work).pipe(Effect.result)
   expect(result).toMatchObject({ _tag: "Failure", failure: { reason: failure === "hang" ? "timeout" : "output_limit" } })
   expect(git(rig.work, "rev-parse", "HEAD")).toBe(f.baseHead)
   expect(git(gh.bare, "rev-parse", "refs/heads/main")).toBe(f.baseHead)
@@ -1015,9 +1016,10 @@ it.live("GitHub hostile branch and title remain argument data, and direct servic
     path: f.source, machineId: "local", checkout: "worktree" })])
   const service = makeGitService({ workspaceFolder: rig.root }), comparison = yield* service.reviewMain(f.source, rig.work)
   const title = "--head=evil $(touch TITLE_EXECUTED) `id`"
-  const denied = yield* service.prepareDelivery(f.source, comparison, { title, body: "Data" }, { _tag: "agent", agentId: f.member.agentId }).pipe(Effect.result)
+  expect(yield* service.reviewMain(f.source, rig.work, { _tag: "agent", agentId: f.member.agentId }).pipe(Effect.result)).toMatchObject({ _tag: "Failure", failure: { reason: "owner_required" } })
+  const denied = yield* service.prepareDelivery(f.source, comparison, { title, body: "Data" }, { _tag: "agent", agentId: f.member.agentId }, rig.work).pipe(Effect.result)
   expect(denied).toMatchObject({ _tag: "Failure", failure: { reason: "owner_required" } })
-  const delivery = yield* service.prepareDelivery(f.source, comparison, { title, body: "Data" }, { _tag: "owner" })
+  const { delivery } = yield* service.prepareDelivery(f.source, comparison, { title, body: "Data" }, { _tag: "owner" }, rig.work)
   expect(delivery).toMatchObject({ mode: "github", title })
   expect(git(gh.bare, "rev-parse", `refs/heads/${branch}`)).toBe(f.head)
   expect(existsSync(join(f.source, "TITLE_EXECUTED"))).toBe(false)
@@ -1146,15 +1148,19 @@ it.live("s27 R2 m1: delivery disables configured signing and remote programs whi
   expect(existsSync(marker)).toBe(false)
   expect(git(gh.bare, "tag", "--list")).toBe("")
   const calls = readFileSync(gh.gitCalls, "utf8").split('\n').filter(Boolean).map(line => JSON.parse(line) as string[]).filter(args => args.includes("push") || args.includes("fetch"))
-  expect(calls).toHaveLength(2)
-  for (const args of calls) for (const option of ["protocol.ext.allow=never", "push.gpgSign=false", "core.askPass="]) expect(args).toContain(option)
+  expect(calls).toHaveLength(3)
+  for (const args of calls) {
+    for (const option of ["protocol.allow=never", "protocol.https.allow=always", "protocol.ssh.allow=always", "protocol.ext.allow=never", "push.gpgSign=false", "core.askPass=", "http.followRedirects=false"]) expect(args).toContain(option)
+    if (args.includes("push")) for (const option of ["remote.origin.mirror=false", "push.followTags=false", "--no-mirror", "--no-force", "--receive-pack=git-receive-pack", "--no-follow-tags", "--recurse-submodules=no", "https://github.com/fixture/product.git"]) expect(args).toContain(option)
+    else for (const option of ["--upload-pack=git-upload-pack", "--no-tags", "--no-prune", "--no-recurse-submodules", "--refmap=", "refs/heads/main:refs/remotes/origin/main"]) expect(args).toContain(option)
+  }
 })).pipe(Effect.orDie))
 
 it.live("s27 R2 m8: a stalled create is bounded after the real branch push", () => provideBoard(rig, Effect.gen(function* () {
   const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
   vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`); gh.set({ hangAt: "create" })
   const service = makeGitService({ workspaceFolder: rig.root, networkTimeoutMs: 1000 }), review = yield* service.reviewMain(f.source, rig.work)
-  const failed = yield* service.prepareDelivery(f.source, review, { title: "Bounded create", body: "Data" }, { _tag: "owner" }).pipe(Effect.result)
+  const failed = yield* service.prepareDelivery(f.source, review, { title: "Bounded create", body: "Data" }, { _tag: "owner" }, rig.work).pipe(Effect.result)
   expect(failed).toMatchObject({ _tag: "Failure", failure: { reason: "timeout", uncertain: true } })
   expect(git(gh.bare, "rev-parse", `refs/heads/${review.branch}`)).toBe(f.head)
   expect(gh.read().branch).toBeUndefined()
@@ -1168,7 +1174,7 @@ for (const phase of ['prepare', 'approve'] as const) it.live(`s27 R2 m5: an unre
   const boundary = vi.spyOn(GitProcesses, 'ghProcess').mockImplementation((folder, args, limits, signal) => original(folder, args, { ...limits, timeoutMs: 500 }, signal))
   yield* Effect.addFinalizer(() => Effect.sync(() => boundary.mockRestore()))
   gh.set({ hang: true })
-  const reason = phase === 'prepare' ? yield* refusal(prepare(f)) : (yield* approve(f, review)).result.reason
+  const reason = phase === 'prepare' ? yield* refusal(prepare(f)) : yield* refusal(approve(f, review))
   expect(reason).toMatch(/GitHub.*[.]$/)
   expect(git(rig.work, 'rev-parse', 'HEAD')).toBe(f.baseHead)
   expect(Object.values(projectView(yield* snapshot).gitAttempts)).toHaveLength(0)
@@ -1179,8 +1185,146 @@ it.live('s27 R2 m5: unreachable approval reports availability instead of claimin
   vi.stubEnv('PATH', `${gh.bin}:${process.env.PATH}`)
   const { review } = (yield* prepare(f)).result
   gh.set({ offline: true })
-  const result = (yield* approve(f, review)).result
-  expect(result).toMatchObject({ outcome: 'refused', reason: expect.stringContaining('availability') })
+  expect(yield* refusal(approve(f, review))).toContain('availability')
+  expect(projectView(yield* snapshot).gitReviews[f.worktreeId]?.outcome).toBe('open')
   expect(git(rig.work, 'rev-parse', 'HEAD')).toBe(f.baseHead)
   expect(readFileSync(gh.calls, 'utf8')).not.toContain('"PUT"')
+  gh.set({ offline: false })
+  expect((yield* approve(f, review)).result.outcome).toBe('merged')
+})).pipe(Effect.orDie))
+
+
+it.live("s27 R3 M-A: a dirty local base can stay behind while successive hosted reviews use the live base", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  save(rig.work, "owner-notes.txt", "Owner untracked notes\n")
+  const first = (yield* prepare(f)).result.review
+  const merged = (yield* approve(f, first)).result
+  expect(merged.outcome).toBe("merged")
+  expect(git(rig.work, "rev-parse", "HEAD")).toBe(f.baseHead)
+  save(f.source, "second-project.txt", "Second contribution\n")
+  const next = commit(f.source, "Second contribution")
+  const prepared = (yield* prepare(f)).result
+  expect(prepared.review).toMatchObject({ head: next, baseHead: merged.mergeHead, delivery: { remoteBaseHead: merged.mergeHead } })
+  expect(prepared.comparison.commits.items.map((row: any) => row.title)).toEqual(["Second contribution"])
+  expect(prepared.comparison.files.items.map((row: any) => row.path)).toEqual(["second-project.txt"])
+  expect(prepared.comparison.diff.patch).not.toContain("actual feature")
+  expect((yield* approve(f, prepared.review)).result.outcome).toBe("merged")
+  expect(git(rig.work, "rev-parse", "HEAD")).toBe(f.baseHead)
+  expect(readFileSync(join(rig.work, "owner-notes.txt"), "utf8")).toBe("Owner untracked notes\n")
+})).pipe(Effect.orDie))
+
+it.live("s27 R3 m-1: Prepare records an externally merged request after a prior verified refusal", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  const { review } = (yield* prepare(f)).result
+  gh.set({ mergeStateStatus: "BLOCKED" })
+  expect((yield* approve(f, review)).result.outcome).toBe("refused")
+  gh.set({ mergeStateStatus: "CLEAN" })
+  const merged = JSON.parse(execFileSync(join(gh.bin, "gh"), ["api", "--method", "PUT", "repos/fixture/product/pulls/17/merge", "-f", `sha=${review.head}`], { cwd: f.source, encoding: "utf8" }))
+  git(gh.bare, "update-ref", "-d", `refs/heads/${review.branch}`)
+  const recovered = (yield* prepare(f)).result.review
+  expect(git(gh.bare, "branch", "--list", review.branch)).toBe("")
+  expect(recovered).toMatchObject({ outcome: "merged", mergeHead: merged.sha, decision: null, delivery: { state: "MERGED" } })
+  expect(projectView(yield* snapshot).gitReviews[f.worktreeId]?.outcome).toBe("merged")
+  expect(git(rig.work, "rev-parse", "HEAD")).toBe(merged.sha)
+  const calls = readFileSync(gh.calls, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line) as string[])
+  expect(calls.filter(args => args.includes("create"))).toHaveLength(1)
+  expect(calls.filter(args => args.includes("PUT"))).toHaveLength(1)
+})).pipe(Effect.orDie))
+
+it.live("s27 R3 m-2: hosted synchronization updates only the explicit remote tracking base", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  git(rig.work, "config", "branch.main.remote", "origin"); git(rig.work, "config", "branch.main.merge", "refs/heads/main")
+  git(rig.work, "config", "remote.origin.fetch", "+refs/heads/*:refs/heads/unsafe/*")
+  const { review } = (yield* prepare(f)).result
+  const result = (yield* approve(f, review)).result
+  expect(git(rig.work, "rev-parse", "refs/remotes/origin/main")).toBe(result.mergeHead)
+  expect(yield* makeGitService({ workspaceFolder: rig.root }).state(rig.work)).toMatchObject({ ahead: 0, behind: 0 })
+  expect(git(rig.work, "for-each-ref", "--format=%(refname)", "refs/heads/unsafe/")).toBe("")
+})).pipe(Effect.orDie))
+
+for (const authState of ["error", "timeout"]) it.live(`s27 R3 m-3: zero-exit authentication ${authState} refuses with no fallback`, () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`); gh.set({ authState })
+  expect(yield* refusal(prepare(f))).toContain("availability")
+  expect(projectView(yield* snapshot).gitReviews[f.worktreeId]).toBeUndefined()
+  expect(readFileSync(gh.gitCalls, "utf8")).not.toContain('"push"')
+})).pipe(Effect.orDie))
+
+it.live("s27 R3 m-3: a merged request with another head never reconciles", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  const { review } = (yield* prepare(f)).result
+  gh.set({ state: "MERGED", mergeCommit: f.head, headOverride: f.baseHead })
+  expect((yield* approve(f, review)).result).toMatchObject({ outcome: "refused", reason: "stale_state" })
+  expect(git(rig.work, "rev-parse", "HEAD")).toBe(f.baseHead)
+  expect(readFileSync(gh.calls, "utf8")).not.toContain('"PUT"')
+})).pipe(Effect.orDie))
+
+it.live("s27 R3 m-3: Prepare reconciles a same-head squash merged by the owner elsewhere", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  const { review } = (yield* prepare(f)).result
+  const tree = git(gh.bare, "rev-parse", `${f.head}^{tree}`)
+  const squash = git(gh.bare, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit-tree", tree, "-p", f.baseHead, "-m", "Owner squash")
+  git(gh.bare, "update-ref", "refs/heads/main", squash)
+  gh.set({ state: "MERGED", mergeCommit: squash, mergedHead: review.head })
+  const recovered = (yield* prepare(f)).result.review
+  expect(recovered).toMatchObject({ outcome: "merged", mergeHead: squash })
+  expect(git(rig.work, "rev-list", "--parents", "-n", "1", "HEAD").split(" ")).toHaveLength(2)
+})).pipe(Effect.orDie))
+
+it.live("s27 R3 m-3: the live reference endpoint encodes a slash in the base name", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  git(gh.bare, "update-ref", "refs/heads/release/next", f.baseHead)
+  expect(yield* Effect.promise(() => githubCommands(f.source, new AbortController().signal, 5000).baseHead("fixture/product", "release/next"))).toBe(f.baseHead)
+  expect(readFileSync(gh.calls, "utf8")).toContain("git/ref/heads/release%2Fnext")
+})).pipe(Effect.orDie))
+
+it.live("s27 R3 m-4: reusing a pull request refreshes its redacted description through stdin", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  yield* prepare(f)
+  save(f.source, "later-description.txt", "Later\n"); const next = commit(f.source, "Later description")
+  const prepared = (yield* prepare(f)).result.review
+  expect(gh.read().body).toContain(`Reviewed head: ${next}`)
+  expect(gh.read().body).not.toContain(`Reviewed head: ${f.head}`)
+  expect(prepared.delivery.body).toBe(gh.read().body)
+  const args = readFileSync(gh.calls, "utf8").split("\n").filter(Boolean).map(line => JSON.parse(line) as string[]).find(args => args.includes("edit"))
+  expect(args).toEqual(["pr", "edit", "17", "--repo", "fixture/product", "--body-file", "-"])
+})).pipe(Effect.orDie))
+
+it.live("s27 R3 m-5: a canonical repository name change tells the owner to update the remote URL", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`); gh.set({ repositoryName: "fixture/renamed" })
+  expect(yield* refusal(prepare(f))).toContain("remote URL")
+})).pipe(Effect.orDie))
+
+it.live("s27 R3 m-6: an explicit create refusal is determinate after a successful branch push", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`); gh.set({ createRefused: true, secret: "synthetic-create-secret-987654" })
+  expect(yield* refusal(prepare(f))).toMatch(/GitHub.*creat.*[.]$/)
+  expect(Object.values(projectView(yield* snapshot).gitAttempts)).toHaveLength(0)
+  expect(git(gh.bare, "rev-parse", `refs/heads/${git(f.source, "branch", "--show-current")}`)).toBe(f.head)
+  expect(JSON.stringify(yield* readLog)).not.toContain("synthetic-create-secret-987654")
+})).pipe(Effect.orDie))
+
+
+it.live("s27 R3 M-A: sign-out between comparison and delivery cannot label a remote-base comparison as local", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  const remoteBase = git(gh.bare, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit-tree", `${f.baseHead}^{tree}`, "-p", f.baseHead, "-m", "Remote advance")
+  git(gh.bare, "update-ref", "refs/heads/main", remoteBase)
+  const original = GitProcesses.ghProcess
+  let authQueries = 0
+  const boundary = vi.spyOn(GitProcesses, "ghProcess").mockImplementation((folder, args, limits, signal, input) => {
+    if (args[0] === "auth" && ++authQueries === 2) gh.set({ signedOut: true })
+    return original(folder, args, limits, signal, input)
+  })
+  yield* Effect.addFinalizer(() => Effect.sync(() => boundary.mockRestore()))
+  expect(yield* refusal(prepare(f))).toBe("Git: stale_state")
+  expect(projectView(yield* snapshot).gitReviews[f.worktreeId]).toBeUndefined()
 })).pipe(Effect.orDie))

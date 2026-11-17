@@ -57,7 +57,7 @@ const summaries: Record<CommandName, string> = {
   "project.review.decline": "Send an open main review back with a reason addressed to its project lead on the board.",
   "project.review": "Read actual review evidence against a local base branch in your project.",
   "project.review.report": "Record reported test or review data for the current project head with an existing project thread item; reports never approve a merge.",
-  "project.review.prepare": "Prepare an owner review and push the registered branch to its GitHub pull request; local fallback requires an absent GitHub remote, CLI, or active account.",
+  "project.review.prepare": "Prepare against the live GitHub base and publish or reconcile the project pull request; local fallback requires an absent GitHub remote, CLI, or active account.",
   "project.review.status": "Read the latest project review and current or stale reported evidence.",
   "project.review.approve": "Approve the reviewed heads as the owner and merge the prepared GitHub pull request, or its recorded local fallback; a refused outcome is not a merge.",
   "project.conflict": "Read canonical conflict hunks in a registered workspace in your project.",

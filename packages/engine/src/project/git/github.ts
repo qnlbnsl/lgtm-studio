@@ -20,7 +20,7 @@ const githubRepository = (url: string): string | undefined => {
 
 /** No diagnostics leave this module. Authentication output contains only selected state discriminants. */
 export const githubCommands = (folder: string, signal: AbortSignal, timeoutMs: number) => {
-  const run: Run = (args) => ghProcess(folder, args, { bytes: 64 * 1024, timeoutMs }, signal);
+  const run = (args: ReadonlyArray<string>, input?: string) => ghProcess(folder, args, { bytes: 64 * 1024, timeoutMs }, signal, input);
   const json = async (args: ReadonlyArray<string>): Promise<any> => {
     const reply = await run(args);
     if (reply.code !== 0) return fail("github_refused");
@@ -35,7 +35,7 @@ export const githubCommands = (folder: string, signal: AbortSignal, timeoutMs: n
   return { run, json, fields, baseHead };
 };
 
-export const deliveryMode = async (git: Run, gh: Run): Promise<{ mode: "github"; remote: string; repository: string } | Extract<GitReviewDelivery, { mode: "local" }>> => {
+export const deliveryMode = async (git: Run, gh: Run): Promise<{ mode: "github"; remote: string; repository: string; pushUrl: string } | Extract<GitReviewDelivery, { mode: "local" }>> => {
   const names = (await git(["remote"])).stdout.trim().split("\n").filter(Boolean);
   const candidates: { remote: string; url: string; repository: string | undefined }[] = [];
   for (const name of names) {
@@ -78,10 +78,12 @@ export const deliveryMode = async (git: Run, gh: Run): Promise<{ mode: "github";
   if (!Array.isArray(accounts)) return fail("github_refused");
   if (accounts.length === 0) return { mode: "local", reason: "Local merge: the service user is not signed in to the GitHub CLI." };
   if (accounts.length !== 1 || accounts[0] !== "success") return fail("github_refused");
-  return { mode: "github", remote, repository };
+  return { mode: "github", remote, repository, pushUrl: urls[2]! };
 };
 
 export const checkedPullRequest = (value: any, repo: string, remote: string, branch: string, base: string, head: string): GithubDelivery => {
+  const canonical = typeof value?.url === "string" ? /^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/[1-9][0-9]*$/i.exec(value.url) : null;
+  if (canonical && canonical[1]!.toLowerCase() !== repo.toLowerCase()) throw new GitFailure({ reason: "github_remote_changed", determinate: true });
   if (!value || value.isCrossRepository !== false || !Number.isSafeInteger(value.number) || value.number < 1 || value.number > 2147483647
     || typeof value.url !== "string" || value.url.toLowerCase() !== `https://github.com/${repo}/pull/${value.number}`.toLowerCase()
     || !["OPEN", "CLOSED", "MERGED"].includes(value.state)

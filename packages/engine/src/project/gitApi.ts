@@ -1,4 +1,4 @@
-import { githubRequestFailureReason } from "./errors.ts"
+import { githubPublicReason, githubRequestFailureReason } from "./errors.ts"
 import { realpath } from "node:fs/promises"
 import { isAbsolute } from "node:path"
 import { cleanText } from "./git/paths.ts"
@@ -32,7 +32,7 @@ export const withGit = <A, E, R>(input: Input, body: (git: GitService) => Effect
     return yield* Effect.uninterruptible(body(state.service!))
   })), () => Effect.sync(() => { state.queued-- }))
 })
-export const gitCall = <A>(effect: GitOperation<A>, githubDelivery = false) => effect.pipe(Effect.mapError((error) => error.uncertain ? new CommandUncertain({ reason: "Git outcome is uncertain; refresh Git state" }) : refused(error.reason === "github_refused" || githubDelivery && ["timeout", "network_failed"].includes(error.reason) ? githubRequestFailureReason : `Git: ${error.reason}`)))
+export const gitCall = <A>(effect: GitOperation<A>, githubDelivery = false) => effect.pipe(Effect.mapError((error) => error.uncertain ? new CommandUncertain({ reason: "Git outcome is uncertain; refresh Git state" }) : refused(githubPublicReason(error.reason) ?? (githubDelivery && ["timeout", "network_failed"].includes(error.reason) ? githubRequestFailureReason : `Git: ${error.reason}`))))
 export const localMachine = (id: string) => id === "local" ? Effect.void : Effect.fail(refused("only the local machine can register a checkout before machine pairing"))
 export const safePath = (input: Input, path: string) => Effect.gen(function* () {
   if ((yield* input.runtime.log.redactText(path)) !== path) return yield* refused("a path cannot contain a registered secret")

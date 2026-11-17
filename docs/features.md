@@ -908,6 +908,9 @@ Automatic push triggers and manual provider text editing below remain planned.
 The pull request flow reads the live remote base independently of stored pull request metadata.
 A fresh owner approval reconciles a confirmed remote merge after a lost receipt.
 Refresh always reads Git state and pushes only a changed project head.
+Hosted comparisons use the fetched live remote base even when the local base is dirty or behind.
+Prepare also recognizes an exact-head request merged elsewhere after a previous refusal.
+Reusing an open request refreshes its redacted description.
 
 The owner raised this on 2026-11-12 and decided its shape the same day. It is
 **agreed**, and it is not built in the engine or the mock. Agents merge their work

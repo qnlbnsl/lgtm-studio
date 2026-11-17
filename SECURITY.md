@@ -269,7 +269,7 @@ The owner authorized GitHub pushes and pull requests on 2026-11-17.
 Only an authenticated owner connection can prepare or approve the project's main review.
 Agent credentials and service credentials cannot invoke those operations.
 The agent tool list does not expose an owner merge tool.
-The engine uses the service user's existing GitHub command-line interface (CLI) identity for authentication status, pull request reads, creation, and merging.
+The engine uses the service user's existing GitHub command-line interface (CLI) identity for authentication status, pull request reads, creation, description updates, and merging.
 It never asks the CLI for a token.
 It never reads or stores the CLI's configuration or credential files.
 The authentication query returns only active-account state values through a CLI filter.
@@ -281,12 +281,16 @@ Selected pull request metadata passes through the production redactor before ent
 The project name, goal, and reported evidence are redacted before they become a pull request title or description.
 The generated title uses the review screen's existing 72-character limit.
 The description is bounded to 8,000 characters and at most 32 kibibytes.
+A reused request receives the current redacted description through standard input.
+The CLI never receives an agent-selected input filename.
 
 Both Git and the GitHub CLI run in the registered repository folder with separate argument vectors and no shell.
 Each process has a bounded timeout and bounded output.
 A GitHub command has at most 64 kibibytes of standard output and 16 kibibytes of error output.
 Each Git service operation that contacts GitHub has a two-minute limit.
 The engine disables interactive Git and GitHub prompts.
+Prepare first fetches the remote base into its explicit remote-tracking reference and computes the review against the fetched commit.
+That fetch does not update the local base branch or its files.
 Prepare pushes the reviewed commit only to the project's registered branch on an existing repository remote.
 It never forces a push or pushes tags or submodules with that operation.
 The engine checks the configured and resolved remote URLs before preparing a pull request.
@@ -299,8 +303,16 @@ Production has no setting to bypass destination validation.
 Delivery commands disable the external transport protocol, push signing, and Git's configured password-prompt program.
 They also disable tag following, submodule recursion, automatic HTTP redirects, and custom remote receive and upload programs.
 The push also disables mirror mode and force mode.
+It uses the validated push URL instead of the remote name because Git applies configured fetch mappings to local references after a named-remote push.
 The fetch disables pruning and configured destination ref mappings.
-The engine preserves the owner's credential helpers, Secure Shell (SSH) configuration, and proxy configuration because normal authentication and connectivity can depend on them.
+It writes only the selected base under the selected remote-tracking namespace.
+A renamed repository requires an updated remote URL.
+Delivery does not follow redirects or accept a different canonical repository.
+A canonical-name mismatch gives a fixed remote-URL explanation.
+The transport can refuse a redirect before canonical metadata is available.
+The engine preserves the owner's credential helpers, Secure Shell (SSH) configuration, and URL-based or global proxy configuration because normal authentication and connectivity can depend on them.
+A push to the validated URL does not apply remote-name-only proxy settings.
+An owner who needs a proxy for that push must use Git's URL-based or global proxy configuration.
 An agent that can write the repository's Git configuration can still configure a credential helper or SSH command to run arbitrary code as the service user when the owner prepares or approves.
 Such an agent can also change proxies, credential handling, or configuration between validation and execution to redirect traffic or expose the owner's GitHub identity.
 A configured checkout filter can run when a fast-forward writes local files.
@@ -312,7 +324,8 @@ It does not request administrative bypass, automatic merging, or a merge queue.
 The preflight refuses a closed pull request or a GitHub merge status other than ready.
 It reads the live base branch through GitHub’s reference endpoint at Prepare and immediately before an open pull request merge.
 The pull request’s `baseRefOid` metadata is not used as a live branch head.
-It checks that the live remote base still matches Prepare and the reviewed local base.
+It checks that the live remote base still matches the fetched base recorded at Prepare.
+The local base branch head does not gate hosted approval.
 GitHub enforces the merge request against its current server state.
 The remote base can move between the preflight and the merge request because GitHub offers a head condition but no base condition on that endpoint.
 The local checkout is updated only after GitHub confirms the merge.
@@ -325,3 +338,13 @@ The owner must refresh and inspect the recorded pull request before continuing.
 A new approval request can reconcile an already merged pull request with the exact reviewed head and a valid recorded merge commit.
 It records that confirmed merge and attempts the same safe local update without requesting another remote merge.
 The original uncertain request keeps its uncertain receipt.
+
+An approval failure without a verified pull request verdict leaves the stored review open.
+Prepare can reconcile an already merged request with the exact project head, even after a previous verified refusal.
+That path does not push or request another remote merge.
+It records the confirmed provider commit and attempts the same conditional local update.
+This also supports a squash merge performed elsewhere by the owner.
+An explicit nonzero creation refusal is determinate after the successful branch push.
+The sentence reports the CLI failure without promising that no remote request exists.
+A fresh Prepare checks for an existing request before creating one.
+A timeout or lost response after possible creation remains uncertain.
