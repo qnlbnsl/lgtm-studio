@@ -18850,3 +18850,13 @@ Read: the failing whole run did not retain its generated request identifier.
 Read: the adjacent wake identity regression also issued two commands under the same marker registry.
 Read: those commands now have deterministic identifiers as well.
 Read: all original content, event, receipt, and refusal assertions remain unchanged.
+
+## 1295. The full check of the secret hiding unit met two load-sensitive tests and four load-sensitive journeys.
+
+In one whole run of the unit tests, "stops cleanly without invoking startup redaction on an interruption-only cause" in `packages/cli/test/serve.test.ts` failed: the service exited with code 13 after the stop signal, where code 0 was expected.
+The file passed three times in a row when run alone, and the unit does not change it or the code it tests.
+In the whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:361` and `studio.spec.ts:1189` failed, and each passed when run alone.
+Three live checks before round five gave 13, 13 and 19 of 23 steps; in the two short runs the Codex worker ended its turn without asking for permission, which is issue 272.
+Two live checks after round five gave 19 of 23, and three on `master` gave 19, 18 and 19.
+
+State: open. Recorded on 2026-11-16.
