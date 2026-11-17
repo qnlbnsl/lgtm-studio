@@ -218,7 +218,16 @@ it.each(["E", "D", "ED"])("F11 final stored role-file content with synthetic sho
   await withFixture(await loadLists(), () => Effect.gen(function* () {
     yield* registerRebuildCheck();
     const sql = yield* SqlClient.SqlClient;
-    const document = JSON.stringify({ name: "file", roles: { builder: { advice: letters.repeat(3_000), limits: {} } } });
+    // A single role no longer fits after composition redaction expands its
+    // replacement markers. Keep that refusal and the original total stress.
+    const oversized = JSON.stringify({ name: "file", roles: { builder: { advice: letters.repeat(3_000), limits: {} } } });
+    expect(failureOf(yield* call({ _tag: "owner" }, "roles.role-file.set", { requestId: "file-oversized-advice", content: oversized })))
+      .toMatchObject({ _tag: "CommandRefused", reason: "Role instructions exceed 48 KiB." });
+    expect((yield* readLog).filter((row) => row.event._tag === "roles.RoleFileSet")).toHaveLength(0);
+    // Spread the same 3,000 repetitions across ten roles so each composition
+    // fits while the document still reaches the exact 64 KiB stored bound.
+    const document = JSON.stringify({ name: "file", roles: Object.fromEntries(Array.from({ length: 10 }, (_, index) =>
+      [`test-${index}`, { advice: letters.repeat(300), limits: {} }])) });
     const content = document + " ".repeat(rolesMaxima.roleFileBytes - Buffer.byteLength(redactor.redactText(document)));
     const expected = redactor.redactText(content);
     expect(Buffer.byteLength(expected)).toBe(rolesMaxima.roleFileBytes);

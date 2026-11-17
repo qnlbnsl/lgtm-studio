@@ -218,6 +218,7 @@ test("6.10 A06 row 53: catches dropping the first prompt or loading a nonexisten
     yield* TestClock.adjust(60_000);
     yield* eventually(Effect.sync(() => promptsAfter(runner, watermark, "pre-session").length), (count) => count === 1);
     expect(runner.callsOf("start").map((entry) => entry.input.agentId)).toEqual(["pre-session"]);
+    expect(runner.callsOf("start")[0]!.input.instructions).toContain("# Rules for every worker");
     expect(runner.callsOf("load")).toEqual([]);
     expect(promptsAfter(runner, watermark, "pre-session").map((entry) => entry.input.delivery.id)).toEqual(["first-prompt"]);
     expect(yield* carryRows("pre-session")).toEqual([]);

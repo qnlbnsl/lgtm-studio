@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
-import { chmodSync } from "node:fs";
+import { chmodSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { mintAgentToken } from "../../src/identity/tokens.ts";
@@ -12,6 +12,7 @@ import { event, fileEvent, owner, start } from "./fixtures.ts";
 
 afterEach(cleanupUnit7b);
 const run = <A>(program: Effect.Effect<A, any, any>) => runReadRig(program, registerRebuildCheck());
+const leadBase = readFileSync(new URL("../../src/roles/instructions/lead-base.md", import.meta.url), "utf8");
 // Write the same start/session and token rows that seedAgent writes, with a
 // role string selected by this test. Never replace the roster or read handler.
 const seed = (id: string, role = "worker:builder", parent?: string) => Effect.gen(function* () {
@@ -53,7 +54,7 @@ it("O01 orient returns the caller's parsed role, parent label, readable roster, 
     parent: { _tag: "agent", agentId: "parent" }, parentName: "Name parent",
     openPermissionRequests: 1, openQuestionsAsked: 1,
   });
-  expect(reply.advice).toContain("Report to the lead.");
+  expect(reply.advice).toBe(leadBase);
   expect(reply.agents.map((row: any) => row.agentId).sort()).toEqual(["lead", "worker"]);
   expect(reply.agents.find((row: any) => row.agentId === "worker")).toMatchObject({ name: "Name worker", state: { _tag: "idle" } });
   expect(yield* headSequence).toBe(before);
@@ -69,7 +70,7 @@ it("O02 lgtm roles orient reaches the real authenticated read and returns its da
   const reply = unwrap({ data: child.stdout().trimEnd() });
   expect(reply).toMatchObject({ name: "Name lead", kind: "lead", roleName: "builder", parentName: "Name parent" });
   expect(reply.agents.map((row: any) => row.agentId).sort()).toEqual(["lead", "worker"]);
-  expect(reply.advice).toContain("Report to the lead.");
+  expect(reply.advice).toBe(leadBase);
 })));
 
 it("O03 the roles.orient MCP tool reaches the real engine with the calling agent's visibility", async () => run(Effect.gen(function* () {
@@ -86,7 +87,7 @@ it("O03 the roles.orient MCP tool reaches the real engine with the calling agent
   const data = unwrap({ data: reply.result.content.map((part: any) => part.text ?? "").join("") });
   expect(data).toMatchObject({ name: "Name lead", kind: "lead", roleName: "builder", parentName: "Name parent" });
   expect(data.agents.map((row: any) => row.agentId).sort()).toEqual(["lead", "worker"]);
-  expect(data.advice).toContain("Report to the lead.");
+  expect(data.advice).toBe(leadBase);
 })));
 
 it("O04 the owner is refused orient and neither a refused nor successful read writes an event", async () => run(Effect.gen(function* () {

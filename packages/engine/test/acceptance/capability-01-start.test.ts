@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect";
 
 import { eventsUntil, isTag, peekEcho, promptsOf, refusal, requestId, scenario, stopAllServices, tagged } from "../support/acceptance.ts";
 import { registerRebuildCheck } from "../support/rebuildCheck.ts";
+import { withRoleInstructions } from "../support/instructionPrompt.ts";
 
 registerRebuildCheck({ noLog: true });
 afterEach(async () => { await stopAllServices(); });
@@ -28,7 +29,7 @@ scenario("1 start: every choice the owner makes is recorded and reaches the harn
   expect(tagged(events, "SessionOpened", agent.agentId)).toHaveLength(1);
 
   // The harness received the choices, in the order the spec's start sequence
-  // gives them, and the prompt as the owner wrote it.
+  // gives them, and the full instructions ahead of the owner's exact prompt.
   const echo = peekEcho(agent.echo)!;
   const methods = echo.inbound.map((frame) => frame.method);
   expect(methods.indexOf("session/new")).toBeGreaterThan(methods.indexOf("initialize"));
@@ -40,7 +41,8 @@ scenario("1 start: every choice the owner makes is recorded and reaches the harn
     expect.objectContaining({ configId: "mode", value: "accept-edits" }),
   ]));
   expect((echo.inbound.find((frame) => frame.method === "session/new")!.params as { cwd: string }).cwd).toBe(w.root.work);
-  expect(promptsOf(echo)).toEqual(["Build the thing."]);
+  const first = tagged(events, "DeliverySent", agent.agentId)[0]!.event as { deliveryId: string };
+  expect(promptsOf(echo)).toEqual([withRoleInstructions(promptsOf(echo)[0]!, first.deliveryId, "Build the thing.", ["worker-base", "builder"])]);
 }));
 
 scenario("1 start: a start the engine cannot honour is refused with a reason and starts nothing (breaks if an unknown model, harness or account still creates an agent)", (w) => Effect.gen(function* () {

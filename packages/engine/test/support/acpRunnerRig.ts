@@ -13,6 +13,7 @@ import * as SqliteClient from "@lgtm/t3-node-sqlite/nodeSqliteClient";
 import type * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner";
 import * as Redacted from "effect/Redacted";
 import { MinimumLogLevel } from "effect/References";
 import * as Schema from "effect/Schema";
@@ -301,6 +302,7 @@ const registryFor = (secrets: FakeSecrets, database?: string) => {
 };
 
 export interface RunnerOptions {
+  readonly wrapSpawner?: (spawner: Context.Service.Shape<typeof ChildProcessSpawner>) => Context.Service.Shape<typeof ChildProcessSpawner>;
   readonly secrets?: Readonly<Record<string, string>>;
   // Account tests exercise the persistent store through the real handler.
   // `secrets` remains the planted registry used by the service's redactor.
@@ -315,7 +317,11 @@ const runnerLayer = (rig: RunnerRig, options: RunnerOptions, secrets: FakeSecret
     stateFolder: rig.stateFolder,
     environment: options.environment ?? serviceEnvironment(rig),
     ...(options.classifyError === undefined ? {} : { classifyError: options.classifyError }),
-  }).pipe(Layer.provide(Layer.mergeAll(NodeServices.layer, secrets.layer)));
+  }).pipe(Layer.provide(Layer.mergeAll(
+    options.wrapSpawner === undefined ? NodeServices.layer : Layer.effect(ChildProcessSpawner,
+      Effect.map(ChildProcessSpawner, options.wrapSpawner)).pipe(Layer.provideMerge(NodeServices.layer)),
+    secrets.layer,
+  )));
 
 const loggerFor = (redactText: (text: string) => string, lines: Array<string>) => Layer.mergeAll(
   redactingLoggerLayer({ redactText }, (line) => { lines.push(line); }),

@@ -48,9 +48,11 @@ substituting the actual repository path and selected model:
 lgtm start --input '{"name":"foundation-manager","role":"orchestrator","harness":"codex","account":{"_tag":"any"},"model":"<selected model>","effort":"high","permission":"ask","folder":"/absolute/repo","runMode":"acp","groups":["run:foundation"],"prompt":"Read the confirmed run brief and coordinate its areas. Begin with roles.orient."}'
 ```
 
-Each agent calls `lgtm roles.orient --input '{}'` at the start of its assignment.
-The reply gives its identity, parent, visible team and role advice. The
-owner may load team-specific advice and bounded limits with
+The engine delivers the [default role instructions](roles.md) ahead of the first prompt in each new session.
+An agent can call `lgtm roles.orient --input '{}'` to read them again.
+The reply gives its identity, parent, visible team and composed role advice.
+The owner may replace individual instruction files under `~/.lgtm/roles`.
+The owner may also load team-specific advice and bounded limits with
 `roles.role-file.set`, whose `content` is the role file's JSON text.
 `roles.role-file.get` returns the file and its hash. Role names such as
 `lead:backend` and `worker:builder` select named advice from that file.

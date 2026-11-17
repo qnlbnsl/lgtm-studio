@@ -19,6 +19,15 @@ export const envelope = (deliveryId: string, text: string, sender?: Sender): str
   return `${label} [${marker}] (delivery ${deliveryId}):\n${text}\nEnd data [${marker}]`;
 };
 
+// Engine policy is distinct from an agent's data. Do not add replay delivery
+// proof: an owner's original prompt has no such proof on the base branch.
+export const instructionEnvelope = (text: string, agent?: string): string => {
+  const body = text + (agent === undefined ? "" : `\n\nThe following data block is the brief from agent ${agent}.`);
+  let marker = randomBytes(18).toString("base64url");
+  while (body.includes(marker)) marker = randomBytes(18).toString("base64url");
+  return `Engine role instructions [${marker}]:\n${body}\nEnd engine role instructions [${marker}]\n\n`;
+};
+
 // A prompt's text as its target receives it: an agent's is escaped and
 // wrapped, and the owner's is passed on unchanged.
 export const agentText = (sender: Sender, deliveryId: string, text: string): string =>
