@@ -18589,7 +18589,7 @@ Read: the frozen hash record includes the cleaned file and the result records th
 ## 1279. The thread acceptance fixture depended on a random credential's prefix.
 
 Found: 2026-11-16, in the complete round-four test run.
-State: fixed with a deterministic fake owner credential and the original assertions.
+State: round five corrects the helper to group deltas by item identifier and tests a planted held final character. Pinning the owner credential alone was insufficient.
 
 Ran: the complete suite passed 9891 tests and failed the assertion requiring the permission answer in one item.
 Ran: an isolated reproduction delivered all thirty answer characters as twenty-nine characters followed by the last character.
@@ -18786,3 +18786,52 @@ Ran by the reviewer: the original baseline took 39 milliseconds.
 Read: the reviewer observed a four-to-five-times slowdown beginning around forty such secrets.
 Read: a mebibyte contains 1048576 bytes.
 Read: retaining oversized states fixes repeated compilation rather than this literal scanning cost.
+
+## s19-6. A random web-session token can split an ordinary message into deltas.
+
+Found: 2026-11-16, while reproducing the owner's round-five thread failure.
+State: the product already appends both deltas under the same item identifier. The acceptance helper now uses the product's grouping function.
+
+Read: the service creates and registers a random web-session token even when no web password is configured.
+Read: that token and the agent token are the scenario's two random registered credentials.
+Read: its owner credential is fixed.
+Read: its account has no secret reference and its temporary login stores do not exist.
+Ran: a planted web-session token beginning with the answer's last character reproduced twenty-nine characters followed by one character.
+Ran: both fragments had one item identifier.
+Ran: the new planted-account-secret regression fails with the old helper and passes with logical item grouping.
+Read: every original assertion remains in place.
+Read: the suite audit found no other real-service message assertion with this raw-delta assumption.
+Read: related assertions read complete prompt deliveries, join text fragments, or end live-gated prose with a safe delimiter.
+
+## s19-7. An unreadable login store can refuse a permission request before its event is emitted.
+
+Found: 2026-11-16, while investigating the owner's round-five live-check observation.
+State: reproduced and recorded without weakening fail-closed credential coverage.
+
+Read: the owner's three live checks passed thirteen, thirteen, and nineteen of twenty-three steps.
+Read: nineteen is the known normal result.
+Read: the two shorter runs reported a worker turn ending without a permission request at step four.
+Ran: corrupting a fake login store after launch made permission identifier checks return a refusal.
+Ran: no permission event was emitted and the fake harness propagated the remote-procedure-call error into a failed turn.
+Read: remote procedure call is abbreviated RPC.
+Read: this is a possible path rather than a diagnosis of those live runs.
+Ran: all four queue-cap tests preserve a healthy permission request until its answer.
+Read: those tests cover count and byte caps with and without the redactor's explicit withholding method.
+Read: neither those caps nor ordinary tool withholding generate a terminal update themselves.
+
+## s19-8. The new message regression initially relied on a helper to narrow event types.
+
+Found: 2026-11-16, in the first round-five typecheck.
+State: fixed with an explicit event-tag guard in the regression.
+
+Read: the tagged helper returns the complete event union rather than a narrowed type.
+Read: the new test now selects text events after checking their tag.
+Read: its assertions and runtime behavior are unchanged.
+
+## s19-9. Partial issue staging added an empty line at the first commit's end.
+
+Found: 2026-11-16, by the staged diff check in round five.
+State: fixed by trimming the partial document before recreating the signed commits.
+
+Read: the complete working document had no trailing blank line.
+Read: this staging correction changes no implementation or test bytes.

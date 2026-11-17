@@ -2,25 +2,26 @@
 // tool call, changed file and permission request. Criteria 8.3 to 8.5.
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { groupThreadItems } from "@lgtm/contracts/thread";
 import { afterEach, expect } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
 
-import { eventsUntil, isTag, requestId, scenario, stopAllServices, tagged } from "../support/acceptance.ts";
+import { eventsUntil, isTag, redacted, requestId, scenario, stopAllServices, tagged } from "../support/acceptance.ts";
 import { registerRebuildCheck } from "../support/rebuildCheck.ts";
 
 registerRebuildCheck({ noLog: true });
 afterEach(async () => { await stopAllServices(); });
 
 type Content = { _tag: string; text?: string; title?: string; status?: string; output?: string; path?: string; diff?: string };
-const contents = (events: ReadonlyArray<{ agentId?: string; event: { _tag: string } }>, agentId: string): ReadonlyArray<Content> =>
-  events.filter((envelope) => envelope.agentId === agentId && envelope.event._tag === "ThreadItem")
+const contents = (events: ReadonlyArray<{ sequence: number; agentId?: string; event: { _tag: string } }>, agentId: string): ReadonlyArray<Content> =>
+  groupThreadItems(events).filter((envelope) => envelope.agentId === agentId && envelope.event._tag === "ThreadItem")
     .map((envelope) => (envelope.event as unknown as { content: Content }).content);
 
 scenario("6 thread: the owner reads a message, a plan, a tool call, a changed file and a permission request as they happen (breaks if the runner drops any one of the five kinds or the stream withholds them until the turn ends)", (w) => Effect.gen(function* () {
-  // A random credential can begin with the answer's final character and
-  // legitimately split it into a second item. Keep this ordering fixture
-  // deterministic without changing private-prefix withholding.
+  // The fixed owner credential keeps this ordering fixture reproducible.
+  // Other registered credentials, including the random web-session token,
+  // can still split a message into deltas sharing one item identifier.
   mkdirSync(w.root.state, { mode: 0o700 });
   writeFileSync(join(w.root.state, "owner-credential"), Buffer.alloc(32, 7), { mode: 0o600 });
   yield* w.boot();
@@ -79,4 +80,28 @@ scenario("6 thread: a client that connects after the turn replays the same threa
   expect(printed).toContain("start");
   expect(printed).toContain("end");
   expect(printed).not.toContain(token);
+}));
+
+scenario("r5 a held final character appends to the same message item at turn end, live and on replay", (w) => Effect.gen(function* () {
+  const sentence = "A complete sentence", privateValue = "e-s19-fake-tail-private-value";
+  const gate = join(w.root.root, "finish-held-character");
+  const prepared = yield* w.prepare({ script: { turns: [[{ step: "text", text: sentence }, { step: "wait_for_file", path: gate }]] }, prompt: "Speak." });
+  w.secrets.add(privateValue);
+  yield* w.owner["accounts set-secret"]({ requestId: requestId(), accountId: prepared.accountId, name: "FAKE_API_KEY", nonce: "r5-tail", value: redacted(privateValue) } as never);
+  const before = yield* w.watermark();
+  const agent = yield* w.owner.start(prepared.request as never);
+  const partial = yield* eventsUntil(w.owner, before, "the decided message prefix", isTag("ThreadItem", agent.agentId));
+  const prefix = contents(partial, agent.agentId).filter(item => item._tag === "text").map(item => item.text).join("");
+  expect(sentence.startsWith(prefix)).toBe(true);
+  expect(prefix.length).toBeLessThan(sentence.length);
+  expect(tagged(partial, "TurnEnded", agent.agentId)).toHaveLength(0);
+  writeFileSync(gate, "go");
+  const finished = yield* eventsUntil(w.owner, before, "the completed message", isTag("TurnEnded", agent.agentId));
+  const deltas = finished.flatMap(row => row.agentId === agent.agentId && row.event._tag === "ThreadItem" && row.event.content._tag === "text" ? [row.event] : []);
+  expect(deltas).toHaveLength(2);
+  expect(new Set(deltas.map(event => event.itemId)).size).toBe(1);
+  expect(deltas.map(event => event.content._tag === "text" ? event.content.text : "").join("")).toBe(sentence);
+  expect(contents(finished, agent.agentId).filter(item => item._tag === "text")).toEqual([{ _tag: "text", text: sentence }]);
+  const replay = yield* eventsUntil(yield* w.reopenOwner(), before, "the replayed completed message", isTag("TurnEnded", agent.agentId));
+  expect(contents(replay, agent.agentId)).toEqual(contents(finished, agent.agentId));
 }));

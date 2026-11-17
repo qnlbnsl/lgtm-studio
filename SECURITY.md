@@ -182,7 +182,12 @@ These rules apply to every change. A change that breaks one is a security bug.
    A streamed agent token's public prefix may be published as match context.
    Every public-prefix occurrence in the bounded candidate window remains eligible.
    A prefix inside a token cannot displace an earlier candidate.
-   The private remainder stays withheld until a continuation rules out the candidate or the complete registered token is replaced.
+   The private remainder stays withheld while it could still complete a registered token.
+   A continuation that rules out the candidate releases it.
+   A complete registered token is replaced.
+   An incomplete candidate is released when its redaction item or turn ends.
+   Forced withholding instead replaces its pending characters with a fixed marker.
+   Its match context and completed coverage remain available for later chunks.
    Published public characters remain match context even when a value-known secret also has a matching suffix.
    Whole-text output may be `[REDACTED]` where streamed output is `shp_[REDACTED]`.
    A value inferred only from an inherited environment variable whose name
