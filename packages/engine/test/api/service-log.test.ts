@@ -23,6 +23,7 @@ import * as Stream from "effect/Stream";
 import { mintAgentToken } from "../../src/identity/tokens.ts";
 import { registerRebuildCheck } from "../support/rebuildCheck.ts";
 import { ownerBearer } from "../support/socketClient.ts";
+import { withWorkerInstructions } from "../support/instructionPrompt.ts";
 import {
   agentToken, makeServiceRoot, ownerClient, peekEcho, promptTexts, requestId, startFakeAgent, startService, stopAllServices, turnEnded, waitFor, waitServing,
 } from "../support/serviceProcess.ts";
@@ -133,7 +134,7 @@ live("A4 inherited flags preserve stored and delivered prompts while a long prov
     const owner = yield* ownerClient(root);
     const agent = yield* startFakeAgent(root, owner, owner, { script: { turns: [[], []] } });
     const safe = `Set TOKENIZERS_PARALLELISM=false and max tokens to 32000. ${ignored.join("; ")}`;
-    yield* owner.prompt({ requestId: requestId(), agentId: agent.agentId, text: safe } as never);
+    const first = yield* owner.prompt({ requestId: requestId(), agentId: agent.agentId, text: safe } as never);
     yield* turnEnded(owner, agent.agentId);
     yield* owner.prompt({ requestId: requestId(), agentId: agent.agentId, text: `key ${providerKey}` } as never);
     const texts = yield* waitFor("both delivered prompts", () => {
@@ -141,7 +142,7 @@ live("A4 inherited flags preserve stored and delivered prompts while a long prov
       const texts = echo === undefined ? [] : promptTexts(echo);
       return texts.length === 2 ? texts : undefined;
     });
-    expect.soft(texts).toEqual([safe, "key [REDACTED]"]);
+    expect.soft(texts).toEqual([withWorkerInstructions(texts[0]!, first.deliveryId, safe), "key [REDACTED]"]);
     const database = new DatabaseSync(join(root.state, "events.sqlite"), { readOnly: true });
     try {
       const events = database.prepare("SELECT payload_json FROM events WHERE event_type = 'DeliveryQueued' ORDER BY sequence").all()
@@ -163,11 +164,11 @@ live("A4 an explicit three-character secrets.json value stays redacted in every 
       script: { turns: [[]] }, environment: { SHORT_VALUE: "secret:short" },
     });
     const text = Object.values(forms(secret)).join(" | ");
-    yield* owner.prompt({ requestId: requestId(), agentId: agent.agentId, text } as never);
+    const first = yield* owner.prompt({ requestId: requestId(), agentId: agent.agentId, text } as never);
     const texts = yield* waitFor("the explicit short-secret prompt", () => {
       const echo = peekEcho(agent.echo);
       const texts = echo === undefined ? [] : promptTexts(echo);
       return texts.length === 1 ? texts : undefined;
     });
-    expect(texts).toEqual([Object.values(forms(secret)).map(() => "[REDACTED]").join(" | ")]);
+    expect(texts).toEqual([withWorkerInstructions(texts[0]!, first.deliveryId, Object.values(forms(secret)).map(() => "[REDACTED]").join(" | "))]);
   })), 60_000);

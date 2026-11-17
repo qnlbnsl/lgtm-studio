@@ -17236,6 +17236,294 @@ Its "reload" step failed with "SocketReadError: An error occurred during Read".
 A second run on the same commit passed that step and gave the known result of 19 of 23.
 The cause of the single failure is not known.
 
+## 1170. Agents did not receive the default workflow instructions on launch.
+
+State: fixed in s22.
+
+A start sent only the caller's prompt.
+The orientation read supplied named owner advice or one generic line.
+The engine now composes shipped role files and their bases before the adapter's first ordinary prompt in a fresh session.
+The same composition is available through `roles.orient`.
+Stored prompt events retain their existing text and shape.
+
+## 1171. Repository role overrides need an owner decision about trust.
+
+State: open.
+
+A repository could carry instructions written by a stranger.
+This unit loads role overrides only from the configured home's `.lgtm/roles` folder.
+The owner must decide whether repository files may instruct agents before repository overrides are built.
+
+## 1172. Role instruction files have no editor or file-management API.
+
+State: open.
+
+The owner can replace instruction files on disk.
+The existing authenticated role-file command can replace named advice.
+There are no commands to list, read or save individual Markdown instruction files.
+An editor and those application programming interface (API) actions remain future work.
+
+## 1173. Done reports and product-only commits remain prose rules.
+
+State: open.
+
+The engine does not require a completion report to name an existing branch head with finished checks.
+It does not reject a merge that includes run notes or scratch files.
+The shipped instructions require these checks from agents and leads.
+Mechanical enforcement remains future work.
+
+## 1174. Two existing documents contain details that need the owner's publication decision.
+
+State: open.
+
+The review identified private project references and dated owner quotations in `docs/specs/2026-11-05-build-loop-design.md`.
+It also identified a private source commit reference in `docs/foundry.md`.
+This unit leaves those passages unchanged and does not repeat their contents here.
+
+## 1175. Several drafted role rules assumed capabilities the engine does not provide.
+
+State: corrected in the shipped prose in s22.
+
+Only the actual project lead can create project records or change other agents' task assignments.
+A reviewer cannot add a note to another agent's task.
+Agents cannot list the owner's harness choices.
+Team creation does not allocate an isolated folder for each builder.
+The engine does not enforce frozen tests, hide review authorship or store executable test commands in project settings.
+The default instructions now route restricted work to the project lead and mark unavailable evidence as unknown.
+These capabilities were not added in this unit.
+
+## 1176. Adapter user-message echoes could expose injected instructions in the thread.
+
+State: fixed in s22.
+
+The adapter can echo the first prompt in arbitrarily split user-message chunks.
+The runner now removes its exact ephemeral instruction prefix from live user echoes before redaction and event publication.
+The caller's echoed prompt remains visible.
+Replay updates retain their existing behavior and write no thread items.
+Round 2 also suppresses changed echoes after recognizing the engine header, as recorded in 1189.
+
+## 1177. The first instruction store used syntax the Node.js strip-only loader cannot run.
+
+State: fixed in s22.
+
+A constructor parameter property passed through the test transpiler but failed in the relocated package test.
+The store now uses explicit fields and constructor assignments.
+The package test executes the module with Node.js and loads its adjacent Markdown resources from a path containing spaces.
+
+## 1178. The existing foundry guide still suggests owner-only reads to agents.
+
+State: open.
+
+The guide tells a run to read `roles.settings.get` and `roles.actions.list`.
+Those commands are restricted to the owner.
+The new default instructions do not send agents to these commands.
+Rewriting the older foundry workflow guidance is outside this unit.
+
+## 1179. The first default lead base omitted an existing lead-advice requirement.
+
+State: fixed in s22.
+
+Three established project lead orientation tests require advice to tell the lead to start its own workers.
+The first copied lead base did not say this explicitly.
+The shipped base now preserves that instruction and the existing post-acknowledgement requirement.
+The assertions remain unchanged.
+
+## 1180. The API initially hid the new fixed instruction-limit errors.
+
+State: fixed in s22.
+
+The command handler returned a specific typed refusal for oversized instructions.
+The authenticated transport reduced it to its generic refusal because the new reasons were absent from its allow-list.
+The transport now preserves the three fixed instruction read and size errors.
+It still rejects arbitrary failure text.
+
+## 1181. Existing prompt tests expected the old instruction-free first turn.
+
+State: corrected in s22.
+
+The configuration retry, service redaction and service restart tests compared the first adapter prompt with the caller's text alone.
+They now compare the complete instruction envelope, its delivery identifier and the unchanged caller text.
+Later prompts and existing-session replays retain their exact previous expectations.
+The capacity tests now compare the full composed advice for recognized instruction names, including unrecognized authority prefixes.
+Their authority and capacity-limit assertions remain unchanged.
+No assertion or wait was weakened.
+Round 2 removes the instruction block's delivery identifier and restores generic advice for unknown kinds, as recorded in 1187 and 1190.
+
+## 1182. The first regression fixtures contained incorrect helper calls and expectations.
+
+State: corrected in s22.
+
+An acceptance fixture reversed the existing wait helper's label and callback arguments.
+A directory-swap fixture expected two independent file resolutions to share a pinned directory.
+It now swaps the directory within a single role-file read.
+A secret fixture initially expected the planted secret to survive redaction.
+It now requires the override marker with the secret removed.
+Two test expressions cast an Effect before yielding its result.
+Removing those unnecessary casts restored the type check.
+No production limit or wait was relaxed to accommodate these fixture errors.
+Round 2 fixtures initially used an invalid legacy role-file hash and looked for an agent identifier on a carry-on event whose delivery target supplies that identity.
+Both fixtures now follow the stored contracts.
+Two new test helpers also needed explicit type annotations for the existing restart environment and public reply.
+
+## 1183. Two new pure tests omitted the required rebuild-hook registration.
+
+State: fixed in s22.
+
+The whole-suite registration guard found the instruction store and echo tests without the repository's required hook.
+Both now register the existing hook with `noLog: true` because they create no event log.
+The discovery guard remains unchanged.
+
+## 1184. Browser asset rewriting broke Node resource paths in web tests.
+
+State: fixed in s22.
+
+Three web test files reproduced role resource read failures.
+A direct browser-environment test exposed a rewritten filesystem path starting at `/packages/`.
+Importing the Node.js URL constructor under its ordinary name did not prevent the asset rewrite.
+The instruction store now imports it as `NodeURL` for its filesystem resources.
+The regression test loads real instruction resources in the browser test environment.
+Round 2 removes the global-constructor stub because it did not exercise the browser asset rewrite.
+Removing the Node.js constructor alias makes the real browser test fail.
+The existing web tests and their assertions remain unchanged.
+
+## 1185. Instruction composition could prevent a healthy session from reloading.
+
+State: fixed in s22 round 2.
+
+Existing-session loads no longer read or compose instructions.
+Legacy oversized advice and a shipped-file read failure cannot turn those loads into reload failures.
+New sessions still require a valid composition.
+Saving named role-file advice now checks each applicable composition before planning its event.
+An oversized composition returns the existing typed refusal.
+
+## 1186. A failed first turn could lose its role instructions on retry.
+
+State: fixed in s22 round 2.
+
+The runner previously cleared the instruction obligation before the send was confirmed.
+It now keeps that obligation until a carrying turn succeeds without error or cancellation.
+Capacity outcomes, usage pauses, sign-in failures, prompt errors and cancellation retain it.
+A failed transport send also retains it.
+Fake-adapter tests cover every prompt outcome and both cancellation protocol versions.
+
+## 1187. The engine instruction label misidentified its source and changed replay acceptance.
+
+State: fixed in s22 round 2.
+
+Engine instructions now have a separate engine label and a fresh random marker.
+A lead's brief retains its agent-data envelope and has its actual sending agent identified before that envelope.
+The engine block contains no delivery identifier.
+It therefore adds no acceptance proof to replayed owner text.
+Restart tests cover saved first-prompt history before and after acceptance.
+
+## 1188. Missing override files produced unnecessary warnings.
+
+State: fixed in s22 round 2.
+
+A missing file or override directory is the normal default and is now silent.
+Unsafe, unreadable and oversized overrides retain a fixed diagnostic without supplied paths or content.
+
+## 1189. A changed adapter echo could expose instruction text in the thread.
+
+State: fixed in s22 round 2.
+
+After recognizing the engine header, the filter suppresses the block through its closing marker even when its body or line endings differ.
+A malformed closing marker withholds the remaining echo.
+Chunk-boundary tests cover changed text and markers.
+A real service test checks thread privacy with normalized line endings.
+
+## 1190. Mismatched role kinds selected inappropriate prose and owner advice.
+
+State: fixed in s22 round 2.
+
+A recognized name with a mismatched kind now receives only the parsed kind's base.
+Unknown kinds receive the generic worker base and no owner advice named for a known role.
+The role table includes `lead:builder`, `worker:build-lead`, `chef:builder` and `:builder`.
+The capacity test again checks that unknown kinds receive generic advice.
+Permission and capacity checks remain unchanged.
+
+## 1191. Several shipped instructions omitted required fields or contradicted their delivery format.
+
+State: fixed in s22 round 2.
+
+Review reports and waits now name all required fields.
+The bases describe sections of one composed text.
+Worker posting rules allow final reports and required test or review requests.
+Test runners may not edit product files anywhere.
+Project leads receive self-contained approval rules after a fresh resume.
+Those rules keep ordinary end-result confirmation separate from the two project permissions.
+Contract checks cover all fifteen files and the required report and wait fields.
+
+## 1192. A failed composition also withheld orientation identity and roster.
+
+State: fixed in s22 round 2.
+
+Orientation now returns its metadata and roster with a fixed unavailable-advice note when composition fails.
+It also substitutes that note when the encoded advice would exceed the reply bound.
+The existing refusal remains necessary if the roster and metadata alone exceed 256 kibibytes.
+The roster is not silently truncated.
+
+## 1193. The global URL stub did not test the browser resource-path workaround.
+
+State: fixed in s22 round 2.
+
+The trivial stub test has been removed.
+The real browser-environment resource test fails without the Node.js URL constructor alias.
+
+## 1194. Override loading requires the descriptor filesystem and a real home directory.
+
+State: documented limitation in s22 round 2.
+
+Overrides do not apply without `/proc/self/fd` or when the configured home path is a symbolic link.
+The engine falls back to its shipped files.
+A missing descriptor filesystem has a distinct diagnostic.
+The constraints are now stated in `docs/roles.md`.
+
+## 1195. Agents running as the engine's user can write future role instructions.
+
+State: open, pending the planned agent sandbox.
+
+An agent with shell access or full permission can write an override as the same operating-system user.
+The next agent of that role receives the override as engine instructions.
+This is the same file-access exposure as `~/.lgtm/workflows`.
+Safe file opening does not isolate programs that run as the same user.
+The exposure is now stated in `docs/roles.md`.
+
+## 1196. Compaction repeats instruction costs and harness compaction is not detected.
+
+State: documented limitation in s22 round 2; harness compaction detection remains open.
+
+Every successful engine-requested compaction restores the full instructions on the next ordinary prompt.
+The restored text costs roughly 10 kibibytes for a default lead and can reach the 48 kibibyte composition bound.
+A compaction started by the harness itself is not detected.
+These limits are now stated in `docs/roles.md`.
+
+## 1197. Older integration fixtures expected behavior changed by the second review.
+
+State: corrected in s22 round 2.
+
+Three orientation assertions expected named builder advice for the mismatched role `lead:builder`.
+They now require the exact lead base while retaining their identity, roster and transport assertions.
+The carry-on dispatch test expected a bare second prompt after a failed first turn.
+It now requires the complete repeated instruction block and unchanged carry-on text.
+Its prompt count, ordering and acceptance assertions remain intact.
+The maximum stored role-file fixture placed all repeated short secrets in one advice value.
+Redaction of its replacement markers now exceeds the composition bound.
+The test requires that single-role refusal and spreads the same repetitions across ten roles for its admitted fixture.
+It still checks exact content, one redaction at storage, the full 64 kibibyte bound and refusal of one additional byte.
+
+## 1198. The sign-in process-group check failed in a full run and passed alone.
+
+State: open, load-sensitive test failure recorded in s22 round 2.
+
+The final whole-suite run reported one failure in `packages/engine/test/harnesses/signin.test.ts`.
+The process-group cleanup test saw a descendant still running at its immediate check on line 67.
+The same file passed all eight tests when run alone after the suite finished.
+It also passed in the earlier whole-suite run.
+The task classifies a full-run failure that passes alone as load.
+Neither the sign-in implementation nor its test changed in this unit.
+No timeout or assertion was relaxed.
+
 ## 1140. Chat cannot recover an unloadable session and mislabels a crash
 
 Found: 2026-11-16, while building unit s21-recover.
@@ -17706,6 +17994,97 @@ This is the same load sensitivity that issues 966, 1014, 1044, 1066, 1079 and 11
 
 State: open. Recorded on 2026-11-16.
 
+## 1230. Restored instructions called every agent message the start brief.
+
+State: fixed in round 3.
+
+The second review identified a routed child question being described as the lead's brief after compaction.
+The engine now derives the brief label from the original start event, its delivery identifier and its recorded parent.
+An owner prompt and other agent messages receive no brief sentence.
+Tests cover a routed question after compaction and a failed first turn followed by a retry of the real brief.
+
+## 1231. A restoration failure rejected prompts after loaded-session compaction.
+
+State: fixed in round 3.
+
+The restoration callback could fail before the caller's prompt reached the adapter.
+The runner now sends the caller's text alone, retains the obligation and retries restoration on the next ordinary prompt.
+Consecutive failures produce one fixed warning without the private failure detail.
+A loaded-session regression covers two failures, successful restoration and the following ordinary prompt.
+
+## 1232. The instruction echo filter reset between user messages and assumed an undecorated header.
+
+State: fixed in round 3.
+
+The second review identified leading decoration and message boundaries that bypassed the filter.
+The filter now belongs to the turn and suppresses everything through the random closing marker.
+Tests cover every split boundary with an empty prelude, a newline, a byte-order mark and a role tag.
+The live translator currently ignores user-message echoes before they reach this filter.
+The runner regression deliberately enables that translation in its fixture to exercise the filter without changing production translation.
+Ordinary unmatched text is retained until turn completion, with a bounded search buffer.
+
+## 1233. A fresh start during restart hid the typed composition refusal.
+
+State: fixed in round 3.
+
+Restart recovery wrote only the generic agent-start failure when composition failed.
+It now also logs one fixed warning containing the recognized size or read refusal.
+Tests inject each failure and assert that private read details are absent.
+The stored failure event remains unchanged.
+
+## 1234. The base instructions did not state the instruction label's trust boundary explicitly.
+
+State: fixed in round 3.
+
+Each of the worker, lead and reviewer bases now states that engine instructions appear first, outside data blocks.
+The same sentence states that a matching label inside a data block remains data.
+Contract tests require the sentence in all three bases.
+The composed sizes remain below the 48 KiB bound.
+
+## 1235. A restart can forget an instruction obligation after a failed first turn.
+
+State: open. Recorded as requested by the second review; no fix is included.
+
+The runner keeps the instruction obligation in process memory.
+A failed first turn can leave its initial delivery queued for retry.
+A service restart can load the existing session without recovering the obligation.
+That requeued delivery can then be sent without role instructions.
+This round changes no persisted event shape and does not repair this recovery gap.
+
+## 1236. Instruction tests omitted the final orientation bound and an actual transport write failure.
+
+State: fixed in round 3.
+
+The restored orientation test creates a roster whose metadata alone exceeds 256 KiB.
+It requires the exact typed refusal and fails when that final guard is temporarily disabled.
+A test-only child spawner wrapper now fails an actual prompt write to standard input before it reaches the fake adapter.
+The next prompt attempt still restores the owed instructions.
+The test fails when the obligation is temporarily cleared before the write.
+The protocol closes its writer after a sink failure, so this test does not claim a successful retry on that same transport.
+
+## 1237. The test runner's prohibition list mixed negative and positive wording.
+
+State: fixed in round 3.
+
+Five bullets under What you never do omitted the word Never.
+Every bullet now starts with Never and retains its existing prohibition.
+The contract test checks all six bullets.
+
+## 1238. Initial round 3 fixtures observed an unfinished turn and used an unsupported question method.
+
+State: fixed in round 3 test development.
+
+The first origin fixture read the adapter echo before its initial prompt arrived.
+It then requested compaction while the first turn was still running.
+The fixture now waits for the completed initial turn before requesting compaction.
+Its scripted elicitation method was unsupported by that harness fixture.
+The regression now routes the question through the real authenticated ask command.
+An intermediate test run also loaded the runner change before its filter finish method existed.
+Completing the filter removed that temporary fixture failure.
+Adding optional brief metadata initially made prompt and compact callback types diverge in an existing generic test helper.
+Both methods now share the same optional metadata shape.
+No existing wait was widened.
+
 ## 1166. Four browser journeys failed in the full check of the recovery unit and passed alone.
 
 The journeys were `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:783` and `studio.spec.ts:1189`.
@@ -17715,7 +18094,7 @@ This is the load sensitivity that issue 1139 and the issues it names record.
 
 State: open. Recorded on 2026-11-16.
 
-## s23-1. Project workers shared their starter's checkout.
+## 1250. Project workers shared their starter's checkout.
 
 State: Fixed in unit s23-worktrees on 2026-11-16.
 
@@ -17725,7 +18104,7 @@ The start command accepts an existing registered worktree for intentional reuse.
 The owner's start accepts an explicit project identifier.
 An agent cannot use that identifier to join another project.
 
-## s23-2. Integration and terminal choices assumed a worker belonged beneath a team.
+## 1251. Integration and terminal choices assumed a worker belonged beneath a team.
 
 State: Fixed in unit s23-worktrees on 2026-11-16.
 
@@ -17735,7 +18114,7 @@ The Terminal chooser omitted that worker too.
 Both paths now include registered workers beneath their recorded project parent.
 The worker retains the same existing controls in the website.
 
-## s23-3. Lead instructions must describe automatic worker allocation.
+## 1252. Lead instructions must describe automatic worker allocation.
 
 State: Open, pending the merge of unit s23-worktrees and the role instruction unit.
 
@@ -17744,7 +18123,7 @@ The assignment reports that the role unit tells leads to allocate worker folders
 Those instructions must describe the default allocation and the optional `worktreeId` after both units merge.
 No absent instruction file was created in this unit.
 
-## s23-4. Retained worker checkouts need an owner-directed cleanup path.
+## 1253. Retained worker checkouts need an owner-directed cleanup path.
 
 State: Open.
 
@@ -17754,7 +18133,7 @@ This preserves uncommitted changes and commits that have not reached the parent.
 An optional cleanup command should prove that the exact registered checkout is clean and merged before removal.
 The internal rollback for a refused new allocation is not a general removal command.
 
-## s23-5. A hard service crash can leave an allocation without a registration.
+## 1254. A hard service crash can leave an allocation without a registration.
 
 State: Open.
 
@@ -17766,7 +18145,7 @@ The engine does not adopt or delete it on a later start.
 A retry chooses another safe numeric name.
 A durable allocation intent would allow this interval to be reconciled on startup.
 
-## s23-6. A failed worker allocation could retain its reserved empty folder.
+## 1255. A failed worker allocation could retain its reserved empty folder.
 
 State: Fixed in unit s23-worktrees on 2026-11-16.
 
@@ -17776,7 +18155,7 @@ Rollback now checks whether the reference exists.
 The reserved folder has an exclusive directory identity and is removed only when it is still that empty directory.
 Injected failures before checkout, after branch creation, and after checkout cover the cleanup.
 
-## s23-7. The existing home-folder ceiling blocks lead starts in home-hosted repositories.
+## 1256. The existing home-folder ceiling blocks lead starts in home-hosted repositories.
 
 State: Open, preserving the existing security rule.
 
@@ -17789,7 +18168,7 @@ This unit does not weaken that rule.
 Using a repository outside the protected home permits lead-started workers under the current policy.
 Changing that policy requires the owner's explicit security decision.
 
-## s23-8. The installer process-tree test can observe a live descendant after timeout cleanup.
+## 1257. The installer process-tree test can observe a live descendant after timeout cleanup.
 
 State: Open, observed during the full unit s23-worktrees suite.
 
@@ -17802,3 +18181,34 @@ Neither the installer nor that test was changed in this unit.
 The full-run result was 9,921 passed tests, one failed test, and two skipped tests.
 A subsequent whole-suite run passed all 638 files, with 9,922 tests passed and two skipped.
 That run used the unchanged installer test and its original timing.
+
+## 1239. In one live check of three, the small Claude lead did not attempt the exact commands it was asked to run.
+
+The live check starts a Claude Code lead on the smallest model at low effort.
+With the role instructions in place, the lead receives about 11,000 bytes of instructions ahead of its first prompt.
+In the first of three runs on the role instruction branch, the steps "removed-variables", "state-read", "always-allow", "permission-kinds" and "reload" reported that Claude did not attempt the command.
+That run passed 16 of 23 steps.
+The second run passed 18 of 23, with the "reload" socket read error that issue 1124 records.
+The third run passed 19 of 23, which is the known result.
+One run in three does not prove a cause.
+A small model that is given long role instructions may follow them over a direct request from the owner.
+
+State: open. Recorded on 2026-11-16. Watch the next live checks for the same pattern.
+
+## 1240. Browser journeys and one sign-in test failed under load in the full check of the role instruction unit.
+
+The unit test "stops the process group on timeout, owner stop and disconnection after the grace period" in `packages/engine/test/harnesses/signin.test.ts` failed in the whole run and passed alone.
+The journeys `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:902` and `studio.spec.ts:1132` failed in the whole browser run.
+Other builders were running their own test suites on the same computer.
+The journey results after rerunning each alone are recorded in the pull request for this unit.
+
+State: open. Recorded on 2026-11-16.
+
+## 1241. The foreground lock race test failed once in a whole run under load.
+
+The test "two foreground launches race for one lifetime lock" in `packages/cli/test/serve-foreground.test.ts` failed in a whole run of the unit tests on the role instruction branch after `master` was merged in.
+Two builders were running their own test suites on the same computer.
+The test passed when its file was run alone.
+The role instruction unit does not change that code.
+
+State: open. Recorded on 2026-11-16.

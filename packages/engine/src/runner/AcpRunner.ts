@@ -1,3 +1,5 @@
+import { instructionEnvelope } from "../routing/envelope.ts";
+import { instructionEcho } from "../roles/instructionEcho.ts";
 import { randomUUID } from "node:crypto";
 import { readlinkSync, rmSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -67,6 +69,9 @@ type Spawn = Parameters<Runner["Service"]["start"]>[0];
 type Send = Parameters<Runner["Service"]["prompt"]>[0];
 type Hold = Effect.Success<ReturnType<typeof makePermissionHold>>;
 interface Turn {
+  readonly compact?: boolean;
+  readonly instructionPrefix?: string;
+  readonly instructionEcho?: ReturnType<typeof instructionEcho>;
   messageIds?: Map<string, string>;
   readonly deliveryId: Send["delivery"]["id"];
   readonly sentSequence: number;
@@ -108,6 +113,8 @@ interface Process {
   context: ContextUsage;
   contextNeedsTurn: boolean;
   commands: ReadonlyArray<{ name: string }>;
+  instructionsPending: boolean;
+  instructionRestoreWarned: boolean;
   message?: {
     readonly id: string;
     readonly sourceId?: string;
@@ -294,6 +301,13 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
     if (turn.ended || !turn.replied || !turn.idle || entry.stopped || entry.dead) return;
     turn.ended = true;
     yield* drainMessages(entry, true);
+    const tail = turn.instructionEcho?.finish() ?? "";
+    if (tail.length > 0) {
+      const text = yield* redactText(tail, entry.covered);
+      turn.text += text;
+      yield* emit({ _tag: "deliveryUpdate", ...identity(entry), deliveryId: turn.deliveryId,
+        kind: "message", itemId: randomUUID(), replay: false, role: "user", text, content: { _tag: "text", text } });
+    }
     yield* drainTerminals(entry);
     const clean = yield* redactText(turn.error ?? turn.text, entry.covered);
     const harness = entry.input.harness.id;
@@ -306,6 +320,9 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
       outcome: turn.cancelled ? { _tag: "success" } : classification === "capacity" ? { _tag: "capacity", error: clean } : classification !== undefined ? { _tag: "pause", reason: classification, error: clean,
         ...(classification === "out-of-usage" && turn.error !== undefined && turn.resetAt !== undefined ? { resetAt: turn.resetAt } : {}) }
         : turn.error !== undefined ? { _tag: "error", error: clean } : { _tag: "success" } });
+    const succeeded = turn.error === undefined && !turn.cancelled && classification === undefined;
+    if (turn.compact && succeeded) entry.instructionsPending = true;
+    else if (turn.instructionPrefix !== undefined && succeeded) entry.instructionsPending = false;
     if (entry.turn === turn) delete entry.turn;
     yield* emit({ _tag: "turnEnded", ...identity(entry), deliveryId: turn.deliveryId,
       sentSequence: turn.sentSequence,
@@ -502,7 +519,7 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
       const processEntry: Process = { input, incarnation: sha256Hex(Redacted.value(input.token)), scope, child, client, secrets: resolvedSecrets, covered,
         holds: new Map(), responses: new Map(), replay: [],
         terminalOutput: makeTerminalOutput({ redactChunk: (id, text, final) => redactChunk(id, text, final, covered), redactText: (text) => redactText(text, covered) }), sessionId: session?._tag === "acp" ? session.sessionId : "", version: 0,
-        loading: session !== undefined, ready: false, stopped: false, dead: false, mode: startingMode, options: [], commands: [], applied: {}, configuring: false, configurationUncertain: false, context: { _tag: "unavailable", reason: "not-reported" }, contextNeedsTurn: session !== undefined };
+        instructionsPending: session === undefined, instructionRestoreWarned: false, loading: session !== undefined, ready: false, stopped: false, dead: false, mode: startingMode, options: [], commands: [], applied: {}, configuring: false, configurationUncertain: false, context: { _tag: "unavailable", reason: "not-reported" }, contextNeedsTurn: session !== undefined };
       entry = processEntry;
       processes.set(input.agentId, processEntry);
       yield* Scope.addFinalizer(scope, Effect.gen(function* () {
@@ -608,11 +625,13 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
               }
               current.message = { id, ...(translated.messageId === undefined ? {} : { sourceId: translated.messageId }), role: translated.role, pending: [], released: "" };
             }
-            current.message.pending.push({ length: translated.text.length, event: {
+            const visibleText = translated.role === "user" ? current.turn?.instructionEcho?.push(translated.text) ?? translated.text : translated.text;
+            if (visibleText.length === 0 && translated.text.length > 0) continue;
+            current.message.pending.push({ length: visibleText.length, event: {
               _tag: "deliveryUpdate", ...identity(current), deliveryId, kind: "message", itemId: current.message.id, replay: current.loading,
               ...(translated.role === undefined ? {} : { role: translated.role }), text: "",
             } });
-            current.message.released += yield* redactChunk(current.message.id, translated.text, false, current.covered);
+            current.message.released += yield* redactChunk(current.message.id, visibleText, false, current.covered);
             yield* drainMessages(current, false);
             continue;
           }
@@ -851,8 +870,24 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
     if (input.delivery.target !== input.agentId || (!compact && input.delivery.content._tag !== "prompt" && input.delivery.content._tag !== "carry-on")) return yield* rejected("delivery does not match send");
     if (entry.configuring || entry.configurationUncertain) return yield* rejected("configuration is not confirmed");
     if (entry.turn !== undefined && !entry.turn.ended) return yield* rejected("agent already has a turn");
-    const text = compact ? yield* compactPrompt(entry.commands) : input.delivery.content._tag === "prompt" || input.delivery.content._tag === "carry-on" ? input.delivery.content.text : "";
-    const turn: Turn = { deliveryId: input.delivery.id, sentSequence: input.sentSequence, replied: false, idle: false, ended: false, text: "" };
+    const callerText = compact ? yield* compactPrompt(entry.commands) : input.delivery.content._tag === "prompt" || input.delivery.content._tag === "carry-on" ? input.delivery.content.text : "";
+    const owed = !compact && entry.instructionsPending;
+    let source = owed ? entry.input.instructions : undefined;
+    if (owed && source === undefined && entry.input.restoreInstructions !== undefined) {
+      const restored = yield* entry.input.restoreInstructions().pipe(Effect.result);
+      if (restored._tag === "Success") {
+        source = restored.success;
+        entry.instructionRestoreWarned = false;
+      } else if (!entry.instructionRestoreWarned) {
+        entry.instructionRestoreWarned = true;
+        yield* Effect.logWarning("Role instruction restoration failed; sending the caller text without instructions.");
+      }
+    }
+    const instructions = source === undefined ? undefined : yield* redactText(source, entry.covered);
+    const origin = input.startBrief === true && input.delivery.sender._tag === "agent" ? yield* redactText(input.delivery.sender.agentId, entry.covered) : undefined;
+    const instructionPrefix = instructions === undefined ? undefined : instructionEnvelope(instructions, origin);
+    const text = (instructionPrefix ?? "") + callerText;
+    const turn: Turn = { compact, ...(instructionPrefix === undefined ? {} : { instructionPrefix, instructionEcho: instructionEcho(instructionPrefix) }), deliveryId: input.delivery.id, sentSequence: input.sentSequence, replied: false, idle: false, ended: false, text: "" };
     entry.turn = turn;
     entry.contextNeedsTurn = false;
     const sent = yield* Deferred.make<void, RunnerRejected>();

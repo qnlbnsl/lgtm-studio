@@ -499,6 +499,7 @@ test("6.7 R17 step 10: catches abandoning an agent caught starting or loading a 
     yield* recover;
     expect(runner.callsOf("load")).toEqual([]);
     expect(runner.callsOf("start").map((entry) => entry.input.agentId)).toEqual(["starting"]);
+    expect(runner.callsOf("start")[0]!.input.instructions).toContain("# Rules for every worker");
     expect(promptsAfter(runner, watermark, "starting").map((entry) => entry.input.delivery.id)).toEqual(["first-prompt"]);
     expect(yield* carryRows("starting")).toEqual([]);
   }));

@@ -1,3 +1,4 @@
+import { composeInstructions } from "../roles/compose.ts";
 import { requireAgentBuilding } from "../project/approvals.ts";
 import { safeStartFailure, type StartFailure } from "@lgtm/contracts/startFailure";
 import { randomUUID } from "node:crypto";
@@ -47,6 +48,7 @@ export const start = (input: Input, payload: Payload<"start">): Effect.Effect<Pl
       Effect.mapError((error) => refused(`Start folder: ${error.reason}`)),
     );
     const folder = yield* folderForSpawn(grant, "start").pipe(Effect.mapError(() => refused()));
+    const instructions = yield* composeInstructions(runtime, snapshot, payload.role);
     const agentId = Schema.decodeUnknownSync(AgentId)(randomUUID());
     const deliveryId = Schema.decodeUnknownSync(DeliveryId)(randomUUID());
     const token = mintAgentToken();
@@ -90,7 +92,7 @@ export const start = (input: Input, payload: Payload<"start">): Effect.Effect<Pl
           const selectedEffort = current?.effort;
           if (waiting !== "starting" && waiting !== "paused") return false;
           return yield* handle.cancellable(bounded(runtime, agentId, SETUP_TIMEOUT_MILLIS, Effect.suspend(() => runtime.runner.start({
-            agentId, token: token.token, folder, grant, harness, account,
+            agentId, token: token.token, folder, grant, harness, account, instructions,
             permission: payload.permission, ...(selectedModel === undefined ? {} : { model: selectedModel }), ...(selectedEffort === undefined ? {} : { effort: selectedEffort }),
           })))).pipe(
             Effect.flatMap(Option.match({ onNone: () => Effect.succeed(true), onSome: (session) => runtime.log.transact((append) => Effect.gen(function* () {

@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { it } from "@effect/vitest";
 import * as SqliteClient from "@lgtm/t3-node-sqlite/nodeSqliteClient";
@@ -127,7 +128,7 @@ it.effect("a refused automatic release does not record or count a successful cap
 });
 
 for (const role of ["chef:builder", ":builder", "worker:builder"]) {
-  it.effect(`loaded named limits preserve generic admission and advice for ${role}`, () => run((runner) => Effect.gen(function* () {
+  it.effect(`named instructions preserve generic admission and named-limit authority for ${role}`, () => run((runner) => Effect.gen(function* () {
     const client = yield* socket;
     yield* client["roles.role-file.set"]!({ requestId: "named-limits", content: JSON.stringify({ name: "Team", roles: {
       builder: { advice: "Custom builder advice.", limits: { capacityRetries: 0, stallMinutes: 25, ageMinutes: 60 } },
@@ -138,7 +139,7 @@ for (const role of ["chef:builder", ":builder", "worker:builder"]) {
     expect(reply.data).toBeTypeOf("string");
     const orient = unwrap({ data: String(reply.data) });
     expect(orient.kind).toBe("worker");
-    expect(orient.advice).toBe(role === "worker:builder" ? "Custom builder advice." : "Report your work and questions to your lead. Do not start agents. Do not ask the owner. Run board.acknowledge when starting to respond to a post.");
+    expect(orient.advice).toBe(readFileSync(new URL("../../../src/roles/instructions/worker-base.md", import.meta.url), "utf8") + (role === "worker:builder" ? "\n\nCustom builder advice." : ""));
     const delivery = yield* send(runner, worker, "Use the appropriate capacity policy.");
     yield* capacityReply(runner, worker, delivery);
     const rows = yield* eventually(alertLog, (rows) => rows.some((row) => row.event._tag === (role === "worker:builder" ? "DeliveryReturned" : "DeliveryHeld")));

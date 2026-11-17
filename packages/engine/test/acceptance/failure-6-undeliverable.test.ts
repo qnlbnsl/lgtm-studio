@@ -16,6 +16,7 @@ import {
   alive, eventsUntil, isTag, peekEcho, promptsOf, refusal, requestId, scenario, since, stopAllServices, tagged, waitFor,
 } from "../support/acceptance.ts";
 import { registerRebuildCheck } from "../support/rebuildCheck.ts";
+import { withWorkerInstructions } from "../support/instructionPrompt.ts";
 
 registerRebuildCheck({ noLog: true });
 afterEach(async () => { await stopAllServices(); });
@@ -28,7 +29,8 @@ scenario("6 undeliverable: messages for a busy agent wait behind its turn, are n
     name: "Busy", permission: "ask", prompt: "Long job.",
     script: { turns: [[{ step: "plan", entries: [] }, { step: "wait_for_file", path: gate }], [], [], []] },
   });
-  yield* eventsUntil(w.owner, 0, "the long job to be taken", isTag("DeliveryAccepted", agent.agentId));
+  const first = yield* eventsUntil(w.owner, 0, "the long job to be taken", isTag("DeliveryAccepted", agent.agentId));
+  const firstId = deliveryOf(tagged(first, "DeliverySent", agent.agentId)[0]!);
   const mark = yield* w.watermark();
   const ids: string[] = [];
   for (const text of ["Second.", "Third.", "Fourth."]) {
@@ -46,7 +48,8 @@ scenario("6 undeliverable: messages for a busy agent wait behind its turn, are n
   const events = yield* eventsUntil(w.owner, mark, "the last message to be taken", (envelope) =>
     envelope.event._tag === "DeliveryAccepted" && envelope.agentId === agent.agentId && deliveryOf(envelope) === ids[2]);
   expect(tagged(events, "DeliverySent", agent.agentId).map(deliveryOf), "the queue was delivered out of order or dropped a message").toEqual(ids);
-  expect(promptsOf(peekEcho(agent.echo)!)).toEqual(["Long job.", "Second.", "Third.", "Fourth."]);
+  const received = promptsOf(peekEcho(agent.echo)!);
+  expect(received).toEqual([withWorkerInstructions(received[0]!, firstId, "Long job."), "Second.", "Third.", "Fourth."]);
 }));
 
 scenario("6 undeliverable: messages still queued for an agent that then crashes go back to their sender as not delivered, the sender is told, the message being worked on is not returned, and a later message is refused (breaks if a crash drops queued messages silently, returns the one already taken, or leaves the sender unaware)", (w) => Effect.gen(function* () {

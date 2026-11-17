@@ -50,6 +50,8 @@ These are the intended pieces. Each one is tracked in more detail in
 
 - **The foundry.** The backend that knows about orchestrators, team leads, and
   the different kinds of worker, and that starts, stops, and reassigns them.
+  The [default role instructions](docs/roles.md) reach each agent in its first turn.
+  The owner can override their files under `~/.lgtm/roles`.
 - **A strict message board.** Channels per team, direct messages, and clear
   rules for who gets woken by which post. The board's first job is to save
   turns and tokens.
