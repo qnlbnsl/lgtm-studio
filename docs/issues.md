@@ -19646,7 +19646,8 @@ Found: 2026-11-17, in the second independent s27 review.
 The fake now requires the authentication filter and supplies zero-exit error and timeout states.
 Tests cover those states, a different merged head, a squash merge, and an encoded slash in a base name.
 The transport test checks the complete delivery option set.
-The required whole unit run must follow the final behavior changes in this round.
+The whole unit suite ran after the final behavior changes and passed all 672 files.
+It passed 10,335 tests and skipped two tests.
 
 ## s27-17. The file-editor browser failure also occurs on the unit's base commit.
 
@@ -19657,7 +19658,9 @@ The failure waited for the first external-edit conflict panel.
 That is also a failure point recorded for round 2 in s27-10.
 This worker ran no other test job during those trials.
 Host load observations were retained because other users' processes are outside this worker's control.
+Five sequential one-test invocations on signed implementation 232b243b passed all five times.
 The file-editor implementation and its assertions have not been changed by this unit.
+These observations establish a baseline failure without establishing its cause or proving that the intermittent failure is gone.
 
 ## s27-18. An existing writer test intermittently misses its Git hold marker.
 
@@ -19667,3 +19670,32 @@ The issue 579/583 queued-registration test failed its existing five-second hold-
 It passed unchanged when rerun alone.
 The local approval path and its assertion timeout have not changed in this round.
 The failure does not yet establish its cause.
+The unchanged test also passed in the final whole unit run.
+
+## s27-19. Seven browser journeys failed only in the round 3 whole run.
+
+State: open.
+Found: 2026-11-17, during the required round 3 browser gate.
+The whole run passed 69 journeys and failed eight journeys.
+Seven failures passed unchanged when each was rerun alone.
+They were main approval, stale reviewed heads, reported evidence, temporary-remote synchronization, registered component View, live projects and board, and the file editor.
+The first six waited for prepared data, updated evidence, a fetch notice, a rendered iframe attribute, or approval completion.
+The file editor waited for its existing five-second save-busy check.
+Its separate baseline comparison is recorded in s27-17.
+The original errors and the isolated logs were retained.
+No assertion or timeout was weakened.
+These results do not establish the failures' cause.
+
+## s27-20. The hosted browser journey intermittently exceeds its existing waits.
+
+State: open.
+Found: 2026-11-17, during the round 3 whole run and isolated rerun.
+The clean-base hosted journey passed the earlier focused invocation.
+It failed in the whole run while waiting ten seconds for its approval control.
+Its first isolated rerun failed while waiting thirty seconds for Refresh Git to release its busy state.
+An additional private diagnostic invocation of the unchanged helper passed.
+Its trace showed preparation, refresh, approval, and final status reads completing.
+The trace retained request names and timing without request data or credentials.
+The dirty-base hosted journey passed both the focused invocation and the whole run.
+The original journey passed unchanged in a second isolated invocation.
+The cause of the intermittent clean-base failure remains unproven.
