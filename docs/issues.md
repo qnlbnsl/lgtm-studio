@@ -19353,3 +19353,13 @@ The report said unsupported local checks left accounts unknown.
 The implementation actually marked those accounts signed out.
 The corrected report acknowledges that error.
 Its final visible-change list now covers the whole unit against the original base.
+
+## 1360. The startup unit left an existing journey asserting the old optimistic sign-in wording.
+
+The journey "live website: subscriptions, notifications and service settings persist through the engine" asserted "Signed in" for a test account that has no sign-in evidence.
+The startup unit changed that wording to "Not reported", and its builder ran only its own new journeys, so the failure appeared in the orchestrator's full check.
+The assertion in `packages/web/e2e/support/studioService.ts` now expects "Not reported" and the absence of "Signed out".
+In the same whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:361` and `studio.spec.ts:1189` failed under load, and each passed when run alone.
+Two live checks gave 19 and 13 of 23 steps; the short run was issue 272.
+
+State: the journey is fixed; the load-sensitive journeys remain open. Recorded on 2026-11-17.
