@@ -1403,3 +1403,20 @@ Without an active task, it uses the latest mapped tool summary or delivered mess
 The description preserves redaction and occupies one bounded line.
 An idle or stopped agent retains its lifecycle description.
 See issues s25-3 and s25-5 in `docs/issues.md`.
+
+## A terminal view of each harness
+
+State: Idea. Requested by the owner on 2026-11-17, to be added later.
+
+The owner wants to see a harness's own terminal program from the website, as a view of an agent.
+The "Terminal, Git, machines, and subscriptions" section above already plans a main conversation that can switch to a terminal, and taking over an agent's terminal.
+An agent run in ACP (Agent Client Protocol) mode has no terminal program to show, so this view depends on the interactive run mode or on a rendering of the agent's session.
+`SECURITY.md` governs who may read and type into such a terminal.
+
+## Keyboard shortcuts for navigation
+
+State: Idea. Requested by the owner on 2026-11-17, to be added later.
+
+The owner wants keyboard shortcuts for moving around the website, in the manner of Vim and Visual Studio Code.
+Examples are moving between projects, tabs, agents and panes, and opening the quick switcher, without the pointer.
+The shortcut sets, whether they can be chosen or remapped, and how they coexist with typing in the chat composer and the terminal are not decided.
