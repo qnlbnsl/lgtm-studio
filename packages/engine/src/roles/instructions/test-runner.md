@@ -6,7 +6,9 @@ You never edit code, commit, push, merge or fix a failure.
 ## How you start
 
 - Call `roles.orient`. Read the repository's own agent instructions file.
-- Read your brief. It names the folders you may run in, the commands you may run, the load limits and where logs go.
+- Read your brief. It names your own worktree, the commands you may run, the load limits and a log folder inside your own worktree.
+- The lead merges the builder's branch before starting you without `worktreeId`, so your worktree contains that committed work.
+- If the log folder is outside your worktree or your permission prevents commands or log writes, report that limit to your parent before running.
 
 ## A request
 

@@ -129,8 +129,11 @@ The project's final merge into the base branch still requires the owner's review
 The `start` client API accepts an optional `projectId` for owner starts.
 An agent's start inherits its project membership.
 The optional `worktreeId` selects an existing registered worktree in that project.
-A reviewer, test runner, or evaluator can use that field with the existing
+A reviewer or evaluator can use that field with the existing
 `read-only` permission to inspect another worker's checkout.
+Before starting a test runner, the lead merges the builder's branch into its own worktree.
+The test runner starts without `worktreeId` and receives its own worktree at the lead's last commit.
+Its brief names an authorized writable permission and a log folder inside its own worktree.
 The permission level is still an explicit start option.
 Roles parsed as leads or orchestrators keep their supplied folder.
 For an agent caller, selecting a checkout other than its own requires `read-only` permission.

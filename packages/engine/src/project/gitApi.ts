@@ -90,7 +90,7 @@ const checkedWorkspace = (input: Input, workspace: Workspace, git: GitService) =
   const checkout = yield* register(workspace.path)
   if (main.commonDirectory !== local.commonDirectory || main.commonDirectory !== checkout.commonDirectory) return yield* refused("checkout belongs to a different repository")
   const state = yield* gitCall(git.state(checkout.path, undefined, checkout))
-  if (state.branch !== workspace.branch) return yield* refused("registered workspace branch changed; restore the registered branch")
+  if (state.branch !== workspace.branch) return yield* refused("The registered workspace branch has changed. Restore the registered branch before retrying.")
   return { workspace, state, registration: checkout }
 })
 // Repository Design is shared within one repository. Agents must identify an

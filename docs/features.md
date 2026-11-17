@@ -1368,7 +1368,12 @@ The existing website shows the worker in its Git, Files, and Terminal choices.
 Resume and recovery reuse the stored folder.
 Removal preserves worktrees and branches.
 Agent callers use read-only permission when selecting another checkout.
+The same rule applies when a lead's supplied folder resolves into another registered project checkout.
 An owner can select a registered project checkout at any permission level.
+Implicit owner project discovery applies only to worker roles.
+Test runners receive their own writable worktree after the lead merges the builder's branch.
+An agent that is not a lead must own the checkout it allocates from.
+Resume refuses a checkout that now belongs to another agent.
 Allocation accepts an uncommitted source and copies only its last commit.
 An unchanged sessionless allocation can be reused after a harness start fails.
 That retry keeps its worktree identifier and updates its owner.

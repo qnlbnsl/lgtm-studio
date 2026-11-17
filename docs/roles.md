@@ -160,7 +160,11 @@ Uncommitted changes are not copied.
 The required `folder` field does not choose a project worker's checkout.
 A lead calls `client.snapshot` and reads `project.workspaces` to find a builder's worktree.
 Its `owner` matches the builder's agent identifier returned by `start`.
-The lead supplies that row's `worktreeId` and `read-only` permission when starting a reviewer, test runner or evaluator there.
+The lead supplies that row's `worktreeId` and `read-only` permission when starting a reviewer or evaluator there.
+Before starting a test runner, the lead merges the builder's branch into its own worktree.
+The test runner starts without `worktreeId` and receives its own worktree at the lead's last commit.
+Its brief names an authorized writable permission and a log folder inside its own worktree.
+Test requests name that runner's folder and exact commit.
 A lead can merge the worker's branch with its own Git commands.
 The owner can use Integrate to merge into the recorded parent worktree.
 An instruction file does not create a blind review.

@@ -11,7 +11,7 @@ Read the lead rules first.
 - Let `start` allocate each builder's worktree and branch from your last commit.
 - Start it with `start`, `role` set to `worker:builder` and the launch fields in the lead rules.
 - Start test authors with `worker:build-init`, reviewers with `worker:reviewer` and the test runner with `worker:test-runner`.
-- Follow the lead rules to find the builder's `worktreeId` and name it with `read-only` permission for a reviewer, test runner or evaluator.
+- Follow the lead rules to find the builder's `worktreeId` and name it with `read-only` permission for a reviewer or evaluator.
 - Ask the actual project lead or task owner to set each task to `active` with `project.task.update` when its builder starts.
 - When the project has tests on, the tests for a subitem are written first by a build-init agent, and a reviewer reads them against the end-result page. The builder starts only after that.
 - The agent that writes a subitem's tests is not the agent that builds it. Use only the launch choices your brief supplies.
@@ -29,7 +29,7 @@ Read the lead rules first.
 - Do not accept a report that arrives before a commit exists, or while a check is still running. Send it back.
 - Check that the commit hash in the report is the head of the builder's branch.
 - Compare the changed files with the brief. A change outside the brief is removed or justified before the merge.
-- Ask the test runner to run the builder's checks at that exact commit.
+- Use the merging steps below to give the test runner the builder's committed work in its own worktree.
 - If no test runner is assigned, run the checks yourself and record that limitation.
 - A builder's own run is a claim until independently checked.
 - A failure goes back to the builder with the test runner's report. The builder names the type of failure: code, test or plan.
@@ -39,9 +39,10 @@ Read the lead rules first.
 ## Merging
 
 - Apply the lead rules under "Before you merge" to every builder branch.
-- Merge the builder's commit into a temporary branch first, and resolve conflicts there.
-- Have the test runner run the tests of every subitem merged so far on that temporary branch.
-- Move your team's branch only on a pass. On a failure, drop the temporary branch and send the report to the builder whose work was merged last.
+- First, merge the builder's branch into your own worktree on its registered branch, and commit any conflict resolution.
+- Start a new test runner without `worktreeId`, with an authorized writable permission and a log folder inside its own worktree.
+- Have it run the tests of every subitem merged so far in its own worktree at that exact integration commit.
+- Report the integration as checked only on a pass. On a failure, keep the integration commit and send the report to the builder whose work was merged last.
 - After the merge, send the commit and checks to the actual project lead or task owner for `project.task.update` and `project.task.note`.
 - Never push to or merge into the base branch.
 

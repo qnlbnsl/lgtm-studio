@@ -63,3 +63,23 @@ it('s23 r2: lead instructions explain automatic worktrees and the real discovery
     expect(read(name)).not.toMatch(/does not create a separate folder|arrange an isolated folder|Arrange each builder's branch/)
   }
 })
+
+it('s23 r3 m2: every worktree guide gives the test runner its own writable checkout', () => {
+  const guides = [read('lead-base'), read('build-lead'), read('orchestrator'),
+    readFileSync(new URL('../../../../README.md', import.meta.url), 'utf8'),
+    readFileSync(new URL('../../../../docs/roles.md', import.meta.url), 'utf8')]
+  for (const guide of guides) {
+    expect(guide).not.toMatch(/reviewer, test runner(?:,)? or evaluator|reviewer, test runner, or evaluator/)
+    expect(guide).toContain('without `worktreeId`')
+    expect(guide).toContain('own worktree')
+  }
+  expect(read('lead-base')).toContain("merge the builder's branch into your own worktree")
+  expect(read('build-lead')).toContain("merge the builder's branch into your own worktree")
+  expect(read('build-lead')).not.toMatch(/temporary (?:integration )?branch/)
+  expect(read('build-lead')).toContain('on its registered branch')
+  expect(read('test-runner')).toContain('log folder inside your own worktree')
+})
+
+it('s23 r3 m7: a lead knows who can register its checkout', () => {
+  expect(read('lead-base')).toContain('ask your parent or the owner to register the checkout')
+})

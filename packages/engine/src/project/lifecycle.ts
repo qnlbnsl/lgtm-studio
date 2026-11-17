@@ -268,7 +268,7 @@ const finishCreation = (observed: Input, observedPlan: ProjectCreation, mainBran
   yield* admitCreation(input, plan)
   const view = projectView(input.snapshot)
   const main = Object.values(view.workspaces).find((row) => row.repoId === plan.repository.repoId && row.machineId === "local" && row.path === plan.repository.path)
-  if (main !== undefined && main.branch !== mainBranch) return yield* refused("registered workspace branch changed; restore the registered branch")
+  if (main !== undefined && main.branch !== mainBranch) return yield* refused("The registered workspace branch has changed. Restore the registered branch before retrying.")
   const mainWorkspace = main ?? { worktreeId: plan.workspace.checkout === "main" ? plan.workspace.worktreeId : fresh(WorkspaceId),
     repoId: plan.repository.repoId, machineId: "local", path: plan.repository.path, branch: mainBranch, checkout: "main" as const }
   const lead = yield* leadDefaults(input, plan.lead)

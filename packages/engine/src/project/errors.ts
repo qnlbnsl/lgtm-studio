@@ -42,7 +42,7 @@ export const projectRefusalReasons = new Set([
   "set the workspace folder before using Git",
   "workspace settings changed; refresh and retry",
   "registered workspace not found",
-  "registered workspace branch changed; restore the registered branch",
+  "The registered workspace branch has changed. Restore the registered branch before retrying.",
   "integration requires a registered team source and its project workspace",
   "Git operation queue is full; retry shortly",
   "Git reply exceeds the read budget; select a smaller file or page",

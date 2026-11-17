@@ -89,9 +89,14 @@ A brief is the only context the agent has. Write it so that it stands alone.
 - Send notes for another agent's task to the project lead.
 - A project worker starts from the last commit in your registered checkout, including when your folder is a subfolder of it.
 - Uncommitted changes in your checkout are not included in the worker's folder.
+- If your checkout is unregistered, ask your parent or the owner to register the checkout before starting a worker.
 - Call `client.snapshot` and read project.workspaces to find a builder's worktree.
 - Match its `owner` to the builder's agent identifier returned by `start`, then use its `worktreeId`.
-- To let a reviewer, test runner or evaluator inspect that builder's work, pass that `worktreeId` to `start` with `permission` set to `read-only`.
+- To let a reviewer or evaluator inspect that builder's work, pass that `worktreeId` to `start` with `permission` set to `read-only`.
+- Before starting a test runner, merge the builder's branch into your own worktree and commit any conflict resolution.
+- Start the test runner without `worktreeId` so it receives its own worktree from your last commit.
+- Use an authorized writable permission for the test runner, and name a log folder inside its own worktree in its brief.
+- Send test requests for the runner's own folder and its exact commit.
 - Naming another agent's checkout with a wider permission is refused.
 - Merge the worker's branch into your own worktree with your own Git commands, or ask the owner to use Integrate.
 - Moving the project's branch into the base branch still requires the owner's approval.

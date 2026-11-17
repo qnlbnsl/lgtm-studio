@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { realpathSync } from "node:fs";
 import { ProjectId, WorkspaceId, parseRole, type Workspace } from "@lgtm/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -21,6 +22,7 @@ const ownerPlacement = (input: Input, workspace: Workspace, projectId: string) =
 };
 const context = (input: Input, p: Payload<"start">) => Effect.gen(function* () {
   const view = projectView(input.snapshot);
+  const worker = parseRole(p.role).kind === "worker";
   const parent = input.actor._tag === "agent" ? own(input.snapshot.agents, input.actor.agentId) : undefined;
   const inherited = parent === undefined ? undefined : own(view.agentProjects, parent.agentId);
   if (input.actor._tag === "agent" && p.projectId !== undefined && p.projectId !== inherited)
@@ -31,22 +33,38 @@ const context = (input: Input, p: Payload<"start">) => Effect.gen(function* () {
   // broad historical registration must not adopt unrelated starts beneath it.
   const supplied = containing.find((row) => row.path === folder);
   const projectId = p.projectId ?? inherited ?? (input.actor._tag === "owner"
-    && supplied !== undefined ? Object.values(view.projects).find((project) => ownerPlacement(input, supplied, project.projectId))?.projectId : undefined);
+    && worker && supplied !== undefined ? Object.values(view.projects).find((project) => ownerPlacement(input, supplied, project.projectId))?.projectId : undefined);
   if (projectId === undefined) {
     if (p.worktreeId !== undefined) return yield* refused("worker-worktree:project_required");
     return undefined;
   }
   const project = own(view.projects, projectId);
-  if (!project || project.archiving || project.archivedAt !== undefined) return yield* refused("worker-worktree:project_unavailable");
   const belongs = (row: Workspace) => workspaceInProject(view, row, projectId)
     || input.actor._tag === "owner" && ownerPlacement(input, row, projectId);
+  // Leads retain their requested folder. Resolve aliases before comparing
+  // that effective checkout with the caller's own registered checkout.
+  if (parent !== undefined && !worker && p.worktreeId === undefined && p.permission !== "read-only") {
+    let requested = p.folder;
+    try { requested = realpathSync(requested); } catch { /* The normal folder admission supplies the refusal. */ }
+    const target = Object.values(view.workspaces).filter((row) => belongs(row) && inside(row.path, requested))
+      .sort((a, b) => b.path.length - a.path.length)[0];
+    if (target !== undefined && target.worktreeId !== containing.find(belongs)?.worktreeId)
+      return yield* refused("Starting in another agent's worktree requires read-only permission.");
+  }
+  // Preserve ordinary start admission, including its archived-project reason,
+  // when this command neither allocates nor selects a checkout.
+  if (!worker && p.worktreeId === undefined) return undefined;
+  if (!project || project.archiving || project.archivedAt !== undefined) return yield* refused("worker-worktree:project_unavailable");
   const base = containing.find(belongs) ?? (parent === undefined ? own(view.workspaces, project.worktreeId) : undefined);
   const selected = p.worktreeId === undefined ? undefined : own(view.workspaces, p.worktreeId);
   if (p.worktreeId !== undefined && (selected === undefined || !belongs(selected)))
     return yield* refused("worker-worktree:workspace_unavailable");
   if (input.actor._tag === "agent" && selected !== undefined && selected.worktreeId !== base?.worktreeId && p.permission !== "read-only")
     return yield* refused("Starting in another agent's worktree requires read-only permission.");
-  return { project, base, selected, allocate: parseRole(p.role).kind === "worker" && selected === undefined };
+  if (worker && selected === undefined && parent !== undefined && parent.agentId !== project.leadAgentId && parseRole(parent.role).kind !== "lead"
+    && base !== undefined && base.owner !== parent.agentId)
+    return yield* refused("Only a lead or the agent that owns this checkout can allocate a worker from it. Ask your lead to start the worker.");
+  return { project, base, selected, allocate: worker && selected === undefined };
 });
 const safeSlug = (name: string, identifier: string) => { try { return slug(name); } catch { return slug(identifier); } };
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
@@ -70,7 +88,7 @@ export const prepareStartWorkspace = (input: Input, raw: Record<string, unknown>
       return yield* start(current, { ...payload as Payload<"start">, ...(now === undefined ? {} : { projectId: now.project.projectId }) });
     })) satisfies Planner;
   const base = selection.base;
-  if (selection.allocate && base === undefined) return yield* refused("worker-worktree:starter_unregistered");
+  if (selection.allocate && base === undefined) return yield* refused("The starter's checkout is not registered for this project. Ask your parent or the owner to register it before starting a worker.");
   if (selection.allocate && (base!.machineId !== "local" || selection.project.machineId !== "local"))
     return yield* refused("Worker worktrees can only be allocated on the local machine before machine pairing.");
   let workspace: Workspace | undefined = selection.selected;

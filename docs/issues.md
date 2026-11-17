@@ -18348,3 +18348,72 @@ A regression allocated a worker there and then failed its project snapshot visib
 That legacy checkout can now anchor an engine allocation without becoming a new snapshot row itself.
 The manual project-root child remains private.
 Every allocated start-table row now checks its project snapshot visibility too.
+
+## s23-13. Implicit owner starts could attach leads to a project before approval.
+
+State: Fixed in round 3 of unit s23-worktrees on 2026-11-16.
+
+Folder-based project inference now applies only to worker roles.
+An owner must name the project explicitly to attach a new lead or orchestrator.
+Tests cover both role kinds with and without an explicit project identifier.
+
+## s23-14. Test runner instructions requested a permission that prevented their work.
+
+State: Fixed in round 3 of unit s23-worktrees on 2026-11-16.
+
+A read-only harness cannot run all required test commands and write their logs.
+The lead first merges the builder's branch into its own checkout.
+It then starts the test runner without selecting an existing worktree.
+The runner receives its own worktree at that integration commit and an authorized writable permission.
+The brief places its log folder inside that worktree.
+All five worktree guides and the test runner instructions now describe that sequence.
+The lead keeps its registered branch because allocation refuses a checkout switched to a temporary branch.
+A real repository test checks the inherited commit, separate folder and local log writes.
+
+## s23-15. A supplied folder could bypass the foreign checkout permission rule.
+
+State: Fixed in round 3 of unit s23-worktrees on 2026-11-16.
+
+A builder could start a lead with edit permission in a sibling's registered checkout.
+The engine now resolves the supplied folder before comparing registered checkout identities.
+Foreign folders receive the same read-only requirement as an explicit worktree selection.
+Tests cover direct paths, symbolic links, subfolders and the caller's own checkout.
+The existing folder ceiling still refuses a foreign checkout's subfolder even with read-only permission.
+That ceiling remains unchanged.
+
+## s23-16. Ordinary lead starts lost the existing archived project refusal.
+
+State: Fixed in round 3 of unit s23-worktrees on 2026-11-16.
+
+A start that neither allocates nor selects a checkout now returns to ordinary start admission.
+Tests preserve its original reason for both an archived project and an archive in progress.
+
+## s23-17. A failed agent could resume into a checkout reassigned to its retry.
+
+State: Fixed in round 3 of unit s23-worktrees on 2026-11-16.
+
+Resume now refuses a folder whose registered checkout belongs to another agent.
+The refusal tells the caller to start a new agent in its own worktree.
+A regression reuses a failed allocation and checks that the earlier agent cannot open a fresh session there.
+
+## s23-18. A visitor could allocate workers from another agent's checkout.
+
+State: Fixed in round 3 of unit s23-worktrees on 2026-11-16.
+
+An agent that is not a lead must own its registered checkout before allocating from it.
+A read-only reviewer in a builder's checkout receives an actionable refusal before any allocation.
+An owning worker can still allocate from its own checkout.
+Existing lead and owner allocation cases remain covered.
+The recorded project lead retains its authority even when a historical record uses a worker role name.
+The first full run exposed that case in three existing channel tests.
+A new failing regression pinned the recorded lead's authority before the guard was corrected.
+The existing channel assertions and waits remain unchanged.
+
+## s23-19. Two checkout refusals did not explain recovery in full sentences.
+
+State: Fixed in round 3 of unit s23-worktrees on 2026-11-16.
+
+An unregistered starter is told to ask its parent or the owner to register the checkout.
+A changed branch is told to restore the registered branch before retrying.
+The lead instructions name who can register a checkout.
+The shared branch refusal and its public reason list use the same wording everywhere.
