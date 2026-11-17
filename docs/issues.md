@@ -19153,3 +19153,13 @@ Three live checks before round five gave 13, 13 and 19 of 23 steps; in the two s
 Two live checks after round five gave 19 of 23, and three on `master` gave 19, 18 and 19.
 
 State: open. Recorded on 2026-11-16.
+
+## 1325. The full check of the worker worktree unit met four load-sensitive journeys and two short live checks.
+
+In the whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:959` and `studio.spec.ts:1189` failed, and each passed when run alone.
+Six live checks on the branch gave 13, 19, 11, 19, 19 and 19 of 23 steps.
+In both short runs the Codex worker ended its turn without asking for permission, which is issue 272.
+In the run of 11, the small Claude lead also did not attempt two commands and made an unexpected tool call during the reload step, as in issue 1239.
+The live check starts no project, so it does not exercise worker worktrees.
+
+State: open. Recorded on 2026-11-16.
