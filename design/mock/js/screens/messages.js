@@ -404,7 +404,7 @@ export function situation(s, a, now) {
     const scope = a.role === 'project-lead' ? openRequests(s, { project: a.project }) : a.team ? openRequests(s, { team: a.team }) : [];
     return { lane: 'blocked', why: scope.length ? `Waiting on ${plural(scope.length, 'request')} its ${a.role === 'project-lead' ? 'teams' : 'team'} sent you` : a.activity || 'Waiting on another agent', tone: 'warn' };
   }
-  if (a.state === 'working') return { lane: 'working', why: a.activity, quiet };
+  if (a.state === 'working') return { lane: 'working', why: live.on ? board.currentActivity(a) : a.activity, quiet };
   if (a.workState === 'done') return { lane: 'done', why: 'Finished its work items' };
   return { lane: 'idle', why: live.on ? '' : a.workState === 'assigned' ? 'Assigned, not started' : 'Nothing assigned' };
 }

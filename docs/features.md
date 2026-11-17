@@ -1393,3 +1393,13 @@ State: Idea.
 
 An owner-directed command could remove a worker checkout after proving that its branch is merged into its parent and that its folder is clean.
 See issue 1253 in `docs/issues.md`.
+
+## Roster work descriptions from existing tasks and threads
+
+State: Built in unit s25-smallfix.
+
+The roster shows an active task title for a working agent when one is available.
+Without an active task, it uses the latest mapped tool summary or delivered message from the thread it already reads.
+The description preserves redaction and occupies one bounded line.
+An idle or stopped agent retains its lifecycle description.
+See issues s25-3 and s25-5 in `docs/issues.md`.

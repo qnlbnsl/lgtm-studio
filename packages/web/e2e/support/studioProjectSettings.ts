@@ -182,6 +182,14 @@ export async function exerciseStudioProjectSettings(page: Page, deleteJourney = 
           await screen.locator('.svc-danger').getByRole('button', { name: 'Restore', exact: true }).click()
           await expect(screen).not.toContainText('This project is archived.')
           await expect(page.locator('.sidebar .tree-row.project')).toContainText('Settings journey')
+          // Restoring is passive. The existing stopped composer lets the owner resume.
+          const s25Launches = runner.callsOf('start').length + runner.callsOf('load').length
+          await page.goto(`${root}#/p/${project.projectId}/chat/${project.leadId}`)
+          await expect(page.locator('.chat-main')).toContainText('is stopped.')
+          expect(runner.callsOf('start').length + runner.callsOf('load').length).toBe(s25Launches)
+          await page.locator('.chat-main').getByRole('button', { name: 'Resume', exact: true }).click()
+          await expect(page.locator('.chat-main textarea')).toBeVisible()
+          await expect.poll(() => runner.callsOf('start').length + runner.callsOf('load').length).toBe(s25Launches + 1)
           await expect.poll(() => page.evaluate(() => (window as any).settingsPolicyViolations || [])).toEqual([])
           expect(errors).toEqual([])
         })

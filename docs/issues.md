@@ -19363,3 +19363,91 @@ In the same whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `studio.spe
 Two live checks gave 19 and 13 of 23 steps; the short run was issue 272.
 
 State: the journey is fixed; the load-sensitive journeys remain open. Recorded on 2026-11-17.
+
+## 1361. Clicking a chosen conflict side showed a refusal notice.
+
+The conflict buttons sent a null choice when the owner clicked the selected side again.
+The live action refused that null choice.
+The buttons now leave the selected side alone.
+The live action also ignores a repeated or empty choice without sending a command.
+State: fixed in unit s25-smallfix.
+
+## 1362. Integration named the project branch instead of the destination branch.
+
+The Git screen replaced a destination branch containing a slash with "the project branch".
+The button now displays the complete registered parent branch.
+The website also names that branch in its success notice.
+A worker can integrate into its starter's registered worktree.
+That worktree can belong to a team or a lead.
+The mock and website now name the complete parent branch in the Integrate button.
+The website's success notice now names the destination branch.
+The mock's existing success notice already names that branch.
+Two Git refresh tests now require the destination notice instead of expecting no notice.
+Their readback and sibling-count assertions remain unchanged.
+State: fixed in unit s25-smallfix.
+
+## 1363. The roster did not describe a working agent's active task.
+
+The current live board mapping supplies the generic description Working.
+The lower-level agent mapping leaves that activity empty.
+The older report of a universally blank website field is therefore not exact for this commit.
+The roster used the generic displayed lifecycle state for its working line.
+The website now uses the title of an active task owned by that working agent when one is available in the existing snapshot.
+The preview preserves the engine's redaction and occupies one line of at most 160 Unicode code points.
+The preview does not claim that queued or completed work is being performed.
+The existing thread summary supplies the fallback when no active task is available.
+State: fixed for active task titles in unit s25-smallfix.
+
+## 1364. A task still requires a team in its stored contract.
+
+Issue 944 reports that the lead created a placeholder team to create its first tasks.
+The current `Task` schema in `packages/contracts/src/project/schema.ts` requires a team identifier.
+The creation command and stored `project.TaskAdded` event both use those fields.
+The planner also requires the team's worktree and checks the owner's team membership.
+Allowing a task without a team therefore changes the stored event shape.
+A follow-up would make the team optional in the command, event, views, and typed mappings while preserving replay of existing logs.
+It would define the permitted project worktree and task owners before assignment to a team.
+It would review team filtering, sprint team summaries, context selection, task creation, and default role guidance.
+The board already has some missing-team fallbacks, but they do not remove those contract and authorization requirements.
+State: deferred under the explicit stored-shape limit in unit s25-smallfix.
+
+## 1365. A working agent without an active task needs its existing thread work summary.
+
+The roster snapshot exposes lifecycle state but no current delivery text or latest tool title.
+The roster already reads the agent's thread for its output time.
+The website now falls back to the latest mapped tool summary or delivered message in that existing thread when no active task title is available.
+The preview preserves the engine's redaction and is bounded to one line of 160 Unicode code points.
+Agent replies and raw tool details are excluded from this summary.
+The existing lifecycle description remains the fallback when neither the task nor thread has a suitable description.
+State: fixed in unit s25-smallfix.
+
+## 1366. The whole unit run failed a service shutdown check that passed alone.
+
+The whole `pnpm exec vitest run` reported a failure in `packages/cli/test/serve.test.ts`.
+The failing case was "stops cleanly without invoking startup redaction on an interruption-only cause".
+The full-run failure returned exit code 13 instead of zero after the termination signal.
+The same case passed when rerun alone with its existing assertions and timeout.
+This unit changes no service startup or shutdown implementation.
+State: open as a whole-run-only failure observed during unit s25-smallfix.
+
+## 1367. Four browser journeys failed in the whole run and passed alone.
+
+The whole `pnpm test:browser` run passed 71 journeys and failed four journeys.
+The legacy Git journey that approves a merge into main timed out while the merge dialog was submitting.
+The legacy Git evidence journey timed out while reading its review state.
+The existing website projects-and-board journey timed out before its new project appeared in the top bar.
+The existing workflow journey timed out before its phase status appeared.
+Each journey passed in a separate one-test run with its existing assertions and timeout.
+The affected cases are in `packages/web/e2e/git.spec.ts` at lines 183 and 253, and `packages/web/e2e/studio.spec.ts` under the titles "live projects and board" and "workflows".
+The browser journeys covering this unit passed in the whole run.
+State: open as whole-run-only failures observed during unit s25-smallfix.
+
+## 1375. The review of the small fix unit left three minor faults in "Doing now" and one weak journey check.
+
+With no active task, the roster's "Doing now" takes the latest tool or delivered message anywhere in the agent's thread, with no turn boundary (`packages/studio/src/board.ts`, near lines 22 to 27).
+An agent woken by an answer can therefore show the last tool of its previous turn, and a fresh agent can show the start of its role prompt.
+When an agent owns two active tasks, the roster always names the first in snapshot order (`board.ts`, near line 10).
+The browser check that a repeated conflict choice shows no refusal compares the notices before and after the click (`packages/web/e2e/support/studioGit.ts`, near lines 149 to 152), so an expiring notice can fail it.
+In the orchestrator's whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:372` and `studio.spec.ts:1200` failed under load, and each passed when run alone.
+
+State: open. Recorded on 2026-11-17.

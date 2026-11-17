@@ -670,7 +670,7 @@ function Conflicts({ s, w, phone }) {
             <header><b>Conflict ${n} of ${blocks(sel).length}</b>
               ${p.choice ? html`<span class="success-text row" style="gap:4px"><${Icon} name="check" size=${12} />${{ ours: 'Using ours', theirs: 'Using theirs', both: 'Using both, ours first' }[p.choice]}</span>` : html`<span class="warn-text">Choose which lines to keep</span>`}
               <span class="grow"></span>
-              <div class="seg">${CHOICES.map(([id, label]) => html`<button type="button" aria-pressed=${p.choice === id} disabled=${sel.resolved} onClick=${() => choose(w.id, sel.id, p.id, p.choice === id ? null : id)}>${label}</button>`)}</div></header>
+              <div class="seg">${CHOICES.map(([id, label]) => html`<button type="button" aria-pressed=${p.choice === id} disabled=${sel.resolved} onClick=${() => { if (p.choice !== id) choose(w.id, sel.id, p.id, id); }}>${label}</button>`)}</div></header>
             ${result ? html`<div class="cf-panes one"><${Pane} title="Result" sub=${sel.path} lines=${result} tone="result" /></div>`
               : html`<div class="cf-panes"><${Pane} title="Ours" sub=${w.branch} lines=${p.ours} tone="ours" />
                 <${Pane} title="Base" sub="common ancestor" lines=${p.base} tone="base" />
@@ -703,7 +703,7 @@ function Integrate({ s, w, project }) {
     <span class="grow">${!w.ahead && !w.behind ? html`Level with ${parent}${w.integratedAt ? html` · integrated just now` : ''}`
       : html`${w.ahead ? plural(w.ahead, 'commit') + ' ahead of' : 'Level with'} ${parent}${w.behind ? html` and <b class="warn-text">${w.behind} behind</b>` : ''}`}</span>
     ${w.behind > 0 && html`<button type="button" class="btn sm" disabled=${!!w.merge} onClick=${() => updateFromBase(w.id)}>Update from base</button>`}
-    <button type="button" class="btn sm" disabled=${!!block} title=${block} onClick=${() => integrate(w.id)}>Integrate into ${baseName(w.parent) === w.parent ? w.parent : 'the project branch'}</button></div>`;
+    <button type="button" class="btn sm" disabled=${!!block} title=${block} onClick=${() => integrate(w.id)}>Integrate into ${w.parent}</button></div>`;
 }
 
 // ---- the tab ----------------------------------------------------------------------

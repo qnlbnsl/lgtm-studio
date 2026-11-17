@@ -584,7 +584,9 @@ export function syncGit(id, operation) { return run('git', async () => {
 export function integrate(id) { return run('git', async () => {
   const w = wt(id); local(w); const target = destination(w); local(target);
   if (w.kind !== 'team') { refuse(); return; }
+  const generation = sessionGeneration;
   await confirmGit(() => request('project.integrate', { ...scope(w), destinationId: target.id, expectedHead: w.head }), () => loadGit(screen?.project, affectedGit(w, target), true));
+  if (generation === sessionGeneration && S().session.status === 'in') act.toast('Integrated into ' + target.branch);
 }); }
 export function openReview(w, project) { return run('git', async () => {
   local(w); const target = destination(w); local(target);
@@ -605,8 +607,9 @@ export function answerReview(id, option, reason, approval) {
   });
 }
 export function choose(id, fid, kid, choice) { return run('git', async () => {
-  const w = wt(id); local(w); const file = w.merge.files.find((f) => f.id === fid), part = file.parts.find((p) => p.id === kid);
-  if (!choice || !file?.selection) { refuse(); return; }
+  const w = wt(id); local(w); const file = w.merge.files.find((f) => f.id === fid), part = file?.parts.find((p) => p.id === kid);
+  if (!choice || part?.choice === choice) return;
+  if (!file?.selection || !part) { refuse(); return; }
   const conflict = read(await request('project.conflict.choose', { ...scope(w), selection: file.selection, hunk: part.hunk, choice }));
   writeWt(id, { merge: { ...w.merge, files: w.merge.files.map((f) => f.id === fid ? { ...mapping.mapConflict(conflict), loaded: true } : f) } });
 }); }

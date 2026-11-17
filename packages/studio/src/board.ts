@@ -1,8 +1,32 @@
 // Pure translations for projects, sprints, task details, the board and first run.
 import type { ClientSnapshot, BoardPost, BoardAuthor, TaskHistoryEntry, AgentChoices, ContextUsage, SetupState, Discovery, ProjectSettings } from "@lgtm/contracts"
-import type { StoreSprint, EngineRecords } from "./mapping.ts"
+import type { StoreSprint, EngineRecords, StoreAgent } from "./mapping.ts"
 type Section = NonNullable<ClientSnapshot["project"]>
 type Channel = { displayName?: string; archived?: boolean; channelId: string; name: string; kind: string; members: ReadonlyArray<BoardAuthor>; group?: string; anchorAgentId?: string }
+// Task titles have already passed the engine's redactor. Bound by code points,
+// so shortening a preview cannot split a Unicode character.
+export function doingNow(snapshot: ClientSnapshot, agentId: string, projectId: string): string {
+  if (snapshot.agents.find((a) => a.agentId === agentId)?.state._tag !== "working") return ""
+  const title = snapshot.project?.tasks.find((t) => t.projectId === projectId && t.owner === agentId && t.state === "active")?.title ?? ""
+  return shortWorkText(title)
+}
+function shortWorkText(text: string): string {
+  const points = Array.from(text.replace(/[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/gu, "").replace(/[\u0000-\u001f\u007f-\u009f]/gu, " ").replace(/\s+/gu, " ").trim())
+  return points.length > 160 ? points.slice(0, 159).join("") + "…" : points.join("")
+}
+// The roster already reads these redacted, mapped thread rows for output times.
+// Replies and raw tool details are not descriptions of the current work.
+export function workPreview(agent: Pick<StoreAgent, "state" | "doingNow" | "activity">, thread: ReadonlyArray<Record<string, unknown>>): string {
+  if (agent.state !== "working") return agent.activity
+  if (agent.doingNow) return agent.doingNow
+  for (let i = thread.length - 1; i >= 0; i--) {
+    const row = thread[i]!
+    const text = row.type === "tools" ? row.summary : row.type === "user" ? row.text : undefined
+    const preview = typeof text === "string" ? shortWorkText(text) : ""
+    if (preview) return preview
+  }
+  return agent.activity
+}
 export const sprintColumn = (sprint: Section["sprints"][number], tasks: Section["tasks"]): StoreSprint["column"] =>
   sprint.completion !== undefined ? "Done" : tasks.some((t) => t.sprintId === sprint.sprintId && ["active", "blocked"].includes(t.state)) ? "In progress"
     : tasks.some((t) => t.sprintId === sprint.sprintId && t.state === "review") ? "Review" : "Planned"
@@ -27,7 +51,7 @@ export function mapBoardRecords(snapshot: ClientSnapshot, records: EngineRecords
       worktreeId: section?.tasks.find((r) => r.taskId === t.id)?.worktreeId ?? "",
       blockedBy: records.requests.find((r) => r.task === t.id)?.kind ?? null })),
     requests: records.requests.map((r) => ({ ...r, sprint: [...snapshot.requests, ...snapshot.questions].find((row) => row.id === r.id)?.display?.sprintId ?? null })),
-    agents: records.agents.map((a) => ({ ...a, stalled: stalls.agents.includes(a.id), activity: snapshot.agents.find((row) => row.agentId === a.id)?.displayedState ?? "", name: a.role === "project-lead" ? "Project lead" : a.role === "team-lead" ? "Team lead" : a.name, task: section?.tasks.find((t) => t.owner === a.id && t.state !== "done")?.label ?? null }))
+    agents: records.agents.map((a) => ({ ...a, doingNow: doingNow(snapshot, a.id, a.project), stalled: stalls.agents.includes(a.id), activity: snapshot.agents.find((row) => row.agentId === a.id)?.displayedState ?? "", name: a.role === "project-lead" ? "Project lead" : a.role === "team-lead" ? "Team lead" : a.name, task: section?.tasks.find((t) => t.owner === a.id && t.state !== "done")?.label ?? null }))
   }
 }
 export const authorId = (author: BoardAuthor): string => author._tag === "agent" ? author.agentId : author._tag === "owner" ? "owner" : `service:${author.service}`

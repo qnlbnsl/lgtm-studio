@@ -55,8 +55,8 @@ test("allocated worker appears in the root website Git tab and integrates into i
           await page.getByRole("button", { name: "Choose a worktree", exact: true }).click();
           await page.getByRole("menuitemradio", { name: /worker\/work-trees\/builder/ }).click();
           await expect(page.locator(".git")).toHaveAttribute("aria-busy", "false");
-          await expect(page.getByRole("button", { name: /Integrate into/ })).toBeEnabled();
-          await page.getByRole("button", { name: /Integrate into/ }).click();
+          await expect(page.getByRole("button", { name: `Integrate into project`, exact: true })).toBeEnabled();
+          await page.getByRole("button", { name: `Integrate into project`, exact: true }).click();
           await expect(page.locator(".git")).toHaveAttribute("aria-busy", "false");
           expect(readFileSync(join(project.path, "browser-worker.txt"), "utf8")).toBe("A worker's contribution.\n");
           await page.goto(`http://127.0.0.1:${port}/#/p/${project.projectId}/files`);
