@@ -16,15 +16,18 @@ for (const kind of ["name", "post"] as const) {
     yield* registerRebuildCheck();
     yield* seedBoard();
     const before = yield* headSequence;
+    // A random UUID can contain the registered collision marker and be
+    // refused before this test reaches the intended board validation.
+    const requestId = `refusal-${kind}`;
     const result = kind === "name"
-      ? yield* call(ownerCredential, "board.open", { name: `Room-${marker}` })
-      : yield* call(ownerCredential, "board.post", { direct: { _tag: "agent", agentId: "worker" }, text: marker.repeat(4096), reply: "none", to: [] });
+      ? yield* call(ownerCredential, "board.open", { requestId, name: `Room-${marker}` })
+      : yield* call(ownerCredential, "board.post", { requestId, direct: { _tag: "agent", agentId: "worker" }, text: marker.repeat(4096), reply: "none", to: [] });
     const reason = kind === "name" ? "name holds a secret" : "post too long once secrets are hidden";
     expect(failureOf(result)).toEqual({ _tag: "CommandRefused", reason });
     expect((yield* logAfter(before)).map((row) => row.event)).toEqual([
       { _tag: "CommandRefused", command: kind === "name" ? "board.open" : "board.post", reason },
     ]);
     // A subsequent real command proves that the refusal left the handler usable.
-    expect(success(yield* call(ownerCredential, "board.open", { name: "AfterRefusal" })).channelId).toBeTypeOf("string");
+    expect(success(yield* call(ownerCredential, "board.open", { requestId: `after-${kind}`, name: "AfterRefusal" })).channelId).toBeTypeOf("string");
   }), [marker]).pipe(Effect.orDie));
 }

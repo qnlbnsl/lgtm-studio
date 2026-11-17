@@ -539,7 +539,8 @@ it.live("FR-118 redacted free text preserves deterministic UUID identities, mani
     channel({ channelId, name: "Room", members: [agent("lead"), agent("worker")] }),
     post(postId, { channelId, text: "Please redact beef before writing." }),
   ], {}, () => ({ requestId, channelId, postId }));
-  success(yield* call(ownerCredential, "board.flush", { agentId: "worker" }));
+  // The registered text marker can also occur in a random command UUID.
+  success(yield* call(ownerCredential, "board.flush", { requestId: "flush-collision", agentId: "worker" }));
   const state = yield* boardState;
   expect(state.posts[postId]).toMatchObject({ postId, channelId, text: "Please redact [REDACTED] before writing." });
   const [delivery] = yield* queued("worker");
@@ -564,7 +565,7 @@ it.live("FR-118 redacted free text preserves deterministic UUID identities, mani
   const receipts = yield* sql<{ result_json: string }>`SELECT result_json FROM receipts WHERE request_id = ${requestId}`;
   expect(JSON.parse(receipts[0]!.result_json).reply).toEqual({ requestId, channelId, postId });
   // Retain the ordinary post command's free-text regression too.
-  const commanded = yield* postAs(c.lead!, { text: "Please redact beef before writing.", to: [agent("other")] });
+  const commanded = yield* postAs(c.lead!, { requestId: "post-collision", text: "Please redact beef before writing.", to: [agent("other")] });
   expect((yield* boardState).posts[commanded]?.text).toBe("Please redact [REDACTED] before writing.");
   expect(deliveryText((yield* queued("other"))[0]!)).not.toContain("Please redact beef before writing.");
 }), [collision]).pipe(Effect.orDie));

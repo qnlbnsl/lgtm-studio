@@ -18835,3 +18835,18 @@ State: fixed by trimming the partial document before recreating the signed commi
 
 Read: the complete working document had no trailing blank line.
 Read: this staging correction changes no implementation or test bytes.
+
+## s19-10. A synthetic secret marker can randomly collide with a board test's request identifier.
+
+Found: 2026-11-16, in the first round-five whole-suite run.
+State: fixed by giving the affected board commands distinct deterministic request identifiers.
+
+Ran: the post-refusal scenario received a generic refusal instead of its expected post-length refusal.
+Read: the scenario registers the public synthetic marker beef for redaction.
+Read: a random request identifier can contain that marker.
+Read: the command handler refuses a secret-bearing request identifier before planning the board command.
+Ran: planting a valid identifier containing the marker reproduced that exact early refusal.
+Read: the failing whole run did not retain its generated request identifier.
+Read: the adjacent wake identity regression also issued two commands under the same marker registry.
+Read: those commands now have deterministic identifiers as well.
+Read: all original content, event, receipt, and refusal assertions remain unchanged.
