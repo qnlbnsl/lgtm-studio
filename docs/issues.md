@@ -19441,3 +19441,13 @@ Each journey passed in a separate one-test run with its existing assertions and 
 The affected cases are in `packages/web/e2e/git.spec.ts` at lines 183 and 253, and `packages/web/e2e/studio.spec.ts` under the titles "live projects and board" and "workflows".
 The browser journeys covering this unit passed in the whole run.
 State: open as whole-run-only failures observed during unit s25-smallfix.
+
+## 1375. The review of the small fix unit left three minor faults in "Doing now" and one weak journey check.
+
+With no active task, the roster's "Doing now" takes the latest tool or delivered message anywhere in the agent's thread, with no turn boundary (`packages/studio/src/board.ts`, near lines 22 to 27).
+An agent woken by an answer can therefore show the last tool of its previous turn, and a fresh agent can show the start of its role prompt.
+When an agent owns two active tasks, the roster always names the first in snapshot order (`board.ts`, near line 10).
+The browser check that a repeated conflict choice shows no refusal compares the notices before and after the click (`packages/web/e2e/support/studioGit.ts`, near lines 149 to 152), so an expiring notice can fail it.
+In the orchestrator's whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:372` and `studio.spec.ts:1200` failed under load, and each passed when run alone.
+
+State: open. Recorded on 2026-11-17.
