@@ -18115,3 +18115,12 @@ Other builders were running their own test suites on the same computer.
 The journey results after rerunning each alone are recorded in the pull request for this unit.
 
 State: open. Recorded on 2026-11-16.
+
+## 1241. The foreground lock race test failed once in a whole run under load.
+
+The test "two foreground launches race for one lifetime lock" in `packages/cli/test/serve-foreground.test.ts` failed in a whole run of the unit tests on the role instruction branch after `master` was merged in.
+Two builders were running their own test suites on the same computer.
+The test passed when its file was run alone.
+The role instruction unit does not change that code.
+
+State: open. Recorded on 2026-11-16.
