@@ -1,6 +1,6 @@
 // Capability 6: read any agent's thread live, from any client: every message,
 // tool call, changed file and permission request. Criteria 8.3 to 8.5.
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, expect } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -18,6 +18,12 @@ const contents = (events: ReadonlyArray<{ agentId?: string; event: { _tag: strin
     .map((envelope) => (envelope.event as unknown as { content: Content }).content);
 
 scenario("6 thread: the owner reads a message, a plan, a tool call, a changed file and a permission request as they happen (breaks if the runner drops any one of the five kinds or the stream withholds them until the turn ends)", (w) => Effect.gen(function* () {
+  // A random credential can begin with the answer's final character and
+  // legitimately split it into a second item. Keep this ordering fixture
+  // deterministic without changing private-prefix withholding.
+  mkdirSync(w.root.state, { mode: 0o700 });
+  writeFileSync(join(w.root.state, "owner-credential"), Buffer.alloc(32, 7), { mode: 0o600 });
+  yield* w.boot();
   const gate = join(w.root.root, "gate-thread");
   const before = yield* w.watermark();
   const agent = yield* w.start(w.owner, {
@@ -53,7 +59,7 @@ scenario("6 thread: the owner reads a message, a plan, a tool call, a changed fi
   yield* w.owner.answer({ requestId: requestId(), kind: "permission", id: request.permissionRequestId, optionId: "allow-once" } as never);
   const finished = yield* eventsUntil(w.owner, before, "the turn end", isTag("TurnEnded", agent.agentId));
   expect(contents(finished, agent.agentId).some((item) => item.text === "permission:selected:allow-once")).toBe(true);
-}));
+}), { manual: true });
 
 scenario("6 thread: a client that connects after the turn replays the same thread from the log, and an agent's environment printed into its thread never shows its token (breaks if replay differs from live, or a secret in agent output reaches an event)", (w) => Effect.gen(function* () {
   const before = yield* w.watermark();

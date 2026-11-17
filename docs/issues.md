@@ -17996,3 +17996,17 @@ State: fixed by removing the empty line's whitespace.
 Ran: the old and cleaned source have identical non-whitespace bytes.
 Read: the cleanup occurred after the full test run started.
 Read: the frozen hash record includes the cleaned file and the result records this formatting-only difference.
+
+## s19-20. The thread acceptance fixture depended on a random credential's prefix.
+
+Found: 2026-11-16, in the complete round-four test run.
+State: fixed with a deterministic fake owner credential and the original assertions.
+
+Ran: the complete suite passed 9891 tests and failed the assertion requiring the permission answer in one item.
+Ran: an isolated reproduction delivered all thirty answer characters as twenty-nine characters followed by the last character.
+Ran: a direct comparison using that scenario's temporary credential produced the same hold in round three and round four.
+Read: the final character was a genuine prefix of a registered form of the owner credential.
+Read: withholding that character until the turn ends preserves the owner's private-prefix decision.
+Read: the scenario now writes a fixed fake owner credential before its manual boot.
+Read: its assertions, waits, and allow-list remain unchanged.
+Ran: both thread acceptance scenarios pass with that fixture.
