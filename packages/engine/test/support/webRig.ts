@@ -113,13 +113,17 @@ export const login = (ctx: WebEndpoint, headers: Record<string, string | undefin
 
 export const upgrade = (ctx: WebEndpoint, headers: Record<string, string | undefined> = {}, autoPong = true) =>
   Effect.gen(function* () {
-    const result = yield* Effect.promise(() => new Promise<{ status: number; socket?: WebSocket }>((resolve, reject) => {
+    const result = yield* Effect.promise(() => new Promise<{ status: number; body?: string; socket?: WebSocket }>((resolve, reject) => {
     const socket = new WebSocket(`ws://${ctx.host}/api`, {
       headers: Object.fromEntries(Object.entries({ Host: ctx.host, Origin: ctx.origin, ...headers }).filter(([, value]) => value !== undefined)),
       handshakeTimeout: 3_000, autoPong,
     });
     socket.once("open", () => resolve({ status: 101, socket }));
-    socket.once("unexpected-response", (_request, response) => { response.resume(); resolve({ status: response.statusCode ?? 0 }); });
+    socket.once("unexpected-response", (_request, response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", chunk => chunks.push(Buffer.from(chunk)));
+      response.once("end", () => resolve({ status: response.statusCode ?? 0, body: Buffer.concat(chunks).toString() }));
+    });
     socket.once("error", reject);
     }));
     if (result.socket !== undefined) yield* Effect.addFinalizer(() => Effect.sync(() => result.socket!.terminate()));

@@ -82,6 +82,7 @@ export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, 
   let lastOutputAt: number | null = null
   let runMode: string | null = null
   const rows: Array<Record<string, unknown>> = []
+  let plan: Record<string, unknown> | undefined
   const calls = new Map<string, { row: ToolRow; content: Extract<Extract<EventEnvelope['event'], { _tag: 'ThreadItem' }>['content'], { _tag: 'tool-call' }>; files: Map<string, string>; snapshots: Map<string, Set<string>> }>()
   const ordered = orderedThread(items)
   const turns = questionTurns(ordered, agentId)
@@ -93,6 +94,7 @@ export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, 
     if (e._tag !== 'ThreadItem' || e.content._tag !== 'file-change') {
       for (const key of calls.keys()) if (key.startsWith('legacy:')) calls.delete(key)
     }
+    if (["TurnStarted", "TurnEnded", "SessionOpened", "AgentStopped", "AgentInterrupted", "AgentCrashed", "AgentReloadFailed"].includes(e._tag)) plan = undefined
     if (e._tag === "DeliverySent") { pending = true; delivery = e.deliveryId }
     if (e._tag === 'TurnEnded' || e._tag === 'SessionOpened') calls.clear()
     if (e._tag === "StateChanged" && e.state._tag !== "working"
@@ -121,7 +123,11 @@ export function mapThread(items: ReadonlyArray<EventEnvelope>, agentId: string, 
         if (previous) Object.assign(previous.row, row)
         else rows.push(row)
         calls.set(c.callId, { row: previous?.row ?? row, content, files, snapshots: previous?.snapshots ?? new Map() })
-      } else if (c._tag === "plan") rows.push({ ...base, type: "agent", text: c.entries.map((p) => `- ${p.status}: ${p.content}`).join("\n") })
+      } else if (c._tag === "plan") {
+        const text = c.entries.map((p) => `- ${p.status}: ${p.content}`).join("\n")
+        if (plan) plan.text = text
+        else { plan = { ...base, type: "agent", text }; rows.push(plan) }
+      }
       else {
         const key = c.callId ?? `legacy:${c.path}:${c.diff}`
         const previous = calls.get(key)

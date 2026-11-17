@@ -6,18 +6,20 @@ export const checkWords = (check) => ({ 'local-credential': 'Local sign-in found
 export const folderLabel = (account) => account?.home ? account.harness === 'gemini' ? account.home + '/.gemini' : account.home : '~/' + ({ claude: '.claude', codex: '.codex', gemini: '.gemini', cursor: '.cursor' }[account?.harness] || 'the harness default folder');
 export async function addAccount(harness, name, folder, home, machine) {
   if (!live.on) {
-    const account = { id: uid('sub'), harness, name, machine, enabled: true, signedIn: false, home: folder === 'advanced' ? home : folder === 'separate' ? '/home/maya/.lgtm/accounts/' + harness + '/sample-account' : '', usage: null, window: null, model: '' };
+    const account = { id: uid('sub'), harness, name, machine, enabled: true, signInKnown: true, signedIn: false, home: folder === 'advanced' ? home : folder === 'separate' ? '/home/maya/.lgtm/accounts/' + harness + '/sample-account' : '', usage: null, window: null, model: '' };
     update(s => s.subscriptions.push(account)); return account;
   }
   const { account } = await engine.request('client.harness.account.add', { harnessId: harness, name, folder, ...(folder === 'advanced' ? { home } : {}) });
   // Only the engine's account reply adds a row. No optimistic record is created.
-  engineWrite({ subscriptions: [...store.state.subscriptions, { id: account.id, harness: account.harness, name: account.displayName || account.id, home: account.home || '', machine: 'local', enabled: account.enabled !== false, signedIn: false, model: '', usage: null, window: null }] });
+  engineWrite({ subscriptions: [...store.state.subscriptions, { id: account.id, harness: account.harness, name: account.displayName || account.id, home: account.home || '', machine: 'local', enabled: account.enabled !== false, signInKnown: false, signedIn: false, model: '', usage: null, window: null }] });
   await liveGit.refreshAccounts();
   return account;
 }
 function applyCheck(account, check) {
-  const patch = { subscriptions: store.state.subscriptions.map(a => a.id === account.id ? { ...a, signedIn: check.state === 'local-credential' } : a) };
-  if (live.on) engineWrite(patch); else update(s => { s.subscriptions = patch.subscriptions; });
+  if (live.on) { void liveGit.run('read-service', liveGit.refreshAccounts); return; }
+  if (!['local-credential', 'signed-out'].includes(check.state)) return;
+  const patch = { subscriptions: store.state.subscriptions.map(a => a.id === account.id ? { ...a, signInKnown: true, signedIn: check.state === 'local-credential' } : a) };
+  update(s => { s.subscriptions = patch.subscriptions; });
 }
 // A bounded plain-text terminal. Recognise carriage returns and clear-line; discard
 // other escape sequences, including OSC hyperlinks. No terminal text becomes HTML.

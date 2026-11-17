@@ -257,3 +257,13 @@ it("answers an approval with Allow and Deny, and keeps a long standing answer in
   await settle()
   expect(calls).toContain("answer")
 })
+
+for (const notice of ['The service could not send its data. Snapshot is too large.', 'The service could not send its data.']) it(`the main area shows a terminal snapshot notice: ${notice}`, async () => {
+  await mount('/home');
+  const kit = await import('../../../design/mock/js/lib.js' as string)
+  kit.engineWrite({ snapshotReady: false, conn: { status: 'reconnecting', lastHeard: 0, notice } });
+  await settle();
+  const body = element.querySelector('.view-body')!;
+  expect(body.textContent).toContain(notice);
+  expect(body.textContent).not.toContain('Loading…');
+})

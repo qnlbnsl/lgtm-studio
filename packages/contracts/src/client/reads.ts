@@ -48,7 +48,7 @@ export const ClientSnapshot = Schema.Struct({
   requests: Schema.Array(IdentityRow), questions: Schema.Array(IdentityRow),
   requestsWithoutDisplay: Count, questionsWithoutDisplay: Count,
   accounts: Schema.optionalKey(Schema.Array(Schema.Struct({
-    id: AccountId, status: Schema.NonEmptyString, enabled: Schema.Boolean,
+    id: AccountId, status: Schema.NonEmptyString, enabled: Schema.Boolean, signedIn: Schema.optionalKey(Schema.Boolean),
     environment: Schema.Array(Schema.Struct({ name: Schema.String, secret: Schema.Boolean }))
   }))),
   alerts: Schema.optionalKey(Schema.Array(Alert)),

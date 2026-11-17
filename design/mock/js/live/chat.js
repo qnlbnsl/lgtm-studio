@@ -1,3 +1,4 @@
+import { clearComposerDrafts } from '../drafts.js';
 import { errorText } from './reads.js';
 // Live actions and on-demand reads. Domain records only change from replies or events.
 import { live, store, update, engineWrite, refuse } from '../lib.js';
@@ -23,9 +24,12 @@ async function attempt(key, fn) {
   catch (e) { if (epoch === generation) notice(e); return false; }
   finally { if (epoch === generation) update((s) => { delete s.ui.chatBusy[key]; }); }
 }
-export function reset() {
+export function reset(status = S()?.session?.status) {
+  if (['out', 'expired', 'logout-unconfirmed'].includes(status)) {
+    clearComposerDrafts(S()?.drafts);
+  }
   generation++; accountNames = []; accountRead = null; oversized.clear(); histories.clear(); details.clear(); sources.clear(); actions = []; loadingRequests = null; requestVersion++;
-  if (S()?.ui) { S().ui.chatBusy = {}; S().drafts = {}; }
+  if (S()?.ui) { S().ui.chatBusy = {}; }
 }
 export function enrich(patch) {
   if (!mapping) return patch;

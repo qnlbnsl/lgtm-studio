@@ -8,6 +8,7 @@ import { collectSecrets } from "../accounts/collectSecrets.ts";
 // own (decision rows 31, 52 and 66).
 import { randomUUID } from "node:crypto";
 import { BootId, Event as EventSchema, PermissionRequestId, WaitId, type AgentId, type Event } from "@lgtm/contracts";
+import * as Clock from "effect/Clock";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
@@ -78,6 +79,8 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
   const canReload = runner.capabilities.loadSession || runner.capabilities.resumeSession;
   const ready = yield* Deferred.make<void>();
   const running = yield* Semaphore.make(1);
+  let recoveredCount = 0;
+  let recoveryTotal = 0;
   let completed = false;
   let attempted = false;
   let timersStarted = false;
@@ -221,7 +224,9 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
       return [...skip] as ReadonlyArray<AgentId>;
     })).pipe(ignoreReused([] as ReadonlyArray<AgentId>));
     const reloaded: Array<AgentId> = [];
-    for (const agentId of processless) if (yield* reloadPaused(agentId, accountId, cause)) reloaded.push(agentId);
+    for (const agentId of processless) if (yield* reloadPaused(agentId, accountId, cause)) {
+      reloaded.push(agentId);
+    }
     return reloaded;
   });
 
@@ -230,8 +235,8 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
   // available, including one whose availability committed before the crash
   // and whose return never ran, then returns its paused agents. Their sends
   // wait for step 10.
-  const returnAccounts = Effect.gen(function* () {
-    if (!timersStarted) {
+  const returningAccounts = (preview = false) => Effect.gen(function* () {
+    if (!preview && !timersStarted) {
       yield* startAccountTimers;
       timersStarted = true;
     }
@@ -248,14 +253,19 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
       },
       catch: () => new LogWriteFailed({ reason: "stored event is unreadable" }),
     });
-    const reloaded: Array<AgentId> = [];
+    const now = yield* Clock.currentTimeMillis;
+    const live = yield* liveAgents;
+    const planned: Array<{ agentId: AgentId; accountId: string; cause: AvailableCause }> = [];
     for (const account of Object.values(snapshot.accounts)) {
-      const cause = causes.get(account.id);
-      if (account.status !== "available" || cause === undefined) continue;
-      if (!Object.values(snapshot.agents).some((agent) => returnable(agent, account.id, cause))) continue;
-      reloaded.push(...yield* returnPaused(account.id, cause));
+      const overdue = preview && account.status === "out-of-usage" && account.resetAt !== undefined && account.resetAt <= now;
+      const cause = overdue ? "usage reset" : causes.get(account.id);
+      if ((!overdue && account.status !== "available") || cause === undefined) continue;
+      for (const agent of Object.values(snapshot.agents)) {
+        if (returnable(agent, account.id, cause) && !live.has(agent.agentId) && !projectPreventsRun(snapshot, agent.agentId))
+          planned.push({ agentId: agent.agentId, accountId: account.id, cause });
+      }
     }
-    return reloaded;
+    return planned;
   });
 
   // Step 9. Holders are re-evaluated once: only requests and questions whose
@@ -297,10 +307,29 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
       }
     }
     const recovered = new Set<string>();
-    for (const agent of Object.values((yield* views.snapshot).agents)) {
-      if (agent.state._tag === "interrupted" && (yield* reloadInterrupted(agent.agentId))) recovered.add(agent.agentId);
+    // Preview overdue returns without moving step 8's timer reconciliation
+    // ahead of ordinary reloads. All old tokens were revoked in step 4.
+    // A preview only estimates progress. Preserve step 8's failure point for
+    // unreadable availability history, after ordinary agents have reloaded.
+    const plannedReturns = yield* returningAccounts(true).pipe(Effect.catchTag("LogWriteFailed", () => Effect.succeed([])));
+    const snapshot = yield* views.snapshot;
+    const interrupted = Object.values(snapshot.agents).filter(agent => {
+      if (projectPreventsRun(snapshot, agent.agentId) || agent.state._tag !== "interrupted") return false;
+      const fresh = agent.state.previous === "starting" && (agent.session === undefined || agent.reloadable !== true);
+      return fresh || (agent.session !== undefined && agent.reloadable === true && canReload);
+    });
+    recoveryTotal = interrupted.length + plannedReturns.length;
+    const finished = Effect.sync(() => { recoveredCount = Math.min(recoveryTotal, recoveredCount + 1); });
+    for (const agent of interrupted) {
+      if (yield* reloadInterrupted(agent.agentId).pipe(Effect.ensuring(finished))) recovered.add(agent.agentId);
     }
-    for (const agentId of yield* returnAccounts) recovered.add(agentId);
+    const returning = yield* returningAccounts();
+    // A deadline or account can change while an adapter is loading. Report
+    // the actual selected returns; completed ordinary attempts remain counted.
+    recoveryTotal = interrupted.length + returning.length;
+    for (const { agentId, accountId, cause } of returning) {
+      if (yield* reloadPaused(agentId, accountId, cause).pipe(Effect.ensuring(finished))) recovered.add(agentId);
+    }
     yield* reevaluate;
     yield* Deferred.succeed(ready, undefined);
     yield* sendQueued(yield* views.snapshot, recovered);
@@ -308,6 +337,7 @@ export const layer = (options: RestartOptions) => Layer.effect(Restart, Effect.g
   }).pipe(Effect.provide(services));
 
   return Restart.of({
+    progress: Effect.sync(() => ({ _tag: "ServiceStarting" as const, recovered: recoveredCount, total: recoveryTotal })),
     ready: Deferred.isDone(ready),
     whenReady: Deferred.await(ready),
     // Ruling 3 of fix round 1: one attempt per service (see `Restart.recover`).

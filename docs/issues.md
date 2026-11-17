@@ -19163,3 +19163,203 @@ In the run of 11, the small Claude lead also did not attempt two commands and ma
 The live check starts no project, so it does not exercise worker worktrees.
 
 State: open. Recorded on 2026-11-16.
+
+## 1330. Recovery hid the website and its sign-in form.
+
+The web server returned an empty service-unavailable response for static files before checking the request policy or session.
+Agent recovery can wait up to 120 seconds for each adapter setup.
+The website now loads during recovery.
+Login now checks the password during recovery.
+Authenticated data requests and socket upgrades return a typed starting state with recovery counts until the full recovery gate opens.
+The existing connection badge and menu show the progress.
+Authenticated starting replies count as contact, so a long recovery does not become an offline warning.
+Data waits because recovery changes agent credentials, lifecycle states, and request holders.
+The total includes interrupted and paused agents.
+A failed or unsupported reload does not count as a successful recovery.
+
+## 1331. Reloading a tab discarded unsent chat messages.
+
+Agent and board composers kept their text only in memory.
+The shared mock and website draft store now uses per-tab session storage for composer keys.
+The stored data is limited to 32 drafts, 8,192 characters per draft, and 65,536 serialized characters in total.
+A successful send removes its draft from storage.
+Password fields, secret fields, sign-in fields, and terminal input do not use this store.
+
+## 1332. Availability was mistaken for sign-in evidence.
+
+Both account adapters treated an available account as signed in without evidence.
+The account view now derives positive evidence from successful session events.
+The existing local credential check keeps its result in memory for the current account row.
+The snapshot exposes only the resulting boolean.
+A changed login configuration invalidates the evidence.
+An account without evidence uses the existing neutral wording, “Not reported”.
+An explicit sign-out remains signed out after the owner clears an availability pause.
+
+## 1333. Plan updates accumulated as separate chat rows.
+
+The thread adapter appended every plan update as a new message.
+The view now updates the first plan row of a turn with the latest entries.
+The same fold handles live events and replay.
+Stored plan events have no plan identifier.
+Separate plans within one turn therefore share a row.
+A turn or session boundary starts a separate row.
+
+## 1334. The full startup check encountered the known shutdown-test failure.
+
+The final whole unit-test run failed the interruption-only shutdown test in `packages/cli/test/serve.test.ts`.
+Issue 1295 already records this load-sensitive failure.
+The same test passed immediately when run alone.
+This change does not modify the command-line shutdown code or its test.
+
+
+## 1335. Signing out left composer drafts in the browser.
+
+The first startup change preserved drafts across every session transition.
+Sign-out, expiry, and an unconfirmed logout now clear both memory and per-tab storage.
+An outage preserves the drafts.
+
+## 1336. Unknown sign-in evidence disabled previously usable account controls.
+
+The first startup change made unknown accounts look signed out to controls beyond their status label.
+Unknown accounts now retain the base account actions, default badge, model choices, and composer selection.
+The header counts confirmed sign-ins among known accounts and reports unknown accounts separately with “Not reported”.
+Subscription loading now runs the existing sequential local check for accounts without evidence.
+It repeats that check after an engine restart.
+Successful session events and explicit sign-out events derive deterministic evidence on replay.
+An owner-cleared availability event now returns the account to unknown.
+Local-check evidence stays in memory for its current account row.
+A replaced row loses that observation and can be checked again.
+
+## 1337. Recovery progress counted successful reloads against unrelated pauses.
+
+The total now includes only the interrupted and returning paused agents selected for recovery attempts.
+An attempt counts when it finishes, including a failed attempt.
+Progress cannot exceed the total.
+The browser clamps excess counts instead of rejecting the authenticated starting state.
+The notice names completed recovery attempts.
+The preflight phase reports zero attempts until its recovery work is selected.
+
+## 1338. An overlong saved draft could return as shortened text.
+
+A composer draft longer than 8,192 characters is now omitted from storage in full.
+Its complete text remains in the current tab's memory.
+The existing toast area reports once per composer that the draft is too long to keep after a reload.
+The other draft count and total-size bounds remain in force.
+
+## 1339. The first authenticated page could look like an empty installation during recovery.
+
+The main area now uses the existing empty-state component with “Loading…” until its first snapshot arrives.
+The connection controls remain visible during that wait.
+The held-recovery journey verifies the main area before recovery completes.
+
+## 1340. A plan update can change text above later tool calls.
+
+The latest plan replaces its first row in the turn.
+An update after tool calls therefore changes a row above those calls.
+This keeps one stable plan row without changing stored events.
+State: open as the presentation tradeoff recorded by review finding m5.
+
+## 1341. A starting badge can remain visible until the next session probe.
+
+A failed socket attempt first preserves the last authenticated startup counts.
+The subsequent session probe clears that starting state when the service stops answering.
+The badge can therefore retain the old counts for one retry.
+State: open as review finding m7.
+
+## 1342. Recovery coverage omitted hostile request headers and the feature list was stale.
+
+The recovery test now checks that a bad Host or Origin receives the same forbidden response during and after recovery.
+Those request-policy checks already ran before the recovery gate.
+The test retains its 5.14 identifier.
+The feature list now describes static loading and login during recovery.
+
+
+## 1343. The first attempt-count fix moved timer reconciliation ahead of ordinary reloads.
+
+The existing recovery-order regression caught an account becoming available before an ordinary reload finished.
+The final implementation previews overdue returns without releasing the account early.
+Timer reconciliation still follows ordinary reloads.
+The total is reconciled with the actual returning work because account deadlines can change while an adapter loads.
+The completed count remains bounded by that total.
+
+
+## 1344. A Setup bookmark bypassed the first-snapshot loading guard.
+
+The first loading guard covered the main views after the Setup route had already returned.
+A held-recovery journey reproduced the gap through that bookmark.
+The Setup route now waits for the first snapshot too.
+
+## 1345. The long-draft notice initially stayed suppressed for the next draft.
+
+The first notice guard remembered a composer key after its text was cleared.
+Clearing the draft or making it short enough now resets that guard.
+A later overlong draft receives its own single notice.
+
+## 1346. A missing local credential was treated as proof of sign-out.
+
+The local check does not cover every harness or login method.
+Its negative result disabled usable Cursor and custom accounts.
+It also overrode successful session evidence and an owner's availability reset.
+Local checks now only add positive evidence.
+Stored event evidence takes precedence.
+Only the stored AccountNeedsSignIn evidence confirms sign-out.
+
+## 1347. Automatic account checks were unbounded and repeated inconclusive reads.
+
+A subscription load now checks at most 64 previously unchecked account rows.
+Every outcome is remembered on its account row.
+An account with no harness configuration also consumes a slot and remembers its outcome.
+Later loads advance through the remaining rows.
+Replacing the row permits a new automatic check.
+The explicit account check can still run again.
+
+## 1348. The boot account-return step could reload a paused agent with a live token.
+
+Normal startup revokes the old tokens before recovery.
+An intervening token issuance could still make a planned return stale.
+The boot return selection now skips an agent that already holds a live token.
+A regression issues a token during an ordinary reload and verifies the paused agent is skipped.
+
+## 1349. A recovery progress preview moved a stored-event failure earlier.
+
+The preview decoded availability history before ordinary agents reloaded.
+An unreadable availability event therefore prevented those reloads.
+A failed preview now supplies an empty estimate.
+The actual account-return step still reports the failure after ordinary reloads.
+A regression restores the deliberately corrupted test event before checking replay consistency.
+
+## 1350. A refused first snapshot left the main area loading indefinitely.
+
+The main area now shows the existing snapshot notice when it is set.
+The startup count notice still leaves the existing Loading… state in the main area.
+A later successful snapshot opens the usual screen.
+
+## 1351. A sample account added without sign-in became unknown and usable.
+
+The mock now creates that sample row with known sign-out status.
+Its row again shows Signed out and the Sign in button.
+The live account still begins without sign-in evidence.
+
+## 1352. The all-unknown header reported zero signed-in accounts out of zero.
+
+The header now reads n Not reported when every account is unknown.
+It appends the existing limit count only when that count is positive.
+The empty list reads 0 Not reported.
+The mixed list retains separate known and unknown counts.
+
+## 1353. The round-two report overstated unsupported checks and omitted visible behavior.
+
+The report said unsupported local checks left accounts unknown.
+The implementation actually marked those accounts signed out.
+The corrected report acknowledges that error.
+Its final visible-change list now covers the whole unit against the original base.
+
+## 1360. The startup unit left an existing journey asserting the old optimistic sign-in wording.
+
+The journey "live website: subscriptions, notifications and service settings persist through the engine" asserted "Signed in" for a test account that has no sign-in evidence.
+The startup unit changed that wording to "Not reported", and its builder ran only its own new journeys, so the failure appeared in the orchestrator's full check.
+The assertion in `packages/web/e2e/support/studioService.ts` now expects "Not reported" and the absence of "Signed out".
+In the same whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:361` and `studio.spec.ts:1189` failed under load, and each passed when run alone.
+Two live checks gave 19 and 13 of 23 steps; the short run was issue 272.
+
+State: the journey is fixed; the load-sensitive journeys remain open. Recorded on 2026-11-17.

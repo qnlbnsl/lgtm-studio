@@ -1,3 +1,4 @@
+import { signInEvidence } from "../accounts/signInEvidence.ts";
 import { canReceiveAnswer } from "../routing/questionAvailability.ts";
 import type { Caller } from "@lgtm/contracts";
 import { pieceNamespaces } from "@lgtm/contracts";
@@ -59,6 +60,7 @@ export const snapshot = (caller: Caller, lists: EngineLists = engineLists) => Ef
       accounts: Object.values(view.accounts).map((row) => ({
         // An account added without the flag is enabled, as account picking treats it.
         id: row.id, status: row.status, enabled: row.enabled !== false,
+        ...(signInEvidence(row) === undefined ? {} : { signedIn: signInEvidence(row) }),
         environment: Object.entries(row.environment ?? {}).map(([name, value]) => ({ name, secret: value.startsWith("secret:") })),
       })),
       waitState: {

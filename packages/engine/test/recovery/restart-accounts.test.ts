@@ -1,4 +1,5 @@
 import { it } from "@effect/vitest";
+import * as SqlClient from "effect/sql/SqlClient";
 import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as TestClock from "effect/testing/TestClock";
@@ -10,7 +11,7 @@ import { accept, notice, send, spawn, type Spawned } from "../support/deliveryRi
 import { makeFakeRunner, sessionFor, type FakeRunner } from "../support/fakeRunner.ts";
 import {
   agentRow, call, headSequence, logAfter, makeRig, ownerCredential, readLog, removeRig,
-  seedAccount, seedAgent, seedHarness, stateOf, success, type Rig,
+  seedAccount, seedAgent, seedHarness, rotateToken, stateOf, success, type Rig,
 } from "../support/handlerRig.ts";
 import { registerRebuildCheck } from "../support/rebuildCheck.ts";
 import { appendEvents, carryRows, promptsAfter, provideRestart, queued, ready, recover } from "../support/restartRig.ts";
@@ -222,5 +223,50 @@ test("6.10 A06 row 53: catches dropping the first prompt or loading a nonexisten
     expect(runner.callsOf("load")).toEqual([]);
     expect(promptsAfter(runner, watermark, "pre-session").map((entry) => entry.input.delivery.id)).toEqual(["first-prompt"]);
     expect(yield* carryRows("pre-session")).toEqual([]);
+  }));
+}));
+
+test("s24: boot account returns skip a paused agent that acquired a live token during an ordinary reload", () => Effect.gen(function* () {
+  const old = yield* history((runner) => Effect.gen(function* () {
+    const paused = yield* pausedTurn(runner, "out-of-usage", false);
+    yield* seedAgent({ id: "ordinary", folder: rig.work });
+    return paused;
+  }));
+  yield* withViews(rig.root, Effect.gen(function* () {
+    yield* registerRebuildCheck();
+    yield* appendEvents({ _tag: "AccountAvailable", accountId: "primary", cause: "usage reset" });
+  }));
+  const runner = yield* makeFakeRunner();
+  yield* provideRestart(rig, runner.layer, Effect.gen(function* () {
+    yield* registerRebuildCheck();
+    const context = yield* Effect.context<Effect.Services<ReturnType<typeof rotateToken>>>();
+    runner.script("load", (input) => Effect.gen(function* () {
+      if (input.agentId === "ordinary") yield* rotateToken(old.target.agentId).pipe(Effect.provide(context), Effect.orDie);
+      return sessionFor(input.agentId);
+    }));
+    yield* recover;
+    expect(runner.callsOf("load").map((c) => c.input.agentId)).toEqual(["ordinary"]);
+    expect(yield* stateOf(old.target.agentId)).toBe("paused");
+  }));
+}));
+
+test("s24: an unreadable availability history still fails after ordinary reloads", () => Effect.gen(function* () {
+  yield* history(() => Effect.gen(function* () {
+    yield* seedAgent({ id: "ordinary", folder: rig.work });
+    yield* appendEvents({ _tag: "AccountAvailable", accountId: "primary", cause: "usage reset" });
+  }));
+  const runner = yield* makeFakeRunner();
+  yield* provideRestart(rig, runner.layer, Effect.gen(function* () {
+    yield* registerRebuildCheck();
+    const sql = yield* SqlClient.SqlClient;
+    // Corrupt only after Views has replayed; restore before the replay check.
+    const rows = yield* sql<{ sequence: number; payload_json: string }>`SELECT sequence, payload_json FROM events WHERE event_type = 'AccountAvailable'`;
+    const stored = rows[0]!;
+    yield* sql`UPDATE events SET payload_json = ${'{'} WHERE sequence = ${stored.sequence}`;
+    yield* Effect.gen(function* () {
+      const outcome = yield* recover.pipe(Effect.result);
+      expect(runner.callsOf("load").map((c) => c.input.agentId)).toEqual(["ordinary"]);
+      expect(outcome).toMatchObject({ _tag: "Failure", failure: { _tag: "LogWriteFailed", reason: "stored event is unreadable" } });
+    }).pipe(Effect.ensuring(sql`UPDATE events SET payload_json = ${stored.payload_json} WHERE sequence = ${stored.sequence}`.pipe(Effect.orDie)));
   }));
 }));

@@ -127,7 +127,6 @@ export const serve = (options: {
   }, lists)), Effect.provide(batchServices), Effect.catchCause((cause) => Cause.hasInterrupts(cause) ? Effect.interrupt : Effect.logError("web server status could not be recorded")));
 
   const app = Effect.scoped(Effect.gen(function* () {
-    if (Option.isSome(recovery) && !(yield* recovery.value.ready)) return HttpServerResponse.empty({ status: 503 });
     const request = yield* HttpServerRequest.HttpServerRequest;
     const path = request.url.split("?")[0]!;
     const upgrade = request.headers.upgrade?.toLowerCase() === "websocket";
@@ -158,6 +157,14 @@ export const serve = (options: {
       return yield* staticResponse(options.staticRoot, request.url, request.method === "HEAD", configuration?.displayOrigin);
     }
     if (caller === undefined) return HttpServerResponse.empty({ status: 401 });
+    // Recovery mutates credentials, holders and agent state. Keep every data
+    // endpoint behind both the session boundary and the complete recovery gate.
+    if (Option.isSome(recovery) && !(yield* recovery.value.ready)) {
+      const progress = recovery.value.progress === undefined
+        ? { _tag: "ServiceStarting" as const, recovered: 0, total: 0 }
+        : yield* recovery.value.progress;
+      return HttpServerResponse.jsonUnsafe(progress, { status: 503, headers: { "cache-control": "no-store", "retry-after": "1" } });
+    }
     if (path === "/api/session" && request.method === "POST" && !upgrade) return HttpServerResponse.empty({ status: 204 });
     if (path === "/api/logout" && request.method === "POST" && !upgrade) {
       session.rotate(); signOutTerminals((yield* handler.input(caller)).runtime.log); yield* disconnect;

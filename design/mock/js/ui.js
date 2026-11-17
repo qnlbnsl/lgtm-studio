@@ -7,7 +7,7 @@ import {
   useKey, HOUR, clamp, plural, isMac, uid,
 } from './lib.js';
 import {
-  agentOf, projectOf, teamOf, teamName, agentStatus, roleIcon, roleLabel, KIND_LABEL, HARNESSES, subOf, subLabel, machineOf,
+  usableSubscription, agentOf, projectOf, teamOf, teamName, agentStatus, roleIcon, roleLabel, KIND_LABEL, HARNESSES, subOf, subLabel, machineOf,
   threadOf, openRequests, byId, routeForRequest, routeForAgent, agentLabel,
 } from './data.js';
 import * as act from './actions.js';
@@ -447,7 +447,7 @@ export function RequestBlock({ s, request: r, variant = 'card', openThread = nul
   const opts = r.options || [];
   const rec = r.kind === 'question' && (r.recommendation || liveMode.on) ? opts.find((o) => o.primary) : null;
   const sub = a.failure && subOf(s, a.failure.subscription);
-  const fixed = r.kind === 'failed' && sub && sub.signedIn;
+  const fixed = r.kind === 'failed' && usableSubscription(sub);
   return html`<section aria-busy=${liveMode.on && chatLive.requestBusy(r)} class=${cx('req', variant, r.kind === 'failed' && 'failed', !open && 'closed')} id=${'req-' + r.id} tabindex="-1" aria-label=${KIND_LABEL[r.kind] + ': ' + r.title}>
     ${liveMode.on && r.kind === 'approval' && r.status === 'open' && r.heldBy && html`<p class="muted">Waiting on ${agentOf(s, r.heldBy).name}</p>`}
     ${approvalEffect && html`<p class="qc-sum">${approvalEffect}</p>`}
@@ -762,7 +762,7 @@ export function Composer({ s, agentId, center }) {
         <button type="button" class="pick" aria-expanded=${picking} onClick=${() => setPicking(!picking)} data-tip="Add a task or a file" data-tip-side="top"><${Icon} name="at-sign" size=${14} /><span class="not-narrow">Context</span></button>
         <button type="button" class="pick" aria-label="Attach files or images" data-tip="Attach files or images" data-tip-side="top" disabled=${!live} onClick=${() => fileIn.current?.click()}><${Icon} name="paperclip" size=${14} /></button>
         <${Menu} class="pick" side="top" label="Subscription" trigger=${html`<span class="truncate">${subLabel(s, a.subscription)}</span><${Icon} name="chevron-down" size=${12} />`}
-          items=${[{ heading: 'Subscription' }, ...subs.map((x) => ({ label: `${h.name} · ${x.name}`, sub: machineOf(s, x.machine).name, checked: x.id === a.subscription, disabled: !x.signedIn, why: x.signedIn ? null : 'Signed out', onSelect: () => act.setAgentConfig(a.id, { subscription: x.id }) }))]} />
+          items=${[{ heading: 'Subscription' }, ...subs.map((x) => ({ label: `${h.name} · ${x.name}`, sub: machineOf(s, x.machine).name, checked: x.id === a.subscription, disabled: !usableSubscription(x), why: x.signInKnown === false ? 'Not reported' : x.signedIn ? null : 'Signed out', onSelect: () => act.setAgentConfig(a.id, { subscription: x.id }) }))]} />
         <${Menu} class="pick" side="top" label="Model" trigger=${html`<span>${a.model}</span><${Icon} name="chevron-down" size=${12} />`}
           items=${[{ heading: 'Model, from the next turn' }, ...(liveMode.on ? a.models || [] : h.models).map((m) => ({ label: m.label || m.id || m, checked: (m.id || m) === a.model, disabled: chatLive.busy('agent:' + a.id), onSelect: () => act.setAgentConfig(a.id, { model: m.id || m }) }))]} />
         <${Menu} class="pick" side="top" label="Effort" trigger=${html`<span>${a.effort}</span><${Icon} name="chevron-down" size=${12} />`}

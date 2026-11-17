@@ -80,7 +80,7 @@ Synapse fork. It is at `docs/message-board/features.md` in the
     agents after an engine restart: it reloads each one with a new token,
     scans the replayed history for delivery ids, then sends a carry-on or
     re-sends, returns paused agents, and supports `resume --fresh`; unit
-    7a answers every connection with 503 until recovery ends). LGTM Studio starts the agent as a child process
+    7a serves the website and password login during recovery, while authenticated data and socket requests report typed startup progress until recovery ends). LGTM Studio starts the agent as a child process
     and drives it through the Agent Client Protocol (ACP): it opens a
     session, sends prompts, and receives structured events (text, plan, tool
     calls, permission requests). Adding a harness means adding its ACP

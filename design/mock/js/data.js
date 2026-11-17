@@ -1,12 +1,14 @@
 // The mock's sample data and the functions that read it.
 // The data is plain objects. It is a design aid, not a contract for the engine.
 // Agents have no personal names: an agent is known by its role and its team.
+import { composerDrafts } from './drafts.js';
 import { MIN, HOUR, DAY, persist, FRAMED, live } from './lib.js';
 
 const T = Date.now();
 const at = (msAgo) => T - msAgo;
 
 // ---- vocabulary ------------------------------------------------------------
+export const usableSubscription = (account) => !!account && (account.signInKnown === false || account.signedIn === true);
 export const STAGES = ['Define', 'Design', 'Plan', 'Build', 'Review', 'Hand over'];
 export const PHASES = [
   { id: 'define', n: 1, name: 'Define', stage: null, what: 'Say what to change. Mockups are made if screens change, and the end-result page is written.' },
@@ -343,7 +345,7 @@ function base() {
       sidebarFolded: persist('sidebarFolded', false), sidebarWidth: persist('sidebarWidth', 264),
       panelWidth: persist('panelWidth', 420), panelOpen: persist('panelOpen', true), onlyNeedingYou: false,
     },
-    drafts: {}, pending: {}, expanded: {}, inspecting: {}, toasts: [], dialog: null, phoneOffer: persist('phoneOffer', 'open'),
+    drafts: composerDrafts(live.on ? 'live' : 'mock', FRAMED), pending: {}, expanded: {}, inspecting: {}, toasts: [], dialog: null, phoneOffer: persist('phoneOffer', 'open'),
     settings: {
       ntfyServer: '', ntfyTopic: '', ntfyToken: '', tokenSet: false, ntfyEnabled: false, email: { enabled: false, tokenSet: false },
       webEnabled: true, port: 8787, checkIn: 15, proxyMode: false, publicAddress: '',
@@ -393,7 +395,7 @@ export const harnessOfModel = (m) => Object.keys(HARNESSES).find((h) => HARNESSE
 export const WORK_KINDS = ['Plan', 'Build', 'Review', 'Test'];
 // The table the project lead proposes, from the harnesses the owner has signed in to.
 export function proposeAssignment(s) {
-  const on = new Set(s.subscriptions.filter((x) => x.signedIn && x.enabled).map((x) => x.harness));
+  const on = new Set(s.subscriptions.filter((x) => usableSubscription(x) && x.enabled).map((x) => x.harness));
   const c = on.has('claude'), x = on.has('codex');
   const pick = (h, m, e) => ({ harness: h, model: m, effort: hasEffort(h, m) ? e : null });
   const fallback = c ? 'claude' : x ? 'codex' : 'claude';

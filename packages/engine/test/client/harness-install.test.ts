@@ -1,3 +1,7 @@
+import { vi } from "vitest"
+import * as readiness from "../../src/project/leadDefaults.ts"
+import { hasSignInCheck } from "../../src/accounts/signInEvidence.ts"
+import { Views } from "../../src/views/Views.ts"
 import { afterEach, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -125,9 +129,11 @@ it.live("checks only local sign-in evidence without launching a provider", () =>
       eventOf({ _tag: "AccountChanged", accountId: "owner-account", account: { id: "owner-account", harness: "claude", home: join(rig.home, "account"), enabled: true } })
     ])
     expect(success(yield* call(ownerCredential, "client.harness.account.check", { accountId: "owner-account" })).state).toBe("signed-out")
+    expect(success(yield* call(ownerCredential, "client.snapshot", {})).accounts.find((row: any) => row.id === "owner-account")).not.toHaveProperty("signedIn")
     mkdirSync(join(rig.home, "account"), { recursive: true })
     writeFileSync(join(rig.home, "account", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "synthetic-owner-token" } }))
     expect(success(yield* call(ownerCredential, "client.harness.account.check", { accountId: "owner-account" })).state).toBe("local-credential")
+    expect(success(yield* call(ownerCredential, "client.snapshot", {})).accounts.find((row: any) => row.id === "owner-account")).toMatchObject({ signedIn: true })
     expect(runner.calls).toHaveLength(0)
   }))
 }))
@@ -151,5 +157,62 @@ it.live("shows the private Codex account's actual login folder without creating 
     writeFileSync(join(folder!, "auth.json"), JSON.stringify({ tokens: { access_token: "synthetic-private-token" } }))
     expect(success(yield* call(ownerCredential, "client.harness.account.check", { accountId: "second-codex" })).state).toBe("local-credential")
     expect(runner.calls).toHaveLength(0)
+  }))
+}))
+
+
+it.live("s24 r2 subscription loading checks unknown local evidence again after an engine restart", () => Effect.gen(function* () {
+  rig = makeRig();
+  mkdirSync(join(rig.home, "account"), { recursive: true });
+  writeFileSync(join(rig.home, "account", ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "synthetic-owner-token" } }));
+  for (let boot = 0; boot < 2; boot++) {
+    const runner = yield* makeFakeRunner();
+    yield* provideRig(rig, { runner, secrets: makeFakeSecrets() }, Effect.gen(function* () {
+      yield* registerRebuildCheck();
+      if (boot === 0) yield* appendSetup([
+        eventOf({ _tag: "HarnessChanged", harness: harnessSettings("claude", { adapterPath: process.execPath }) }),
+        eventOf({ _tag: "AccountChanged", accountId: "owner-account", account: { id: "owner-account", harness: "claude", home: join(rig.home, "account"), enabled: true } })
+      ]);
+      const account = (reply: any) => reply.accounts.find((row: any) => row.id === "owner-account");
+      expect(account(success(yield* call(ownerCredential, "client.snapshot", {})))).not.toHaveProperty("signedIn");
+      success(yield* call(ownerCredential, "client.harness.status", {}));
+      expect(account(success(yield* call(ownerCredential, "client.snapshot", {})))).toMatchObject({ signedIn: true });
+      expect(runner.calls).toHaveLength(0);
+    }));
+  }
+}));
+
+it.live("automatically checks at most 64 new rows per load and remembers inconclusive outcomes", () => Effect.gen(function* () {
+  rig = makeRig()
+  const runner = yield* makeFakeRunner()
+  yield* provideRig(rig, { runner, secrets: makeFakeSecrets() }, Effect.gen(function* () {
+    yield* registerRebuildCheck()
+    yield* appendSetup([
+      eventOf({ _tag: "HarnessChanged", harness: harnessSettings("offline", { runMode: "interactive" }) }),
+      eventOf({ _tag: "HarnessChanged", harness: harnessSettings("missing", { adapterPath: join(rig.root, "absent") }) }),
+      eventOf({ _tag: "HarnessChanged", harness: harnessSettings("empty", { adapterPath: process.execPath }) }),
+      ...Array.from({ length: 70 }, (_, i) => eventOf({ _tag: "AccountChanged", accountId: `bounded-${i}`, account: {
+        id: `bounded-${i}`, harness: ["offline", "missing", "empty", "unconfigured"][i % 4]!
+      } }))
+    ])
+    const check = vi.spyOn(readiness, 'accountReadiness')
+    try {
+      success(yield* call(ownerCredential, "client.harness.status", {}))
+      // Unconfigured rows consume a slot too; the remaining rows wait for the next load.
+      expect(check.mock.calls.map((args) => args[2].id)).not.toContain('bounded-64')
+      expect(check.mock.calls.length).toBeLessThanOrEqual(64)
+      const rows = (yield* (yield* Views).snapshot).accounts
+      expect(Object.values(rows).filter(hasSignInCheck)).toHaveLength(64)
+      expect(hasSignInCheck(rows['bounded-63']!)).toBe(true)
+      expect(hasSignInCheck(rows['bounded-64']!)).toBe(false)
+      success(yield* call(ownerCredential, "client.harness.status", {}))
+      const after = check.mock.calls.map((args) => args[2].id)
+      expect(after).toContain('bounded-68')
+      expect(new Set(after).size).toBe(after.length)
+      expect(Object.values(rows).every(hasSignInCheck)).toBe(true)
+      success(yield* call(ownerCredential, "client.harness.status", {}))
+      expect(check.mock.calls).toHaveLength(after.length)
+      expect(success(yield* call(ownerCredential, "client.snapshot", {})).accounts.every((a: any) => a.signedIn === undefined)).toBe(true)
+    } finally { check.mockRestore() }
   }))
 }))

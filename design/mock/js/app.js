@@ -1,3 +1,5 @@
+import { setDraftNotice } from './drafts.js';
+import { connectionWord } from './live/startup.js';
 import { Workflows } from './screens/workflows.js';
 import * as liveGit from './live/git.js';
 import * as chat from './live/chat.js';
@@ -186,7 +188,7 @@ function Bell({ s }) {
 }
 function Live({ s }) {
   const now = useNow(5000); const c = s.conn;
-  const word = { live: 'Live', reconnecting: 'Reconnecting', offline: 'Offline' }[c.status];
+  const word = connectionWord(c);
   return html`<${Menu} class=${cx('live', c.status)} align="end" width=${280} label=${'Connection: ' + word}
     trigger=${html`<i class=${cx('dot', c.status === 'live' ? 'working' : c.status === 'reconnecting' ? 'waiting' : 'failed')}></i><span class="not-phone">${word}</span>`}
     header=${html`<div style="padding:8px 8px 6px;line-height:1.5"><b>${word}</b><div class="muted" style="font-size:var(--text-sm)">${c.notice || (c.status === 'live' ? `Connected to the service on ${(s.machines.find((m) => m.here) || s.machines[0])?.name || 'this computer'}.` : c.lastHeard ? `Last heard from the service ${ago(c.lastHeard, now)} ago. You can read, and changes wait until it is back.` : 'The service has not answered yet.')}</div></div>`}
@@ -333,10 +335,12 @@ function App() {
   // The live website asks the engine whether this browser is signed in before it shows anything.
   if (s.session.status === 'checking') return html`<main class="auth" aria-busy="true"></main>`;
   if (top === 'login' || (s.session.status !== 'in' && (top !== 'setup' || live.on))) return html`<${Login} s=${s} /><${Toasts} s=${s} />`;
-  if (top === 'setup') return html`<${FirstRun} s=${s} route=${route} /><${DialogHost} s=${s} /><${Toasts} s=${s} />`;
+  const waiting = live.on && !s.snapshotReady;
+  if (top === 'setup' && !waiting) return html`<${FirstRun} s=${s} route=${route} /><${DialogHost} s=${s} /><${Toasts} s=${s} />`;
   const project = top === 'p' ? projectOf(s, route.parts[1]) : null;
   let content;
-  if (top === 'p' && project) content = html`<${ProjectView} s=${s} route=${route} project=${project} />`;
+  if (waiting) content = html`<div class="view-body"><div class="page" role="status" aria-busy=${!s.conn.notice || !!s.conn.starting}><${Empty} title=${!s.conn.starting && s.conn.notice || 'Loading…'} /></div></div>`;
+  else if (top === 'p' && project) content = html`<${ProjectView} s=${s} route=${route} project=${project} />`;
   else if (top === 'p') content = html`<div class="view-body"><div class="page"><div class="empty" data-empty><strong>This project does not exist</strong><span>It may have been removed. <a class="link" href=${href('/home')}>Go to Home</a></span></div></div></div>`;
   else if (top === 'r') content = route.parts[2] === 'design' ? html`<${RepoDesign} s=${s} repoId=${route.parts[1]} route=${route} />` : html`<${RepoPage} s=${s} repoId=${route.parts[1]} />`;
   else if (top === 'projects') content = html`<${AllProjects} s=${s} />`;
@@ -366,6 +370,7 @@ function App() {
 //   slots        components for the named places above, by name
 export { App };
 export function mount(el, { connection, slots: fills, mode = 'mock' } = {}) {
+  setDraftNotice(() => act.toast('This draft is too long to keep after a reload.', 'error'));
   engine.setConnection(connection);
   slots = fills || {};
   live.on = mode === 'live';
@@ -405,8 +410,9 @@ function mountLive(el) {
   addEventListener('unhandledrejection', onRefusedError);
   engine.connection().open?.((patch) => {
     if (patch.session && patch.session.status !== 'checking' && patch.session.status !== 'in') {
-      chat.reset(); engineWrite({ threads: {}, pending: {} });
+      chat.reset(patch.session.status); engineWrite({ threads: {}, pending: {} });
     }
+    if (patch.snapshotReady === undefined && patch.projects) patch.snapshotReady = true;
     if (patch.chatEvent) { if (patch.git) liveGit.observe({ git: patch.git }); chat.receive(patch.chatEvent); return; }
     chat.enrich(patch);
     // The Workflow and Mocks tabs keep one record per project. Each live project gets an

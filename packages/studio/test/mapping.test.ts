@@ -134,11 +134,11 @@ describe("requests", () => {
 
 describe("subscriptions", () => {
   it("lists each account the engine or an agent names, with its harness and sign-in", () => {
-    const accounts = [{ id: "acct-main", status: "available", enabled: true, environment: [] }, { id: "codex", status: "needs-sign-in", enabled: false, environment: [] },
+    const accounts = [{ id: "acct-main", status: "available", signedIn: true, enabled: true, environment: [] }, { id: "codex", status: "needs-sign-in", enabled: false, environment: [] },
       { id: "acct-unknown", status: "available", enabled: true, environment: [] }] as never
     expect(mapSubscriptions(accounts, engineSnapshot.agents, "local")).toEqual([
-      { id: "acct-main", harness: "claude", name: "acct-main", machine: "local", enabled: true, signedIn: true, useForNew: false, usage: null, window: null, account: null, model: "" },
-      { id: "codex", harness: "codex", name: "codex", machine: "local", enabled: false, signedIn: false, useForNew: false, usage: null, window: null, account: null, model: "" }
+      { id: "acct-main", harness: "claude", name: "acct-main", machine: "local", enabled: true, signedIn: true, signInKnown: true, useForNew: false, usage: null, window: null, account: null, model: "" },
+      { id: "codex", harness: "codex", name: "codex", machine: "local", enabled: false, signedIn: false, signInKnown: true, useForNew: false, usage: null, window: null, account: null, model: "" }
     ])
   })
 })

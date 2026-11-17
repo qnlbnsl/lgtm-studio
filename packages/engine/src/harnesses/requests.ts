@@ -1,3 +1,4 @@
+import { hasSignInCheck, recordSignInCheck, signInEvidence } from "../accounts/signInEvidence.ts"
 import * as Schema from "effect/Schema"
 import { HarnessSettings } from "@lgtm/contracts"
 import { harnesses as planHarnesses } from "../commands/harnesses.ts"
@@ -38,6 +39,14 @@ const audit = (input: Pick<Input, "runtime">, events: ReadonlyArray<Event>) => i
 const status: ReadHandler = (input, p) => Effect.gen(function* () {
   if (input.actor._tag !== "owner") return yield* refused()
   const { programs } = instance(input), configured = yield* readHarnesses(input.runtime)
+  // Bound each load, remembering inconclusive checks as well as positives.
+  // Later loads advance through the remaining rows without re-reading stores.
+  const unchecked = Object.values(input.snapshot.accounts).filter(account => signInEvidence(account) === undefined && !hasSignInCheck(account)).slice(0, 64)
+  for (const account of unchecked) {
+    const harness = configured.find(row => row.id === account.harness)
+    if (harness) yield* accountReadiness(input, harness, account)
+    else recordSignInCheck(account, "missing-executable")
+  }
   const ids = [...new Set([...programs.ids, ...configured.map((h) => h.id)])]
   const harnesses = []
   for (const id of ids) {
@@ -123,6 +132,7 @@ const accountCheck: ReadHandler = (input, p) => Effect.gen(function* () {
   if (!account) return yield* refused("The account is no longer registered.")
   const settings = (yield* readHarnesses(input.runtime)).find((h) => h.id === account.harness)
   const state = settings ? yield* accountReadiness(input, settings, account) : "missing-executable"
+  if (!settings) recordSignInCheck(account, state)
   const { programs } = instance(input), value = programs.recipe(account.harness)
   const installation = yield* inspect(input, programs, account.harness, settings)
   let command = value?.signInCommand ?? ""

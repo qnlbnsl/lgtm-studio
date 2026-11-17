@@ -16,7 +16,9 @@ export async function exerciseStudioService(page: Page, origin: string) {
   await expect(row).toContainText('Turned off')
   await row.getByRole('button', { name: 'Actions for Browser account', exact: true }).click()
   await page.getByRole('menuitem', { name: 'Turn on', exact: true }).click()
-  await expect(row).toContainText('Signed in')
+  // The test account has no sign-in evidence, so it reads the neutral wording and stays usable.
+  await expect(row).toContainText('Not reported')
+  await expect(row).not.toContainText('Signed out')
   await row.getByRole('combobox').selectOption('other-model')
   await expect(row.getByRole('combobox')).toHaveValue('other-model')
   await row.getByRole('button', { name: 'Actions for Browser account', exact: true }).click()
