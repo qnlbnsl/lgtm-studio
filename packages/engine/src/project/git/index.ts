@@ -611,14 +611,16 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
         } catch (error) {
           // A cancelled/timed-out child has already exited. Cleanup has its own
           // finite budget, rather than inheriting its exhausted signal.
-          try { await rollbackAllocation(path, { path: target, branch: name, head: start, locked: false, available: true }, AbortSignal.timeout(10_000)); }
-          finally { await clearEmpty(); }
+          // Cleanup is best effort. A changed partial checkout is evidence,
+          // and neither that refusal nor ENOTEMPTY may replace this failure.
+          try { await rollbackAllocation(path, { path: target, branch: name, head: start, locked: false, available: true }, AbortSignal.timeout(10_000)); } catch { /* preserve external work */ }
+          try { await clearEmpty(); } catch { /* keep a changed reservation */ }
           throw error;
         }
         if (reply.code !== 0) {
           if (/already exists|already registered/i.test(reply.stderr)) { await clearEmpty(); continue; }
-          try { await rollbackAllocation(path, { path: target, branch: name, head: start, locked: false, available: true }, AbortSignal.timeout(10_000)); }
-          finally { await clearEmpty(); }
+          try { await rollbackAllocation(path, { path: target, branch: name, head: start, locked: false, available: true }, AbortSignal.timeout(10_000)); } catch { /* preserve external work */ }
+          try { await clearEmpty(); } catch { /* keep a changed reservation */ }
           throw processFailure(reply);
         }
         return { path: target, branch: name, head: start, locked: false, available: true };

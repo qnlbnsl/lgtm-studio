@@ -153,4 +153,14 @@ The instructions ask agents to finish checks before reporting done.
 They also prohibit committing run notes.
 The engine does not mechanically validate those claims or reject such commits.
 Frozen tests, independent review and isolated builder folders remain responsibilities of the agreed brief and its leads.
-A role name does not create a worktree or a blind review.
+The engine uses the parsed role kind to allocate worktrees for project workers.
+Leads and orchestrators retain their supplied folders.
+A worker starts from the starter's last commit.
+Uncommitted changes are not copied.
+The required `folder` field does not choose a project worker's checkout.
+A lead calls `client.snapshot` and reads `project.workspaces` to find a builder's worktree.
+Its `owner` matches the builder's agent identifier returned by `start`.
+The lead supplies that row's `worktreeId` and `read-only` permission when starting a reviewer, test runner or evaluator there.
+A lead can merge the worker's branch with its own Git commands.
+The owner can use Integrate to merge into the recorded parent worktree.
+An instruction file does not create a blind review.

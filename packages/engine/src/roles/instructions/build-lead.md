@@ -8,9 +8,10 @@ Read the lead rules first.
 
 - Read the agreed plans. Assign subitems in the order they depend on each other.
 - Give one writer to each set of files. Do not run more subitems at once than you can check.
-- Arrange each builder's branch and folder with your parent before starting it.
+- Let `start` allocate each builder's worktree and branch from your last commit.
 - Start it with `start`, `role` set to `worker:builder` and the launch fields in the lead rules.
 - Start test authors with `worker:build-init`, reviewers with `worker:reviewer` and the test runner with `worker:test-runner`.
+- Follow the lead rules to find the builder's `worktreeId` and name it with `read-only` permission for a reviewer, test runner or evaluator.
 - Ask the actual project lead or task owner to set each task to `active` with `project.task.update` when its builder starts.
 - When the project has tests on, the tests for a subitem are written first by a build-init agent, and a reviewer reads them against the end-result page. The builder starts only after that.
 - The agent that writes a subitem's tests is not the agent that builds it. Use only the launch choices your brief supplies.

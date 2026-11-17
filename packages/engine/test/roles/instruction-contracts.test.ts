@@ -47,3 +47,19 @@ it('s22 r3: every test-runner prohibition is a complete Never sentence', () => {
   expect(bullets).toHaveLength(6)
   for (const line of bullets) expect(line).toMatch(/^- Never .+\.$/)
 })
+
+it('s23 r2: lead instructions explain automatic worktrees and the real discovery fields', () => {
+  const lead = read('lead-base')
+  expect(lead).toContain('own worktree and branch automatically')
+  expect(lead).toContain('`folder` does not select a project worker')
+  expect(lead).toContain('`client.snapshot`')
+  expect(lead).toContain('project.workspaces')
+  expect(lead).toContain('`owner`')
+  expect(lead).toContain('`worktreeId`')
+  expect(lead).toContain('`read-only`')
+  expect(lead).toContain('Uncommitted changes')
+  expect(lead).toContain('Integrate')
+  for (const name of ['lead-base', 'build-lead', 'orchestrator']) {
+    expect(read(name)).not.toMatch(/does not create a separate folder|arrange an isolated folder|Arrange each builder's branch/)
+  }
+})

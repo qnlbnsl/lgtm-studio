@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
+import * as Result from "effect/Result";
 import { agentCredential, appendSetup, call, eventOf, ownerCredential, seedAccount, seedAgent, seedHarness, success, type Rig } from "./handlerRig.ts";
 
 export const workerGit = (folder: string, ...args: string[]) => execFileSync("/usr/bin/git", ["-C", folder, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
@@ -10,7 +11,7 @@ export const workerCommit = (folder: string, filename: string, content = "worker
   workerGit(folder, "add", filename); workerGit(folder, "commit", "-m", filename);
   return workerGit(folder, "rev-parse", "HEAD");
 };
-export const workerProject = (rig: Rig) => Effect.gen(function* () {
+export const workerProject = (rig: Rig, options: { settings?: boolean } = {}) => Effect.gen(function* () {
   workerGit(rig.work, "init", "-b", "main");
   workerGit(rig.work, "config", "user.name", "Test owner"); workerGit(rig.work, "config", "user.email", "test@example.invalid");
   workerGit(rig.work, "config", "commit.gpgsign", "false");
@@ -22,9 +23,17 @@ export const workerProject = (rig: Rig) => Effect.gen(function* () {
   const teamPath = join(rig.work, ".worktrees", "team");
   workerGit(path, "worktree", "add", "-b", "team", teamPath);
   yield* seedAccount(); yield* seedHarness();
-  success(yield* call(ownerCredential, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "sh" } }));
-  const repoId = success(yield* call(ownerCredential, "project.repository.add", { name: "Repository", path: rig.work, machineId: "local" })).repoId;
-  const register = (path: string, branch: string, parentId?: unknown) => call(ownerCredential, "project.workspace.register", { repoId, machineId: "local", path, branch, checkout: parentId === undefined ? "main" : "worktree", ...(parentId === undefined ? {} : { parentId }) });
+  if (options.settings !== false) success(yield* call(ownerCredential, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "sh" } }));
+  const repoId = options.settings !== false ? success(yield* call(ownerCredential, "project.repository.add", { name: "Repository", path: rig.work, machineId: "local" })).repoId : "historical-repository";
+  if (options.settings === false) yield* appendSetup([
+    eventOf({ _tag: "project.RepositoryAdded", repoId, name: "Repository", path: rig.work }),
+    eventOf({ _tag: "project.RepositoryLocated", repoId, machineId: "local", path: rig.work }),
+  ]);
+  const register = (path: string, branch: string, parentId?: unknown) => options.settings !== false
+    ? call(ownerCredential, "project.workspace.register", { repoId, machineId: "local", path, branch, checkout: parentId === undefined ? "main" : "worktree", ...(parentId === undefined ? {} : { parentId }) })
+    : appendSetup([eventOf({ _tag: "project.WorktreeCreated", worktreeId: `historical-${branch}`, repoId, machineId: "local", path, branch, checkout: parentId === undefined ? "main" : "worktree", ...(parentId === undefined ? {} : { parentId }) })]).pipe(
+      Effect.as(Result.succeed({ worktreeId: `historical-${branch}` })),
+    );
   const mainId = success(yield* register(rig.work, "main")).worktreeId;
   const worktreeId = success(yield* register(path, "project", mainId)).worktreeId;
   const lead = yield* seedAgent({ id: "project-lead", role: "lead:project", folder: path });

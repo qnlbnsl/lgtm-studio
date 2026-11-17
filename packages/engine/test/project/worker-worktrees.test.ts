@@ -34,18 +34,21 @@ const run = <A, E, R>(program: Effect.Effect<A, E, R> | ((runner: FakeRunner) =>
 // access shares the builder policy; the reviewer rows prove read-only reuse.
 export const startCases = ["owner", "project-lead", "team-lead"].flatMap((starter) =>
   ["builder:typescript", "reviewer", "test-runner", "evaluator", "lead:team"].flatMap((role) =>
-    [false, true].flatMap((project) => [false, true].map((named) => ({ starter, role, project, named })))));
+    [false, true].flatMap((project) => [false, true].map((named) => ({ starter, role, project, named }))))).filter((row) => row.project || row.starter !== "team-lead");
 for (const row of startCases) {
   it.live(`start table: ${row.starter} / ${row.role} / project=${row.project} / named=${row.named}`, () => run((runner) => Effect.gen(function* () {
     const p = yield* workerProject(rig);
     const actor = row.starter === "owner" ? ownerCredential : !row.project ? p.outsideCredential : row.starter === "team-lead" ? p.teamCredential : p.leadCredential;
     const basePath = !row.project ? rig.outside : row.starter === "team-lead" ? p.teamPath : p.path;
     const parentId = row.starter === "team-lead" ? p.teamWorktreeId : p.worktreeId;
+    const namedId = row.starter === "team-lead" ? p.worktreeId : p.teamWorktreeId;
+    const namedPath = row.starter === "team-lead" ? p.path : p.teamPath;
+    const permission = row.role === "reviewer" || row.named && row.starter !== "owner" ? "read-only" : "ask";
     const before = yield* readLog;
     const result = yield* call(actor, "start", workerPayload(basePath, {
-      role: row.role, permission: row.role === "reviewer" ? "read-only" : "ask",
+      role: row.role, permission,
       ...(row.project && row.starter === "owner" ? { projectId: p.projectId } : {}),
-      ...(row.named ? { worktreeId: parentId } : {}),
+      ...(row.named ? { worktreeId: namedId } : {}),
     }));
     if (!row.project && row.named) {
       expect(failureOf(result)!.reason).toBe("worker-worktree:project_required");
@@ -55,9 +58,9 @@ for (const row of startCases) {
     }
     const reply = success(result), state = yield* snapshot, agent = state.agents[reply.agentId as string]!;
     const allocated = row.project && !row.named && !row.role.startsWith("lead");
-    const folder = allocated ? join(rig.work, ".worktrees", "worker-work-trees-builder") : basePath;
+    const folder = allocated ? join(rig.work, ".worktrees", "worker-work-trees-builder") : row.named ? namedPath : basePath;
     expect(agent.folder).toBe(folder);
-    expect(runner.callsOf("start")[0]!.input).toMatchObject({ folder, permission: row.role === "reviewer" ? "read-only" : "ask" });
+    expect(runner.callsOf("start")[0]!.input).toMatchObject({ folder, permission });
     expect(runner.callsOf("start")[0]!.input.grant.realPath).toBe(folder);
     const events = (yield* readLog).slice(before.length).map((row) => row.event);
     expect(events.filter((event) => event._tag === "project.WorktreeCreated")).toHaveLength(allocated ? 1 : 0);
@@ -65,6 +68,7 @@ for (const row of startCases) {
     if (allocated) {
       const workspace = Object.values(projectView(state).workspaces).find((row) => row.path === folder)!;
       expect(workspace).toMatchObject({ branch: "worker/work-trees/builder", parentId, projectId: p.projectId, owner: agent.agentId });
+      expect(snapshotFor({ _tag: "agent", agentId: p.lead.agentId }, state)!.workspaces.map((row) => row.worktreeId)).toContain(workspace.worktreeId);
       expect(git(folder, "rev-parse", "HEAD")).toBe(git(basePath, "rev-parse", "HEAD"));
     }
     expect(projectView(state).agentProjects[agent.agentId]).toBe(row.project ? p.projectId : undefined);
@@ -95,11 +99,18 @@ it.live("isolates sibling commits, integrates into the recorded project parent, 
   success(yield* call(p.leadCredential, "project.changes", { projectId: p.projectId, worktreeId: workspace.worktreeId }));
 })).pipe(Effect.orDie));
 
-for (const kind of ["dirty", "missing", "not-repository", "collision", "invalid-name", "foreign-project", "unknown-worktree", "outside-authority"] as const) {
+const refusals = {
+  missing: "Start folder: folder is not an existing directory",
+  "not-repository": "Git: not_repository",
+  collision: "worker-worktree:collision",
+  "foreign-project": "worker-worktree:project_unavailable",
+  "unknown-worktree": "worker-worktree:workspace_unavailable",
+  "outside-authority": "worker-worktree:project_unavailable",
+} as const;
+for (const kind of Object.keys(refusals) as (keyof typeof refusals)[]) {
   it.live(`failure table: ${kind} has no agent events, process, folder or branch`, () => run((runner) => Effect.gen(function* () {
     const p = yield* workerProject(rig);
     const original = git(rig.work, "for-each-ref", "--format=%(refname)", "refs/heads");
-    if (kind === "dirty") writeFileSync(join(p.path, "dirty.txt"), "dirty\n");
     if (kind === "missing") rmSync(p.path, { recursive: true });
     if (kind === "not-repository") rmSync(join(p.path, ".git"));
     if (kind === "collision") for (let n = 1; n <= 100; n++) git(rig.work, "branch", `worker/work-trees/builder${n === 1 ? "" : `-${n}`}`);
@@ -107,12 +118,11 @@ for (const kind of ["dirty", "missing", "not-repository", "collision", "invalid-
     const folders = readdirSync(join(rig.work, ".worktrees")).sort();
     const before = yield* readLog;
     const result = yield* call(kind === "outside-authority" ? p.outsideCredential : p.leadCredential, "start", workerPayload(p.path, {
-      ...(kind === "invalid-name" ? { name: "!!!" } : {}),
       ...(kind === "foreign-project" || kind === "outside-authority" ? { projectId: kind === "outside-authority" ? p.projectId : "other" } : {}),
       ...(kind === "unknown-worktree" ? { worktreeId: "unknown" } : {}),
     }));
     expect(result._tag).toBe("Failure");
-    expect(failureOf(result)!.reason).toMatch(/worker-worktree:|Start folder:|Git:/);
+    expect(failureOf(result)).toEqual({ _tag: "CommandRefused", reason: refusals[kind] });
     expect(runner.callsOf("start")).toHaveLength(0);
     expect((yield* readLog).slice(before.length).map((row) => row.event._tag)).toEqual(["CommandRefused"]);
     expect(readdirSync(join(rig.work, ".worktrees")).sort()).toEqual(folders);
@@ -259,3 +269,8 @@ it.live("concurrent starts reserve distinct worktrees before either session open
   expect(new Set(folders.map((folder) => git(folder, "branch", "--show-current")))).toEqual(new Set(["worker/work-trees/builder", "worker/work-trees/builder-2"]));
   expect(runner.callsOf("start")).toHaveLength(2);
 })).pipe(Effect.orDie));
+
+it.live("r2 m8: the start table has no duplicate non-project starter rows", () => Effect.sync(() => {
+  const keys = startCases.map((row) => JSON.stringify([row.project ? row.starter : row.starter === "owner" ? "owner" : "outside-lead", row.role, row.project, row.named]));
+  expect(new Set(keys).size).toBe(startCases.length);
+}));

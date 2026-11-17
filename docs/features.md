@@ -1367,6 +1367,12 @@ Leads keep their current checkout.
 The existing website shows the worker in its Git, Files, and Terminal choices.
 Resume and recovery reuse the stored folder.
 Removal preserves worktrees and branches.
+Agent callers use read-only permission when selecting another checkout.
+An owner can select a registered project checkout at any permission level.
+Allocation accepts an uncommitted source and copies only its last commit.
+An unchanged sessionless allocation can be reused after a harness start fails.
+That retry keeps its worktree identifier and updates its owner.
+Remote allocation waits for machine pairing.
 
 ## Reconciliation of interrupted worker allocations
 
@@ -1374,11 +1380,11 @@ State: Idea.
 
 A durable allocation intent could reconcile a Git checkout created just before a hard service crash.
 The recovery path would verify the original folder and branch identities before registering or removing anything.
-See issue s23-5 in `docs/issues.md`.
+See issue 1254 in `docs/issues.md`.
 
 ## Removal of finished worker checkouts
 
 State: Idea.
 
 An owner-directed command could remove a worker checkout after proving that its branch is merged into its parent and that its folder is clean.
-See issue s23-4 in `docs/issues.md`.
+See issue 1253 in `docs/issues.md`.

@@ -216,19 +216,34 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
   }
 }
 
-// A registered worker can sit beneath a project or a team, at any depth.
-// Only ancestry to this project's root/team proves membership; repoId alone
-// never grants access to another project in the same repository.
-export const workspaceInProject = (view: ProjectView, workspace: Workspace, projectId: string): boolean => {
+// Manual registration cannot supply projectId or owner. Those fields, together
+// with the owning agent's membership, identify an engine allocation, including
+// allocations written before workerSourceHead was introduced.
+export const allocatedWorkspaceInProject = (view: ProjectView, workspace: Workspace, projectId: string): boolean => {
   const project = own(view.projects, projectId);
-  if (!project || workspace.repoId !== project.repoId || workspace.projectId !== undefined && workspace.projectId !== projectId) return false;
-  const roots = new Set([project.worktreeId, ...Object.values(view.teams).filter((team) => team.projectId === projectId).map((team) => team.worktreeId)]);
+  if (!project || workspace.repoId !== project.repoId) return false;
+  const teams = new Set(Object.values(view.teams).filter((team) => team.projectId === projectId).map((team) => team.worktreeId));
+  const roots = new Set([project.worktreeId, ...teams]);
   const seen = new Set<string>();
   let row: Workspace | undefined = workspace;
   while (row && row.repoId === project.repoId && !seen.has(row.worktreeId)) {
-    if (roots.has(row.worktreeId)) return true;
+    // A direct team child was already readable on the base. It can anchor an
+    // engine allocation without becoming a new snapshot row itself.
+    if (roots.has(row.worktreeId)) return row !== workspace;
+    if (row !== workspace && row.checkout === "worktree" && row.parentId !== undefined && teams.has(row.parentId)) return true;
+    if (row.owner === undefined || row.projectId !== projectId || own(view.agentProjects, row.owner) !== projectId) return false;
     seen.add(row.worktreeId);
     row = row.parentId === undefined ? undefined : own(view.workspaces, row.parentId);
   }
   return false;
+};
+
+// Preserve the original project/team/direct-team-child Git scope and add only
+// engine allocations. An arbitrary manual descendant is not a project grant.
+export const workspaceInProject = (view: ProjectView, workspace: Workspace, projectId: string): boolean => {
+  const project = own(view.projects, projectId);
+  return project !== undefined && workspace.repoId === project.repoId && (project.worktreeId === workspace.worktreeId
+    || Object.values(view.teams).some((team) => team.projectId === projectId
+      && (team.worktreeId === workspace.worktreeId || workspace.checkout === "worktree" && team.worktreeId === workspace.parentId))
+    || allocatedWorkspaceInProject(view, workspace, projectId));
 };
