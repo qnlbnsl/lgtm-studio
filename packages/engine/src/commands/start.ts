@@ -2,11 +2,12 @@ import { composeInstructions } from "../roles/compose.ts";
 import { requireAgentBuilding } from "../project/approvals.ts";
 import { safeStartFailure, type StartFailure } from "@lgtm/contracts/startFailure";
 import { randomUUID } from "node:crypto";
-import { AgentId, DeliveryId, PermissionLevel, type Event } from "@lgtm/contracts";
+import { AgentId, DeliveryId, PermissionLevel, defaultChildPermission, type Event, type Workspace } from "@lgtm/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import { projectFolderScope } from "../project/folderScope.ts";
 import { pickAccount } from "../accounts/pick.ts";
 import { canUseMode, checkFolder, folderForSpawn } from "../identity/ceiling.ts";
 import { mintAgentToken } from "../identity/tokens.ts";
@@ -19,18 +20,19 @@ import { own, projectView } from "../project/view.ts";
 import { freshRequest, readHarnesses, refused, type Input, type Payload, type Plan } from "./internal.ts";
 import { validChoiceId } from "../runner/choices.ts";
 
-export const start = (input: Input, payload: Payload<"start">): Effect.Effect<Plan, ReturnType<typeof refused> | LogWriteFailed> =>
+export const start = (input: Input, payload: Payload<"start">, pendingWorkspace?: Workspace): Effect.Effect<Plan, ReturnType<typeof refused> | LogWriteFailed> =>
   Effect.gen(function* () {
     const { runtime, actor, snapshot } = input;
     if (actor._tag !== "owner" && actor._tag !== "agent") return yield* refused();
     const parent = actor._tag === "agent" ? snapshot.agents[actor.agentId] : undefined;
+    const permission = payload.permission ?? defaultChildPermission(parent?.permission as PermissionLevel | undefined);
     if (parent !== undefined) {
       yield* requireAgentBuilding(input, parent.agentId);
       const view = projectView(snapshot), id = own(view.agentProjects, parent.agentId);
       const project = id === undefined ? undefined : own(view.projects, id);
       if (project?.archiving || project?.archivedAt !== undefined) return yield* refused("project is archived or archiving");
     }
-    if (actor._tag === "agent" && (parent === undefined || !canUseMode(actor, Schema.decodeUnknownSync(PermissionLevel)(parent.permission), payload.permission))) {
+    if (actor._tag === "agent" && (parent === undefined || !canUseMode(actor, Schema.decodeUnknownSync(PermissionLevel)(parent.permission), permission))) {
       return yield* refused();
     }
     const harness = (yield* readHarnesses(runtime)).find((settings) => settings.id === payload.harness);
@@ -44,7 +46,7 @@ export const start = (input: Input, payload: Payload<"start">): Effect.Effect<Pl
       || (effort !== undefined && harness.efforts.length > 0 && !harness.efforts.includes(effort))) return yield* refused();
     const account = pickAccount(snapshot, payload.harness, payload.account);
     if (account === undefined) return yield* refused("no usable account");
-    const grant = yield* checkFolder({ ...runtime, caller: actor, parentFolder: parent?.folder ?? payload.folder, folder: payload.folder }).pipe(
+    const grant = yield* checkFolder({ ...runtime, ...projectFolderScope(runtime, parent?.agentId, pendingWorkspace === undefined ? undefined : { workspace: pendingWorkspace, sequence: snapshot.sequence }), caller: actor, parentFolder: parent?.folder ?? payload.folder, folder: payload.folder }).pipe(
       Effect.mapError((error) => refused(`Start folder: ${error.reason}`)),
     );
     const folder = yield* folderForSpawn(grant, "start").pipe(Effect.mapError(() => refused()));
@@ -54,7 +56,7 @@ export const start = (input: Input, payload: Payload<"start">): Effect.Effect<Pl
     const token = mintAgentToken();
     const event: Event = {
       _tag: "AgentStarted", agentId, name: payload.name, role: payload.role, groups: payload.groups ?? [],
-      parent: actor, ...(payload.projectId === undefined ? {} : { projectId: payload.projectId }), harness: harness.id, account: account.id, permission: payload.permission,
+      parent: actor, ...(payload.projectId === undefined ? {} : { projectId: payload.projectId }), harness: harness.id, account: account.id, permission,
       folder, runMode: payload.runMode ?? harness.runMode,
       ...(model === undefined ? {} : { model }), ...(effort === undefined ? {} : { effort }),
       ...(payload.prompt === undefined ? {} : {
@@ -93,7 +95,7 @@ export const start = (input: Input, payload: Payload<"start">): Effect.Effect<Pl
           if (waiting !== "starting" && waiting !== "paused") return false;
           return yield* handle.cancellable(bounded(runtime, agentId, SETUP_TIMEOUT_MILLIS, Effect.suspend(() => runtime.runner.start({
             agentId, token: token.token, folder, grant, harness, account, instructions,
-            permission: payload.permission, ...(selectedModel === undefined ? {} : { model: selectedModel }), ...(selectedEffort === undefined ? {} : { effort: selectedEffort }),
+            permission, ...(selectedModel === undefined ? {} : { model: selectedModel }), ...(selectedEffort === undefined ? {} : { effort: selectedEffort }),
           })))).pipe(
             Effect.flatMap(Option.match({ onNone: () => Effect.succeed(true), onSome: (session) => runtime.log.transact((append) => Effect.gen(function* () {
               // An exit can arrive while the session result is being returned.

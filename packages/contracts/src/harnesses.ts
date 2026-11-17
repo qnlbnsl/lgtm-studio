@@ -9,6 +9,7 @@ const PermissionMapping = Schema.Struct({
   "read-only": Schema.NonEmptyString,
   ask: Schema.NonEmptyString,
   edit: Schema.NonEmptyString,
+  auto: Schema.optionalKey(Schema.NonEmptyString),
   full: Schema.NonEmptyString
 })
 
@@ -38,3 +39,12 @@ export const HarnessSettings = Schema.Struct({
   denyReadMechanism: DenyMechanism
 })
 export type HarnessSettings = typeof HarnessSettings.Type
+
+// Historical harness events have no auto field. Their edit mode remains the
+// conservative fallback; no event migration changes an existing agent.
+export const permissionModeFor = (harness: HarnessSettings, level: PermissionLevel): string =>
+  level === "auto" ? harness.permissionMapping.auto ?? harness.permissionMapping.edit : harness.permissionMapping[level]
+
+export const autoPermissionStatus = (harness: HarnessSettings): string | undefined =>
+  harness.permissionMapping.auto === undefined || harness.permissionMapping.auto === harness.permissionMapping.edit
+    ? "Automatic review is unavailable; auto uses this harness's edit mode." : undefined

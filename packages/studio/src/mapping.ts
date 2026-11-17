@@ -116,7 +116,7 @@ export const mapStage = (stage: string | undefined): StoreStage | "" => (stage =
 
 // The page's own words for the engine's permission levels.
 const PERMISSIONS: Record<string, string> = {
-  "read-only": "Read only", ask: "Ask before every change", edit: "Edit files without asking", full: "Full access"
+  "read-only": "Read only", ask: "Ask before every change", edit: "Edit files without asking", auto: "Automatic review", full: "Full access"
 }
 export const mapPermission = (level: string): string => PERMISSIONS[level] ?? level
 

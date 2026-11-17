@@ -76,7 +76,7 @@ it.live("reads missing programs, shows an exact fake recipe, installs once, reda
     yield* registerRebuildCheck()
     yield* appendSetup([eventOf({ _tag: "HarnessChanged", harness: harnessSettings("first", { adapterPath: executable }) })])
     const before = success(yield* call(ownerCredential, "client.harness.status", {}))
-    expect(before.harnesses.find((h: any) => h.harnessId === "first")).toMatchObject({ installed: false })
+    expect(before.harnesses.find((h: any) => h.harnessId === "first")).toMatchObject({ installed: false, autoPermissionReason: "Automatic review is unavailable; auto uses this harness's edit mode." })
     const recipe = success(yield* call(ownerCredential, "client.harness.recipe", { harnessId: "first" }))
     expect(recipe.recipe.commands).toEqual([`'${process.execPath}' '${script}'`])
     const result = success(yield* call(ownerCredential, "client.harness.install", { harnessId: "first", requestId: "fake-install", commands: ["malicious"], recipe: { executable: "malicious" } }))

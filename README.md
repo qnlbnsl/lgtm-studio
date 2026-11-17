@@ -134,7 +134,8 @@ A reviewer or evaluator can use that field with the existing
 Before starting a test runner, the lead merges the builder's branch into its own worktree.
 The test runner starts without `worktreeId` and receives its own worktree at the lead's last commit.
 Its brief names an authorized writable permission and a log folder inside its own worktree.
-The permission level is still an explicit start option.
+The optional permission level defaults to `auto`, limited by an agent starter's own level.
+Selecting another agent's checkout still requires an explicit `read-only` level.
 Roles parsed as leads or orchestrators keep their supplied folder.
 For an agent caller, selecting a checkout other than its own requires `read-only` permission.
 The owner can select a registered project checkout at any permission level.
@@ -143,8 +144,13 @@ A clean registered allocation whose harness never opened a session can be reused
 Reuse requires an unchanged source commit and no session or work from any previous attempt.
 An agent outside every project keeps the existing folder-based start behaviour.
 Manual worktree registration remains restricted to the owner.
-The existing folder ceiling refuses agent-started children inside the owner's home folder.
-Lead-started workers therefore need a repository outside that protected folder.
+On 2026-11-17, the owner allowed lead starts inside home for registered worktrees of the starter's project.
+The engine compares real directory identities for the project worktree, team worktrees and engine allocations.
+The home folder itself and its ancestors remain refused.
+The state folder, plugin root, home dotfolders and configured harness login folders remain protected.
+A registration containing a protected folder or mount is refused even when the requested subfolder is clear.
+The engine refreshes these records before each spawn, recovery and resume.
+Removing a folder's registration makes a later resume refuse with a reason.
 
 The worker's stored folder is reused on recovery and either kind of resume.
 A missing folder is reported as unavailable instead of being recreated.
@@ -153,6 +159,19 @@ Deleting a team preserves its registered worktrees and branches.
 The engine does not automatically remove even a clean, merged worker checkout.
 Registered worker worktrees appear in the existing Git, Files, and Terminal choices.
 
+
+## Agent permission levels
+
+On 2026-11-17, the owner chose `auto` as the default for new project leads and their workers.
+The ordered levels are `read-only`, `ask`, `edit`, `auto` and `full`.
+New harness defaults use `auto`.
+Saved owner defaults and existing agents keep their chosen levels.
+Claude's automatic mode is `auto`.
+Codex's automatic review mode is `agent`.
+A harness without a configured automatic mode uses its edit mapping and reports the fallback in its status.
+The owner can choose any level.
+A child cannot exceed its starter's level.
+See [the adapter findings](docs/research/2026-11-17-auto-permissions.md) for the pinned versions and their limits.
 
 ## Documents
 

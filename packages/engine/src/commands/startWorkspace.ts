@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
-import { ProjectId, WorkspaceId, parseRole, type Workspace } from "@lgtm/contracts";
+import { ProjectId, WorkspaceId, parseRole, defaultChildPermission, type PermissionLevel, type Workspace } from "@lgtm/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { start } from "./start.ts";
@@ -73,19 +73,20 @@ const failedAttempt = (input: Input, p: Payload<"start">, agent: Input["snapshot
   && same(agent.parent, input.actor) && agent.state._tag === "stopped" && agent.startFailure !== undefined && agent.session === undefined;
 
 export const prepareStartWorkspace = (input: Input, raw: Record<string, unknown>, allocated: (release: Effect.Effect<void>) => void) => Effect.gen(function* () {
-  const p = raw as Payload<"start">;
+  const p = { ...raw, permission: raw.permission ?? defaultChildPermission(input.actor._tag === "agent" ? input.snapshot.agents[input.actor.agentId]?.permission as PermissionLevel : undefined) } as Payload<"start">;
   const selection = yield* context(input, p);
   const projectId = selection?.project.projectId;
   const starterFolder = input.actor._tag === "agent" ? input.snapshot.agents[input.actor.agentId]?.folder : selection?.base?.path;
   const folder = selection?.selected?.path ?? (selection?.allocate ? starterFolder ?? p.folder : p.folder);
   const admission = { ...p, ...(projectId === undefined ? {} : { projectId }), folder };
   // Full permission, protected-folder, account and instruction checks precede
-  // Git. In particular, home-hosted lead starts cannot create an orphan.
+  // Git. Protected starts cannot create an orphan.
   yield* start(input, admission);
   if (selection === undefined || !selection.allocate && selection.selected === undefined)
     return ((current, payload) => Effect.gen(function* () {
-      const now = yield* context(current, payload as Payload<"start">);
-      return yield* start(current, { ...payload as Payload<"start">, ...(now === undefined ? {} : { projectId: now.project.projectId }) });
+      const normalized = { ...payload, permission: payload.permission ?? p.permission } as Payload<"start">;
+      const now = yield* context(current, normalized);
+      return yield* start(current, { ...normalized, ...(now === undefined ? {} : { projectId: now.project.projectId }) });
     })) satisfies Planner;
   const base = selection.base;
   if (selection.allocate && base === undefined) return yield* refused("The starter's checkout is not registered for this project. Ask your parent or the owner to register it before starting a worker.");
@@ -144,13 +145,14 @@ export const prepareStartWorkspace = (input: Input, raw: Record<string, unknown>
   }));
   const checked = workspace, newWorkspace = created, retryWorkspace = reused;
   return ((current, payload) => Effect.gen(function* () {
-    const now = yield* context(current, payload as Payload<"start">);
+    const normalized = { ...payload, permission: payload.permission ?? p.permission } as Payload<"start">;
+    const now = yield* context(current, normalized);
     if (projectView(current.snapshot).settings?.workspaceFolder !== projectView(input.snapshot).settings?.workspaceFolder
       || now === undefined || now.project.projectId !== projectId || !same(now.base, base) || !same(now.selected, selection.selected)
       || retryWorkspace !== undefined && (!same(own(projectView(current.snapshot).workspaces, retryWorkspace.worktreeId), retryWorkspace)
         || !same(attempts(current, retryWorkspace.path), attempts(input, retryWorkspace.path))))
       return yield* refused("worker-worktree:stale_state");
-    const plan = yield* start(current, { ...payload as Payload<"start">, projectId, folder: checked!.path });
+    const plan = yield* start(current, { ...normalized, projectId, folder: checked!.path }, newWorkspace);
     const registration = newWorkspace ?? retryWorkspace;
     if (!registration) return plan;
     const agent = plan.events.find((event) => event._tag === "AgentStarted");

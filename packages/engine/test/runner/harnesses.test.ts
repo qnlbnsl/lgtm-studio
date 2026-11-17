@@ -95,6 +95,7 @@ live("every resolved harness decodes with the contracts schema, in acp run mode 
     for (const harness of result.harnesses) {
       const decoded = Schema.decodeUnknownSync(HarnessSettings)(harness)
       assert.equal(decoded.runMode, "acp")
+      assert.equal(decoded.defaultPermission, "auto")
       assert.isTrue(decoded.permissionMapping["read-only"].length > 0)
     }
   }))
@@ -108,7 +109,7 @@ live("every resolved harness records its modes with a level, so a mode change is
       const ids = harness.reportedModes.map((mode) => mode.id)
       assert.equal(new Set(ids).size, ids.length, `${harness.id} lists a mode twice`)
       // Every mode LGTM Studio asks for is a mode the harness reports, at the level that asks for it or below.
-      const levels = ["read-only", "ask", "edit", "full"] as const
+      const levels = ["read-only", "ask", "edit", "auto", "full"] as const
       for (const [index, level] of levels.entries()) {
         const reported = harness.reportedModes.find((mode) => mode.id === harness.permissionMapping[level])
         assert.isDefined(reported, `${harness.id} does not report its ${level} mode`)
@@ -116,10 +117,10 @@ live("every resolved harness records its modes with a level, so a mode change is
       }
     }
     assert.deepEqual(byId(result, "codex").reportedModes, [
-      { id: "read-only", level: "read-only" }, { id: "workspace-write", level: "edit" }, { id: "agent-full-access", level: "full" }
+      { id: "read-only", level: "read-only" }, { id: "workspace-write", level: "edit" }, { id: "agent", level: "auto" }, { id: "agent-full-access", level: "full" }
     ])
     assert.deepEqual(byId(result, "claude").reportedModes, [
-      { id: "plan", level: "read-only" }, { id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }, { id: "bypassPermissions", level: "full" }
+      { id: "plan", level: "read-only" }, { id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }, { id: "auto", level: "auto" }, { id: "bypassPermissions", level: "full" }
     ])
     assert.deepEqual(byId(result, "cursor").reportedModes, [{ id: "ask", level: "read-only" }, { id: "agent", level: "edit" }])
   }))

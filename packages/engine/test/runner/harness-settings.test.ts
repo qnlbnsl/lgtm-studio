@@ -147,3 +147,19 @@ live("6.11 row 70: a value the adapter rejects writes AgentStartFailed with a re
       expect(gone).toBe(false);
     }));
   }));
+
+for (const mode of ["auto", "agent"] as const) live(`s26: auto reaches the ACP mode ${mode} while old mappings fall back to edit`, () =>
+  withAcpRunner(rig, {}, ({ runner }) => Effect.gen(function* () {
+    const base = harnessFor("first", writeFakeAdapter(rig));
+    for (const historical of [false, true]) {
+      const harness = historical ? base : { ...base, permissionMapping: { ...base.permissionMapping, auto: mode },
+        reportedModes: [...base.reportedModes, { id: mode, level: "auto" as const }] };
+      const option = modeOption();
+      const echo = echoFile(rig);
+      const spawn = yield* spawnFor(rig, harness, accountFor("first", { configOptions: [{ ...option,
+        options: [...option.options, { value: mode, name: "Automatic review" }] }], strictConfigOptions: true, turns: [] }, echo), { permission: "auto" });
+      yield* runner.start(spawn.input);
+      const seen = yield* readEcho(echo, current => configCalls(current).some(entry => entry.configId === "mode"));
+      expect(configCalls(seen).filter(entry => entry.configId === "mode").at(-1)?.value).toBe(historical ? "accept-edits" : mode);
+    }
+  })));

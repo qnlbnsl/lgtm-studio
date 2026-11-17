@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema"
 
-export const permissionLevels = ["read-only", "ask", "edit", "full"] as const
+export const permissionLevels = ["read-only", "ask", "edit", "auto", "full"] as const
 export const PermissionLevel = Schema.Literals(permissionLevels)
 export type PermissionLevel = typeof PermissionLevel.Type
 
@@ -19,3 +19,7 @@ export function permissionForOptionKind(kind: string): { readonly level: Permiss
     default: return { level: "full", persistent: true }
   }
 }
+
+// Omitted child levels use auto without exceeding the starter's ceiling.
+export const defaultChildPermission = (parent?: PermissionLevel): PermissionLevel =>
+  parent !== undefined && comparePermission(parent, "auto") < 0 ? parent : "auto"

@@ -18767,22 +18767,23 @@ Injected failures before checkout, after branch creation, and after checkout cov
 
 ## 1256. The existing home-folder ceiling blocks lead starts in home-hosted repositories.
 
-State: Open, preserving the existing security rule.
+State: Fixed by unit s26, under the owner's decision of 2026-11-17.
 
-The folder ceiling refuses an agent-started child anywhere inside the owner's home folder.
-The existing ceiling tests explicitly require that refusal for protected folders and their descendants.
-A project stored under the owner's home therefore cannot start workers through its lead.
-An owner-started worker still has the existing owner exception.
-A temporary-directory reproduction returned `FolderRefused` with the protected-folder reason.
-This unit does not weaken that rule.
-Using a repository outside the protected home permits lead-started workers under the current policy.
-Changing that policy requires the owner's explicit security decision.
-The independent review confirmed that `service.ts` supplies the actual `HOME` as the ceiling's home folder.
-The ceiling also refuses ancestors of protected folders and descendants of the state and plugin folders.
-Its owner exception returns before those checks.
-A round 2 regression places the whole repository inside a synthetic home.
-It asserts the exact existing protected-folder reason before any Git process, agent event or allocation.
-The ceiling implementation remains unchanged.
+The old ceiling refused lead-started workers in every repository under home.
+The owner authorized a narrow exception for registered worktrees of the starter's own project.
+The project worktree, team worktrees and engine allocations now grant that exception.
+An arbitrary manually registered descendant grants nothing.
+The engine compares real device and inode identities.
+The home itself, its ancestors, the state folder, plugin root, immediate home dotdirectories and existing configured login folders stay protected.
+Both the requested folder and trusted registration root are checked, including mounted protected folders.
+The current engine records are consulted on each start, recovery reload and resume.
+The allocation's private pending registration is accepted only at its validated precommit log head.
+After append, only the committed registration grants admission.
+Registration removal makes a later resume refuse with a sentence reason.
+The intentional round 2 pin now asserts successful allocation inside a synthetic home.
+The new regressions cover aliases, protected folders, mounted identities, manual roots, a repository at home, defaults and recovery after registration replacement.
+There is no unregister command today.
+The recovery regression replaces the stored worktree row with a new path to remove the old folder's registration.
 
 ## 1257. The installer process-tree test can observe a live descendant after timeout cleanup.
 
@@ -19451,3 +19452,66 @@ The browser check that a repeated conflict choice shows no refusal compares the 
 In the orchestrator's whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:372` and `studio.spec.ts:1200` failed under load, and each passed when run alone.
 
 State: open. Recorded on 2026-11-17.
+
+## s26-1. Restricted process execution can make installer output tests report empty output.
+
+State: Diagnosed as an execution sandbox limitation during unit s26.
+
+Three installer tests returned empty output when run inside the coding agent's restricted sandbox.
+A separate Node.js child-process reproduction also lost asynchronous standard output there.
+The same three tests passed outside that sandbox without a production code change.
+Chromium also exited with an operation-not-permitted error inside that sandbox.
+The required suites were rerun outside it with temporary homes and local test services.
+
+## s26-2. Older harness settings have no automatic permission mapping.
+
+State: Handled with an explicit edit fallback in unit s26.
+
+The pinned Claude and Codex adapters expose automatic review.
+Historical harness events have only the original four mappings.
+Those events still decode without migration.
+An `auto` request falls back to the stored edit mapping when no automatic mapping is configured.
+Gemini and Cursor defaults also use the edit fallback because this unit verifies no separate automatic review mode for them.
+The harness status reports the fallback.
+Existing agents and saved permission defaults are not changed.
+
+## s26-3. Alternate environment homes can place harness login stores inside a worktree.
+
+State: Protected in unit s26.
+
+The harness-specific home variable is not the only way to move a login store.
+An account can override `HOME`.
+Cursor can also override `XDG_CONFIG_HOME`.
+The folder ceiling protects the existing login directories derived from these fallbacks.
+Secret references are resolved without reading credential files.
+Handler regressions cover both override paths under a registered project root.
+
+## s26-4. Seven browser journeys failed in the whole run and passed separately.
+
+State: Open as whole-run-only failures observed during unit s26.
+
+The whole browser suite passed 68 journeys and failed seven journeys.
+The merge-to-main journey timed out while waiting for the merge result.
+The stale-evidence journey timed out while waiting for its review state.
+The temporary-remote journey timed out while waiting for its operation result.
+The project-creation journey timed out while the dialog was submitting.
+The projects-and-board journey timed out before the new project appeared.
+The workflow journey timed out before the phase status appeared.
+The file-editor journey timed out while its save was busy.
+Each failed journey passed in a separate run with its existing assertions and timeout.
+The affected cases are `git.spec.ts:183`, `git.spec.ts:253`, `git.spec.ts:316`, `new-project.spec.ts:149`, `studio.spec.ts:372`, `studio.spec.ts:1058`, and `studio.spec.ts:1200` under `packages/web/e2e/`.
+The shared merge source line also selected the master variant during its first rerun.
+That variant passed in the whole suite but timed out when run after the main variant.
+It passed when rerun by its own title.
+The permission-settings journey passed in the whole run.
+
+## s26-5. The whole unit run failed a sign-in cleanup check that passed alone.
+
+State: Open as a whole-run-only failure observed during unit s26.
+
+The final whole unit run failed the existing process-group cleanup case in `packages/engine/test/harnesses/signin.test.ts`.
+The case is "stops the process group on timeout, owner stop and disconnection after the grace period".
+It tried to read the fake child's PID file after the session ended, but the file did not exist.
+The failure was `ENOENT` at the existing `readFileSync(pidfile)` assertion setup.
+The exact case passed when rerun alone with its existing assertions and timing limits.
+This unit changes no sign-in session or process-group cleanup implementation.

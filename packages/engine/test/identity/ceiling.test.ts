@@ -286,3 +286,70 @@ it.effect("5a.2 custom configuration: catches ignoring a trusted harness configu
   const option = { kind: "allow_once", level: "read-only" as const, persistent: false };
   expect(canAnswerOption({ caller: agent, mode: "full", option, settingsPath: join(configDir, "settings.json"), configDir })).toBe("owner");
 }));
+
+it.effect("s26: home admission requires a live registration and checks aliases by identity", () => Effect.gen(function* () {
+  const project = directory(join(ownerHome, "repository"));
+  const nested = directory(join(project, "src"));
+  const alias = join(root, "registered-alias"); symlinkSync(project, alias);
+  let paths = [alias];
+  const request = { ...options(nested, agent, project), registeredWorktrees: Effect.sync(() => paths) };
+  const grant = yield* checkFolder(request);
+  expect(yield* folderForSpawn(grant, "start")).toBe(nested);
+  paths = [];
+  for (const operation of ["start", "resume", "reload"] as const) {
+    const result = yield* folderForSpawn(grant, operation).pipe(Effect.result);
+    expect(Result.isFailure(result)).toBe(true);
+    if (Result.isFailure(result)) expect(result.failure.reason).toBe("This folder inside home is not a registered worktree of the starter's project. Ask the owner to restore its registration before retrying.");
+  }
+}));
+
+it.effect.each(["home", "ancestor", "state", "state-child", "state-ancestor", "plugin", "plugin-child", "plugin-ancestor", "dotfolder", "dotfolder-child", "dotfolder-ancestor", "unregistered", "login"] as const)(
+  "s26: even a trusted registration refuses %s", (which) => Effect.gen(function* () {
+    const project = directory(join(ownerHome, "repository"));
+    const dot = directory(join(ownerHome, ".ssh"));
+    const login = directory(join(project, "custom-login"));
+    const choices = { home: ownerHome, ancestor: root, state: stateFolder, "state-child": directory(join(stateFolder, "child")), "state-ancestor": join(root, "protected"),
+      plugin: pluginRoot, "plugin-child": directory(join(pluginRoot, "child")), "plugin-ancestor": join(root, "protected"),
+      dotfolder: dot, "dotfolder-child": directory(join(dot, "child")), "dotfolder-ancestor": ownerHome, unregistered: directory(join(ownerHome, "other")), login };
+    const folder = choices[which];
+    const registered = which === "unregistered" ? [project] : [folder];
+    const request = { ...options(folder, agent, root), registeredWorktrees: Effect.succeed(registered), harnessHomes: Effect.succeed([login]) };
+    expect(Result.isFailure(yield* checkFolder(request).pipe(Effect.result))).toBe(true);
+    expect((yield* checkFolder({ ...request, caller: owner })).realPath).toBe(realpathSync(folder));
+  }),
+);
+
+it.effect.each([".lgtm", ".ssh", ".claude", ".codex", ".other"])("s26: a registered root containing home dotfolder %s refuses its clean subfolder", (name) => Effect.gen(function* () {
+  const project = directory(join(ownerHome, "repository"));
+  const nested = directory(join(project, "src"));
+  const hidden = directory(join(project, "private"));
+  // An immediate home dotfolder may resolve into a manually registered tree.
+  symlinkSync(hidden, join(ownerHome, name));
+  expect(Result.isFailure(yield* checkFolder({ ...options(nested, agent, project), registeredWorktrees: Effect.succeed([project]) }).pipe(Effect.result))).toBe(true);
+}));
+
+it.effect("s26: a registered alias redirected into a protected folder cannot grant home admission", () => Effect.gen(function* () {
+  const project = directory(join(ownerHome, "repository"));
+  const alias = join(root, "alias"); symlinkSync(project, alias);
+  const request = { ...options(alias, agent, ownerHome), registeredWorktrees: Effect.succeed([alias]) };
+  const grant = yield* checkFolder(request);
+  rmSync(alias); symlinkSync(directory(join(ownerHome, ".lgtm")), alias);
+  expect(Result.isFailure(yield* folderForSpawn(grant, "resume").pipe(Effect.result))).toBe(true);
+}));
+
+it.effect("s26: a mounted protected identity anywhere in the registered root refuses a nested start", () => Effect.gen(function* () {
+  const project = directory(join(ownerHome, "repository"));
+  const nested = directory(join(project, "src"));
+  // Listing an alias as the mount point models the kernel's bound identity,
+  // without mounting in the host namespace or mocking stat.
+  const mount = join(project, "mounted"); symlinkSync(stateFolder, mount);
+  const request = { ...options(nested, agent, project), registeredWorktrees: Effect.succeed([project]) };
+  expect(Result.isFailure(yield* checkFolder(request, { readMountInfo: () => `1 0 0:1 / ${mount} rw - tmpfs tmpfs rw` }).pipe(Effect.result))).toBe(true);
+}));
+
+it.effect("s26: the owner bypasses project scope and login-directory discovery", () => Effect.gen(function* () {
+  const request = { ...options(ownerHome, owner), registeredWorktrees: Effect.die("owner must not read the project grant"),
+    harnessHomes: Effect.die("owner must not read login folders") };
+  const grant = yield* checkFolder(request);
+  expect(yield* folderForSpawn(grant, "start")).toBe(ownerHome);
+}));

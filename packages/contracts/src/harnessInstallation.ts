@@ -5,6 +5,7 @@ import { HarnessSettings } from "./harnesses.ts"
 export const HarnessInstallation = Schema.Struct({
   harnessId: HarnessId, installed: Schema.Boolean,
   reason: Schema.optionalKey(Schema.String), version: Schema.optionalKey(Schema.String), path: Schema.optionalKey(Schema.String),
+  autoPermissionReason: Schema.optionalKey(Schema.String),
   settings: Schema.optionalKey(HarnessSettings)
 })
 export type HarnessInstallation = typeof HarnessInstallation.Type

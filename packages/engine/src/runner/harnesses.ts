@@ -56,11 +56,11 @@ export const resolveHarnessDefaults = (options: { readonly binDirectory: string;
     const harnesses: HarnessSettings[] = []
     const missing: Array<{ id: string; command: string; reason: string }> = []
     const definitions = [
-      { id: "claude", command: "claude-agent-acp", args: [], modes: ["plan", "default", "acceptEdits", "bypassPermissions"] },
-      { id: "codex", command: "codex-acp", args: [], modes: ["read-only", "read-only", "workspace-write", "agent-full-access"] },
-      { id: "gemini", command: "gemini", args: ["--acp"], modes: ["plan", "default", "autoEdit", "yolo"] },
+      { id: "claude", command: "claude-agent-acp", args: [], modes: ["plan", "default", "acceptEdits", "auto", "bypassPermissions"] },
+      { id: "codex", command: "codex-acp", args: [], modes: ["read-only", "read-only", "workspace-write", "agent", "agent-full-access"] },
+      { id: "gemini", command: "gemini", args: ["--acp"], modes: ["plan", "default", "autoEdit", "autoEdit", "yolo"] },
       // Cursor's Ask mode is read-only: https://cursor.com/docs/cli/overview (2026-11-01).
-      { id: "cursor", command: "agent", args: ["acp"], modes: ["ask", "ask", "agent", "agent"] }
+      { id: "cursor", command: "agent", args: ["acp"], modes: ["ask", "ask", "agent", "agent", "agent"] }
     ] as const
     for (const definition of definitions) {
       const directories = definition.id === "claude" || definition.id === "codex"
@@ -79,20 +79,20 @@ export const resolveHarnessDefaults = (options: { readonly binDirectory: string;
         missing.push({ id: definition.id, command: definition.command, reason: "Executable not installed in the configured search path" })
         continue
       }
-      const [readOnly, ask, edit, full] = definition.modes
+      const [readOnly, ask, edit, auto, full] = definition.modes
       // Fix round 1, A16: the modes the harness reports, each at the lowest
       // level that asks for it, so a harness that serves two levels with one
       // mode (Codex's read-only, Cursor's ask and agent) lists the mode once.
       // An empty list would make every mode change look unrecorded. The
       // levels run from the lowest, so the first one to name a mode keeps it.
       const reportedModes: Array<{ id: string; level: PermissionLevel }> = []
-      for (const [id, level] of [[readOnly, "read-only"], [ask, "ask"], [edit, "edit"], [full, "full"]] as const) {
+      for (const [id, level] of [[readOnly, "read-only"], [ask, "ask"], [edit, "edit"], [auto, "auto"], [full, "full"]] as const) {
         if (!reportedModes.some((mode) => mode.id === id)) reportedModes.push({ id, level })
       }
       harnesses.push({
         id: Schema.decodeUnknownSync(HarnessId)(definition.id), runMode: "acp", adapterPath, adapterArguments: [...definition.args],
-        permissionMapping: { "read-only": readOnly, ask, edit, full },
-        reportedModes, defaultPermission: "ask", models: [], efforts: [], denyReadMechanism: { _tag: "none" }
+        permissionMapping: { "read-only": readOnly, ask, edit, auto, full },
+        reportedModes, defaultPermission: "auto", models: [], efforts: [], denyReadMechanism: { _tag: "none" }
       })
     }
     return { harnesses, missing }

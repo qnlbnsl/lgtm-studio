@@ -47,6 +47,37 @@ user. It is still planned. On 2026-11-03 the owner approved building remote
 access before it, so that LGTM Studio is in use sooner. Until it is built, any
 agent can read LGTM Studio's state folder, including the stored account keys.
 
+On 2026-11-17, the owner approved a narrow exception to the home-folder rule.
+An agent-started child may work inside home only beneath a currently registered worktree of its starter's own project.
+Only the project worktree, team worktrees and engine-allocated worker worktrees grant this exception.
+A manually registered descendant alone grants nothing.
+Real paths are resolved and compared by device and inode along their ancestors.
+The existing parent-folder and same-repository checks still apply.
+Selecting another agent's checkout still requires read-only permission.
+The home folder itself and any folder containing it remain refused.
+The state folder and plugin root remain refused, together with their ancestors and descendants.
+The engine enumerates immediate home dotdirectories and resolves directory aliases without reading their contents.
+These directories and existing configured account login folders receive the same protection.
+Login paths include account homes and harness home-variable overrides, including resolved secret references.
+They also include login-store fallbacks under an alternate `HOME` and Cursor's `XDG_CONFIG_HOME`.
+Both the requested folder and its trusted worktree root must pass the protection checks.
+The Linux mount-table check also runs against that root, so a clean subfolder cannot conceal a protected mount elsewhere in the worktree.
+The engine reads the current project views again before every spawn, recovery reload and resume.
+The allocator may validate its own pending registration at the same log head before the atomic append.
+After that append, the grant relies exclusively on the committed registration.
+A later registration removal makes a later resume refuse with a sentence reason.
+The owner caller keeps the existing exception.
+The spawn race and non-Linux mount limits in issue 49 remain unchanged.
+
+The owner also chose the `auto` default on 2026-11-17.
+Automatic review delegates routine approvals to the harness's own reviewer.
+It does not bypass the engine's permission ceiling or the owner-only routing for persistent settings.
+The scale is `read-only`, `ask`, `edit`, `auto`, then `full`.
+An omitted child permission is capped at its starter's level.
+Existing agents and saved owner defaults retain their levels.
+An older harness mapping without `auto` falls back to its `edit` mode.
+Harness status reports that fallback.
+
 The harness installation receipts are in that state folder.
 A hostile process running as the same user can rewrite a receipt and make a
 changed program pass the "changed since install" check.

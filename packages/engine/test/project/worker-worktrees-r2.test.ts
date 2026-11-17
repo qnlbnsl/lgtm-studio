@@ -26,15 +26,16 @@ const run = <A, E, R>(program: (runner: FakeRunner) => Effect.Effect<A, E, R>) =
 }).pipe(Effect.scoped, Effect.orDie);
 const inventory = () => ({ folders: readdirSync(join(rig.work, ".worktrees")).sort(), branches: git(rig.work, "for-each-ref", "--format=%(refname)", "refs/heads") });
 
-it.live("r2 M1: a repository inside home refuses the lead before any Git work", () => {
+it.live("s26: a lead allocates a worker in a registered project inside home", () => {
   const work = join(rig.home, "repository"); renameSync(rig.work, work); rig = { ...rig, work };
   return run((runner) => Effect.gen(function* () {
-    const p = yield* workerProject(rig), before = inventory(), events = (yield* readLog).length;
-    const process = vi.spyOn(GitProcess, "gitProcess");
-    expect(failureOf(yield* call(p.leadCredential, "start", workerPayload(p.path)))).toEqual({ _tag: "CommandRefused", reason: "Start folder: folder is, or is inside, a protected folder" });
-    expect(process).not.toHaveBeenCalled(); expect(runner.callsOf("start")).toHaveLength(0);
-    expect(inventory()).toEqual(before);
-    expect((yield* readLog).slice(events).map((row) => row.event._tag)).toEqual(["CommandRefused"]);
+    const p = yield* workerProject(rig);
+    const reply = success(yield* call(p.leadCredential, "start", workerPayload(p.path)));
+    const agent = (yield* snapshot).agents[reply.agentId]!;
+    expect(agent.folder).not.toBe(p.path);
+    expect(existsSync(join(agent.folder, ".git"))).toBe(true);
+    expect(Object.values(projectView(yield* snapshot).workspaces).find(row => row.path === agent.folder)?.owner).toBe(reply.agentId);
+    expect(runner.callsOf("start")).toHaveLength(1);
   }));
 });
 

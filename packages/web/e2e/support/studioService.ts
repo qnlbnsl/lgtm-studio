@@ -62,6 +62,11 @@ export async function exerciseStudioService(page: Page, origin: string) {
   await page.reload()
   await expect(page.getByRole('radio', { name: /^Edit files without asking/ })).toBeChecked()
 
+  await page.getByRole('radio', { name: /^Automatic review/ }).click()
+  await expect(page.getByRole('radio', { name: /^Automatic review/ })).toBeChecked()
+  await page.reload()
+  await expect(page.getByRole('radio', { name: /^Automatic review/ })).toBeChecked()
+
   await page.goto(`${root}#/settings?section=stall-watch`)
   await expect(page.locator('.svc-pane fieldset')).toHaveAttribute('aria-busy', 'false')
   await page.locator('#sd-w').fill('37')

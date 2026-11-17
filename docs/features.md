@@ -1379,6 +1379,24 @@ An unchanged sessionless allocation can be reused after a harness start fails.
 That retry keeps its worktree identifier and updates its owner.
 Remote allocation waits for machine pairing.
 
+The owner's decision of 2026-11-17 permits lead starts in registered worktrees inside home.
+Only the starter's current project worktree, team worktrees and engine allocations grant that exception.
+The home itself, state folder, plugin root, home dotdirectories and configured login folders remain protected.
+Recovery and resume refresh the registration before spawning.
+
+## Automatic permission defaults
+
+State: Implemented in unit s26, under the owner's decision of 2026-11-17.
+
+New harness defaults use `auto` for project leads.
+A worker start without a permission level uses `auto`, capped at its starter's level.
+The ordered levels are `read-only`, `ask`, `edit`, `auto` and `full`.
+Claude uses its `auto` mode.
+Codex uses its `agent` automatic review mode.
+An unsupported or historical mapping falls back to edit and reports that fact in harness status.
+The website offers Automatic review alongside the existing choices.
+Existing agents and saved defaults keep their levels.
+
 ## Reconciliation of interrupted worker allocations
 
 State: Idea.
