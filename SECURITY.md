@@ -161,6 +161,13 @@ These rules apply to every change. A change that breaks one is a security bug.
    This is not general decoding of line-wrapped documents.
    Other wrap widths, carriage-return separators, and arbitrary line phases inside larger documents are not covered.
    Middle line segments are not independently registered.
+   Mixed wrapping between encoding steps is outside this covered set.
+   For example, `printf %s "$T" | base64 -w0 | base64` can publish part or all of the encoded secret.
+   A secret inside a larger document encoded with default base64 wrapping is not reliably hidden.
+   This includes `printf 'key=%s\n' "$T" | base64` and an encoded credentials file.
+   The full GNU forms apply when the registered value is the encoding input.
+   Other document content changes the line positions and can break every registered run.
+   Hexadecimal output wrapped by `xxd -p` is not matched in general.
    A wrapped document can therefore escape matching when it contains none of the registered contiguous or full pipeline forms.
    The two-step list does not include hexadecimal combined with another encoding.
    It does not cover every mixture of standard and URL-safe base64 alphabets.

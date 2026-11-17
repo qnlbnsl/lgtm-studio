@@ -6,119 +6,15 @@ import * as Redacted from "effect/Redacted";
 import { Redactor, type RedactionPart } from "../log/Redactor.ts";
 import { eventStructure, fieldStructure, type RedactionStructure } from "../log/redactionStructure.ts";
 import { credentialLength, hasValidChecksum, sha256Hex } from "./credential.ts";
+import { addForms, base64Run, compileForms, toBase64url, maximumCachedFormCharacters, type FormLists } from "./redactionForms.ts";
 
 const replacement = "[REDACTED]";
 
-// Encoded forms shorter than this are not matched on their own. Only the
-// partial base64 runs of a very short secret are that short, and matching
-// them would blank unrelated text. The full forms are always matched.
-const minimumPartialLength = 8;
-
-// The longest text an encoded credential can occupy: every character
-// percent-escaped. Hexadecimal (2 per byte) and base64 are shorter.
 const longestCredentialForm = 3 * credentialLength;
-
-// The characters of base64 output that depend only on `bytes` when they start
-// `alignment` bytes into a longer encoded value (decision row 73: all three
-// alignments). The leading and trailing characters that mix in neighbouring
-// bytes are left out.
-const base64Run = (bytes: Buffer, alignment: number): string => {
-  const padded = Buffer.concat([Buffer.alloc(alignment), bytes, Buffer.alloc(2)]);
-  const first = Math.ceil((8 * alignment) / 6);
-  const end = Math.floor((8 * (alignment + bytes.byteLength)) / 6);
-  return padded.toString("base64").slice(first, end);
-};
-
-const toBase64url = (base64: string): string => base64.replaceAll("+", "-").replaceAll("/", "_");
-
-// The matched forms of every live secret, by the text they are searched in.
-// `exact` forms are matched as written. `hex` forms are lower-case and are
-// searched in a copy of the text with A-F folded to lower case, so
-// hexadecimal matches in any case. `percent` forms have lower-case escapes
-// and are searched in a copy with only the digits of each `%xx` escape
-// folded, so the escapes match in any case and literal letters do not.
-interface Forms {
-  readonly exact: ReadonlyArray<string>;
-  readonly hex: ReadonlyArray<string>;
-  readonly percent: ReadonlyArray<string>;
+interface Forms extends FormLists {
   readonly publicLengths: ReadonlyMap<string, number>;
   readonly match: (text: string, found: Array<Interval>, hexFolded: string) => void;
 }
-
-// Every form of one secret (decision rows 57 and 73, fix round 1 rulings 1
-// and 2): raw; as it appears inside a JSON string; base64 and base64url,
-// whole and at each byte alignment inside a longer value; URL-encoded, with
-// `%20` or `+` for a space; and hexadecimal.
-const addForms = (secret: string, exact: Set<string>, hex: Set<string>, percent: Set<string>): void => {
-  if (secret.length === 0) return;
-  const bytes = Buffer.from(secret, "utf8");
-  exact.add(secret);
-  const json = JSON.stringify(secret).slice(1, -1);
-  const base64 = bytes.toString("base64");
-  exact.add(json);
-  // Bounded two-step set (issue 232): JSON(JSON(secret)), base64(JSON(secret)),
-  // JSON(base64(secret)), URL(base64(secret)), and base64(base64(secret)).
-  // JSON leaves base64 unchanged. Do not recursively compose forms or add
-  // partial runs except for double base64, whose inner and outer alignments
-  // below cover contiguous runs; GNU line wrapping is handled separately.
-  exact.add(JSON.stringify(json).slice(1, -1));
-  exact.add(Buffer.from(json, "utf8").toString("base64"));
-  exact.add(JSON.stringify(base64).slice(1, -1));
-  percent.add(encodeURIComponent(base64).replace(/%[0-9A-F]{2}/g, (escape) => escape.toLowerCase()));
-  exact.add(Buffer.from(base64, "utf8").toString("base64"));
-  exact.add(bytes.toString("base64"));
-  exact.add(bytes.toString("base64url"));
-  for (const alignment of [0, 1, 2]) {
-    const run = base64Run(bytes, alignment);
-    if (run.length < minimumPartialLength) continue;
-    exact.add(run);
-    exact.add(toBase64url(run));
-  }
-  // Three inner byte alignments, each at three outer byte alignments.
-  // Standard and URL-safe outer runs add at most eighteen forms per secret.
-  for (const innerAlignment of [0, 1, 2]) {
-    const inner = base64Run(bytes, innerAlignment);
-    if (inner.length < minimumPartialLength) continue;
-    for (const outerAlignment of [0, 1, 2]) {
-      const run = base64Run(Buffer.from(inner, "ascii"), outerAlignment);
-      if (run.length < minimumPartialLength) continue;
-      exact.add(run);
-      exact.add(toBase64url(run));
-    }
-  }
-  // GNU base64 uses 76 columns and a final LF. Full pipeline forms cover
-  // the entire value, including internal line breaks, with or without the
-  // final output LF. They add at most six forms. No recursive expansion.
-  const gnu = (value: string): string => (Buffer.from(value).toString("base64").match(/.{1,76}/g) ?? []).join("\n") + "\n";
-  for (const value of [secret, secret + "\n"]) {
-    const inner = gnu(value);
-    exact.add(inner.slice(0, -1));
-    exact.add(gnu(inner).slice(0, -1));
-    exact.add(Buffer.from(inner).toString("base64"));
-  }
-  // The first and last inner line segments at each byte alignment also
-  // contribute bounded partial runs. At most 36 additional forms; the
-  // existing eight-character gate applies to both inner and outer runs.
-  for (const alignment of [0, 1, 2]) {
-    const inner = base64Run(bytes, alignment);
-    if (inner.length <= 76) continue;
-    const firstColumn = Math.ceil(8 * alignment / 6);
-    const firstLength = 76 - firstColumn;
-    const lastStart = firstLength + 76 * Math.floor((inner.length - firstLength - 1) / 76);
-    for (const segment of new Set([inner.slice(0, firstLength), inner.slice(lastStart)])) {
-      if (segment.length < minimumPartialLength) continue;
-      for (const outer of [0, 1, 2]) {
-        const run = base64Run(Buffer.from(segment, "ascii"), outer);
-        if (run.length < minimumPartialLength) continue;
-        exact.add(run); exact.add(toBase64url(run));
-      }
-    }
-  }
-  const url = encodeURIComponent(secret).replace(/%[0-9A-F]{2}/g, (escape) => escape.toLowerCase());
-  percent.add(url);
-  percent.add(url.replaceAll("%20", "+"));
-  hex.add(bytes.toString("hex"));
-};
 
 // Where an encoded credential can start (fix round 1, ruling 3): the
 // base64 and base64url runs of each six-byte prefix at each alignment, and
@@ -147,130 +43,6 @@ const foldHex = (text: string): string => text.replace(/[A-F]/g, (letter) => let
 // `%xx` escape folded to lower case.
 const foldEscapes = (text: string): string =>
   text.replace(/%[0-9A-Fa-f]{2}/g, (escape) => escape.toLowerCase());
-
-// A single compact automaton searches whole text in one pass. Folding A-F
-// shares hexadecimal paths; exact and percent matches are verified against
-// the original spelling. Output links retain overlapping and short matches.
-const wholeMatcher = (forms: Pick<Forms, "exact" | "hex" | "percent">) => {
-  const patterns = (["exact", "hex", "percent"] as const).flatMap(kind => forms[kind].map(form => ({ kind, form })));
-  // Group common heads in a bounded native expression. Full forms remain
-  // literal checks, so case folding and short heads do not change matches.
-  if (patterns.length > 256 && patterns.length <= 4096) {
-    interface HeadNode { readonly children: Map<string, HeadNode>; terminal: boolean }
-    const heads: HeadNode = { children: new Map(), terminal: false };
-    const buckets = new Map<string, typeof patterns>();
-    for (const pattern of patterns) {
-      const key = foldHex(pattern.form.slice(0, 8));
-      const bucket = buckets.get(key) ?? [];
-      bucket.push(pattern); buckets.set(key, bucket);
-      let at = heads;
-      for (const c of key) {
-        let next = at.children.get(c);
-        if (next === undefined) { next = { children: new Map(), terminal: false }; at.children.set(c, next); }
-        at = next;
-      }
-      at.terminal = true;
-    }
-    const expression = (node: HeadNode): string => {
-      if (node.terminal) return "";
-      const branches = Array.from(node.children, ([c, child]) =>
-        c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + expression(child));
-      return branches.length === 1 ? branches[0]! : `(?:${branches.join("|")})`;
-    };
-    const source = expression(heads);
-    if (source.length > 0 && source.length <= 32768) {
-      const candidates = new RegExp(source, "g");
-      return (text: string, found: Array<Interval>, hexFolded: string): void => {
-        candidates.lastIndex = 0;
-        for (let hit = candidates.exec(hexFolded); hit !== null; hit = candidates.exec(hexFolded)) {
-          const start = hit.index;
-          for (let length = hit[0].length; length <= Math.min(8, text.length - start); length++) {
-            for (const { form, kind } of buckets.get(foldHex(text.slice(start, start + length))) ?? []) {
-              const value = text.slice(start, start + form.length);
-              if ((kind === "exact" ? value : kind === "hex" ? foldHex(value) : foldEscapes(value)) === form) found.push([start, start + form.length]);
-            }
-          }
-          candidates.lastIndex = start + 1;
-        }
-      };
-    }
-  }
-  // Native searches over shared, bounded heads skip ordinary text cheaply.
-  // Verify every full form at a hit, including overlapping matches. A large
-  // form collection uses the single automaton below instead of per-form scans.
-  if (patterns.length <= 256) {
-    const groups = (["exact", "hex", "percent"] as const).map(kind => {
-      const buckets = new Map<string, Array<string>>();
-      for (const form of forms[kind]) {
-        const key = form.slice(0, 32), bucket = buckets.get(key) ?? [];
-        bucket.push(form); buckets.set(key, bucket);
-      }
-      return { kind, buckets };
-    });
-    return (text: string, found: Array<Interval>, hexFolded = foldHex(text)): void => {
-      for (const { kind, buckets } of groups) {
-        const view = kind === "exact" ? text : kind === "hex" ? hexFolded : foldEscapes(text);
-        for (const [key, bucket] of buckets) {
-          for (let start = view.indexOf(key); start !== -1; start = view.indexOf(key, start + 1)) {
-            for (const form of bucket) if (view.startsWith(form, start)) found.push([start, start + form.length]);
-          }
-        }
-      }
-    };
-  }
-  const capacity = 1 + patterns.reduce((sum, pattern) => sum + pattern.form.length, 0);
-  const head = new Uint32Array(capacity), sibling = new Uint32Array(capacity), chars = new Uint16Array(capacity);
-  const failure = new Uint32Array(capacity), terminal = new Uint32Array(capacity), output = new Uint32Array(capacity);
-  const same = new Uint32Array(patterns.length), root = new Uint32Array(128);
-  const folded = (c: number) => c >= 65 && c <= 70 ? c + 32 : c;
-  const child = (at: number, c: number): number => {
-    if (at === 0 && c < root.length) return root[c]!;
-    for (let next = head[at]!; next !== 0; next = sibling[next]!) if (chars[next] === c) return next;
-    return 0;
-  };
-  let size = 1;
-  for (let i = 0; i < patterns.length; i++) {
-    let at = 0;
-    const form = patterns[i]!.form;
-    for (let j = 0; j < form.length; j++) {
-      const c = folded(form.charCodeAt(j));
-      let next = child(at, c);
-      if (next === 0) {
-        next = size++; chars[next] = c; sibling[next] = head[at]!; head[at] = next;
-        if (at === 0 && c < root.length) root[c] = next;
-      }
-      at = next;
-    }
-    same[i] = terminal[at]!; terminal[at] = i + 1;
-  }
-  const queue = new Uint32Array(size);
-  let end = 0;
-  for (let next = head[0]!; next !== 0; next = sibling[next]!) queue[end++] = next;
-  for (let i = 0; i < end; i++) {
-    const at = queue[i]!, fail = failure[at]!;
-    output[at] = terminal[fail] !== 0 ? fail : output[fail]!;
-    for (let next = head[at]!; next !== 0; next = sibling[next]!) {
-      let fail = failure[at]!, target = child(fail, chars[next]!);
-      while (fail > 0 && target === 0) { fail = failure[fail]!; target = child(fail, chars[next]!); }
-      failure[next] = target; queue[end++] = next;
-    }
-  }
-  return (text: string, found: Array<Interval>): void => {
-    let at = 0;
-    for (let i = 0; i < text.length; i++) {
-      const c = folded(text.charCodeAt(i));
-      let next = child(at, c);
-      while (at > 0 && next === 0) { at = failure[at]!; next = child(at, c); }
-      at = next;
-      for (let node = terminal[at] !== 0 ? at : output[at]!; node !== 0; node = output[node]!) {
-        for (let id = terminal[node]!; id !== 0; id = same[id - 1]!) {
-          const { form, kind } = patterns[id - 1]!, start = i + 1 - form.length;
-          if (kind === "hex" || (kind === "exact" ? text.startsWith(form, start) : foldEscapes(text.slice(start, i + 1)) === form)) found.push([start, i + 1]);
-        }
-      }
-    }
-  };
-};
 
 // The fixed-cost gate before any credential hash (decision row 73): only a
 // decoded candidate with a credential prefix, the exact shape and a matching
@@ -408,9 +180,8 @@ interface Tail { readonly held: number; readonly context: number }
 const noTail: Tail = { held: 0, context: 0 };
 const largerTail = (a: Tail, b: Tail): Tail => a.held > b.held || a.held === b.held && a.context >= b.context ? a : b;
 
-// One compact failure automaton serves every registry size. Numeric arrays
-// replace per-character Maps and per-form fallback scans. Only the suffix
-// that can be a proper prefix needs inspection, even for a megabyte chunk.
+// This automaton contains only the fixed public token prefixes. It is built
+// once, independently of registered secrets, and scans only its bounded suffix.
 const prefixMatcher = (forms: ReadonlyArray<string>, publicLengths: ReadonlyMap<string, number>) => {
   const capacity = 1 + forms.reduce((sum, form) => sum + Math.max(0, form.length - 1), 0);
   const head = new Uint32Array(capacity), sibling = new Uint32Array(capacity);
@@ -550,7 +321,7 @@ export const makeRedactor = (registry: {
   readonly redactChunk: (itemId: string, text: string, final: boolean) => string;
   readonly withholdParts: (itemId: string, marker: string) => ReadonlyArray<RedactionPart>;
 } => {
-  const compiled: Array<{ values: ReadonlyArray<string>; forms: Forms; tail: (text: string) => Tail }> = [];
+  const compiled: Array<{ values: ReadonlyArray<string>; forms: Forms; tail: (text: string) => Tail; characters: number }> = [];
   const currentForms = (additional: ReadonlyArray<Redacted.Redacted<string>> = []) => {
     // Registries may return fresh arrays and Redacted wrappers. Compare their
     // values, not wrapper identities, and keep only four compiled states.
@@ -570,17 +341,16 @@ export const makeRedactor = (registry: {
       }
     }
     const lists = { exact: [...exact], hex: [...hex], percent: [...percent] };
-    const forms = { ...lists, publicLengths, match: wholeMatcher(lists) };
-    const matchExact = prefixMatcher(forms.exact, publicLengths), matchHex = prefixMatcher(forms.hex, publicLengths), matchPercent = prefixMatcher(forms.percent, publicLengths);
-    const longest = [forms.exact, forms.hex, forms.percent].reduce((max, list) => list.reduce((max, form) => Math.max(max, form.length - 1), max), 0);
-    const tail = (text: string): Tail => {
-      if (longest === 0) return noTail;
-      const suffix = text.slice(-longest);
-      return largerTail(matchExact(suffix), largerTail(matchHex(foldHex(suffix)), matchPercent(foldEscapes(suffix).replace(/%[0-9A-Fa-f]$/, escape => escape.toLowerCase()))));
-    };
-    const state = { values, forms, tail };
-    compiled.unshift(state);
-    if (compiled.length > 4) compiled.pop();
+    const matcher = compileForms(lists, publicLengths);
+    const forms = { ...lists, publicLengths, match: matcher.match };
+    const tail = matcher.tail;
+    const state = { values, forms, tail, characters: matcher.formCharacters };
+    // Oversized form lists are used for this call and not retained. The
+    // accelerator has its own smaller budget and falls back without a trie.
+    if (state.characters <= maximumCachedFormCharacters) {
+      compiled.unshift(state);
+      while (compiled.length > 4 || compiled.reduce((sum, state) => sum + state.characters, 0) > maximumCachedFormCharacters) compiled.pop();
+    }
     return state;
   };
 

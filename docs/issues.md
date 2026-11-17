@@ -3837,7 +3837,7 @@ The issue 242 round-7 scope leaves this shared stop-state path unchanged.
 
 Found: 2026-11-02, by the security review of the issue 223 fix (commit
 b88b876, finding F1).
-State: fixed in s19-secrets with five bounded two-step forms, GNU pipeline forms, and whole and streamed regressions. The precise limits are in SECURITY.md rule 6.
+State: fixed in s19-secrets with bounded two-step and GNU pipeline forms, a bounded shared matcher, and whole-text reference and streaming regressions. Lone-surrogate values remain protected. The precise encoding limits are in SECURITY.md rule 6.
 
 What happens: the redactor matches a fixed list of forms of each secret,
 built by `addForms` in `packages/engine/src/identity/redactor.ts`, line 49.
@@ -17891,3 +17891,108 @@ Ran: directed tests reproduced the hash-only token and both value-secret variant
 Ran: overlapping value secrets reproduced the same leak without withholding.
 Read: the corrected carry preserves the entire completed match's covered reach.
 Ran: the extended stream reference includes the review's three exact schedules.
+
+## s19-12. First-use matching allocated large automatons synchronously.
+
+Found: 2026-11-16, from round-three review finding M2.
+State: ordinary-set compilation and accelerator memory are bounded in round four. Large-set synchronous form construction remains open.
+
+Read: the previous implementation built full-form and prefix automatons before the first result.
+Read: round four uses one four-character candidate index for complete and prefix matching.
+Read: short queries use direct lookups in that index.
+Read: native expression compilation waits for a query longer than 256 characters.
+Read: the index accepts at most 262144 form characters and 32768 head characters.
+Read: its expression source is limited to 32768 characters.
+Read: larger sets use literal searches over every form without an accelerator.
+Read: no form is dropped to meet a resource budget.
+Read: cached states retain at most 1048576 form characters in total and at most four states.
+Read: a larger state is used only for its current call.
+Read: these are bounds on derived indexes and cached text, not a fixed bound on process memory.
+Read: constructing every supported spelling still needs memory and time proportional to registered input.
+Ran: the final time and memory table is in the round-four result.
+Read: very large uncached sets rebuild their forms on later calls.
+Read: the first long query can still pay for native expression compilation.
+
+## s19-13. Whole-text strategies disagreed on percent escapes and had no naive reference test.
+
+Found: 2026-11-16, from round-three review findings M1 and m2.
+State: fixed in round four with one normalization rule and repository reference tests.
+
+Read: one strategy normalized complete text while others normalized only a candidate slice.
+Ran: the uppercase final digit of `%4A` was hidden with a small secret set and shown with larger sets.
+Read: percent forms now always search the same globally normalized view.
+Read: the naive reference uses indexOf over the exact production form list.
+Ran: fixed-seed cohorts cross all three former form-count thresholds.
+Ran: direct matcher assertions prove the bounded index and literal fallback are exercised.
+Ran: all registered forms are planted at text boundaries and compared by original source masks.
+Ran: shared heads, prefix and suffix secrets, infix secrets, repetitions, expression metacharacters, non-ASCII text, and overlaps are covered.
+Ran: the stream reference plants values and two tokens and tests random forced withholding.
+Ran: temporary copies of both reference tests fail against the round-three implementation.
+
+## s19-14. A lone surrogate in a registered value made every redaction throw.
+
+Found: 2026-11-16, from round-three review finding m4.
+State: fixed in round four for raw, JSON, and supported encoded forms.
+
+Read: the URL encoder rejected an unpaired Unicode surrogate.
+Read: it now repairs that input in the same way as UTF-8 buffer encoding.
+Read: UTF-8 means Unicode Transformation Format, 8-bit.
+Read: the exact raw value and its JSON-escaped spelling remain registered.
+Ran: high, low, and separated surrogate fixtures are checked whole and at every split.
+
+## s19-15. Five alternating secret sets continually evict compiled states.
+
+Found: 2026-11-16, from round-three review finding m5.
+State: recorded without a separate cache-policy fix, as assigned.
+
+Read: the cache retains at most four states and now also enforces a total text budget.
+Read: five or more alternating sets cannot all remain cached.
+Read: each miss reconstructs its supported forms.
+Read: the registry is still compared by string values rather than wrapper identities.
+Read: this affects latency and does not reuse the wrong secret set.
+Read: today's runner supplies the combined secrets of all running processes to each stream.
+Read: that wiring does not independently cycle five per-agent additional sets on successive items.
+Read: oversized uncached sets also rebuild on every call, as recorded in issue s19-12.
+
+## s19-16. Several wrapped encoding pipelines remain outside the bounded form set.
+
+Found: 2026-11-16, from round-three review finding m3.
+State: recorded as limits in SECURITY.md rule 6, without expanding the assigned form set.
+
+Read: an unwrapped inner base64 step followed by a default wrapped outer step can leave readable encoded content.
+Read: a registered value inside a larger document can miss every contiguous run when the document is encoded with default wrapping.
+Read: this includes an encoded login file.
+Read: line-wrapped hexadecimal output from xxd -p can escape the contiguous hexadecimal form.
+Read: the security document now names all three cases in plain words.
+
+## s19-17. The first cold benchmark expected a baseline stream to release ordinary text immediately.
+
+Found: 2026-11-16, while measuring round-four first use.
+State: corrected before accepting benchmark results.
+
+Ran: the baseline deliberately held the short first chunk and failed that benchmark-only expectation.
+Read: validation now includes its final flush outside the timed first call.
+Read: the measured call remains its actual first whole-text or streamed call.
+Read: no repository assertion or wait was changed.
+
+## s19-18. The simpler matcher costs more for a few long values in whole-text scans.
+
+Found: 2026-11-16, while comparing the round-four matcher.
+State: recorded as the tradeoff authorized by the round-four preference for fewer strategies.
+
+Read: the previous three whole-text strategies have been replaced by one candidate index and a literal fallback.
+Read: both paths share the same normalization and full-form checks.
+Ran: the three-value, 1500-character warmed whole-text rows exceed twice the original baseline.
+Read: their absolute extra time is small compared with the removed multi-second compilation cost for large sets.
+Read: the final result reports every warmed row and does not claim the older twice-baseline target was met in those rows.
+Read: no required secret form was removed to improve the measurement.
+
+
+## s19-19. A copied reference test retained whitespace on an otherwise empty line.
+
+Found: 2026-11-16, by the round-four staged diff check.
+State: fixed by removing the empty line's whitespace.
+
+Ran: the old and cleaned source have identical non-whitespace bytes.
+Read: the cleanup occurred after the full test run started.
+Read: the frozen hash record includes the cleaned file and the result records this formatting-only difference.

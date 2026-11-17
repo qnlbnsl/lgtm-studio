@@ -54,3 +54,20 @@ for (const fixture of cases) it(`r4 B2 preserves completed coverage: ${fixture.n
   expect(parts.map(p => p.text).join("") === fixture.expected, "completed private match must not lose its covered tail").toBe(true);
   expect(parts.reduce((n, p) => n + p.length, 0)).toBe(fixture.calls.reduce((n, text) => n + (text?.length ?? 0), 0));
 });
+it("r4 percent-escape normalization is independent of the secret-set size", () => {
+  for (const count of [0, 20, 300]) {
+    const r = create(["a", ...Array.from({ length: count }, (_, i) => `s19-fake-irrelevant-${i}-not-a-real-secret`)]);
+    expect(r.redactText("%4A") === "%4[REDACTED]", `extra values=${count}`).toBe(true);
+  }
+});
+it("r4 lone surrogate values retain their raw and JSON protection", () => {
+  for (const value of ["s19-fake-\ud800", "s19-fake-\udc00", "s19-fake-\ud800X\udc00"]) {
+    const r = create([value]);
+    for (const text of [value, JSON.stringify(value).slice(1, -1), encodeURIComponent(value.toWellFormed())]) {
+      expect(r.redactText(text) === "[REDACTED]").toBe(true);
+      for (let cut = 0; cut <= text.length; cut++) {
+        expect((r.redactChunk("surrogate", text.slice(0, cut), false) + r.redactChunk("surrogate", text.slice(cut), true)) === "[REDACTED]").toBe(true);
+      }
+    }
+  }
+});
