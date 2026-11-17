@@ -141,6 +141,55 @@ These rules apply to every change. A change that breaks one is a security bug.
    Explicit secrets from `secrets.json`, resolved `secret:` variables,
    harness login files, the web password, and owner and agent credentials stay
    registered at any length.
+   Registered values are matched raw, JSON escaped, in base64 and base64url,
+   in partial base64 runs of at least eight characters, URL encoded, and in hexadecimal.
+   The bounded two-step forms are double JSON escaping, base64 of the JSON-escaped value,
+   JSON escaping of base64, URL encoding of base64, and base64 of base64.
+   Encodings are not composed recursively.
+   Double base64 also matches bounded partial runs at all three inner and outer byte alignments.
+   Each partial run still requires at least eight characters.
+   Contiguous registered runs can match inside a larger encoded document.
+   For a value-known secret, GNU base64 output at 76 columns with line-feed separators is also matched.
+   The full forms cover single encoding and the default double-encoding pipelines from `printf` and `echo`.
+   They allow the final output line feed to be removed.
+   They also cover an unwrapped outer encoding of that wrapped inner output.
+   These full pipeline forms add at most six entries per secret.
+   The first and last inner line segments at each byte alignment add at most 36 partial entries.
+   Both inner and outer partial runs still require eight characters.
+   The complete bounded set attempts at most 78 insertions per secret.
+   At least one insertion is always a duplicate, leaving at most 77 distinct entries.
+   This is not general decoding of line-wrapped documents.
+   Other wrap widths, carriage-return separators, and arbitrary line phases inside larger documents are not covered.
+   Middle line segments are not independently registered.
+   Mixed wrapping between encoding steps is outside this covered set.
+   For example, `printf %s "$T" | base64 -w0 | base64` can publish part or all of the encoded secret.
+   A secret inside a larger document encoded with default base64 wrapping is not reliably hidden.
+   This includes `printf 'key=%s\n' "$T" | base64` and an encoded credentials file.
+   The full GNU forms apply when the registered value is the encoding input.
+   Other document content changes the line positions and can break every registered run.
+   Hexadecimal output wrapped by `xxd -p` is not matched in general.
+   A wrapped document can therefore escape matching when it contains none of the registered contiguous or full pipeline forms.
+   The two-step list does not include hexadecimal combined with another encoding.
+   It does not cover every mixture of standard and URL-safe base64 alphabets.
+   Base64 of the JSON-escaped value has no additional partial-run forms.
+   JSON escaping of base64 uses the spelling produced by `JSON.stringify`.
+   Optional slash escapes in that text are not an additional matched spelling.
+   URL encoding of base64 matches its literal and fully encoded spellings.
+   An arbitrary mixture of escaped and unescaped base64 characters is not covered.
+   A token known only by its stored hash is matched raw and in the supported single encodings.
+   The two-step forms require its value to be registered too.
+   The GNU wrapped forms also require the value to be registered.
+   A streamed agent token's public prefix may be published as match context.
+   Every public-prefix occurrence in the bounded candidate window remains eligible.
+   A prefix inside a token cannot displace an earlier candidate.
+   The private remainder stays withheld while it could still complete a registered token.
+   A continuation that rules out the candidate releases it.
+   A complete registered token is replaced.
+   An incomplete candidate is released when its redaction item or turn ends.
+   Forced withholding instead replaces its pending characters with a fixed marker.
+   Its match context and completed coverage remain available for later chunks.
+   Published public characters remain match context even when a value-known secret also has a matching suffix.
+   Whole-text output may be `[REDACTED]` where streamed output is `shp_[REDACTED]`.
    A value inferred only from an inherited environment variable whose name
    matches `KEY`, `TOKEN`, `SECRET` or `PASSWORD` is registered only at eight
    or more characters when its trimmed text is nonempty, is neither `true`

@@ -113,13 +113,16 @@ for (const source of ["terminal", "message"]) {
   it.live(`E diagnostic: stop emits but does not store the held ${source} tail`, () => Effect.gen(function* () {
     const gate = join(rig.root, "never-release");
     const harness = harnessFor("first", writeFakeAdapter(rig));
-    const tail = `${source} held tail`;
+    const tailSecret = "Zebra-planted-private-message-tail-credential";
+    // Ordinary message endings stream immediately. Use a genuine registered
+    // prefix so this unchanged diagnostic still exercises the message carry.
+    const tail = source === "message" ? tailSecret.slice(0, 12) : `${source} held tail`;
     const echo = echoFile(rig);
     // The queued plan must finish before the tail. A second acknowledged FIFO
     // round trip places actual tail handling before the direct raw-frame barrier.
     // Neither round trip emits content that could flush the short held tail.
-    const account = accountFor("first", { turns: [[reference, marker, { step: "notification_barrier" }, ...(source === "terminal" ? [chunk(tail)] : [{ step: "text", text: tail }]), { step: "notification_barrier" }, frame({ sessionUpdate: "available_commands_update", availableCommands: [] }), { step: "wait_for_file", path: gate }]] }, echo);
-    return yield* withEngine(rig, { harness, accounts: [account] }, (context) => Effect.gen(function* () {
+    const account = accountFor("first", { turns: [[reference, marker, { step: "notification_barrier" }, ...(source === "terminal" ? [chunk(tail)] : [{ step: "text", text: tail }]), { step: "notification_barrier" }, frame({ sessionUpdate: "available_commands_update", availableCommands: [] }), { step: "wait_for_file", path: gate }]] }, echo, { PLANTED_KEY: "secret:tail" });
+    return yield* withEngine(rig, { harness, accounts: [account], secrets: { "secret:tail": tailSecret } }, (context) => Effect.gen(function* () {
       yield* registerRebuildCheck();
       const reply = success(yield* call(ownerCredential, "start", startPayloadFor(harness, account, rig.work, { prompt: "go" })));
       yield* context.waitFor((event) => event._tag === "deliveryUpdate" && event.kind === "plan");

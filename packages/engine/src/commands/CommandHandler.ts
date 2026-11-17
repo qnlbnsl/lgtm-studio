@@ -22,6 +22,7 @@ import * as Stream from "effect/Stream";
 import * as RpcSchema from "effect/rpc/RpcSchema";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import { preloadAccountCredentials } from "../accounts/preloadCredentials.ts";
 import { followAvailability } from "../accounts/available.ts";
 import { sha256Hex } from "../identity/credential.ts";
 import { callerKey } from "../identity/caller.ts";
@@ -123,6 +124,7 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
       return yield* restore(Fiber.join(fiber));
     }));
     const runtime: Runtime = { ...configuration, lists, sql, log, runner, secrets, views };
+    yield* preloadAccountCredentials(runtime, Object.values((yield* views.snapshot).accounts));
     setTerminalSwitch(log, ((yield* views.snapshot).client as { webSettings?: { terminalEnabled?: boolean } } | undefined)?.webSettings?.terminalEnabled === true);
     yield* Effect.addFinalizer(() => Effect.sync(() => closeSignIns(log)));
     // Fix round 1, N-1: the first start loads the harness defaults.
@@ -470,6 +472,14 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
           }
           if (serviceRestartPending() && !["stop", "client.service.restart"].includes(name)) return yield* refused("service restarting");
           const plan = planned.success;
+          if (plan.events.some(event => event._tag === "AccountChanged")) {
+            const accounts: Record<string, import("@lgtm/contracts").Account> = { ...snapshot.accounts };
+            for (const event of plan.events) if (event._tag === "AccountChanged") {
+              if (event.account === undefined) delete accounts[event.accountId];
+              else accounts[event.accountId] = event.account;
+            }
+            yield* preloadAccountCredentials(runtime, Object.values(accounts));
+          }
           yield* append(actor, requestId, bodyHash, (pieceNamespace(name) === undefined || projectLifecycleCommand(name)) ? withWaitChecks(snapshot, plan.events, lists) : plan.events, plan.sideRows ?? {}, (batch) =>
             plan.reply === undefined ? replyFor(snapshot, name, requestId, batch, settings).reply : plan.reply(batch));
           // Return precisely the redacted result that a later retry reads.
