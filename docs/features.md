@@ -899,6 +899,13 @@ The design must meet these points before any upload is built.
 
 ## Pushing a finished project and opening its pull request
 
+The owner review flow was connected to GitHub.com on 2026-11-17.
+Prepare pushes the registered project branch with the service user's signed-in GitHub CLI and creates or reuses an open pull request.
+Approval requests a merge commit and conditionally fast-forwards the local base.
+The existing review area shows the mode, provider link, state, and local update result.
+Missing GitHub support keeps the explained local merge fallback.
+Automatic push triggers and manual provider text editing below remain planned.
+
 The owner raised this on 2026-11-12 and decided its shape the same day. It is
 **agreed**, and it is not built in the engine or the mock. Agents merge their work
 locally, from an agent's worktree into its team branch and from the team branch into the
@@ -1121,7 +1128,8 @@ The local engine, client application programming interface, command-line program
 The owner approves every merge into the base branch.
 Sending a review back records a distinct outcome and addresses its reason to the project lead on the board.
 Git text generation needs an owner-configured account and model with a bounded short-task execution boundary.
-Hosted pull request editing needs a durable provider record and an authenticated provider update action.
+Hosted pull request editing now has a durable GitHub delivery record.
+It still needs an authenticated provider text update action.
 Those generation and editing controls remain refused until their prerequisites exist.
 Remote-machine Git remains unavailable.
 

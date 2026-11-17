@@ -162,3 +162,14 @@ Sessions end when the page reloads, its connection grace period expires, the own
 Remote shells, agent terminal watching, agent terminal takeover, and session reconnection need engine support.
 Those controls are disabled in the live screen, with the tooltip “Engine work needed”.
 The sample screen and its pretend shell remain unchanged when opened without the engine.
+
+## GitHub project merge reviews
+
+The connected Git tab uses the existing review ribbon and merge dialog for GitHub pull requests.
+The ribbon and dialog show the prepared mode, pull request number, link, and state.
+The dialog displays the generated title and description as recorded data.
+The title and description editors still refuse live edits.
+An explicit Git refresh pushes newer commits for an open GitHub review and replaces that review.
+Automatic background reads remain read-only.
+Approval records the remote merge and reports whether the local base was updated.
+The sample screens continue to work without an engine or a GitHub connection.

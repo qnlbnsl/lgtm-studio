@@ -262,3 +262,43 @@ Neither output nor typed keys are traced or included in an error message.
 A secret printed in the terminal appears on the owner's screen and in any scrollback the owner's own tools keep.
 The shell runs as the owner and can change files with that user's permissions.
 Rule 6 remains unchanged for every other path.
+
+## The owner's GitHub pull requests
+
+The owner authorized GitHub pushes and pull requests on 2026-11-17.
+Only an authenticated owner connection can prepare or approve the project's main review.
+Agent credentials and service credentials cannot invoke those operations.
+The agent tool list does not expose an owner merge tool.
+The engine uses the service user's existing GitHub command-line interface (CLI) identity for authentication status, pull request reads, creation, and merging.
+It never asks the CLI for a token.
+It never reads or stores the CLI's configuration or credential files.
+Authentication diagnostics and unused command output are discarded.
+Selected pull request metadata passes through the production redactor before entering a log, an event, or a client reply.
+The project name, goal, and reported evidence are redacted before they become a pull request title or description.
+The generated title uses the review screen's existing 72-character limit.
+The description is bounded to 8,000 characters and at most 32 kibibytes.
+
+Both Git and the GitHub CLI run in the registered repository folder with separate argument vectors and no shell.
+Each process has a bounded timeout and bounded output.
+A GitHub command has at most 64 kibibytes of standard output and 16 kibibytes of error output.
+Each Git service operation that contacts GitHub has a two-minute limit.
+The engine disables interactive Git and GitHub prompts.
+Prepare pushes the reviewed commit only to the project's registered branch on an existing repository remote.
+It never forces a push or pushes tags or submodules with that operation.
+The engine checks the configured and resolved remote URLs before preparing a pull request.
+It refuses the repository path `vitalysim/herdr-synapse`, including a resolved push URL with that path.
+The existing owner Git push also refuses that path.
+
+Approval pins the reviewed head in GitHub's merge request and requests a merge commit.
+It does not request administrative bypass, automatic merging, or a merge queue.
+The preflight refuses a closed pull request or a GitHub merge status other than ready.
+It checks that the remote base still matches Prepare.
+GitHub enforces the merge request against its current server state.
+The remote base can move between the preflight and the merge request because GitHub offers a head condition but no base condition on that endpoint.
+The local checkout is updated only after GitHub confirms the merge.
+A dirty local base or a checkout on another branch is left alone.
+A failed fetch or fast-forward does not undo a confirmed GitHub merge.
+The reply states that the local update could not complete.
+A timeout after an external effect can have an uncertain outcome.
+The durable operation attempt prevents a retry from blindly repeating that effect.
+The owner must refresh and inspect the recorded pull request before continuing.

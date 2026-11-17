@@ -1,3 +1,4 @@
+import { fakeGithub } from "../support/fakeGithub.ts"
 import { randomBytes } from "node:crypto"
 import { execFileSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
@@ -893,3 +894,148 @@ it.live("review 12: project-wide Git readers include other team builders, but ex
     expect(yield* refusal(run(member, name, { ...p, worktreeId: f.destinationId }))).toBe("project is unavailable to this caller");
   }
 })).pipe(Effect.orDie));
+
+it.live("GitHub prepare pushes only the project branch, creates one redacted pull request, and owner approval merges remotely", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  const first = (yield* prepare(f)).result
+  expect(first.review.delivery).toMatchObject({ mode: "github", number: 17, state: "OPEN", repository: "fixture/product" })
+  expect(gh.read().title).toContain("Product work")
+  expect(gh.read().body).toContain("Review actual changes")
+  expect(git(gh.bare, "rev-parse", `refs/heads/${first.review.branch}`)).toBe(f.head)
+  expect((yield* prepare(f)).result.review.delivery.number).toBe(17)
+  const review = (yield* prepare(f)).result.review
+  const result = (yield* approve(f, review)).result
+  expect(result).toMatchObject({ outcome: "merged", delivery: { mode: "github", state: "MERGED" }, localSync: "The local base checkout was fast-forwarded." })
+  expect(git(rig.work, "rev-parse", "HEAD")).toBe(result.mergeHead)
+  expect(git(rig.work, "rev-list", "--parents", "-n", "1", result.mergeHead).split(" ")).toHaveLength(3)
+})).pipe(Effect.orDie))
+
+for (const status of ["DIRTY", "BLOCKED", "UNKNOWN"]) it.live(`GitHub ${status} refuses approval without changing local files`, () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  const { review } = (yield* prepare(f)).result
+  gh.set({ mergeStateStatus: status })
+  expect((yield* approve(f, review)).result).toMatchObject({ outcome: "refused", reason: expect.stringContaining("GitHub refused") })
+  expect(git(rig.work, "rev-parse", "HEAD")).toBe(f.baseHead)
+  expect(readFileSync(gh.calls, "utf8")).not.toContain('"PUT"')
+})).pipe(Effect.orDie))
+
+it.live("GitHub closed pull requests and stale source or remote base heads cannot merge", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  let review = (yield* prepare(f)).result.review
+  gh.set({ state: "CLOSED" })
+  expect((yield* approve(f, review)).result.outcome).toBe("refused")
+  gh.set({ state: "OPEN" })
+  review = (yield* prepare(f)).result.review
+  save(f.source, "later.txt", "later\n"); const later = commit(f.source, "Later commit")
+  expect((yield* approve(f, review)).result).toMatchObject({ outcome: "refused", reason: "stale_state" })
+  review = (yield* prepare(f)).result.review
+  expect(git(gh.bare, "rev-parse", `refs/heads/${review.branch}`)).toBe(later)
+  git(gh.bare, "update-ref", "refs/heads/main", later)
+  expect((yield* approve(f, review)).result).toMatchObject({ outcome: "refused", reason: "stale_state" })
+  expect(git(rig.work, "rev-parse", "HEAD")).toBe(f.baseHead)
+})).pipe(Effect.orDie))
+
+for (const dirty of [true, false]) it.live(`GitHub approval preserves the local base when ${dirty ? "dirty" : "on another branch"}`, () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  const { review } = (yield* prepare(f)).result
+  if (dirty) save(rig.work, "file.txt", "owner edits\n")
+  else git(rig.work, "checkout", "-b", "owner-unrelated")
+  const result = (yield* approve(f, review)).result
+  expect(result).toMatchObject({ outcome: "merged", localSync: expect.stringContaining("left alone") })
+  expect(git(rig.work, "rev-parse", "HEAD")).toBe(f.baseHead)
+  if (dirty) expect(readFileSync(join(rig.work, "file.txt"), "utf8")).toBe("owner edits\n")
+})).pipe(Effect.orDie))
+
+it.live("GitHub fallback explains no remote, non-GitHub, signed out and missing CLI", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup()
+  expect((yield* prepare(f)).result.review.delivery).toMatchObject({ mode: "local", reason: expect.stringContaining("remote") })
+  const gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  gh.set({ signedOut: true })
+  expect((yield* prepare(f)).result.review.delivery).toMatchObject({ mode: "local", reason: expect.stringContaining("not signed in") })
+  rmSync(join(gh.bin, "gh")); writeFileSync(join(gh.bin, "git"), '#!/bin/sh\nexec /usr/bin/git "$@"\n', { mode: 0o700 })
+  vi.stubEnv("PATH", gh.bin)
+  expect((yield* prepare(f)).result.review.delivery).toMatchObject({ mode: "local", reason: expect.stringContaining("not installed") })
+  git(rig.work, "remote", "set-url", "origin", gh.bare)
+  expect((yield* prepare(f)).result.review.delivery).toMatchObject({ mode: "local", reason: expect.stringContaining("not on GitHub") })
+})).pipe(Effect.orDie))
+
+it.live("GitHub refuses forbidden remotes, including rewritten push URLs, before pushing", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  for (const url of ["https://github.com/vitalysim/herdr-synapse.git", "git@github.com:vitalysim/herdr-synapse.git", "ssh://git@github.com/vitalysim/herdr-synapse", "https://github.com/vitalysim/herdr-synapse.git///", "https://github.com/%76italysim/herdr-synapse.git"]) {
+    git(rig.work, "config", "remote.origin.pushurl", url)
+    expect(yield* refusal(prepare(f))).toBe("Git: forbidden_remote")
+  }
+  expect(git(gh.bare, "branch", "--list", git(f.source, "branch", "--show-current"))).toBe("")
+})).pipe(Effect.orDie))
+
+it.live("GitHub never executes hostile title or branch data, and redacts reported secrets before publishing", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  const secret = "synthetic-review-secret-987654"
+  gh.set({ secret })
+  yield* report(f, f.api, { summary: `Evidence ${secret} $(touch SHOULD_NOT_EXIST)` })
+  const { review } = (yield* prepare(f)).result
+  expect(gh.read().body).not.toContain(secret)
+  expect(gh.read().body).toContain("[REDACTED]")
+  expect(JSON.stringify(yield* readLog)).not.toContain(secret)
+  expect(gh.read().body).toContain("$(touch SHOULD_NOT_EXIST)")
+  expect(existsSync(join(f.source, "SHOULD_NOT_EXIST"))).toBe(false)
+  gh.set({ title: secret, body: secret })
+  expect(JSON.stringify((yield* prepare(f)).result)).not.toContain(secret)
+  const member = yield* client(f.socket, f.member.token), before = readFileSync(gh.calls, "utf8")
+  expect(yield* refusal(run(member, "project.review.prepare", { ...f }))).toBe("command refused")
+  expect(yield* refusal(approve({ ...f, api: member }, review))).toBe("command refused")
+  expect(readFileSync(gh.calls, "utf8")).toBe(before)
+}), ["synthetic-review-secret-987654"]).pipe(Effect.orDie))
+
+for (const failure of ["hang", "overflow"] as const) it.live(`GitHub ${failure} is bounded without a local or remote merge`, () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  gh.set({ [failure]: true })
+  const service = makeGitService({ workspaceFolder: rig.root, networkTimeoutMs: failure === "hang" ? 100 : 5000 })
+  const comparison = yield* service.reviewMain(f.source, rig.work)
+  const result = yield* service.prepareDelivery(f.source, comparison, { title: "Bounded", body: "Data" }, { _tag: "owner" }).pipe(Effect.result)
+  expect(result).toMatchObject({ _tag: "Failure", failure: { reason: failure === "hang" ? "timeout" : "output_limit" } })
+  expect(git(rig.work, "rev-parse", "HEAD")).toBe(f.baseHead)
+  expect(git(gh.bare, "rev-parse", "refs/heads/main")).toBe(f.baseHead)
+})).pipe(Effect.orDie))
+
+it.live("GitHub hostile branch and title remain argument data, and direct service calls require the owner", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  const branch = "project/$(id)"
+  git(f.source, "branch", "-m", branch)
+  yield* appendSetup([eventOf({ _tag: "project.WorktreeCreated", repoId: f.repoId, worktreeId: f.worktreeId, branch,
+    path: f.source, machineId: "local", checkout: "worktree" })])
+  const service = makeGitService({ workspaceFolder: rig.root }), comparison = yield* service.reviewMain(f.source, rig.work)
+  const title = "--head=evil $(touch TITLE_EXECUTED) `id`"
+  const denied = yield* service.prepareDelivery(f.source, comparison, { title, body: "Data" }, { _tag: "agent", agentId: f.member.agentId }).pipe(Effect.result)
+  expect(denied).toMatchObject({ _tag: "Failure", failure: { reason: "owner_required" } })
+  const delivery = yield* service.prepareDelivery(f.source, comparison, { title, body: "Data" }, { _tag: "owner" })
+  expect(delivery).toMatchObject({ mode: "github", title })
+  expect(git(gh.bare, "rev-parse", `refs/heads/${branch}`)).toBe(f.head)
+  expect(existsSync(join(f.source, "TITLE_EXECUTED"))).toBe(false)
+  expect(gh.read().branch).toBe(branch)
+  const deniedMerge = yield* service.approveDelivery(f.source, rig.work, comparison, delivery as any, { _tag: "agent", agentId: f.member.agentId }, true).pipe(Effect.result)
+  expect(deniedMerge).toMatchObject({ _tag: "Failure", failure: { reason: "owner_required" } })
+})).pipe(Effect.orDie))
+
+it.live("GitHub push never forces a remote branch that has advanced independently", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
+  vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
+  const { review } = (yield* prepare(f)).result
+  expect(git(gh.bare, "for-each-ref", "--format=%(refname)", "refs/heads/").split("\n").sort()).toEqual(["refs/heads/main", `refs/heads/${review.branch}`].sort())
+  const tree = git(gh.bare, "rev-parse", `${f.head}^{tree}`)
+  const advanced = git(gh.bare, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit-tree", tree, "-p", f.head, "-m", "Remote work")
+  git(gh.bare, "update-ref", `refs/heads/${review.branch}`, advanced, f.head)
+  expect(yield* refusal(prepare(f))).toBe("Git: push_rejected")
+  expect(git(gh.bare, "rev-parse", `refs/heads/${review.branch}`)).toBe(advanced)
+  expect(git(rig.work, "rev-parse", "HEAD")).toBe(f.baseHead)
+  expect(git(f.source, "rev-parse", "HEAD")).toBe(f.head)
+})).pipe(Effect.orDie))

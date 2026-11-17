@@ -23,10 +23,19 @@ const gitOptions = ["--no-pager", "--literal-pathspecs", "-c", "core.hooksPath=/
 
 export const gitProcess = (
   cwd: string, args: ReadonlyArray<string>, limits: ProcessLimits, signal: AbortSignal, truncate = false,
+): Promise<ProcessReply> => boundedProcess("git", cwd, [...gitOptions, ...args], limits, signal, truncate);
+
+export const ghProcess = (
+  cwd: string, args: ReadonlyArray<string>, limits: ProcessLimits, signal: AbortSignal,
+): Promise<ProcessReply> => boundedProcess("gh", cwd, args, limits, signal);
+
+const boundedProcess = (
+  executable: "git" | "gh",
+  cwd: string, args: ReadonlyArray<string>, limits: ProcessLimits, signal: AbortSignal, truncate = false,
 ): Promise<ProcessReply> => new Promise((resolve, reject) => {
   if (signal.aborted) { reject(new GitFailure({ reason: "cancelled" })); return; }
-  const child = spawn("git", [...gitOptions, ...args], {
-    cwd, env: safeEnvironment(), shell: false, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"],
+  const child = spawn(executable, [...args], {
+    cwd, env: { ...safeEnvironment(), GH_PROMPT_DISABLED: "1", GH_DEBUG: "", GH_REPO: "", GH_HOST: "github.com", GH_PAGER: "cat" }, shell: false, detached: process.platform !== "win32", stdio: ["ignore", "pipe", "pipe"],
   });
   const out: Buffer[] = [], err: Buffer[] = [];
   let bytes = 0, stderrBytes = 0, truncated = false;
@@ -67,7 +76,7 @@ export const gitProcess = (
     if (stderrBytes > 16_384) { failure ??= new GitFailure({ reason: "output_limit" }); stop(); }
   });
   child.on("error", (error: NodeJS.ErrnoException) => {
-    failure ??= new GitFailure({ reason: error.code === "ENOENT" ? "git_unavailable" : "git_failed" });
+    failure ??= new GitFailure({ reason: error.code === "ENOENT" ? executable === "gh" ? "gh_unavailable" : "git_unavailable" : "git_failed" });
   });
   child.on("close", (code) => {
     clearTimeout(timer);

@@ -36,7 +36,7 @@ const gitReport: RedactionStructure = { fields: { reportId: identity, projectId:
 const gitEvidence: RedactionStructure = { fields: Object.fromEntries(["tests", "review"].map((kind) => [kind,
   { fields: { state: identity, report: gitReport } }])) };
 const gitReview: RedactionStructure = { fields: { reviewId: identity, projectId: identity, worktreeId: identity,
-  destinationId: identity, decision: identity, outcome: identity, evidence: gitEvidence } };
+  destinationId: identity, decision: identity, outcome: identity, evidence: gitEvidence, delivery: { fields: { mode: identity, state: identity } } } };
 
 const mockSource = { elements: { fields: { sourceId: identity, worktreeId: identity } } };
 const mockScreens = { elements: { fields: { screenId: identity, sourceId: identity, scenarioRoutes: { elements: { fields: { scenarioId: identity } } } } } };

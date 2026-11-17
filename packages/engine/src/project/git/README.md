@@ -128,3 +128,18 @@ Reopening requires that fingerprint and explicit confirmation.
 Unsafe or oversized resolved paths are omitted without hiding other resolved paths.
 A stale file observation refuses before checkout replaces its contents.
 A proven overlapping-edit abort refusal returns `abort_blocked` without mutation uncertainty.
+
+## GitHub delivery of the owner's main review
+
+`prepareDelivery` selects an existing GitHub.com remote and checks `gh` authentication by exit code.
+It returns an explicit local fallback when the CLI or sign-in is unavailable.
+It pushes the pinned project head to that project's branch without force, tags, or submodules.
+It creates or reuses an open pull request with bounded redacted project text.
+`approveDelivery` checks the reviewed heads and provider identity before merging through the GitHub merge endpoint.
+The endpoint requests a merge commit and conditions it on the reviewed head.
+A confirmed remote merge is followed by a best-effort fetch and fast-forward of a clean base checkout on its base branch.
+The owner receives a separate sentence describing local synchronization.
+Neither method accepts agent authority.
+The project command layer authorizes the owner again and wraps Prepare in a durable mutation attempt.
+Provider diagnostics stay private.
+Structured provider metadata is redacted by the project command and event log boundaries.

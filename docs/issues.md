@@ -12638,17 +12638,19 @@ There is no bounded short task that returns generated Git text with an owner-sel
 Commit and pull request generation therefore retain their existing refusal.
 This assignment adds no implicit account selection and sends no repository content to a model.
 
-## 738. Hosted pull request editing has no stored provider record.
+## 738. Hosted pull request text editing has no authenticated provider update action.
 
-State: open. Checked against the code on 2026-11-15. No hosted pull request record or provider update operation found; entry lists them as prerequisites and no later entry delivers them. Kind: visible to the owner.
+State: open for manual title and description editing.
+Checked against the code on 2026-11-17 after the s27 change.
+Kind: visible to the owner.
 
-GitMainReview is a local approval record for a reviewed pair of heads.
-It has no hosted pull request number, provider identity, title, or body.
-The Git service can read local review evidence and merge it with owner approval.
-It does not create a hosted pull request.
-No authenticated provider update operation exists in the engine.
-The title and body controls therefore retain their refusal.
-A hosted record and a bounded authenticated provider action are prerequisites for connecting them.
+The review originally stored only a local approval record for a reviewed pair of heads.
+The s27 change adds an optional GitHub delivery record with the pull request number, provider identity, title, description, and state.
+Prepare now creates or finds that pull request with redacted text from the project and reported evidence.
+Approval now merges that pull request when GitHub is available.
+No authenticated provider text update operation exists in the engine.
+The title and description controls therefore retain their refusal of manual live edits.
+A bounded authenticated provider update action is still required to connect those editors.
 
 
 ## 739. The required local live check passed sixteen of twenty-three steps.
@@ -19451,3 +19453,45 @@ The browser check that a repeated conflict choice shows no refusal compares the 
 In the orchestrator's whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:372` and `studio.spec.ts:1200` failed under load, and each passed when run alone.
 
 State: open. Recorded on 2026-11-17.
+
+## s27-1. Prepare and owner approval previously never reached GitHub.
+
+State: fixed in this change.
+Found: 2026-11-17, while verifying the s27 task brief against the main review command and Git service.
+Prepare previously recorded only a local comparison.
+Approval merged into the owner's local base without a push or a pull request.
+Prepare now uses a signed-in GitHub CLI to push the registered project branch and create or find a pull request.
+Approval merges that pull request with a merge commit and conditionally fast-forwards the local base.
+A missing GitHub remote, executable, or sign-in retains the explicitly described local fallback.
+The generated title and description are recorded from project data.
+Manual hosted title and description editing in issue 738 remains unavailable.
+
+## s27-2. GitHub does not offer an atomic reviewed-base condition for its merge endpoint.
+
+State: open.
+Found: 2026-11-17, while checking the GitHub merge endpoint documentation.
+The engine checks the prepared remote base immediately before requesting the merge.
+The merge request atomically pins the reviewed head.
+The endpoint cannot atomically pin the prepared base as well.
+The remote base can therefore move between preflight and merge.
+GitHub still enforces its current merge and branch protection rules.
+A remote merge and a local checkout update also cannot share one transaction.
+The reply records a confirmed remote merge even when the later local update cannot complete.
+
+
+## s27-3. Eight browser journeys failed in the whole run and passed on rerun.
+
+State: open.
+Found: 2026-11-17, during the required whole browser run for unit s27-pullrequest.
+The whole `pnpm test:browser` run passed 68 journeys and failed eight journeys.
+The existing Git cases for main approval, stale reviewed heads, evidence, and fetch/pull/push failed.
+The existing project creation case across eight viewport sizes failed.
+The existing website projects-and-board, workflows, and files cases failed.
+The new GitHub journey and the existing local fallback website journey both passed in the whole run.
+A serial rerun of only those eight failures passed five cases.
+The evidence, fetch/pull/push, and files cases failed again at different steps in that serial rerun.
+Each of those three cases then passed in a separate one-test run.
+Every existing assertion and timeout was retained.
+The whole unit and browser runs overlapped for part of the run.
+This observation does not establish the cause of the failures.
+Issues 1367 and 1375 record similar earlier observations.

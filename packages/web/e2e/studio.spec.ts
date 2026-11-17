@@ -1204,3 +1204,5 @@ test('studio terminal: real shell, private output and renderer policy', async ({
 test("studio lead: Define, owner approval, rename and team deletion", async ({ page }) => { test.setTimeout(90_000); await exerciseStudioLeadDefinition(page) })
 
 test("studio project delete: archived confirmation, cancellation and persistent removal", async ({ page }) => { test.setTimeout(90_000); await exerciseStudioProjectDelete(page) })
+
+test("studio GitHub: owner prepares, refreshes and approves a hosted pull request", async ({ page }) => { test.setTimeout(120_000); await (await import('./support/studioGithub.ts')).exerciseStudioGithub(page) })

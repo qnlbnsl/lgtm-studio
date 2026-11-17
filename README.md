@@ -154,6 +154,29 @@ The engine does not automatically remove even a clean, merged worker checkout.
 Registered worker worktrees appear in the existing Git, Files, and Terminal choices.
 
 
+## Finish project work through a pull request
+
+The Git tab's existing merge review prepares a GitHub pull request when the repository has a GitHub.com remote and the service user has a signed-in GitHub command-line interface (CLI), `gh`.
+Prepare pushes only the project's registered branch without force.
+Its title uses the project name.
+Its description uses the goal and the reported review evidence.
+An existing open pull request for that branch and base is reused.
+The review area shows its number, link, and state.
+Preparing again or explicitly refreshing Git pushes newer project commits and requires approval of the refreshed review.
+Automatic background reads never push.
+
+Approve merges the reviewed pull request on GitHub with a merge commit.
+The engine refuses a changed reviewed head, a remote base that differs from the reviewed base, a closed request, conflicts, or checks and reviews that GitHub has not marked ready.
+A clean local base checkout on its registered base branch is fetched and fast-forwarded.
+A dirty checkout or a checkout on another branch is preserved.
+The Git tab reports whether that local update completed.
+
+When the remote is unavailable for GitHub review, `gh` is missing, or the service user is not signed in, Prepare records the existing local merge mode and explains why.
+That mode merges locally without pushing the base branch.
+There is no setting to force local mode.
+Only the authenticated owner can prepare, push, or approve these changes.
+See [the project Git guide](packages/engine/src/project/README.md) for the typed client API.
+
 ## Documents
 
 - [AGENTS.md](AGENTS.md): rules for coding agents working in this repository.

@@ -690,11 +690,11 @@ function Integrate({ s, w, project }) {
   if (w.kind === 'project') {
     const req = live.on ? w.review : s.requests.find((x) => x.kind === 'merge' && x.project === project.id && x.source === w.branch);
     if (project.merged || w.merged) {
-      return html`<div class="git-integrate ok"><${Icon} name="git-merge" size=${14} class="success-text" /><span><b>Merged</b> into ${parent}${w.merged ? ` ${ago(w.merged, now)} ago` : req?.answeredAt ? ` ${ago(req.answeredAt, now) === 'now' ? 'just now' : ago(req.answeredAt, now) + ' ago'}` : ''}. The branch can be deleted.</span></div>`;
+      return html`<div class="git-integrate ok"><${Icon} name="git-merge" size=${14} class="success-text" /><span><b>Merged</b> into ${parent}${w.merged ? ` ${ago(w.merged, now)} ago` : req?.answeredAt ? ` ${ago(req.answeredAt, now) === 'now' ? 'just now' : ago(req.answeredAt, now) + ' ago'}` : ''}. ${req?.delivery?.mode === 'github' && html`<a class="link" href=${req.delivery.url} target="_blank" rel="noopener noreferrer">#${req.delivery.number}</a> · ${req.delivery.state}. `}${req?.localSync || 'The branch can be deleted.'}</span></div>`;
     }
     const open = req && req.status === 'open';
     return html`<div class=${cx('git-integrate', open && 'warn')}><${Icon} name="git-pull-request" size=${14} class=${open ? 'warn-text' : 'muted'} />
-      <span class="grow">${open ? html`<b>Waiting for your merge.</b> ${plural(w.ahead, 'commit')} ahead of ${parent}.` : html`${plural(w.ahead, 'commit')} ahead of ${parent}${w.behind ? ` and ${w.behind} behind` : ''}. Only you can merge it.`}</span>
+      <span class="grow">${req?.delivery && html`${req.delivery.mode === 'github' ? html`GitHub <a class="link" href=${req.delivery.url} target="_blank" rel="noopener noreferrer">#${req.delivery.number}</a> · ${req.delivery.state}. ` : req.delivery.reason + ' '}`} ${open ? html`<b>Waiting for your merge.</b> ${plural(w.ahead, 'commit')} ahead of ${parent}.` : html`${plural(w.ahead, 'commit')} ahead of ${parent}${w.behind ? ` and ${w.behind} behind` : ''}. Only you can merge it.`}</span>
       ${w.behind > 0 && html`<button type="button" class="btn sm" onClick=${() => updateFromBase(w.id)}>Update from base</button>`}
       <button type="button" class=${cx('btn sm', open && 'primary')} disabled=${!w.ahead} onClick=${() => openReview(s, w, project)}>Open merge review</button></div>`;
   }

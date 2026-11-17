@@ -141,7 +141,8 @@ export const gitReply = (input: Input, requestId: unknown, result: unknown, agen
     if (key === "_tag" && ["owner", "agent"].includes(value as string)
       || key === "kind" && ["tests", "review"].includes(value as string)
       || key === "status" && ["passed", "failed"].includes(value as string)
-      || key === "state" && ["missing", "current", "stale"].includes(value as string)
+      || key === "state" && ["missing", "current", "stale", "OPEN", "CLOSED", "MERGED"].includes(value as string)
+      || key === "mode" && ["github", "local"].includes(value as string)
       || key === "provenance" && value === "reported"
       || key === "decision" && ["approve", "approve_without_evidence"].includes(value as string)
       || key === "outcome" && ["open", "merged", "refused", "sent_back"].includes(value as string)
