@@ -19364,7 +19364,7 @@ Two live checks gave 19 and 13 of 23 steps; the short run was issue 272.
 
 State: the journey is fixed; the load-sensitive journeys remain open. Recorded on 2026-11-17.
 
-## s25-1. Clicking a chosen conflict side showed a refusal notice.
+## 1361. Clicking a chosen conflict side showed a refusal notice.
 
 The conflict buttons sent a null choice when the owner clicked the selected side again.
 The live action refused that null choice.
@@ -19372,7 +19372,7 @@ The buttons now leave the selected side alone.
 The live action also ignores a repeated or empty choice without sending a command.
 State: fixed in unit s25-smallfix.
 
-## s25-2. Integration named the project branch instead of the destination branch.
+## 1362. Integration named the project branch instead of the destination branch.
 
 The Git screen replaced a destination branch containing a slash with "the project branch".
 The button now displays the complete registered parent branch.
@@ -19386,7 +19386,7 @@ Two Git refresh tests now require the destination notice instead of expecting no
 Their readback and sibling-count assertions remain unchanged.
 State: fixed in unit s25-smallfix.
 
-## s25-3. The roster did not describe a working agent's active task.
+## 1363. The roster did not describe a working agent's active task.
 
 The current live board mapping supplies the generic description Working.
 The lower-level agent mapping leaves that activity empty.
@@ -19398,7 +19398,7 @@ The preview does not claim that queued or completed work is being performed.
 The existing thread summary supplies the fallback when no active task is available.
 State: fixed for active task titles in unit s25-smallfix.
 
-## s25-4. A task still requires a team in its stored contract.
+## 1364. A task still requires a team in its stored contract.
 
 Issue 944 reports that the lead created a placeholder team to create its first tasks.
 The current `Task` schema in `packages/contracts/src/project/schema.ts` requires a team identifier.
@@ -19411,7 +19411,7 @@ It would review team filtering, sprint team summaries, context selection, task c
 The board already has some missing-team fallbacks, but they do not remove those contract and authorization requirements.
 State: deferred under the explicit stored-shape limit in unit s25-smallfix.
 
-## s25-5. A working agent without an active task needs its existing thread work summary.
+## 1365. A working agent without an active task needs its existing thread work summary.
 
 The roster snapshot exposes lifecycle state but no current delivery text or latest tool title.
 The roster already reads the agent's thread for its output time.
@@ -19421,7 +19421,7 @@ Agent replies and raw tool details are excluded from this summary.
 The existing lifecycle description remains the fallback when neither the task nor thread has a suitable description.
 State: fixed in unit s25-smallfix.
 
-## s25-6. The whole unit run failed a service shutdown check that passed alone.
+## 1366. The whole unit run failed a service shutdown check that passed alone.
 
 The whole `pnpm exec vitest run` reported a failure in `packages/cli/test/serve.test.ts`.
 The failing case was "stops cleanly without invoking startup redaction on an interruption-only cause".
@@ -19430,7 +19430,7 @@ The same case passed when rerun alone with its existing assertions and timeout.
 This unit changes no service startup or shutdown implementation.
 State: open as a whole-run-only failure observed during unit s25-smallfix.
 
-## s25-7. Four browser journeys failed in the whole run and passed alone.
+## 1367. Four browser journeys failed in the whole run and passed alone.
 
 The whole `pnpm test:browser` run passed 71 journeys and failed four journeys.
 The legacy Git journey that approves a merge into main timed out while the merge dialog was submitting.
