@@ -18731,7 +18731,7 @@ The role instruction unit does not change that code.
 
 State: open. Recorded on 2026-11-16.
 
-## s19-1. An oversized current secret set rebuilt its forms on every call.
+## 1280. An oversized current secret set rebuilt its forms on every call.
 
 Found: 2026-11-16, from round-four review finding M1.
 State: fixed by retaining the newest state and evicting older states to the cache budget.
@@ -18743,7 +18743,7 @@ Read: the independent index and expression limits are unchanged.
 Ran: the same calls now compile once for fourteen and twenty 2000-character values, two hundred 134-character values, and one hundred 2000-character values.
 Read: the round-five result records baseline and final steady-state call times.
 
-## s19-2. The reference tests missed two linear-tail mutations and encoded token-prefix reversions.
+## 1281. The reference tests missed two linear-tail mutations and encoded token-prefix reversions.
 
 Found: 2026-11-16, from round-four review finding m1.
 State: fixed with a naive proper-prefix reference and additional encoded stream plants.
@@ -18754,7 +18754,7 @@ Read: both indexed and literal paths are asserted directly.
 Read: the reference also checks public prefixes, percent escapes, Unicode, and longer suffixes.
 Ran: independently reverting the hexadecimal and base64 candidate loops now fails the extended stream reference.
 
-## s19-3. Matching depended on a caller folding the candidate query correctly.
+## 1282. Matching depended on a caller folding the candidate query correctly.
 
 Found: 2026-11-16, from round-four review finding m2.
 State: fixed by folding inside the matcher and sharing normalization helpers.
@@ -18766,7 +18766,7 @@ Read: the unused tail-context value was removed.
 Read: the public-prefix automaton only returned zero held characters and was removed with that value.
 Read: the independent already-published context remains intact.
 
-## s19-4. Repeated candidate heads make adversarial whole-text scans slow.
+## 1283. Repeated candidate heads make adversarial whole-text scans slow.
 
 Found: 2026-11-16, from round-four review finding m3.
 State: recorded without an unrequested matcher redesign.
@@ -18776,7 +18776,7 @@ Ran by the reviewer: the original baseline took five milliseconds on that input.
 Read: those are the reviewer's measurements, not fresh round-five timings.
 Read: every matching head still causes full-form verification for its bucket.
 
-## s19-5. Cached literal scans on a mebibyte cost more than the original baseline.
+## 1284. Cached literal scans on a mebibyte cost more than the original baseline.
 
 Found: 2026-11-16, from round-four review finding m4.
 State: recorded without expanding this round's cache fix into a matching redesign.
@@ -18787,7 +18787,7 @@ Read: the reviewer observed a four-to-five-times slowdown beginning around forty
 Read: a mebibyte contains 1048576 bytes.
 Read: retaining oversized states fixes repeated compilation rather than this literal scanning cost.
 
-## s19-6. A random web-session token can split an ordinary message into deltas.
+## 1285. A random web-session token can split an ordinary message into deltas.
 
 Found: 2026-11-16, while reproducing the owner's round-five thread failure.
 State: the product already appends both deltas under the same item identifier. The acceptance helper now uses the product's grouping function.
@@ -18803,7 +18803,7 @@ Read: every original assertion remains in place.
 Read: the suite audit found no other real-service message assertion with this raw-delta assumption.
 Read: related assertions read complete prompt deliveries, join text fragments, or end live-gated prose with a safe delimiter.
 
-## s19-7. An unreadable login store can refuse a permission request before its event is emitted.
+## 1286. An unreadable login store can refuse a permission request before its event is emitted.
 
 Found: 2026-11-16, while investigating the owner's round-five live-check observation.
 State: reproduced and recorded without weakening fail-closed credential coverage.
@@ -18819,7 +18819,7 @@ Ran: all four queue-cap tests preserve a healthy permission request until its an
 Read: those tests cover count and byte caps with and without the redactor's explicit withholding method.
 Read: neither those caps nor ordinary tool withholding generate a terminal update themselves.
 
-## s19-8. The new message regression initially relied on a helper to narrow event types.
+## 1287. The new message regression initially relied on a helper to narrow event types.
 
 Found: 2026-11-16, in the first round-five typecheck.
 State: fixed with an explicit event-tag guard in the regression.
@@ -18828,7 +18828,7 @@ Read: the tagged helper returns the complete event union rather than a narrowed 
 Read: the new test now selects text events after checking their tag.
 Read: its assertions and runtime behavior are unchanged.
 
-## s19-9. Partial issue staging added an empty line at the first commit's end.
+## 1288. Partial issue staging added an empty line at the first commit's end.
 
 Found: 2026-11-16, by the staged diff check in round five.
 State: fixed by trimming the partial document before recreating the signed commits.
@@ -18836,7 +18836,7 @@ State: fixed by trimming the partial document before recreating the signed commi
 Read: the complete working document had no trailing blank line.
 Read: this staging correction changes no implementation or test bytes.
 
-## s19-10. A synthetic secret marker can randomly collide with a board test's request identifier.
+## 1289. A synthetic secret marker can randomly collide with a board test's request identifier.
 
 Found: 2026-11-16, in the first round-five whole-suite run.
 State: fixed by giving the affected board commands distinct deterministic request identifiers.
