@@ -22,8 +22,12 @@ beforeEach(() => { rig = makeRunnerRig(); vi.stubEnv("HOME", rig.home); vi.stubE
 afterEach(() => { vi.unstubAllEnvs(); removeRunnerRig(rig); });
 registerRebuildCheck({ noLog: true });
 const live = (name: string, test: () => Effect.Effect<unknown, unknown, any>) => it.live(name, () => test() as Effect.Effect<unknown, unknown, never>, 60_000);
-const runnerLayer = () => AcpRunner.layer({ socketPath: rig.socket, stateFolder: rig.stateFolder, environment: serviceEnvironment(rig) }).pipe(
-  Layer.provide(Layer.mergeAll(NodeServices.layer, makeFakeSecrets().layer)));
+const runnerLayer = (values: Readonly<Record<string, string>> = {}) => {
+  const secrets = makeFakeSecrets();
+  for (const [reference, value] of Object.entries(values)) (secrets.stored as Map<string, string>).set(reference, value);
+  return AcpRunner.layer({ socketPath: rig.socket, stateFolder: rig.stateFolder, environment: serviceEnvironment(rig) }).pipe(
+    Layer.provide(Layer.mergeAll(NodeServices.layer, secrets.layer)));
+};
 const options = [modeOption(), modelOption(), effortOption()];
 const reports = readLog.pipe(Effect.map((rows) => tagged(rows, "ThreadItem").flatMap((row) => row.content._tag === "text" && row.content.text.startsWith("configuration:")
   ? [JSON.parse(row.content.text.slice("configuration:".length))] : [])));
@@ -60,12 +64,15 @@ live("W05c spawn race: a choice committed before the delayed spawn configures th
 live("W05c restart: queued owner work uses durable pending settings on reload, and stale incarnation calls cannot touch the new process", () => Effect.gen(function* () {
   const harness = harnessFor("first", writeFakeAdapter(rig));
   const oldEcho = echoFile(rig);
+  const pendingSecret = "Zebra-planted-unaccepted-turn-credential";
   const account = accountFor("first", { configOptions: options, turns: [[
-    { step: "text", text: "old turn accepted" },
+    // This journey needs an unaccepted turn at restart. Ordinary text now
+    // streams immediately, so hold a genuine registered prefix instead.
+    { step: "text", text: pendingSecret.slice(0, 12) },
     { step: "raw_frame", frame: JSON.stringify({ jsonrpc: "2.0", method: "session/update", params: { sessionId: "${session}", update: { sessionUpdate: "usage_update", used: 30, size: 100 } } }) },
     { step: "slow", ms: 60_000 },
-  ]] }, oldEcho);
-  const old = yield* provideRestart(rig, runnerLayer(), Effect.gen(function* () {
+  ]] }, oldEcho, { PLANTED_KEY: "secret:pending" });
+  const old = yield* provideRestart(rig, runnerLayer({ "secret:pending": pendingSecret }), Effect.gen(function* () {
     yield* registerRebuildCheck();
     yield* appendEvents({ _tag: "HarnessChanged", harness }, { _tag: "AccountChanged", accountId: account.id, account });
     const agentId = success(yield* call(ownerCredential, "start", startPayloadFor(harness, account, rig.work, { prompt: "old work" }))).agentId;

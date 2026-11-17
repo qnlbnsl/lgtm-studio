@@ -3,68 +3,18 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
-import { Redactor } from "../log/Redactor.ts";
+import { Redactor, type RedactionPart } from "../log/Redactor.ts";
 import { eventStructure, fieldStructure, type RedactionStructure } from "../log/redactionStructure.ts";
 import { credentialLength, hasValidChecksum, sha256Hex } from "./credential.ts";
+import { addForms, base64Run, compileForms, toBase64url, maximumCachedFormCharacters, type FormLists, type Tail, foldHex, foldEscapes } from "./redactionForms.ts";
 
 const replacement = "[REDACTED]";
 
-// Encoded forms shorter than this are not matched on their own. Only the
-// partial base64 runs of a very short secret are that short, and matching
-// them would blank unrelated text. The full forms are always matched.
-const minimumPartialLength = 8;
-
-// The longest text an encoded credential can occupy: every character
-// percent-escaped. Hexadecimal (2 per byte) and base64 are shorter.
 const longestCredentialForm = 3 * credentialLength;
-
-// The characters of base64 output that depend only on `bytes` when they start
-// `alignment` bytes into a longer encoded value (decision row 73: all three
-// alignments). The leading and trailing characters that mix in neighbouring
-// bytes are left out.
-const base64Run = (bytes: Buffer, alignment: number): string => {
-  const padded = Buffer.concat([Buffer.alloc(alignment), bytes, Buffer.alloc(2)]);
-  const first = Math.ceil((8 * alignment) / 6);
-  const end = Math.floor((8 * (alignment + bytes.byteLength)) / 6);
-  return padded.toString("base64").slice(first, end);
-};
-
-const toBase64url = (base64: string): string => base64.replaceAll("+", "-").replaceAll("/", "_");
-
-// The matched forms of every live secret, by the text they are searched in.
-// `exact` forms are matched as written. `hex` forms are lower-case and are
-// searched in a copy of the text with A-F folded to lower case, so
-// hexadecimal matches in any case. `percent` forms have lower-case escapes
-// and are searched in a copy with only the digits of each `%xx` escape
-// folded, so the escapes match in any case and literal letters do not.
-interface Forms {
-  readonly exact: ReadonlyArray<string>;
-  readonly hex: ReadonlyArray<string>;
-  readonly percent: ReadonlyArray<string>;
+interface Forms extends FormLists {
+  readonly publicLengths: ReadonlyMap<string, number>;
+  readonly match: (text: string, found: Array<Interval>) => string;
 }
-
-// Every form of one secret (decision rows 57 and 73, fix round 1 rulings 1
-// and 2): raw; as it appears inside a JSON string; base64 and base64url,
-// whole and at each byte alignment inside a longer value; URL-encoded, with
-// `%20` or `+` for a space; and hexadecimal.
-const addForms = (secret: string, exact: Set<string>, hex: Set<string>, percent: Set<string>): void => {
-  if (secret.length === 0) return;
-  const bytes = Buffer.from(secret, "utf8");
-  exact.add(secret);
-  exact.add(JSON.stringify(secret).slice(1, -1));
-  exact.add(bytes.toString("base64"));
-  exact.add(bytes.toString("base64url"));
-  for (const alignment of [0, 1, 2]) {
-    const run = base64Run(bytes, alignment);
-    if (run.length < minimumPartialLength) continue;
-    exact.add(run);
-    exact.add(toBase64url(run));
-  }
-  const url = encodeURIComponent(secret).replace(/%[0-9A-F]{2}/g, (escape) => escape.toLowerCase());
-  percent.add(url);
-  percent.add(url.replaceAll("%20", "+"));
-  hex.add(bytes.toString("hex"));
-};
 
 // Where an encoded credential can start (fix round 1, ruling 3): the
 // base64 and base64url runs of each six-byte prefix at each alignment, and
@@ -85,18 +35,6 @@ const base64Probes: ReadonlyArray<Base64Probe> = ["shp_a_"].flatMap((prefix) =>
 const hexPrefix = Buffer.from("shp_", "latin1").toString("hex");
 
 type Interval = readonly [start: number, end: number];
-
-// A copy of the text, of the same length, with A-F folded to lower case.
-const foldHex = (text: string): string => text.replace(/[A-F]/g, (letter) => letter.toLowerCase());
-
-// A copy of the text, of the same length, with only the digits of each
-// `%xx` escape folded to lower case.
-const foldEscapes = (text: string): string =>
-  text.replace(/%[0-9A-Fa-f]{2}/g, (escape) => escape.toLowerCase());
-
-const occurrences = (text: string, form: string, found: Array<Interval>): void => {
-  for (let at = text.indexOf(form); at !== -1; at = text.indexOf(form, at + 1)) found.push([at, at + form.length]);
-};
 
 // The fixed-cost gate before any credential hash (decision row 73): only a
 // decoded candidate with a credential prefix, the exact shape and a matching
@@ -168,13 +106,7 @@ const findCredentials = (
 // repeated secrets releases one marker per secret as it goes.
 const findMatches = (text: string, forms: Forms, tokenHashes: ReadonlySet<string>): Array<Interval> => {
   const found: Array<Interval> = [];
-  for (const form of forms.exact) occurrences(text, form, found);
-  const hexFolded = forms.hex.length > 0 || tokenHashes.size > 0 ? foldHex(text) : text;
-  for (const form of forms.hex) occurrences(hexFolded, form, found);
-  if (forms.percent.length > 0) {
-    const escapesFolded = foldEscapes(text);
-    for (const form of forms.percent) occurrences(escapesFolded, form, found);
-  }
+  const hexFolded = forms.match(text, found);
   if (tokenHashes.size > 0) findCredentials(text, hexFolded, tokenHashes, found);
   found.sort((a, b) => a[0] - b[0]);
   const merged: Array<[number, number]> = [];
@@ -206,6 +138,73 @@ const render = (
   return { output, covered: Math.max(at, from) };
 };
 
+// Preserve each decided span's original length. Message chunk boundaries and
+// intervening content use these lengths rather than the shorter or longer
+// replacement text, so redaction cannot move ordinary text across an update.
+const renderParts = (text: string, intervals: ReadonlyArray<Interval>, from: number, to: number, publicContext = false) => {
+  const parts: Array<RedactionPart> = [];
+  let at = from;
+  for (const [start, end] of intervals) {
+    if (end <= at) continue;
+    if (start >= to) break;
+    if (start > at) parts.push({ length: start - at, text: text.slice(at, start), replacement: false });
+    parts.push({ length: end - Math.max(at, start), text: start >= from || publicContext ? replacement : "", replacement: true });
+    at = end;
+  }
+  if (at < to) parts.push({ length: to - at, text: text.slice(at, to), replacement: false });
+  return { parts, covered: Math.max(at, from) };
+};
+
+// A public credential prefix can be published while staying as match context.
+// Every base64 prefix here contains only bits of `shp_`; the last mixed
+// character is excluded. No private token character is released this way.
+const publicBytes = Buffer.from("shp_", "ascii");
+const publicBase64 = [0, 1, 2].map(alignment => base64Run(publicBytes, alignment));
+const publicPercent = Array.from({ length: 16 }, (_, mask) => [..."shp_"].map((c, i) =>
+  mask & (1 << i) ? `%${c.charCodeAt(0).toString(16)}` : c).join(""));
+const publicPrefixes = [...new Set([
+  "shp_", hexPrefix, ...publicPercent, ...publicBase64, ...publicBase64.map(toBase64url),
+  ...publicBase64.flatMap(inner => [0, 1, 2].map(alignment => base64Run(Buffer.from(inner, "ascii"), alignment))),
+])].sort((a, b) => b.length - a.length);
+const publishedContextLength = publicPrefixes.reduce((longest, prefix) => Math.max(longest, prefix.length), 0) + 3;
+const noTail: Tail = { held: 0 };
+const largerTail = (a: Tail, b: Tail): Tail => a.held >= b.held ? a : b;
+
+const hashPrefixes = [
+  { prefix: "shp_", max: credentialLength, alphabet: /^[A-Za-z0-9_-]*$/, fold: false },
+  { prefix: hexPrefix, max: 2 * credentialLength, alphabet: /^[0-9a-f]*$/, fold: true },
+  ...publicBase64.flatMap((prefix, alignment) => [prefix, toBase64url(prefix)].map(prefix => ({
+    prefix, max: Math.ceil(8 * (alignment + credentialLength) / 6) - Math.ceil(8 * alignment / 6) + 2,
+    alphabet: /^[A-Za-z0-9_+/=-]*$/, fold: false,
+  }))),
+];
+const hashTail = (text: string): Tail => {
+  const suffix = text.slice(-(longestCredentialForm - 1));
+  const hex = foldHex(suffix);
+  let tail = noTail;
+  for (const spec of hashPrefixes) {
+    const view = spec.fold ? hex : suffix;
+    for (let start = view.indexOf(spec.prefix); start !== -1; start = view.indexOf(spec.prefix, start + 1)) {
+      if (view.length - start >= spec.max) continue;
+      const rest = view.slice(start + spec.prefix.length);
+      if (spec.alphabet.test(rest)) tail = largerTail(tail, { held: rest.length > 0 ? spec.prefix.length + rest.length : 0 });
+    }
+  }
+  // Mixed literal and percent-escaped public prefixes are public too. Partial
+  // escapes after the prefix stay held until their decoded byte is known.
+  const percent = foldEscapes(suffix).replace(/%[0-9A-Fa-f]$/, escape => escape.toLowerCase());
+  for (const prefix of publicPercent) {
+    for (let start = percent.indexOf(prefix); start !== -1; start = percent.indexOf(prefix, start + 1)) {
+      const rest = percent.slice(start + prefix.length);
+      const decoded = rest.replace(/%[0-9a-f]{2}/g, escape => String.fromCharCode(parseInt(escape.slice(1), 16)));
+      if (/^[A-Za-z0-9_-]*(?:%[0-9a-f]?)?$/.test(decoded) && decoded.replace(/%[0-9a-f]?$/, "").length < credentialLength - 4) {
+        tail = largerTail(tail, { held: rest.length > 0 ? prefix.length + rest.length : 0 });
+      }
+    }
+  }
+  return tail;
+};
+
 // Copy string values, preserving keys, tags and schema-typed identities.
 // An explicit secret still wins in every other string, in every encoding.
 const redactValue = (
@@ -231,6 +230,7 @@ const redactValue = (
 interface Carry {
   readonly text: string;
   readonly covered: number;
+  readonly context?: string;
 }
 
 // The real redactor (task 5a.3). Both registries are read on every call, so a
@@ -243,57 +243,110 @@ export const makeRedactor = (registry: {
 }): {
   readonly layer: Layer.Layer<Redactor>;
   readonly redactText: (text: string) => string;
+  readonly redactParts: (itemId: string, text: string, final: boolean) => ReadonlyArray<RedactionPart>;
   readonly redactChunk: (itemId: string, text: string, final: boolean) => string;
+  readonly withholdParts: (itemId: string, marker: string) => ReadonlyArray<RedactionPart>;
 } => {
-  const currentForms = (): Forms => {
-    const exact = new Set<string>();
-    const hex = new Set<string>();
-    const percent = new Set<string>();
-    for (const secret of registry.secrets()) addForms(Redacted.value(secret), exact, hex, percent);
-    return { exact: [...exact], hex: [...hex], percent: [...percent] };
+  const compiled: Array<{ values: ReadonlyArray<string>; forms: Forms; tail: (text: string) => Tail; characters: number }> = [];
+  const currentForms = (additional: ReadonlyArray<Redacted.Redacted<string>> = []) => {
+    // Registries may return fresh arrays and Redacted wrappers. Compare their
+    // values, not wrapper identities, and keep only four compiled states.
+    const values = [...registry.secrets(), ...additional].map(Redacted.value);
+    const cached = compiled.find(state => state.values.length === values.length && state.values.every((value, i) => value === values[i]));
+    if (cached !== undefined) return cached;
+    const exact = new Set<string>(), hex = new Set<string>(), percent = new Set<string>();
+    const publicLengths = new Map<string, number>();
+    for (const value of values) {
+      const localExact = new Set<string>(), localHex = new Set<string>(), localPercent = new Set<string>();
+      addForms(value, localExact, localHex, localPercent);
+      const credential = hasValidChecksum(value);
+      for (const [local, all] of [[localExact, exact], [localHex, hex], [localPercent, percent]] as const) for (const form of local) {
+        all.add(form);
+        const length = credential ? publicPrefixes.find(prefix => form.startsWith(prefix))?.length ?? 0 : 0;
+        publicLengths.set(form, Math.min(publicLengths.get(form) ?? length, length));
+      }
+    }
+    const lists = { exact: [...exact], hex: [...hex], percent: [...percent] };
+    const matcher = compileForms(lists, publicLengths);
+    const forms = { ...lists, publicLengths, match: matcher.match };
+    const tail = matcher.tail;
+    const state = { values, forms, tail, characters: matcher.formCharacters };
+    // Always retain the newest state, including one larger than the budget.
+    // The budget evicts older states; it must not force every subsequent
+    // chunk to regenerate the current list. The index has its own cap.
+    compiled.unshift(state);
+    while (compiled.length > 1 && (compiled.length > 4 || compiled.reduce((sum, state) => sum + state.characters, 0) > maximumCachedFormCharacters)) compiled.pop();
+    return state;
   };
 
   const redactWith = (forms: Forms, tokenHashes: ReadonlySet<string>) => (text: string): string => {
     const intervals = findMatches(text, forms, tokenHashes);
     return intervals.length === 0 ? text : render(text, intervals, 0, text.length).output;
   };
-  const redactText = (text: string): string => redactWith(currentForms(), registry.tokenHashes())(text);
+  const redactText = (text: string): string => redactWith(currentForms().forms, registry.tokenHashes())(text);
 
   // Streamed text is joined per item (decision row 57). Each call releases
-  // everything before the last (window - 1) characters, where the window is
-  // the longest matched form (decision row 73), because no match can start
-  // there and still be incomplete. A decided replacement is released at once
+  // text except a suffix that could continue a registered form, bounded by
+  // (window - 1) characters. Safe delimiters release a complete ordinary
+  // chunk. A decided replacement is released at once
   // even when it reaches into the held-back text; the carry then records how
   // much of it is already covered. The carry never exceeds (window - 1)
   // characters, however many matches arrive (fix round 1, ruling 5).
   const carries = new Map<string, Carry>();
-  const redactChunk = (itemId: string, text: string, final: boolean): string => {
+  const redactParts = (itemId: string, text: string, final: boolean, additional: ReadonlyArray<Redacted.Redacted<string>> = []): ReadonlyArray<RedactionPart> => {
     const carry = carries.get(itemId) ?? { text: "", covered: 0 };
-    const joined = carry.text + text;
-    const forms = currentForms();
-    const intervals = findMatches(joined, forms, registry.tokenHashes());
+    const context = carry.context ?? "";
+    const joined = context + carry.text + text;
+    const state = currentForms(additional);
+    const forms = state.forms;
+    const from = context.length + carry.covered;
+    const publicContext = context.length > 0 && carry.covered === 0;
+    const tokenHashes = registry.tokenHashes();
+    const intervals = findMatches(joined, forms, tokenHashes);
     if (final) {
       carries.delete(itemId);
-      return render(joined, intervals, carry.covered, joined.length).output;
+      return renderParts(joined, intervals, from, joined.length, publicContext).parts;
     }
-    const window = Math.max(
-      longestCredentialForm,
-      ...[...forms.exact, ...forms.hex, ...forms.percent].map((form) => form.length),
-    );
-    const cut = Math.max(0, joined.length - (window - 1));
-    const released = cut > carry.covered
-      ? render(joined, intervals, carry.covered, cut)
-      : { output: "", covered: carry.covered };
-    carries.set(itemId, { text: joined.slice(cut), covered: Math.max(0, released.covered - cut) });
-    return released.output;
+    const tail = tokenHashes.size > 0 ? largerTail(state.tail(joined), hashTail(joined)) : state.tail(joined);
+    // Keep a candidate whole once it contains private characters. If an
+    // earlier chunk published public prefix characters, never hold them again.
+    const cut = Math.max(context.length, joined.length - tail.held);
+    // Even with no ordinary span to release, a completed overlapping match
+    // can extend the previous replacement. Keep its entire covered reach.
+    const released = renderParts(joined, intervals, from, Math.max(from, cut), publicContext);
+    // Published public bytes are context only. They neither own a pending
+    // event span nor require a second marker when the private remainder ends.
+    // A base64 decoder also needs up to three already-published characters
+    // before its public-prefix probe to reconstruct a byte-aligned group.
+    // This context never delays output or contributes a pending event span.
+    // Keep this independent of the selected private suffix: another secret
+    // may start inside the public prefix. Its hold must not discard context.
+    const contextLength = publishedContextLength;
+    const retainedContext = joined.slice(Math.max(0, cut - contextLength), cut);
+    carries.set(itemId, { text: joined.slice(cut), covered: Math.max(0, released.covered - cut), context: retainedContext });
+    return released.parts;
   };
 
+  const redactChunk = (itemId: string, text: string, final: boolean, additional: ReadonlyArray<Redacted.Redacted<string>> = []): string =>
+    redactParts(itemId, text, final, additional).map(part => part.text).join("");
+  const withholdParts = (itemId: string, marker: string): ReadonlyArray<RedactionPart> => {
+    const carry = carries.get(itemId);
+    if (carry === undefined || carry.covered >= carry.text.length) return [];
+    const length = carry.text.length - carry.covered;
+    carries.set(itemId, { ...carry, covered: carry.text.length });
+    return [{ length, text: marker, replacement: true }];
+  };
   const layer = Layer.succeed(Redactor, {
+    withholdParts: (itemId: string, marker: string) => Effect.sync(() => withholdParts(itemId, marker)),
+    redactPartsWithSecrets: (itemId: string, text: string, final: boolean, additional: ReadonlyArray<Redacted.Redacted<string>>) =>
+      Effect.sync(() => redactParts(itemId, text, final, additional)),
+    redactChunkWithSecrets: (itemId: string, text: string, final: boolean, additional: ReadonlyArray<Redacted.Redacted<string>>) =>
+      Effect.sync(() => redactChunk(itemId, text, final, additional)),
     redactChunk: (itemId: string, text: string, final: boolean) => Effect.sync(() => redactChunk(itemId, text, final)),
     redactText: (text: string) => Effect.sync(() => redactText(text)),
     redact: (event: Event) => Effect.sync(() =>
-      redactValue(event, redactWith(currentForms(), registry.tokenHashes()), eventStructure) as Event),
+      redactValue(event, redactWith(currentForms().forms, registry.tokenHashes()), eventStructure) as Event),
   });
 
-  return { layer, redactText, redactChunk };
+  return { layer, redactText, redactChunk, redactParts, withholdParts };
 };

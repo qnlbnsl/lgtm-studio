@@ -26,6 +26,7 @@ import type * as SecretStore from "../../src/commands/SecretStore.ts";
 import { checkFolder } from "../../src/identity/ceiling.ts";
 import { redactingLoggerLayer } from "../../src/identity/logger.ts";
 import { makeRedactor } from "../../src/identity/redactor.ts";
+import { Redactor } from "../../src/log/Redactor.ts";
 import { mintAgentToken } from "../../src/identity/tokens.ts";
 import * as EventLog from "../../src/log/EventLog.ts";
 import { migrate } from "../../src/log/migrations.ts";
@@ -287,12 +288,12 @@ const waiter = (events: ReadonlyArray<RunnerEvent>) => (predicate: (event: Runne
 // The secret registry the service's redactor reads: the stored account
 // secrets and the hashes of every agent token in the database, read on each
 // call so a token minted a moment ago is already covered.
-const registryFor = (secrets: FakeSecrets, database?: string) => {
+const registryFor = (secrets: FakeSecrets, database?: string, extraHashes: ReadonlySet<string> = new Set()) => {
   let reader: DatabaseSync | undefined;
   return makeRedactor({
     secrets: () => [...secrets.stored.values()].map((value) => Redacted.make(value)),
     tokenHashes: () => {
-      if (database === undefined || !existsSync(database)) return new Set<string>();
+      if (database === undefined || !existsSync(database)) return extraHashes;
       try {
         reader ??= new DatabaseSync(database, { readOnly: true });
         return new Set((reader.prepare("SELECT token_hash FROM agent_tokens").all() as Array<{ token_hash: string }>).map((row) => row.token_hash));
@@ -302,6 +303,8 @@ const registryFor = (secrets: FakeSecrets, database?: string) => {
 };
 
 export interface RunnerOptions {
+  readonly withoutWithholdParts?: boolean;
+  readonly tokenHashes?: ReadonlySet<string>;
   readonly wrapSpawner?: (spawner: Context.Service.Shape<typeof ChildProcessSpawner>) => Context.Service.Shape<typeof ChildProcessSpawner>;
   readonly secrets?: Readonly<Record<string, string>>;
   // Account tests exercise the persistent store through the real handler.
@@ -339,7 +342,11 @@ const fakeSecretsWith = (values: Readonly<Record<string, string>> = {}, persiste
 // built, as the service does (identity/logger.ts).
 export const withAcpRunner = <A, E>(rig: RunnerRig, options: RunnerOptions, body: (context: RunnerContext) => Effect.Effect<A, E, Scope.Scope>) => {
   const secrets = fakeSecretsWith(options.secrets, options.secretStore);
-  const redactor = registryFor(secrets);
+  const redactor = registryFor(secrets, undefined, options.tokenHashes);
+  const redactorLayer = options.withoutWithholdParts ? Layer.effect(Redactor, Effect.gen(function* () {
+    const { withholdParts: _removed, ...service } = yield* Redactor;
+    return service;
+  })).pipe(Layer.provide(redactor.layer)) : redactor.layer;
   const lines: Array<string> = [];
   const events: Array<RunnerEvent> = [];
   return Effect.gen(function* () {
@@ -350,7 +357,7 @@ export const withAcpRunner = <A, E>(rig: RunnerRig, options: RunnerOptions, body
       runner, events, eventsAfter: (count) => events.slice(count), waitFor: waiter(events), logLines: lines, secrets,
     });
   }).pipe(
-    Effect.provide(runnerLayer(rig, options, secrets).pipe(Layer.provide(redactor.layer))),
+    Effect.provide(runnerLayer(rig, options, secrets).pipe(Layer.provide(redactorLayer))),
     Effect.provide(loggerFor(redactor.redactText, lines)),
     Effect.scoped,
   );

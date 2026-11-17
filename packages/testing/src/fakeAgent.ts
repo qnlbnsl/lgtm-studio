@@ -64,6 +64,8 @@ type Step = DiagnosticStep | StepDiagnostic
   // `exec:<exit code>`. The child's stdio is ignored; a caller script reports through its own file.
   | { step: "exec"; argv: string[]; strip?: string[] }
 interface Script {
+  // Hold the idle report after cancel so a test can isolate the cancel flush.
+  cancelIdleGate?: string
   legacyModels?: { currentModelId: string; availableModels: Array<{ modelId: string; name: string }> }
   protocolVersion?: 1 | 2
   // Unit 6d: advertise a peer that cannot reload, without starting a real adapter.
@@ -403,6 +405,7 @@ const program = Effect.gen(function*() {
       return { stopReason: "end_turn" }
     })
     const result = yield* Effect.raceFirst(run, Deferred.await(cancel).pipe(Effect.as({ stopReason: "cancelled" })))
+    if (result.stopReason === "cancelled" && script.cancelIdleGate !== undefined) yield* awaitGate(script.cancelIdleGate)
     yield* update({ sessionUpdate: "state_update", state: "idle", ...result } as AcpSchema.SessionNotification["update"])
     delete session.cancel
     for (const late of afterTurn) {

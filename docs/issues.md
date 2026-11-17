@@ -3686,7 +3686,7 @@ reached clients that could not read the harness's home.
 ## 224. A login store is covered only after a launch has opened it in this service's life
 
 Found: 2026-11-02, while fixing issue 223.
-State: open.
+State: fixed in s19-secrets for current default and enabled-account stores at startup and before account changes publish. Tokens removed from a store before a previous service stopped cannot be reconstructed after restart.
 
 What happens: the redactor learns a login store's tokens when the runner
 launches an account that uses that store.
@@ -3837,7 +3837,7 @@ The issue 242 round-7 scope leaves this shared stop-state path unchanged.
 
 Found: 2026-11-02, by the security review of the issue 223 fix (commit
 b88b876, finding F1).
-State: open, for the owner's hostile pass.
+State: fixed in s19-secrets with bounded two-step and GNU pipeline forms, a bounded shared matcher, and whole-text reference and streaming regressions. Lone-surrogate values remain protected. The precise encoding limits are in SECURITY.md rule 6.
 
 What happens: the redactor matches a fixed list of forms of each secret,
 built by `addForms` in `packages/engine/src/identity/redactor.ts`, line 49.
@@ -3863,8 +3863,7 @@ token in a form a client can decode.
 
 Found: 2026-11-02, by the security review of the issue 223 fix (commit
 b88b876, finding F4).
-State: open, for the owner's hostile pass. It is older than the issue 223
-fix.
+State: fixed in s19-secrets with one combined streaming window, every public-prefix candidate, independent public match context, and completed-match coverage across updates and forced replacements. A genuine private prefix still delays following tools, as recorded in issue 1264.
 
 What happens: streamed message text is held back by the chunk redactor, so
 a secret split across chunks is still matched.
@@ -8102,7 +8101,7 @@ brief in `.scratch/foundry-runs/foundation-plans-1/lgtm-tools/result.md`.
 ## 485. Cursor's native login store is missing from credential redaction
 
 Found: 2026-11-05, while reading Cursor's installed permission implementation.
-State: open. This is outside the approval change.
+State: fixed in s19-secrets, with both candidate paths covered and live refresh retained.
 
 `credentialSourceFor` currently has no Cursor file paths because its original
 scouting established only an environment key. Cursor 2026.10.14-941492e's
@@ -17236,6 +17235,347 @@ Its "reload" step failed with "SocketReadError: An error occurred during Read".
 A second run on the same commit passed that step and gave the known result of 19 of 23.
 The cause of the single failure is not known.
 
+## 1200. Cursor does not publish its authentication file path.
+
+Found: 2026-11-16, during the secret hiding work.
+State: mitigated by covering both candidate paths.
+
+Cursor's current authentication documentation says credentials are stored locally.
+It does not name the authentication file.
+Issue 485 records the installed credential manager's Linux path.
+The source now inspects both `$XDG_CONFIG_HOME/cursor/auth.json` and `HOME/.config/cursor/auth.json`.
+The official references are https://cursor.com/docs/cli/reference/authentication and https://cursor.com/docs/cli/reference/configuration.
+No real credential file was opened.
+
+## 1201. Slow account stores need a bounded initial read.
+
+Found: 2026-11-16, while fixing issue 224.
+State: fixed with asynchronous inspection and a total 500 millisecond budget.
+
+The existing launch reader performs synchronous filesystem operations.
+Calling it for every account during startup could block the service on a slow filesystem.
+The initial reader now uses asynchronous operations with the same file and leaf limits.
+At most two initial inspections occupy logical slots across repeated batches.
+Uncancelled system calls can outlive those slots, as recorded in issue 1208.
+A shared snapshot cache reads each distinct store once per batch.
+The account writer waits for the bounded inspection before publishing its change.
+A timed-out or unreadable store is retried at its next launch.
+Successful snapshots seed the existing synchronous refresh path.
+
+## 1202. Replacement lengths cannot assign text to its original chunks.
+
+Found: 2026-11-16, while fixing issue 233.
+State: fixed with original-span mapping.
+
+A replacement may be longer or shorter than the text it hides.
+Assigning its output by the original chunk lengths can move later ordinary text before an intervening tool update.
+A trailing tool can also leave replacement text without a message to receive it.
+The redactor now reports each decided span's original length.
+The runner assigns that span to its original message metadata.
+Safe complete chunks are released immediately.
+A short chunk with an undecided suffix is retained within the same window.
+The held suffix never exceeds the longest registered form minus one character.
+The existing stop-state loss after the runner emits its tail remains tracked in issue 231.
+This change flushes the runner's carry on stop without changing that event acceptance policy.
+
+## 1203. A new adapter message identity could still end the security carry.
+
+Found: 2026-11-16, while checking the final issue 233 implementation.
+State: fixed with one security carry across message identities.
+
+An adapter can use a new message identifier after a tool update.
+The old source-identity boundary still finalized the carry in that case.
+The named-message regression failed before the boundary was removed.
+Each pending chunk now retains its own item identifier and speaker.
+The security carry survives until turn termination.
+Original-span mapping preserves the ordinary text's source identity.
+
+## 1204. Partial safe chunks broke complete configuration reports.
+
+Found: 2026-11-16, in the full secret-hiding gate.
+State: fixed by recognizing safe chunk endings.
+
+The first span-mapping implementation emitted a safe prefix of every large message chunk.
+Existing configuration journeys read each complete report from one text item.
+Their JavaScript Object Notation reports became incomplete when a prefix was emitted separately.
+The flow journey also needed safe ordinary text before its permission request.
+The redactor now releases a complete safe chunk when no registered form can continue at its end.
+A possible secret suffix stays within the existing maximum window.
+A short chunk with a possible suffix is kept whole within that same bound.
+Hash-only credential probes retain their maximum window while a credential-alphabet suffix remains possible.
+The configuration and end-to-end flow assertions are unchanged.
+
+## 1205. The isolated suite home lacked the launcher test's Node installation.
+
+Found: 2026-11-16, in the full secret-hiding gate.
+State: resolved in the test environment without changing the test.
+
+The complete suite ran under a temporary home to avoid real credential files.
+One launcher test requires a Node.js 26 installation under that home's version-manager directory.
+Its prerequisite failed before it exercised the launcher.
+The final suite home links only the existing Node.js binary into that directory.
+All credential directories remain temporary.
+
+## 1206. Repairing a credential store could expose an adjacent tool report.
+
+Found: 2026-11-16, while checking unreadable-store recovery after the carry change.
+State: fixed by retaining the message's withheld interval for following tool metadata.
+
+The new carry handling published the withheld marker before the following tool update.
+An existing recovery journey repairs the store as soon as that marker appears.
+The following tool could then be published during the interval that the journey expects to remain withheld.
+Loss of coverage now discards the undecided message carry with a fixed marker.
+Following tool metadata remains withheld until a healthy message starts a new interval.
+The existing half-written and oversized-store journeys pass without changes to their assertions or waits.
+
+## 1207. The passing full suite emits client-test warnings.
+
+Found: 2026-11-16, in the final secret-hiding gate.
+State: observed outside the four assigned fixes.
+
+The studio harness integration build warns about a minified chunk larger than 500 kilobytes.
+The studio terminal tests report the unavailable canvas context in their browser test environment.
+Several retired web-page tests emit React state-update warnings about missing `act` wrappers.
+All affected files passed in the complete 632-file run.
+No test assertion or warning threshold was changed for this task.
+
+## 1208. Abandoned preload reads occupied every logical slot forever.
+
+Found: 2026-11-16, from independent review finding m2.
+State: logical-slot starvation is fixed with deadline abandonment and deduplication of source path sets. Uncancelled filesystem calls can still exhaust the default four-thread libuv pool.
+
+Read: the old counter fell only when the filesystem promise settled.
+Ran: a later healthy batch failed to start after two planted never-settling reads.
+Read: a timeout now releases the logical slot.
+Read: an unfinished read keeps its source path list marked to prevent duplicate inspections of that same list.
+Read: different source lists with an overlapping physical path are not deduplicated across batches.
+Ran: the fake-clock tests retain the original two-start assertion for duplicate abandoned paths.
+Ran: a later batch starts two other paths within its own 500 millisecond budget.
+Ran: a healthy later batch completes after the abandoned reads.
+Read: Node.js cannot cancel an already-running stat system call.
+Read: such a call can continue occupying an operating-system worker after its logical slot is released.
+Read: the default libuv thread pool has four worker threads.
+Read: abandoned filesystem calls from distinct source path lists can occupy all four threads.
+Read: releasing logical slots does not release those threads or guarantee later filesystem progress.
+
+## 1209. Every redaction synchronously inspects preloaded account stores.
+
+Found: 2026-11-16, from independent review finding m3.
+State: recorded without a fix, as assigned.
+
+Read: the credential registry refreshes every registered source during `secrets()`.
+Read: an unchanged file still requires a synchronous metadata inspection.
+Read: this now includes enabled accounts that have never launched.
+Read: a broken store for one of those accounts also makes `healthyAll()` false.
+Read: initial preloading has a deadline, but these later metadata checks do not use that asynchronous path.
+
+## 1210. Cursor's default credential file can refuse another configuration folder.
+
+Found: 2026-11-16, from independent review finding m5.
+State: recorded without a fix, as assigned.
+
+Read: the Cursor source checks both the configured folder and the default-home candidate.
+Read: an unreadable or malformed default file therefore refuses an account whose configured folder is healthy.
+Read: this is stricter than inspecting only the account's own file.
+Read: issue 1200 records why both candidate paths are covered.
+
+## 1211. Double-base64 pipelines need inner and outer alignment runs.
+
+Found: 2026-11-16, from independent review finding M4.
+State: fixed for bounded contiguous runs, with remaining encoding limits recorded.
+
+Ran: the printf pipeline, echo pipeline, two inner offsets, and a larger encoded document all failed before the alignment forms were added.
+Read: the redactor now attempts three inner alignments and three outer alignments.
+Read: standard and URL-safe outer spellings add at most eighteen attempted forms.
+Read: each partial form retains the eight-character minimum.
+Ran: all five cases pass as whole text and at every streamed split.
+Ran: the twenty-secret measurement has 441 matched form entries.
+Ran: its average is 22.05 entries per secret.
+Ran: its minimum is 20 entries and its maximum is 23 entries.
+Read: alphabet variants can be identical and are deduplicated.
+Read: arbitrary recursive encodings remain outside the bounded set.
+Read: line wrapping that breaks every matching run can prevent a match.
+Read: the bounded list also omits hexadecimal compositions and some mixtures of the two base64 alphabets.
+Read: base64 of a JSON-escaped value has no added partial alignment runs.
+Read: hash-only credentials have no two-step decoding probes.
+Read: rule 6 now states these limits without removing its existing requirements.
+
+## 1212. Escaped slashes and mixed percent escapes add unmatched base64 spellings.
+
+Found: 2026-11-16, from independent review finding m7.
+State: recorded without a fix, as assigned.
+
+Read: `JSON.stringify` leaves base64's alphabet unchanged.
+Read: its identity form does not register optional backslashes before slashes.
+Read: the percent form encodes the complete base64 value with `encodeURIComponent`.
+Read: partly escaping its reserved characters can therefore produce an unmatched spelling.
+Read: rule 6 now states those spelling limits.
+
+## 1213. Ordinary words were held behind a broad token alphabet.
+
+Found: 2026-11-16, from independent review finding B1.
+State: fixed with proper-prefix matching and public token-prefix context.
+
+Ran: ordinary chunks and a sentence followed by a tool were withheld before the correction.
+Read: the old hash probe treated any trailing credential-alphabet run as undecided.
+Read: the old short-chunk rule retained the entire chunk when only its suffix was undecided.
+Read: the runner also retained decided text to preserve a complete short chunk.
+Read: those rules are removed.
+Ran: the exact five ordinary chunks now publish as they arrive.
+Ran: sentences with and without a full stop publish with their tool before the adapter's gate opens.
+Read: the owner clarified that the public token prefix may be published while retained as match context.
+Ran: every token split is checked in raw, hexadecimal, both base64 alphabets, and percent-encoded text.
+Read: a genuine prefix of a value-known secret can still delay that suffix until the next text or the turn's termination.
+Read: this remaining time delay has no wall-clock bound before termination.
+Read: its character count is bounded by one less than the longest registered form.
+Read: issue 1215 records the queue limit that can end that delay earlier with a withheld marker.
+
+## 1214. Permission control can precede a genuine held secret suffix.
+
+Found: 2026-11-16, from independent review finding M1.
+State: documented and covered by stored replay and service-reload tests.
+
+Read: decided text now publishes before a permission request.
+Read: a genuine secret suffix and the tool queued behind it still wait for safe resolution.
+Read: permission control must remain answerable during that wait.
+Ran: short and long message journeys store decided text before the permission request.
+Ran: they store the redacted suffix and queued tool after that request.
+Ran: replay and an actual service restart preserve that order.
+Read: the existing website renderer keeps a permission boundary between the message segments.
+Read: merging those segments across the request would move later text before its recorded action.
+
+## 1215. The content queue behind a genuine secret prefix was unbounded.
+
+Found: 2026-11-16, from independent review finding M2.
+State: fixed with item and byte budgets.
+
+Ran: count and byte overflow tests failed with the cap disabled.
+Read: the queue now allows at most 1024 pending items before releasing them.
+Read: its conservative byte budget is one mebibyte.
+Read: the arriving item can cross a budget before it triggers release.
+Read: overflow replaces the held suffix with the existing fixed withheld marker.
+Read: covered match context remains available for a later secret remainder.
+Ran: both overflow cases publish the queued tools in their original order before the adapter gate opens.
+Ran: neither the raw held prefix nor the private continuation appears in their output.
+
+## 1216. The termination tests did not establish that a carry existed.
+
+Found: 2026-11-16, from independent review finding M3.
+State: fixed with genuine-prefix fixtures and negative flush mutations.
+
+Read: the previous four fixtures ended in ordinary text.
+Read: the strengthened fixtures end in a genuine secret prefix with a tool queued behind it.
+Ran: they assert no content appears before termination.
+Ran: end of turn, stop, crash, and cancel each publish the expected text followed by the queued tool.
+Ran: all four tests fail when termination drains are disabled.
+Ran: a subsequent separate mutation checked each termination path independently.
+Read: end of turn has redundant idle and finish drains, so its mutation removes both.
+Read: stop has close and finalizer fallbacks, so its mutation suppresses drains only for stopped entries.
+Ran: removing only the crash watcher drain fails the crash regression.
+Ran: removing only the cancel drain fails the cancel regression.
+Ran: the mutation script restored the runner source byte for byte.
+Read: the cancel fixture holds the adapter's idle report behind another gate.
+Ran: its flush therefore cannot be rescued by a later idle report.
+Read: the existing stop diagnostic also needed a genuine registered prefix after ordinary suffixes began streaming immediately.
+Ran: that diagnostic passes with its original assertions and waits unchanged.
+
+## 1217. Rebuilding encoding forms and prefix tables slowed every streamed chunk.
+
+Found: 2026-11-16, from independent review finding m1.
+State: fixed with bounded compiled-state caching and failure tries.
+
+Ran: one mebibyte in 200-character chunks took 4247.64 milliseconds before the round-two change.
+Ran: the same initial comparison took 1145.41 milliseconds at commit `ab05bfc`.
+Read: form generation and repeated prefix-table construction happened on every chunk.
+Read: four compiled registry states are now cached by their values.
+Read: failure tries scan each chunk for proper suffixes without rebuilding per-form prefix tables.
+Ran: an early paired measurement took 244.33 milliseconds after the change against 871.61 milliseconds at baseline.
+Ran: a later quiet repeat took 380.01 milliseconds against 1391.46 milliseconds at baseline.
+Ran: the final quiet repeat after the compatibility correction took 233.68 milliseconds against 916.76 milliseconds at baseline.
+Ran: final whole-text medians were 35.03 milliseconds after the change and 19.87 milliseconds at baseline.
+Read: this is a whole-text ratio of 1.76, so no requested forms were dropped.
+Read: registry values and token hashes are still checked on every call.
+
+## 1218. Public encoded-prefix context also needs the preceding base64 group.
+
+Found: 2026-11-16, while implementing the owner's public-prefix clarification.
+State: fixed with already-published alignment context.
+
+Ran: standalone token split tests passed while an embedded base64 token still escaped matching.
+Read: the decoder needs up to three characters before its byte-aligned prefix probe.
+Read: those characters now remain as match context without delaying their publication.
+Ran: every split at both embedded offsets passes in standard and URL-safe base64.
+Read: no raw held suffix is released by retaining that context.
+Ran: a Unicode mutation test also caught a code-point scan mismatching the redactor's 16-bit Unicode transformation format (UTF-16) chunk spans.
+Read: the matcher now scans the same code units as those spans.
+
+## 1219. New regression fixtures needed explicit protocol and state boundaries.
+
+Found: 2026-11-16, while writing the round-two regressions.
+State: corrected before accepting their results.
+
+Ran: a large environment script first hit the operating system's argument-size limit.
+Read: the overflow fixtures now load their large scripts from temporary files inside the fake adapter.
+Ran: the first file-backed script omitted its mode option and was refused during configuration.
+Read: the corrected fixture declares that mode before it exercises output.
+Ran: a manually emitted permission request continued without waiting for its answer.
+Read: an explicit adapter gate now orders that continuation after the owner's answer.
+Ran: the first browser-render fixture omitted its pending-state map.
+Read: the corrected fixture supplies the same empty map as the website store.
+Ran: a genuine registered prefix corrected the old stop diagnostic fixture without changing its assertions.
+Ran: the isolated live check passed 4 of 23 steps and failed the two steps that awaited model-driven team work.
+Read: this is not equivalent to the known signed-in master result of 19 of 23 steps.
+
+## 1220. An unbounded prefix trie exhausted memory for a large credential leaf.
+
+Found: 2026-11-16, while reviewing the new compiled-state cache.
+State: fixed with a trie-size limit and compact failure-table fallback.
+
+Ran: a large planted fake credential compiled at `ab05bfc` under a 128 mebibyte old-generation heap limit.
+Ran: the first round-two trie exhausted that heap.
+Read: one Map object per form character multiplied memory use for large leaves.
+Read: a matcher now uses compact four-byte failure entries when its form characters exceed 32768.
+Read: smaller registries retain the faster trie.
+Read: the compact fallback scans each form separately, trading scan work for bounded index memory.
+Ran: the bounded-heap regression failed before this correction.
+Ran: it now checks whole-text redaction and a genuine large prefix across a streamed split within the same heap.
+Ran: all seventeen redactor tests passed after the correction.
+Ran: the in-progress whole-suite run was stopped before accepting it as final evidence.
+Ran: the complete suite was restarted against the corrected implementation.
+
+## 1221. A candidate already containing private characters published its public prefix unnecessarily.
+
+Found: 2026-11-16, in the round-two complete suite.
+State: fixed while retaining immediate publication of public-only tails.
+
+Ran: two unchanged terminal-output assertions expected a single marker for a token split in its private portion.
+Read: the first correction published the public prefix even when that same chunk already contained private characters.
+Read: the owner's clarification permits holding a candidate once private characters are present.
+Read: that candidate now stays whole until decided, except for public characters already published by an earlier chunk.
+Read: a public-only tail still publishes immediately and stays as matching context.
+Ran: the every-split test failed before pinning this distinction in the implementation.
+Ran: all seventeen redactor tests and both unchanged terminal assertions pass after the correction.
+Read: no terminal-specific output rewriting or stored shape change was needed.
+
+## 1222. The restart fixture relied on an ordinary sentence being unaccepted.
+
+Found: 2026-11-16, in the round-two complete suite.
+State: corrected with a genuine held-prefix fixture and the original assertions.
+
+Ran: the configuration-recovery test received a carry-on prompt instead of resending its original work.
+Read: promptly publishing its ordinary sentence correctly marked that delivery accepted.
+Read: the test's original assertions require an unaccepted delivery during restart.
+Read: its message now ends in a genuine registered private prefix.
+Ran: the first fixture edit passed values to a fake-store factory that takes no arguments.
+Read: the corrected fixture inserts the value into the factory's exposed map.
+Ran: typechecking then caught the map's read-only interface.
+Read: the type assertion used by the existing runner rig corrects that declaration without changing the fixture's execution.
+Ran: both configuration-recovery tests pass with their assertions and waits unchanged.
+Ran: the completed failing whole run contained 633 passing files, two failing files, 9703 passing tests, three failing tests, and two skips.
+Ran: the final complete suite was restarted after these corrections.
+Ran: the final complete suite passed all 635 files with 9706 passing tests and two existing skips.
+Ran: the complete typecheck passed after the type-only fixture correction.
+
 ## 1170. Agents did not receive the default workflow instructions on launch.
 
 State: fixed in s22.
@@ -17994,6 +18334,272 @@ This is the same load sensitivity that issues 966, 1014, 1044, 1066, 1079 and 11
 
 State: open. Recorded on 2026-11-16.
 
+
+## 1260. Mixed percent escapes after a public token prefix escaped streaming redaction.
+
+Found: 2026-11-16, from round-two review blocker B1.
+State: fixed in round three with the literal prefix included in the percent candidate probe.
+
+Read: the raw candidate rejected a percent sign in its remainder.
+Read: the percent candidate skipped a literal public prefix.
+Ran: the new differential B1 regression failed on `0ff155f9` before the production change.
+Read: diagnostics report split positions and counts without publishing token bytes.
+Ran: the guard includes fully escaped, one-escape, alternating, and literal-prefix spellings.
+
+## 1261. A private suffix displaced already-published public match context.
+
+Found: 2026-11-16, from round-two review blocker B2.
+State: fixed in round three by retaining public context independently of private suffix selection.
+
+Read: selecting the longest held suffix discarded the context of a different candidate.
+Ran: the new differential B2 regression failed on `0ff155f9` with a planted value-known secret.
+Read: the carry now retains at most fifteen already-published characters before its held suffix.
+Read: these characters own no pending event span and add no output delay.
+Ran: the differential guard tests zero, one, three, and twenty value secrets at every two-way and three-way split.
+
+## 1262. GNU base64 wrapping escaped single and double encoding matches.
+
+Found: 2026-11-16, from round-two review findings M1 and m3.
+State: fixed for the bounded GNU forms listed in SECURITY.md rule 6.
+
+Ran: fifteen new whole and streaming cases failed before the production change.
+Ran: three independent model checks agree with the installed GNU base64 tool.
+Read: a 58-byte value already wraps inside the first encoding at column 76.
+Read: the earlier 40-character pipeline fixtures could not expose this boundary.
+Read: the full pipeline forms cover the complete registered value at lengths 58, 108, and 209.
+Read: bounded partial forms cover the first and last inner line segments at each alignment.
+Read: arbitrary wrap widths, separators, phases, and middle segments are outside this set.
+Read: the maximum is 78 attempted insertions and 77 distinct form entries per secret.
+
+## 1263. Large secret forms made the prefix fallback scan every full chunk separately.
+
+Found: 2026-11-16, from round-two review finding M2.
+State: fixed in round three with suffix-only scanning and one compact failure automaton per spelling category.
+
+Read: the previous fallback activated above 32768 form characters.
+Ran: twenty 100-byte fake values made a one-mebibyte chunk take more than three seconds before this correction.
+Read: a proper prefix can begin only within the longest form length minus one at the end of the chunk.
+Read: normalization now also examines only that suffix for prefix matching.
+Read: whole matching uses bounded shared candidate heads with full-form verification.
+Read: a collection above those index limits uses one compact whole-text automaton.
+Read: the index preserves overlapping matches and exact case outside hexadecimal escapes.
+Ran: the six requested benchmark rows are recorded in the round-three result.
+Read: earlier full-expression and candidate-index experiments missed the requested bound and were replaced.
+
+## 1264. Genuine one-character secret prefixes delay ordinary sentence endings and tools.
+
+Found: 2026-11-16, from round-two review finding M3.
+State: waits for the owner's decision.
+
+Read: a value-known secret's first character is private even when it ends ordinary prose.
+Read: releasing it would violate the streaming privacy rule if the rest of that secret followed.
+Read: a following tool remains queued to preserve event order.
+Ran: a fixed fake-value corpus measures the following rates over 72 possible final characters.
+Ran: each row also checks six ordinary sentences and those sentences with final full stops.
+
+| Registered values | Final characters held | Ordinary sentences held | With full stops held | Maximum held characters |
+| --- | --- | --- | --- | --- |
+| 1 | 16 of 72 | 1 of 6 | 0 of 6 | 1 |
+| 3 | 26 of 72 | 3 of 6 | 0 of 6 | 1 |
+| 6 | 40 of 72 | 4 of 6 | 0 of 6 | 2 |
+| 20 | 58 of 72 | 6 of 6 | 0 of 6 | 2 |
+
+Read: these are fixture frequencies, not a probability estimate for all writing.
+Ran: a runner regression shows the final private `s` and its following tool held until the planted continuation arrives.
+Read: this task deliberately preserves that behavior.
+
+## 1265. A supplied redactor without withholding could leave the event queue unbounded.
+
+Found: 2026-11-16, from round-two review finding m1.
+State: fixed in round three with original-span accounting after forced replacement.
+
+Read: the optional redactor method could be absent while its parts method remained present.
+Read: the fallback carry then had no corresponding spans to withhold.
+Read: overflow now replaces the queued undecided spans in event order and retains the supplied security carry.
+Read: a count tracks the original spans already replaced when the supplied redactor later returns them.
+Ran: both the count and byte limits are tested with and without the optional withholding method.
+Read: the existing 1024-event and one-mebibyte limits are unchanged.
+
+## 1266. Streamed token replacement shapes differ from whole-text replacement shapes.
+
+Found: 2026-11-16, from round-two review finding m4.
+State: recorded as the owner's public-prefix design.
+
+Read: whole-text recognition replaces the complete token with `[REDACTED]`.
+Read: streaming can already have published fixed public characters before recognizing the token.
+Read: examples include `shp_[REDACTED]`, `sh[REDACTED]`, and `7368705[REDACTED]`.
+Read: encoded markers follow the same rule for characters containing only public bits.
+Read: the private remainder is never published merely to make the shapes equal.
+Ran: the differential guard checks original source spans rather than assuming equal rendered shapes.
+
+
+## 1267. An intermediate whole-form expression exceeded the constrained heap test's compilation limit.
+
+Found: 2026-11-16, during the round-three performance correction.
+State: fixed before accepting the final implementation.
+
+Ran: compiling one expression over every complete form failed the existing large-value child-process check.
+Read: the final native expression contains only bounded eight-character candidate heads.
+Read: its source is limited to 32768 characters and 4096 patterns.
+Read: small collections share literal heads instead.
+Read: larger collections use a compact failure automaton.
+Read: full forms are verified at each candidate and overlapping matches are retained.
+
+## 1268. New test callbacks passed array indexes to the redacted-value constructor.
+
+Found: 2026-11-16, by the round-three typecheck.
+State: fixed in the new differential and overlap fixtures.
+
+Ran: direct use of the constructor as an Array.map callback failed typechecking in two files.
+Read: its second parameter is an options object rather than an array index.
+Read: an explicit callback now passes only the planted value.
+Ran: the complete typecheck passes after that correction.
+
+
+## 1269. An inner public prefix displaced the real beginning of a streamed token.
+
+Found: 2026-11-16, from round-three review blocker B1.
+State: fixed in round four by checking every prefix occurrence in the bounded window.
+
+Read: using the last occurrence of a prefix discarded an earlier valid token candidate.
+Ran: the reviewer's planted token reproduced the leak in raw and hexadecimal text.
+Ran: one percent escape after its inner prefix also leaked when registered by value.
+Read: each occurrence now contributes to the maximum required hold.
+Ran: the directed regression tests chunk sizes one, two, three, and seven and every two-way split.
+Ran: it checks all three spellings with and without a registered value.
+
+## 1270. A completed match could lose coverage while no new ordinary text was released.
+
+Found: 2026-11-16, from round-three review blocker B2.
+State: fixed in round four by rendering the completed replacement reach even when the cut does not pass previous coverage.
+
+Read: the old branch returned the previous covered point without examining newly completed matches.
+Read: the next call could then publish their tails after their starts left the retained context.
+Ran: directed tests reproduced the hash-only token and both value-secret variants after forced withholding.
+Ran: overlapping value secrets reproduced the same leak without withholding.
+Read: the corrected carry preserves the entire completed match's covered reach.
+Ran: the extended stream reference includes the review's three exact schedules.
+
+## 1271. First-use matching allocated large automatons synchronously.
+
+Found: 2026-11-16, from round-three review finding M2.
+State: ordinary-set compilation and accelerator memory are bounded. Round five retains the newest form list even above the cache budget. Large-set first-use form construction remains open.
+
+Read: the previous implementation built full-form and prefix automatons before the first result.
+Read: round four uses one four-character candidate index for complete and prefix matching.
+Read: short queries use direct lookups in that index.
+Read: native expression compilation waits for a query longer than 256 characters.
+Read: the index accepts at most 262144 form characters and 32768 head characters.
+Read: its expression source is limited to 32768 characters.
+Read: larger sets use literal searches over every form without an accelerator.
+Read: no form is dropped to meet a resource budget.
+Read: up to four states share a 1048576-character cache budget.
+Read: round five always retains the newest state, even when it alone exceeds that budget.
+Read: older states are evicted until only that state remains or the total fits.
+Read: these are bounds on derived indexes and cached text, not a fixed bound on process memory.
+Read: constructing every supported spelling still needs memory and time proportional to registered input.
+Ran: the final time and memory table is in the round-four result.
+Read: a state evicted by a different secret set must rebuild when selected again.
+Read: the first long query can still pay for native expression compilation.
+
+## 1272. Whole-text strategies disagreed on percent escapes and had no naive reference test.
+
+Found: 2026-11-16, from round-three review findings M1 and m2.
+State: fixed in round four with one normalization rule and repository reference tests.
+
+Read: one strategy normalized complete text while others normalized only a candidate slice.
+Ran: the uppercase final digit of `%4A` was hidden with a small secret set and shown with larger sets.
+Read: percent forms now always search the same globally normalized view.
+Read: the naive reference uses indexOf over the exact production form list.
+Ran: fixed-seed cohorts cross all three former form-count thresholds.
+Ran: direct matcher assertions prove the bounded index and literal fallback are exercised.
+Ran: all registered forms are planted at text boundaries and compared by original source masks.
+Ran: shared heads, prefix and suffix secrets, infix secrets, repetitions, expression metacharacters, non-ASCII text, and overlaps are covered.
+Ran: the stream reference plants values and two tokens and tests random forced withholding.
+Ran: temporary copies of both reference tests fail against the round-three implementation.
+
+## 1273. A lone surrogate in a registered value made every redaction throw.
+
+Found: 2026-11-16, from round-three review finding m4.
+State: fixed in round four for raw, JSON, and supported encoded forms.
+
+Read: the URL encoder rejected an unpaired Unicode surrogate.
+Read: it now repairs that input in the same way as UTF-8 buffer encoding.
+Read: UTF-8 means Unicode Transformation Format, 8-bit.
+Read: the exact raw value and its JSON-escaped spelling remain registered.
+Ran: high, low, and separated surrogate fixtures are checked whole and at every split.
+
+## 1274. Five alternating secret sets continually evict compiled states.
+
+Found: 2026-11-16, from round-three review finding m5.
+State: recorded without a separate cache-policy fix, as assigned.
+
+Read: the cache retains at most four states under a total text budget, with an exception for the newest state alone.
+Read: five or more alternating sets cannot all remain cached.
+Read: each miss reconstructs its supported forms.
+Read: the registry is still compared by string values rather than wrapper identities.
+Read: this affects latency and does not reuse the wrong secret set.
+Read: today's runner supplies the combined secrets of all running processes to each stream.
+Read: that wiring does not independently cycle five per-agent additional sets on successive items.
+Read: round five fixes repeated rebuilding of a single oversized current set.
+
+## 1275. Several wrapped encoding pipelines remain outside the bounded form set.
+
+Found: 2026-11-16, from round-three review finding m3.
+State: recorded as limits in SECURITY.md rule 6, without expanding the assigned form set.
+
+Read: an unwrapped inner base64 step followed by a default wrapped outer step can leave readable encoded content.
+Read: a registered value inside a larger document can miss every contiguous run when the document is encoded with default wrapping.
+Read: this includes an encoded login file.
+Read: line-wrapped hexadecimal output from xxd -p can escape the contiguous hexadecimal form.
+Read: the security document now names all three cases in plain words.
+
+## 1276. The first cold benchmark expected a baseline stream to release ordinary text immediately.
+
+Found: 2026-11-16, while measuring round-four first use.
+State: corrected before accepting benchmark results.
+
+Ran: the baseline deliberately held the short first chunk and failed that benchmark-only expectation.
+Read: validation now includes its final flush outside the timed first call.
+Read: the measured call remains its actual first whole-text or streamed call.
+Read: no repository assertion or wait was changed.
+
+## 1277. The simpler matcher costs more for a few long values in whole-text scans.
+
+Found: 2026-11-16, while comparing the round-four matcher.
+State: recorded as the tradeoff authorized by the round-four preference for fewer strategies.
+
+Read: the previous three whole-text strategies have been replaced by one candidate index and a literal fallback.
+Read: both paths share the same normalization and full-form checks.
+Ran: the three-value, 1500-character warmed whole-text rows exceed twice the original baseline.
+Read: their absolute extra time is small compared with the removed multi-second compilation cost for large sets.
+Read: the final result reports every warmed row and does not claim the older twice-baseline target was met in those rows.
+Read: no required secret form was removed to improve the measurement.
+
+
+## 1278. A copied reference test retained whitespace on an otherwise empty line.
+
+Found: 2026-11-16, by the round-four staged diff check.
+State: fixed by removing the empty line's whitespace.
+
+Ran: the old and cleaned source have identical non-whitespace bytes.
+Read: the cleanup occurred after the full test run started.
+Read: the frozen hash record includes the cleaned file and the result records this formatting-only difference.
+
+## 1279. The thread acceptance fixture depended on a random credential's prefix.
+
+Found: 2026-11-16, in the complete round-four test run.
+State: round five corrects the helper to group deltas by item identifier and tests a planted held final character. Pinning the owner credential alone was insufficient.
+
+Ran: the complete suite passed 9891 tests and failed the assertion requiring the permission answer in one item.
+Ran: an isolated reproduction delivered all thirty answer characters as twenty-nine characters followed by the last character.
+Ran: a direct comparison using that scenario's temporary credential produced the same hold in round three and round four.
+Read: the final character was a genuine prefix of a registered form of the owner credential.
+Read: withholding that character until the turn ends preserves the owner's private-prefix decision.
+Read: the scenario now writes a fixed fake owner credential before its manual boot.
+Read: its assertions, waits, and allow-list remain unchanged.
+Ran: both thread acceptance scenarios pass with that fixture.
+
 ## 1230. Restored instructions called every agent message the start brief.
 
 State: fixed in round 3.
@@ -18122,5 +18728,135 @@ The test "two foreground launches race for one lifetime lock" in `packages/cli/t
 Two builders were running their own test suites on the same computer.
 The test passed when its file was run alone.
 The role instruction unit does not change that code.
+
+State: open. Recorded on 2026-11-16.
+
+## 1280. An oversized current secret set rebuilt its forms on every call.
+
+Found: 2026-11-16, from round-four review finding M1.
+State: fixed by retaining the newest state and evicting older states to the cache budget.
+
+Ran: all four new cache regressions failed before the change.
+Ran: twelve calls compiled twelve times for each oversized set.
+Read: an oversized newest state may exceed the cache text budget by itself.
+Read: the independent index and expression limits are unchanged.
+Ran: the same calls now compile once for fourteen and twenty 2000-character values, two hundred 134-character values, and one hundred 2000-character values.
+Read: the round-five result records baseline and final steady-state call times.
+
+## 1281. The reference tests missed two linear-tail mutations and encoded token-prefix reversions.
+
+Found: 2026-11-16, from round-four review finding m1.
+State: fixed with a naive proper-prefix reference and additional encoded stream plants.
+
+Ran: removing one-character linear holds now fails with a required hold of one character.
+Ran: removing long linear holds now fails with a required hold of two hundred characters.
+Read: both indexed and literal paths are asserted directly.
+Read: the reference also checks public prefixes, percent escapes, Unicode, and longer suffixes.
+Ran: independently reverting the hexadecimal and base64 candidate loops now fails the extended stream reference.
+
+## 1282. Matching depended on a caller folding the candidate query correctly.
+
+Found: 2026-11-16, from round-four review finding m2.
+State: fixed by folding inside the matcher and sharing normalization helpers.
+
+Read: the earlier caller could pass unfolded text when no hexadecimal forms or token hashes existed.
+Read: current form generation made that path unreachable in the product.
+Read: the matcher now normalizes its own query and returns that view for hash-token matching.
+Read: the unused tail-context value was removed.
+Read: the public-prefix automaton only returned zero held characters and was removed with that value.
+Read: the independent already-published context remains intact.
+
+## 1283. Repeated candidate heads make adversarial whole-text scans slow.
+
+Found: 2026-11-16, from round-four review finding m3.
+State: recorded without an unrequested matcher redesign.
+
+Ran by the reviewer: twenty-five secrets beginning with s19- took 209 milliseconds on s19- repeated sixty thousand times.
+Ran by the reviewer: the original baseline took five milliseconds on that input.
+Read: those are the reviewer's measurements, not fresh round-five timings.
+Read: every matching head still causes full-form verification for its bucket.
+
+## 1284. Cached literal scans on a mebibyte cost more than the original baseline.
+
+Found: 2026-11-16, from round-four review finding m4.
+State: recorded without expanding this round's cache fix into a matching redesign.
+
+Ran by the reviewer: sixty 134-character secrets took 156 milliseconds on one mebibyte of whole text.
+Ran by the reviewer: the original baseline took 39 milliseconds.
+Read: the reviewer observed a four-to-five-times slowdown beginning around forty such secrets.
+Read: a mebibyte contains 1048576 bytes.
+Read: retaining oversized states fixes repeated compilation rather than this literal scanning cost.
+
+## 1285. A random web-session token can split an ordinary message into deltas.
+
+Found: 2026-11-16, while reproducing the owner's round-five thread failure.
+State: the product already appends both deltas under the same item identifier. The acceptance helper now uses the product's grouping function.
+
+Read: the service creates and registers a random web-session token even when no web password is configured.
+Read: that token and the agent token are the scenario's two random registered credentials.
+Read: its owner credential is fixed.
+Read: its account has no secret reference and its temporary login stores do not exist.
+Ran: a planted web-session token beginning with the answer's last character reproduced twenty-nine characters followed by one character.
+Ran: both fragments had one item identifier.
+Ran: the new planted-account-secret regression fails with the old helper and passes with logical item grouping.
+Read: every original assertion remains in place.
+Read: the suite audit found no other real-service message assertion with this raw-delta assumption.
+Read: related assertions read complete prompt deliveries, join text fragments, or end live-gated prose with a safe delimiter.
+
+## 1286. An unreadable login store can refuse a permission request before its event is emitted.
+
+Found: 2026-11-16, while investigating the owner's round-five live-check observation.
+State: reproduced and recorded without weakening fail-closed credential coverage.
+
+Read: the owner's three live checks passed thirteen, thirteen, and nineteen of twenty-three steps.
+Read: nineteen is the known normal result.
+Read: the two shorter runs reported a worker turn ending without a permission request at step four.
+Ran: corrupting a fake login store after launch made permission identifier checks return a refusal.
+Ran: no permission event was emitted and the fake harness propagated the remote-procedure-call error into a failed turn.
+Read: remote procedure call is abbreviated RPC.
+Read: this is a possible path rather than a diagnosis of those live runs.
+Ran: all four queue-cap tests preserve a healthy permission request until its answer.
+Read: those tests cover count and byte caps with and without the redactor's explicit withholding method.
+Read: neither those caps nor ordinary tool withholding generate a terminal update themselves.
+
+## 1287. The new message regression initially relied on a helper to narrow event types.
+
+Found: 2026-11-16, in the first round-five typecheck.
+State: fixed with an explicit event-tag guard in the regression.
+
+Read: the tagged helper returns the complete event union rather than a narrowed type.
+Read: the new test now selects text events after checking their tag.
+Read: its assertions and runtime behavior are unchanged.
+
+## 1288. Partial issue staging added an empty line at the first commit's end.
+
+Found: 2026-11-16, by the staged diff check in round five.
+State: fixed by trimming the partial document before recreating the signed commits.
+
+Read: the complete working document had no trailing blank line.
+Read: this staging correction changes no implementation or test bytes.
+
+## 1289. A synthetic secret marker can randomly collide with a board test's request identifier.
+
+Found: 2026-11-16, in the first round-five whole-suite run.
+State: fixed by giving the affected board commands distinct deterministic request identifiers.
+
+Ran: the post-refusal scenario received a generic refusal instead of its expected post-length refusal.
+Read: the scenario registers the public synthetic marker beef for redaction.
+Read: a random request identifier can contain that marker.
+Read: the command handler refuses a secret-bearing request identifier before planning the board command.
+Ran: planting a valid identifier containing the marker reproduced that exact early refusal.
+Read: the failing whole run did not retain its generated request identifier.
+Read: the adjacent wake identity regression also issued two commands under the same marker registry.
+Read: those commands now have deterministic identifiers as well.
+Read: all original content, event, receipt, and refusal assertions remain unchanged.
+
+## 1295. The full check of the secret hiding unit met two load-sensitive tests and four load-sensitive journeys.
+
+In one whole run of the unit tests, "stops cleanly without invoking startup redaction on an interruption-only cause" in `packages/cli/test/serve.test.ts` failed: the service exited with code 13 after the stop signal, where code 0 was expected.
+The file passed three times in a row when run alone, and the unit does not change it or the code it tests.
+In the whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:361` and `studio.spec.ts:1189` failed, and each passed when run alone.
+Three live checks before round five gave 13, 13 and 19 of 23 steps; in the two short runs the Codex worker ended its turn without asking for permission, which is issue 272.
+Two live checks after round five gave 19 of 23, and three on `master` gave 19, 18 and 19.
 
 State: open. Recorded on 2026-11-16.

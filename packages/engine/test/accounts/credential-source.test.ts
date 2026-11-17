@@ -57,7 +57,7 @@ it("B1 CS2: secretLeaves excludes named login metadata without discarding unknow
 });
 
 for (const [harnessId, relative] of [
-  ["codex", ".codex/auth.json"], ["claude", ".claude/.credentials.json"], ["gemini", ".gemini/oauth_creds.json"],
+  ["codex", ".codex/auth.json"], ["claude", ".claude/.credentials.json"], ["gemini", ".gemini/oauth_creds.json"], ["cursor", ".config/cursor/auth.json"],
 ] as const) {
   it(`B1 CS3 ${harnessId}: reads each default login leaf as Redacted, without returning the whole document`, async () => {
     const { credentialSourceFor } = await sourceModule();
@@ -153,6 +153,7 @@ it("B1 CS6: follows a symbolic link to a regular login file", async () => {
 for (const [harnessId, variable, filename, defaultFile] of [
   ["codex", "CODEX_HOME", "auth.json", ".codex/auth.json"],
   ["claude", "CLAUDE_CONFIG_DIR", ".credentials.json", ".claude/.credentials.json"],
+  ["cursor", "XDG_CONFIG_HOME", "cursor/auth.json", ".config/cursor/auth.json"],
 ] as const) {
   it(`B1 CS7 ${variable}: the resolved account variable moves the active store away from the default home`, async () => {
     const { credentialSourceFor } = await sourceModule();
@@ -161,7 +162,7 @@ for (const [harnessId, variable, filename, defaultFile] of [
     plant(join(moved, filename), { token: "active-account-token" });
     const source = credentialSourceFor({ harnessId, home, variables: { [variable]: moved } });
     expect(source.paths).toContain(join(moved, filename));
-    expect((await Effect.runPromise(source.read)).map((leaf) => Redacted.value(leaf))).toEqual(["active-account-token"]);
+    expect((await Effect.runPromise(source.read)).map((leaf) => Redacted.value(leaf))).toEqual(harnessId === "cursor" ? ["active-account-token", "inactive-default-token"] : ["active-account-token"]);
   });
 }
 
@@ -236,4 +237,17 @@ it("B1 F7: a store with more than 256 distinct leaves fails closed, and the revi
   const registry = makeCredentialRegistry();
   expect(Exit.isFailure(Effect.runSyncExit(registry.open(credentialSourceFor({ harnessId: "codex", home, variables: {} }))))).toBe(true);
   expect(registry.secrets()).toEqual([]);
+});
+
+it("s19 Cursor discovers refreshes and missing stores, and refuses malformed stores", async () => {
+  const { credentialSourceFor } = await sourceModule();
+  const source = credentialSourceFor({ harnessId: "cursor", home, variables: {} });
+  const path = join(home, ".config/cursor/auth.json");
+  expect((await Effect.runPromise(source.read)).length).toBe(0);
+  plant(path, { accessToken: "s19-fake-cursor-first" });
+  expect((await Effect.runPromise(source.read)).length).toBe(1);
+  plant(path, { accessToken: "s19-fake-cursor-refreshed-longer" });
+  expect((await Effect.runPromise(source.read)).some(x => Redacted.value(x).endsWith("longer"))).toBe(true);
+  writeFileSync(path, "{");
+  expect(Exit.isFailure(await Effect.runPromiseExit(source.read))).toBe(true);
 });
