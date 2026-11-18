@@ -1,3 +1,4 @@
+import { permissionModeFor } from "@lgtm/contracts";
 import { spawn } from "node:child_process"
 import { mkdir, mkdtemp, chmod, writeFile, realpath, readFile, readdir } from "node:fs/promises"
 import { join, relative, isAbsolute } from "node:path"
@@ -273,7 +274,7 @@ async function recordOne(settings: HarnessSettings, environment: Record<string, 
     const session = await request("session/new", { cwd: workspace, mcpServers: [] })
     const mode = (session.configOptions as Array<Frame> | undefined)?.find((option) => option.category === "mode")
     if (!mode) throw new RecordingError("Adapter has no mode configuration option")
-    const value = settings.permissionMapping[permission]
+    const value = permissionModeFor(settings, permission)
     const configId = mode.configId ?? mode.id
     const changed = await request("session/set_config_option", { sessionId: session.sessionId, configId, ...(v2 ? { type: "id" } : {}), value })
     if (!changed.configOptions?.some((option: Frame) => (option.configId ?? option.id) === configId && option.currentValue === value)) {
@@ -307,7 +308,7 @@ export const runRecording = async (options: RecordOptions, signal: AbortSignal) 
     if (options.outputPath !== undefined && harnesses.length !== 1) throw new RecordingError("An output filename requires one harness")
     if (options.scenario !== undefined && !safeName(options.scenario)) throw new RecordingError("Invalid scenario name")
     const permission = options.permission ?? "read-only"
-    if (!["read-only", "ask", "edit", "full"].includes(permission)) throw new RecordingError("Invalid permission level")
+    if (!["read-only", "ask", "edit", "auto", "full"].includes(permission)) throw new RecordingError("Invalid permission level")
     const lexicalTemporaryPath = relative(tmpdir(), options.temporaryRoot)
     if (lexicalTemporaryPath.startsWith("..") || isAbsolute(lexicalTemporaryPath)) throw new RecordingError("Recording workspaces must be inside the system temporary folder")
     for (const sample of options.errorSamples ?? []) {

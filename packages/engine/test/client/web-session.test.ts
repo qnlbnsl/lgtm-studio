@@ -1,7 +1,7 @@
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { hasValidChecksum } from "../../src/identity/credential.ts";
 import { join } from "node:path";
 import * as Effect from "effect/Effect";
-import * as TestClock from "effect/testing/TestClock";
 import { expect, it, vi } from "vitest";
 import { registerRebuildCheck } from "../support/rebuildCheck.ts";
 import { connected, eventually, login, post, withWeb } from "../support/webRig.ts";
@@ -10,17 +10,20 @@ registerRebuildCheck({ noLog: true });
 
 const tokenFrom = (cookie: string): Buffer => {
   const text = decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1));
-  return /^[0-9a-f]{64}$/i.test(text) ? Buffer.from(text, "hex") : Buffer.from(text, "base64url");
+  expect(hasValidChecksum(text, "shp_w_")).toBe(true);
+  return Buffer.from(text.slice(6, 49), "base64url");
 };
 const filesIn = (root: string): string[] => readdirSync(root).flatMap((name) => {
   const path = join(root, name); const stat = lstatSync(path);
   return stat.isDirectory() ? filesIn(path) : stat.isFile() ? [path] : [];
 });
 
-it("5.6 memory-only token: catches per-login rotation, a short token, or a token written to a file or database", async () => withWeb((ctx) => Effect.gen(function* () {
+it("r2 each login adds a separate 256-bit token without persisting either token", async () => withWeb((ctx) => Effect.gen(function* () {
   const first = yield* login(ctx);
   const second = yield* login(ctx);
-  expect(first.cookie === second.cookie, "login rotated the engine's one session").toBe(true);
+  expect(first.cookie === second.cookie, "login must rotate the session").toBe(false);
+  expect((yield* Effect.promise(() => post(ctx, "/api/session", undefined, { Cookie: first.cookie }))).status).toBe(204);
+  expect((yield* Effect.promise(() => post(ctx, "/api/session", undefined, { Cookie: second.cookie }))).status).toBe(204);
   const token = tokenFrom(first.cookie);
   expect(token.byteLength).toBe(32);
   const text = first.cookie.slice(first.cookie.indexOf("=") + 1);
@@ -42,13 +45,25 @@ it("5.6 logout: catches leaving either connection open or allowing an old cookie
   expect((yield* Effect.promise(() => post(ctx, "/api/session", undefined, { Cookie: next.cookie }))).status).toBe(204);
 })));
 
-it("5.6 no expiry: catches adding a time-to-live or renewal requirement to the session", async () => withWeb((ctx) => Effect.gen(function* () {
+it("s28 fixed expiry refuses a cookie after thirty days", async () => withWeb((ctx) => Effect.gen(function* () {
   const { cookie } = yield* login(ctx);
-  // TestClock controls Effect time only. Move the wall clock after session
-  // creation too, without replacing network timers or engine follower time.
-  const future = Date.now() + 365 * 24 * 60 * 60 * 1_000;
+  // Move wall time to the exact boundary without advancing the listener's
+  // periodic cleanup or replacing real network timers.
+  const future = Date.now() + 30 * 24 * 60 * 60 * 1_000;
   yield* Effect.acquireRelease(Effect.sync(() => vi.spyOn(Date, "now").mockReturnValue(future)),
     (clock) => Effect.sync(() => clock.mockRestore()));
-  yield* TestClock.adjust(365 * 24 * 60 * 60 * 1_000);
-  expect((yield* Effect.promise(() => post(ctx, "/api/session", undefined, { Cookie: cookie }))).status).toBe(204);
-}), { clock: true }));
+  expect((yield* Effect.promise(() => post(ctx, "/api/session", undefined, { Cookie: cookie }))).status).toBe(401);
+})));
+
+it('r3 a ninth HTTP login closes only the oldest browser sockets and preserves the others', async () => withWeb(ctx => Effect.gen(function* () {
+  const cookies: string[] = []
+  for (let n = 0; n < 8; n++) cookies.push((yield* login(ctx)).cookie)
+  const oldest = yield* connected(ctx, cookies[0]!), second = yield* connected(ctx, cookies[1]!)
+  const ninth = yield* login(ctx)
+  yield* eventually(() => oldest.readyState, state => state === 3, 'evicted browser kept its socket')
+  expect(second.readyState).toBe(1)
+  expect((yield* Effect.promise(() => post(ctx, '/api/session', undefined, { Cookie: cookies[0]! }))).status).toBe(401)
+  for (const cookie of [...cookies.slice(1), ninth.cookie]) expect((yield* Effect.promise(() => post(ctx, '/api/session', undefined, { Cookie: cookie }))).status).toBe(204)
+  expect((yield* Effect.promise(() => post(ctx, '/api/logout', undefined, { Cookie: ninth.cookie }))).status).toBe(204)
+  expect(second.readyState).toBe(1)
+})))

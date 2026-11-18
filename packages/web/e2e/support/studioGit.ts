@@ -41,7 +41,7 @@ export async function exerciseStudioGit(page: Page) {
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, Layer.succeed(Redactor, { redact: (e) => Effect.succeed(e), redactText: (s) => Effect.succeed(s) }))
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck(); yield* seedAccount('launch', 'cursor')
-        success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: harnessSettings('cursor', { adapterPath: process.execPath, reportedModes: [{ id: 'default', level: 'ask' }] }) }))
+        success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: harnessSettings('cursor', { adapterPath: process.execPath, reportedModes: [{ id: 'default', level: 'ask' }, { id: 'acceptEdits', level: 'edit' }] }) }))
         success(yield* call(ownerCredential, 'accounts set-secret', { accountId: 'launch', name: 'CURSOR_API_KEY', nonce: 'studio-git-test', value: Redacted.make('synthetic-studio-git-key') }))
         success(yield* call(ownerCredential, 'project.settings.set', { settings: { workspaceFolder: rig.root, shell: 'zsh' } }))
         const repoId = success(yield* call(ownerCredential, 'project.repository.add', { name: 'Git browser repository', path: rig.work, machineId: 'local' })).repoId

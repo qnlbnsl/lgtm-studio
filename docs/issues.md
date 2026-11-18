@@ -11608,10 +11608,11 @@ Found: 2026-11-13, by hand on the first real project.
 State: fixed in `packages/studio/src/connection.ts`, which asks the session route after a lost connection and shows sign-in when the session has ended, though no browser journey covers a real restart. Verified against the code on 2026-11-16.
 Earlier state: open.
 
-A restart of the service ends the browser's session.
-An open page of the live website then shows "Offline" and stays there.
-Only a reload brings up the Login page.
-The page should notice that the service answers again and ask the owner to sign in.
+Before the owner's decision of 2026-11-17, a restart ended the browser's session.
+The session now survives a restart with the same password for up to 30 days.
+At the time of the original report, an open page showed "Offline" and stayed there.
+Only a reload brought up the Login page.
+The page needed to notice that the service answered again and ask the owner to sign in.
 
 ## 659. The live Mocks tab did not read recorded bundles.
 
@@ -14512,16 +14513,17 @@ It cannot attach to an agent's terminal or transfer that terminal's keyboard.
 The live Session actions menu draws Watch agent session and Take over agent session disabled.
 Both controls show “Engine work needed” on hover.
 
-## 907. Ended project shells cannot reconnect.
+## 907. Project shells could not reattach after a reload.
 
-State: open. Checked by s20-controls on 2026-11-16. Reconnect remains disabled with Engine work needed. The engine has no resumed terminal attachment or ownership transfer for a replacement connection. An ended shell cannot be resumed. Kind: visible to the owner.
+State: fixed by s28-session on 2026-11-17 for a live shell within the five-minute disconnect grace period.
+The owner approved reattachment on 2026-11-17.
 
-A project shell belongs to its opening connection.
-Reloading the page or losing that connection ends the shell after the grace period.
-The live Reconnect control is disabled, with “Engine work needed” on hover.
-A New session control opens a fresh shell instead.
-Remote worktree menu items are disabled because remote terminal transport is unbuilt.
-They show “Engine work needed” on hover.
+The live Terminal tab lists and reattaches the owner's web shells across authenticated owner web sessions.
+The newest output reader takes over cleanly, while other signed-in connections may still type.
+It restores at most 64 kibibytes of recent output from memory.
+A closed or expired shell cannot be resumed.
+Remote terminal transport remains unbuilt.
+The remote worktree choices remain disabled with “Engine work needed” on hover.
 
 ## 908. Interactive shell jobs use separate process groups.
 
@@ -18769,22 +18771,26 @@ Injected failures before checkout, after branch creation, and after checkout cov
 
 ## 1256. The existing home-folder ceiling blocks lead starts in home-hosted repositories.
 
-State: Open, preserving the existing security rule.
+State: Fixed by unit s26, under the owner's decision of 2026-11-17.
 
-The folder ceiling refuses an agent-started child anywhere inside the owner's home folder.
-The existing ceiling tests explicitly require that refusal for protected folders and their descendants.
-A project stored under the owner's home therefore cannot start workers through its lead.
-An owner-started worker still has the existing owner exception.
-A temporary-directory reproduction returned `FolderRefused` with the protected-folder reason.
-This unit does not weaken that rule.
-Using a repository outside the protected home permits lead-started workers under the current policy.
-Changing that policy requires the owner's explicit security decision.
-The independent review confirmed that `service.ts` supplies the actual `HOME` as the ceiling's home folder.
-The ceiling also refuses ancestors of protected folders and descendants of the state and plugin folders.
-Its owner exception returns before those checks.
-A round 2 regression places the whole repository inside a synthetic home.
-It asserts the exact existing protected-folder reason before any Git process, agent event or allocation.
-The ceiling implementation remains unchanged.
+The old ceiling refused lead-started workers in every repository under home.
+The owner authorized a narrow exception for registered worktrees of the starter's own project.
+The project worktree, team worktrees and engine allocations now grant that exception.
+An arbitrary manually registered descendant grants nothing.
+The engine compares real device and inode identities.
+The home itself, its ancestors, the state folder, plugin root, immediate home dotdirectories and existing configured login folders stay protected.
+Under the round 2 clarification, protection applies to the child folder, including mounted protected folders.
+A protected sibling elsewhere in the registration does not refuse a clean child.
+The nearest registered workspace across all projects sets the boundary.
+Foreign and unregistered nested checkouts cannot inherit a broader grant.
+The current engine records are consulted on each start, recovery reload and resume.
+The allocation's private pending registration is accepted only at its validated precommit log head.
+After append, only the committed registration grants admission.
+Registration removal makes a later resume refuse with a sentence reason.
+The intentional round 2 pin now asserts successful allocation inside a synthetic home.
+The new regressions cover aliases, protected folders, mounted identities, manual roots, a repository at home, defaults and recovery after registration replacement.
+There is no unregister command today.
+The recovery regression replaces the stored worktree row with a new path to remove the old folder's registration.
 
 ## 1257. The installer process-tree test can observe a live descendant after timeout cleanup.
 
@@ -19087,7 +19093,8 @@ Read: retaining oversized states fixes repeated compilation rather than this lit
 Found: 2026-11-16, while reproducing the owner's round-five thread failure.
 State: the product already appends both deltas under the same item identifier. The acceptance helper now uses the product's grouping function.
 
-Read: the service creates and registers a random web-session token even when no web password is configured.
+Read: before s28-session, the service created and registered a random web-session token even when no web password was configured.
+Read: s28-session creates a web token only after a successful sign-in.
 Read: that token and the agent token are the scenario's two random registered credentials.
 Read: its owner credential is fixed.
 Read: its account has no secret reference and its temporary login stores do not exist.
@@ -19782,3 +19789,590 @@ State: Open. Found by the fourth independent review of unit s27-pullrequest on 2
 
 The hosted variant in `packages/engine/test/project/main-review.test.ts` never asserts a fetch call or a GitHub delivery mode.
 Its 201-file case does not check that no Git attempt is left pending.
+
+## 1403. A disconnect before the first terminal subscription retained its unread queue.
+
+Found and fixed during s28-session on 2026-11-17.
+The initial attachment timer prevented disconnect cleanup from switching the project terminal to bounded replay memory.
+A detached shell could pause on its unread queue instead of continuing during the grace period.
+Disconnect cleanup now releases that queue and resumes the pseudo-terminal while retaining only bounded recent output.
+Real server tests cover disconnect before subscription, scrollback bounds, and the detached shell limit.
+
+## 1404. A resumed session needs redaction before its first browser request.
+
+Found and fixed during s28-session on 2026-11-17.
+The existing hash-based redactor recognized only structured agent tokens.
+A stored hash of an arbitrary web token would not protect that token before the browser authenticated again.
+Web tokens now use a separate `shp_w_` prefix with the existing 256-bit payload and checksum construction.
+The redactor recognizes that prefix against the stored session hash.
+The agent verifier continues to accept only the agent prefix.
+A real engine restart test prints the token through a synthetic agent before presenting its cookie again.
+
+## 1405. Shared repository checkouts need project identity when terminals reattach.
+
+Found and fixed during s28-session on 2026-11-17.
+Two projects in one repository can both offer its main checkout in Terminal.
+Matching restored terminals only by their checkout could display the same shell in both projects.
+The terminal list now includes the project identifier used to open each shell.
+The page restores only the selected project's shells.
+A mapping regression covers a shared main checkout.
+
+## 1406. Service settings assumed that a restarted service must refuse its cookie.
+
+Found and fixed during s28-session on 2026-11-17.
+The restart poller waited only for an unauthorized session response.
+Persistent sessions can return a successful response instead.
+The poller now reconnects for a successful session probe while retaining the revoked-session path.
+The service hint, confirmation, refusal, and progress toast now describe the preserved sign-in and closed terminals.
+A focused regression exercises both session responses.
+
+## 1407. The full browser run had failures that passed when rerun.
+
+Observed during s28-session on 2026-11-17.
+The whole browser suite passed 67 journeys and failed eight journeys.
+The failures covered the legacy merge to main, legacy Git evidence, legacy remote Git operations, project creation at eight sizes, live projects and board, workflows, Files, and Terminal.
+A rerun of only those eight failures with one worker passed six journeys, including the final terminal reload journey.
+The Git evidence and Files journeys still timed out on five-second busy-state checks in that batch.
+Each then passed in a separate one-test run with its original assertions and timeout.
+The six journeys that failed only in the whole run were the merge to main, remote Git operations, project creation, live projects and board, workflows, and Terminal.
+The whole run overlapped review edits, so it does not establish that every transient failure was caused by load.
+Earlier issues 1374 and 1375 record similar Git, board, workflow, and Files waits.
+State: open as a record of batch-run failures, with every failed journey passing on the final source in a rerun.
+
+Round 2 repeated the whole browser suite on settled source.
+It passed 65 journeys and failed 10 journeys.
+Individual one-test invocations passed conflict resolution, project placement, live projects and board, the long website Git journey, and Files.
+Main approval, master approval, remote Git operations, first-run navigation, and throttled oversized-state recovery failed again individually.
+Those five failures are not classified as whole-run-only.
+Main approval also failed at its merge-completion wait when the changed production modules were temporarily restored to signed Round 1.
+The original assertions and timeouts remain unchanged.
+State: open with the repeated failures above still unresolved.
+
+Round 3 ran the whole unit and browser suites sequentially on signed source.
+The whole unit suite passed all 678 files and 10,363 tests.
+The whole browser suite passed 68 journeys and failed seven journeys.
+The seven failures were main approval, stale reviewed heads, reported-evidence approval, remote Git, eight-size goal/project creation, live projects and board, and Files.
+Each passed in a separate one-test invocation with one worker.
+Those seven failed only in the Round 3 whole run.
+The extended Terminal journey passed in the whole run.
+Five isolated runs per journey on the base passed two main approvals, three master approvals, four remote Git journeys, five Welcome journeys, and four throttled-state journeys.
+The same five-run batches on signed Round 3 passed every attempt.
+The base was the unmodified source at d4fb1877.
+All existing assertions and timeouts were retained.
+The host remained shared and busy despite serial comparison runs.
+These counts reproduce intermittent base failures without establishing a controlled latency benchmark.
+State: open for the whole-run failures, with all seven passing individually in Round 3.
+
+## 1408. A sign-in displaced the owner's other browsers.
+
+Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
+The first brief incorrectly required global token rotation.
+The implementation consequently signed out the owner's other devices.
+The revised collection holds eight independent sessions with independent creation times.
+A ninth sign-in evicts the oldest session.
+Logout revokes only the presenting browser.
+Real process restart tests cover two browsers, individual logout and expiry, and global password invalidation.
+
+## 1409. A stored password binding permitted fast offline guesses.
+
+Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
+The original binding used the stored verifier as its public hash-based message authentication code (HMAC) key.
+A leaked record therefore permitted one fast digest per password guess.
+Each record now derives its binding key through scrypt with an independent random salt.
+The fixed derivation parameters require about 64 mebibytes of memory per guess.
+Every binding is checked before the web listener starts.
+A changed or removed password invalidates the whole collection before any old cookie can authenticate.
+
+## 1410. A half-open reader prevented terminal reattachment.
+
+Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
+The previous subscription flag remained set until the old socket closed.
+A new authenticated reader now takes over with a new subscription generation and recent output replay.
+The old reader ends cleanly without detaching its replacement.
+Both signed-in connections may continue typing.
+A real transport test pauses the old socket before the phone takes over.
+A browser journey covers two tabs and an independently signed-in phone using the same shell process.
+
+## 1411. Web session cleanup crossed unrelated connection boundaries.
+
+Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
+The original sign-out sweep included terminals and harness sign-ins without a web session.
+Web login, logout, expiry, and eviction now clean only the affected web sessions.
+Round 2 kept an affected shell only when another live web session was reading it.
+Round 3 removes that reader condition, as recorded in 1422 below.
+The last web session's logout closes every web shell.
+Local socket terminals and unrelated harness sign-ins remain alive.
+Display cleanup also tracked only one global service.
+Each display frame now records its initiating web session so one browser's logout preserves the other's display.
+
+## 1412. Session revocation could reject memory while leaving a valid record.
+
+Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
+The previous implementation cleared memory before removing the session file.
+A failed removal could allow the old cookie again after restart.
+Updates now commit the complete snapshot before changing memory.
+A failed update attempts an empty snapshot and then a mode-zero invalidation.
+If storage cannot be invalidated, the operation reports failure without claiming a committed revocation.
+Fault injection covers rename, flush, and unlink failures.
+Logout now also runs before the recovery gate.
+
+## 1413. Replay history repeatedly encoded its accumulated output.
+
+Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
+The original history concatenated and encoded its retained text on every output chunk.
+A ring now tracks measured chunk byte counts and builds replay only on subscription.
+Small writes coalesce into bounded chunks without encoding retained history.
+An initial ring implementation retained too little output when thousands of tiny writes exhausted its metadata slots.
+The stress regression now requires a near-full 64-kibibyte replay window for those writes.
+Replay skips an incomplete leading terminal escape sequence and preserves Unicode boundaries.
+
+## 1414. Terminal hints and restart help retained the old session assumptions.
+
+Found in the independent review and fixed during s28-session round 2 on 2026-11-17.
+The reattach hint appeared after shell exit and explicit close.
+It now appears only for connection loss.
+A displaced output reader explains that typing still works.
+Command-line restart help now states that pages stay signed in and terminals close.
+The web test rig now passes the state folder explicitly instead of relying on a production environment fallback.
+
+## 1415. The large-output terminal test can mistake command echo for completion.
+
+Observed during the s28-session round 2 whole unit run on 2026-11-17.
+The test waits 200 milliseconds after sending `stty -echo`.
+It then accepts any occurrence of `LARGE_DONE` as completion.
+The failed run still contained that marker in the echoed command before all 400,000 lines arrived.
+Its output-length assertion consequently ran after only a prefix of the output.
+The original test passed when rerun alone.
+The timeout and assertions remain unchanged.
+State: open as a fixture synchronization problem.
+
+## 1416. A Git overlap test failed before its held subprocess started.
+
+Observed during the s28-session round 2 whole unit run on 2026-11-17.
+The test named "issue 579/583: queued registration and creation do not block a positive independent writer while real Git is held" did not observe its subprocess marker within five seconds.
+It failed again when selected alone with the original assertion and timeout.
+The failure occurs before the test launches its queued writers.
+The Git implementation and this test are unchanged by round 2.
+A control run with the changed production modules restored to signed Round 1 passed this case.
+A following run with the exact round 2 source restored failed the five-second marker wait again.
+The test uses the local socket and does not start a web listener.
+These observations do not establish the cause of the difference.
+State: open with the failure unresolved.
+
+Round 3 selected this test alone five times on the unmodified base at d4fb1877.
+Four base runs passed.
+The failed base run reached the same five-second subprocess-marker assertion.
+All five runs on signed Round 3 passed.
+The complete 45-test main-review file also passed in the whole unit suite.
+The Git implementation and this fixture have no diff from the base.
+No assertion or timeout was changed.
+The earlier single-control difference therefore does not establish a regression from this unit.
+State: reproduced on the base as an intermittent setup failure.
+
+## 1417. A backward clock step invalidated valid web sessions.
+
+Found in the second review and fixed during s28-session round 3 on 2026-11-17.
+Startup rejected every record if one creation time was ahead of the current clock.
+Periodic expiry also deleted a session after a backward step.
+Startup now permits five minutes of skew.
+Runtime expiry deletes only records that have reached their 30-day wall-clock boundary.
+A clock moving backward can delay that boundary.
+
+## 1418. The stored password binding did not authenticate its creation time.
+
+Found in the second review and fixed during s28-session round 3 on 2026-11-17.
+Changing a record's creation time previously left its binding valid.
+Version 3 includes that time in the hash-based message authentication code (HMAC) input.
+Earlier development records are refused rather than migrated.
+SECURITY.md records the deliberate choice of scrypt N=65536, r=8, and p=1 and the tradeoff against the higher common recommendation.
+
+## 1419. An empty replay left a transferred terminal paused.
+
+Found in the second review and fixed during s28-session round 3 on 2026-11-17.
+An incomplete terminal escape string could make the safe replay empty.
+Replacing a full unread queue with that empty replay previously left the pseudoterminal paused forever.
+Replacing the queue now resumes reads even when replay has no text.
+
+## 1420. A detached verbose shell kept consuming output until its grace limit.
+
+Found in the second review and fixed during s28-session round 3 on 2026-11-17.
+The replay parser built per-character array literals while reading detached output without backpressure.
+It now uses constant comparisons.
+A detached shell pauses reads when the bounded ring first turns over.
+Reattachment resumes reads.
+The native-exit watcher still drains a finite tail before the pseudoterminal closes.
+
+## 1421. A displaced browser never learned that its shell ended.
+
+Found in the second review and fixed during s28-session round 3 on 2026-11-17.
+A takeover ended the old output stream without a later shell-exit update.
+The existing notice bar now explains how to take output back.
+A displayed displaced shell checks the existing terminal list once per second without taking over its output.
+An absent shell gets the existing ended bar and disabled input.
+Opening the Terminal tab still attaches listed shells automatically.
+The browser-engine sign-out comment now describes per-session logout.
+
+## 1422. A typing-only or reloading browser could lose a shared web shell.
+
+Found in the second review and fixed during s28-session round 3 on 2026-11-17.
+Round 2 required another browser to be actively reading when the creating session ended.
+A web shell now stays alive while any signed-in owner web session remains, subject to its detached grace period.
+The last session ending still closes all web shells.
+The owner approved restart survival and reload reattachment on 2026-11-17.
+Sharing shells across that owner's sessions is this unit's design choice for the single-owner product.
+Simultaneous signed-in browsers preserve the earlier product behaviour.
+
+## 1423. Failed startup invalidation could leave usable records on storage.
+
+Found in the second review and fixed during s28-session round 3 on 2026-11-17.
+The earlier service could accept a valid file without proving it could update that file.
+Startup now checkpoints validated records before accepting any cookie.
+If checkpoint and invalidation both fail, that service accepts no session and refuses sign-in until restart.
+No process can durably invalidate an unchanged file while every storage mutation fails.
+SECURITY.md now states that limit and explains that restoring an old state-folder backup can restore a signed-out cookie.
+
+## 1424. Revoked-owner guards and real ninth-login eviction lacked direct coverage.
+
+Found in the second review and covered during s28-session round 3 on 2026-11-17.
+The existing guards were present in start, lookup, and list.
+Dedicated cases now test each guard while another owner session keeps the shell alive.
+A real web-server case logs in nine times and requires only the oldest browser's sockets and cookie to be rejected.
+
+## 1425. One session record dated in the future still voids every web session.
+
+State: Open. Found by the third independent review of unit s28-session on 2026-11-17.
+
+At load, a session record dated more than five minutes ahead of the clock empties the whole session file (`packages/engine/src/client/web/session.ts`).
+A host that starts with its clock an hour behind, before time synchronisation, signs every device out.
+The creation time is authenticated by the record's binding, so the test is redundant.
+The fix drops the test, or skips only that record.
+
+## 1376. Restricted process execution can make installer output tests report empty output.
+
+State: Diagnosed as an execution sandbox limitation during unit s26.
+
+Three installer tests returned empty output when run inside the coding agent's restricted sandbox.
+A separate Node.js child-process reproduction also lost asynchronous standard output there.
+The same three tests passed outside that sandbox without a production code change.
+Chromium also exited with an operation-not-permitted error inside that sandbox.
+The required suites were rerun outside it with temporary homes and local test services.
+
+## 1377. Older harness settings have no automatic permission mapping.
+
+State: Handled with an explicit edit fallback in unit s26.
+
+The pinned Claude and Codex adapters expose automatic review.
+Historical harness events have only the original four mappings.
+Those events still decode without migration.
+Round 2 upgrades the effective value of an exact previous factory setting when read.
+An owner-edited historical mapping remains unchanged.
+An `auto` request falls back to the stored edit mapping when no automatic mapping is configured.
+Gemini and Cursor defaults also use the edit fallback because this unit verifies no separate automatic review mode for them.
+The harness status reports the fallback.
+Existing agents and owner-edited permission defaults are not changed.
+
+## 1378. Alternate environment homes can place harness login stores inside a worktree.
+
+State: Protected in unit s26.
+
+The harness-specific home variable is not the only way to move a login store.
+An account can override `HOME`.
+Cursor can also override `XDG_CONFIG_HOME`.
+The folder ceiling protects the existing login directories derived from these fallbacks.
+Secret references are resolved without reading credential files.
+Handler regressions cover both override paths under a registered project root.
+
+## 1379. Seven browser journeys failed in the whole run and passed separately.
+
+State: Open as whole-run-only failures observed during unit s26.
+
+The whole browser suite passed 68 journeys and failed seven journeys.
+The merge-to-main journey timed out while waiting for the merge result.
+The stale-evidence journey timed out while waiting for its review state.
+The temporary-remote journey timed out while waiting for its operation result.
+The project-creation journey timed out while the dialog was submitting.
+The projects-and-board journey timed out before the new project appeared.
+The workflow journey timed out before the phase status appeared.
+The file-editor journey timed out while its save was busy.
+Each failed journey passed in a separate run with its existing assertions and timeout.
+The affected cases are `git.spec.ts:183`, `git.spec.ts:253`, `git.spec.ts:316`, `new-project.spec.ts:149`, `studio.spec.ts:372`, `studio.spec.ts:1058`, and `studio.spec.ts:1200` under `packages/web/e2e/`.
+The shared merge source line also selected the master variant during its first rerun.
+That variant passed in the whole suite but timed out when run after the main variant.
+It passed when rerun by its own title.
+The permission-settings journey passed in the whole run.
+
+## 1380. The whole unit run failed a sign-in cleanup check that passed alone.
+
+State: Open as a whole-run-only failure observed during unit s26.
+
+The final whole unit run failed the existing process-group cleanup case in `packages/engine/test/harnesses/signin.test.ts`.
+The case is "stops the process group on timeout, owner stop and disconnection after the grace period".
+It tried to read the fake child's PID file after the session ended, but the file did not exist.
+The failure was `ENOENT` at the existing `readFileSync(pidfile)` assertion setup.
+The exact case passed when rerun alone with its existing assertions and timing limits.
+This unit changes no sign-in session or process-group cleanup implementation.
+
+## 1381. Stored factory defaults kept new leads at ask after the upgrade.
+
+State: Fixed in round 2 of unit s26 and refined by the owner's round-three field policy.
+
+The first implementation changed only defaults for fresh installations.
+Round two upgraded an exact previous factory row when read.
+Round three upgrades factory permission fields despite unrelated owner edits.
+Every stored ask default now reads as auto.
+Other defaults and custom permission fields are kept.
+The stored log and existing agents remain unchanged.
+Status distinguishes an older stored mapping from a harness with no separate automatic mode.
+The current pre-unit-log regressions cover all four factory harness shapes through restart and real start handlers.
+Issue 1389 records the field policy.
+
+## 1382. Automatic review can approve commands without raising an engine permission request.
+
+State: Documented as an accepted limit under the owner's decision of 2026-11-17.
+
+The engine's persistent-settings routing applies only to requests the harness raises.
+A command approved inside the harness may touch settings files without asking the owner.
+The folder ceiling constrains the start folder rather than the paths those commands touch.
+SECURITY.md and decision row 56 now state these limits.
+The website's Automatic review description no longer promises that risky actions ask.
+
+## 1383. A broad project registration admitted nested foreign or unregistered checkouts.
+
+State: Fixed in round 2 of unit s26.
+
+A main checkout can contain linked worktrees belonging to another project.
+The nearest registered workspace across all projects now sets the boundary.
+A nested checkout without its own project registration cannot inherit the broad root's grant.
+A registration that becomes a symbolic link cannot follow another checkout.
+Real directory identities grant admission.
+Path spelling is used only to refuse a replaced registration.
+Two-project and hand-made linked-worktree regressions cover this distinction.
+
+## 1384. Invalid login paths blocked unrelated agent starts and recovery.
+
+State: Fixed in round 2 of unit s26.
+
+Login-folder discovery now excludes relative paths, missing paths and regular files.
+Existing absolute login directories remain protected.
+Regressions cover a relative Codex home and a regular file through start and resume.
+
+## 1385. Protecting an entire registration blocked the self-hosted build loop.
+
+State: Fixed under the owner's round 2 clarification of the decision of 2026-11-17.
+
+A registration can contain the service checkout and a clean worker worktree beside it.
+Protection now tests the child's own folder and the protected mounts it contains.
+The nearest registration is selected without depending on record order.
+A main-checkout source may contain the service while allocating a worker.
+That preliminary source check returns no spawn grant.
+A source that is or is inside a protected folder remains refused before Git runs.
+The actual allocated child passes ordinary folder admission before registration and before spawn.
+Regressions preserve the no-Git and unchanged-inventory assertions for a protected start.
+A real Git allocation beside a synthetic service checkout also survives fresh resume.
+
+## 1386. An omitted worker level ignored the owner's saved harness default.
+
+State: Fixed in round 2 of unit s26.
+
+An omitted permission uses the lowest of automatic review, the saved harness default and the starter's ceiling.
+An explicit permission remains subject to the starter's ceiling.
+A full-permission lead respects a saved edit default when it omits the worker level.
+The owner's round-three decision upgrades stored ask harness defaults to auto.
+Issue 1389 records that explicit default change.
+The role instructions and start-tool description state this rule.
+
+## 1387. The whole round-two unit run failed a secret-carry stop check that passed alone.
+
+State: Open as a whole-run-only failure observed during round 2 of unit s26.
+
+The whole unit run failed the existing stop case in `packages/engine/test/runner/secret-carry-s19.test.ts`.
+The case is "s19 stop flushes a genuine secret prefix and its queued tool".
+It observed no delivery updates immediately after stopping the runner.
+It expected the message and queued tool updates.
+The exact case passed alone with its existing assertions and timing limits.
+This round changes no stop or redaction implementation.
+
+## 1388. The round-two browser run had eight failures, and merge-to-main still failed alone.
+
+State: Open as browser failures observed during round 2 of unit s26.
+
+The whole browser suite passed 67 journeys and failed eight journeys.
+The affected cases are `git.spec.ts:183` for main, `git.spec.ts:253`, `git.spec.ts:316`, `new-project.spec.ts:113`, `new-project.spec.ts:324`, `studio.spec.ts:372`, `studio.spec.ts:970`, and `studio.spec.ts:1200` under `packages/web/e2e/`.
+The main merge button stayed disabled in the whole run.
+The stale-evidence review button stayed disabled in the whole run.
+The temporary-remote case did not observe its pull result in time.
+The project-placement case exceeded its total time limit.
+The exhausted-recovery case did not find its expected browser test hook.
+The projects-and-board case did not observe its expected topbar text.
+The extended Git case exceeded its six-minute limit while refreshing.
+The file-editor case remained busy after saving.
+Seven of these cases passed individually with their existing assertions and time limits.
+The extended Git case passed in 5.3 minutes.
+The stale-evidence case failed its first individual run while the unit suite was active and passed its final individual run after that suite finished.
+The merge-to-main case failed both individual runs while waiting for the merged destination message.
+Its final individual run had no competing whole suite.
+The browser gate therefore remains failing.
+This round changes no Git merge implementation or existing browser assertion.
+The round-three comparison did not reproduce the named historical failures on the base or either tested unit revision.
+Issue 1398 records the round-three whole-run failures and their separate passing reruns.
+
+
+## 1389. Owner model edits prevented the automatic permission upgrade.
+
+State: Fixed in round 3 of unit s26 under the owner's explicit default decision.
+
+The old upgrade required the entire stored harness row to match the previous factory row.
+Factory permission mappings and reported modes now upgrade independently of model, effort, run mode and adapter edits.
+Every stored ask default reads as auto.
+Other defaults and custom permission fields remain intact.
+The event log and existing agent levels remain unchanged.
+Regressions use the previous factory shapes and current executable discovery for all four harnesses.
+Existing test fixtures now use the current auto default.
+The saved-default cap regression uses edit because the owner explicitly replaced stored ask defaults.
+A future website control is recorded in the feature list.
+
+## 1390. A refused worker allocation could change a protected checkout.
+
+State: Fixed in round 3 of unit s26.
+
+A clean linked source could allocate beneath a protected main checkout before child admission refused.
+Git could leave an empty allocation directory and a changed exclusion file after rollback.
+The allocation directory and common directory are now checked before worktree creation.
+Missing allocation directories are checked through their nearest existing ancestor.
+The regression preserves the existing exclusion bytes, branch inventory and workspace inventory.
+The preliminary check returns no spawn grant.
+
+## 1391. A foreign checkout outside home bypassed the project boundary check.
+
+State: Fixed in round 3 of unit s26.
+
+The boundary check previously ran only when an own-project registration enclosed the requested folder.
+A foreign sibling checkout outside home could pass through shared-repository containment.
+The check now also refuses that foreign boundary without an enclosing own registration.
+Read-only permission does not bypass the boundary.
+The earlier Git scope for direct manual team children outside home remains available.
+Those manual registrations still grant no admission inside home.
+Existing non-local starts that retain their folder still avoid Git.
+Allocation registration and machine refusals retain their specific recovery sentences.
+
+## 1392. Reading harness settings repeated executable discovery.
+
+State: Fixed in round 3 of unit s26.
+
+Commands and per-agent recovery could repeatedly probe the executable search path and repeat missing-adapter warnings.
+The real service now resolves factory discovery once at startup.
+Reset uses that startup snapshot.
+Ordinary settings reads use the latest stored rows and pure permission migration.
+A regression counts discovery across settings reads and starts.
+
+## 1393. An unreadable home dotfolder blocks unrelated agent starts.
+
+State: Documented as a fail-closed limitation in round 3 of unit s26.
+
+An unreadable home dotfolder can block starts and recovery outside home too.
+An unresolved alias could point into the requested folder.
+The engine cannot prove that entry unrelated by directory identity.
+SECURITY.md now states this refusal and the owner's remedy.
+
+## 1394. The folder documentation omitted shared Git settings and clean subfolders.
+
+State: Clarified in round 3 of unit s26.
+
+Sibling worktrees share the Git common directory, configuration and hooks with the service checkout.
+Folder admission does not isolate those settings.
+The main checkout root containing the service is refused as a child folder.
+A clean subfolder such as packages remains admitted when the parent is already in that main checkout.
+The clean-subfolder regression passed before the clarification.
+
+
+## 1395. Project fixtures advertised only the previous default mode.
+
+State: Fixed in round 3 of unit s26.
+
+The whole unit run found project fixtures that advertised only the fake harness's ask mode.
+The automatic default falls back to their configured edit mapping.
+Lead selection correctly refused that unreported mode before the intended Git and project assertions ran.
+The affected fake harness settings now advertise the existing edit mapping too.
+Production mode validation remains unchanged.
+The existing assertions and time limits remain unchanged.
+Frozen historical factory fixtures retain their old shapes.
+
+
+## 1396. The boundary fix mistook a broad own registration for a foreign project.
+
+State: Fixed in round 3 of unit s26.
+
+Two existing resume tests exposed an own-project registration spanning a home ancestor outside home.
+That broad registration cannot grant admission inside home.
+It still identifies the project's boundary outside home.
+The boundary comparison now distinguishes that membership from a grant for a home descendant.
+The ordinary protected-folder and containment checks still apply to the child's actual directory.
+The existing resume assertions remain unchanged.
+The foreign-checkout regressions still require refusal.
+
+
+## 1397. Some test fixtures inherit the invoking home for readiness checks.
+
+State: Open as a test-isolation gap found in round 3 of unit s26.
+
+The common unit setup clears provider variables but does not replace HOME.
+Some Git fixtures also omit their own HOME override.
+Lead readiness builds its environment from the invoking process before checking login stores.
+Those fixtures can therefore probe login paths outside their synthetic rig.
+The earlier round-three commands did not provide a synthetic outer home.
+No real login store was inspected to determine whether such a file existed.
+Subsequent validation uses a temporary outer home and clears provider variables before starting the test runner.
+The wrapper keeps the installed browser binary cache available without using it as a login directory.
+A repository-wide test-environment fix remains separate work.
+
+
+## 1398. Seven browser journeys failed in the whole run and passed separately.
+
+State: Open as whole-run-only browser failures observed in round 3 of unit s26.
+
+The whole browser run passed 68 journeys and failed seven journeys.
+The main merge case at `git.spec.ts:183` did not observe the merged dialog content within five seconds.
+The stale-evidence case at `git.spec.ts:253` timed out waiting for review dialog content.
+The temporary-remote case at `git.spec.ts:316` did not observe the fetch acknowledgment within five seconds.
+The eight-size creation case at `new-project.spec.ts:149` still showed the creation dialog after five seconds.
+The throttled-state case at `oversized-state.spec.ts:25` timed out waiting for a state-marker predicate.
+The projects-and-board case at `studio.spec.ts:372` timed out waiting for the expected topbar text.
+The file-editor case at `studio.spec.ts:1200` still reported itself busy after five seconds.
+All seven passed as exact-title single-test reruns with their existing assertions and time limits.
+No other test, typecheck or install of this worker was active during those reruns.
+The earlier isolated attribution also passed the main merge, temporary remote, placement and both issue-579 cases on the base, round one and round three.
+That attribution used a synthetic outer home with a one-minute load between 14.27 and 23.39.
+It did not reproduce those historical failures on any revision.
+The long Git workspace journey at `studio.spec.ts:970` passed the whole run in 5.4 minutes.
+
+## 1399. A custom harness that reports no edit mode can no longer start with its default.
+
+State: Open. Found by the third independent review of unit s26-leadstart on 2026-11-17.
+
+A stored harness default of "ask" is read as "auto" for every harness row (`packages/engine/src/runner/harnesses.ts`).
+A harness without an automatic mode falls back to its "edit" mapping.
+An owner-added harness that reports only its plan and ask modes then fails a start with an omitted permission level, with "mode is not recorded".
+The fix keeps "ask" when the row's reported modes contain neither its automatic nor its edit mapping.
+
+## 1400. The harness default "ask" is accepted on save and never takes effect.
+
+State: Open. Found by the third independent review of unit s26-leadstart on 2026-11-17.
+
+The `harnesses set` command accepts a default permission of "ask" and replies with success.
+Every later read returns "auto", following the owner's decision of 2026-11-17 that "auto" is the default.
+The command should refuse "ask" with a sentence, or the engine should store a marker for an explicit choice.
+
+## 1401. Resetting harness settings uses the probe taken at service start.
+
+State: Open. Found by the third independent review of unit s26-leadstart on 2026-11-17.
+
+The service resolves the installed harness defaults once at start.
+A harness installed while the service runs is not found by `harnesses reset` until a restart.
+Before unit s26-leadstart the reset probed again.
+
+## 1402. The visible changes list of unit s26-leadstart omitted three effects.
+
+State: Recorded. Found by the third independent review of unit s26-leadstart on 2026-11-17.
+
+The list omitted the reset behaviour of issue 1401 and the start refusal of issue 1399.
+It also omitted that a lead's worker start now reports an unregistered checkout or a machine mismatch before a permission or folder refusal.

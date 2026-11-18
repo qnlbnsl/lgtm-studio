@@ -60,10 +60,23 @@ See [SECURITY.md](../SECURITY.md) for this boundary.
 
 Changing the password means changing the service environment and restarting the
 engine.
-A restart ends every existing web session.
-Logging out also ends every client's session.
+A web session survives a restart with the same password for at most 30 days from sign-in.
+Changing or removing the password ends every session.
+Up to eight independently signed-in browsers or devices can stay connected together.
+A new sign-in adds a session and evicts the oldest only when all eight slots are full.
+Logging out ends only that browser's session.
 The browser does not store the password.
 The session token is held in a cookie that page scripts cannot read.
+The service stores a verifier in the private state folder instead of storing that token.
+Project terminals reattach after a page reload within a five-minute disconnect grace period.
+They replay at most 64 kibibytes of recent output from memory.
+Any signed-in owner device can pick up the same web shell.
+The newest output reader takes over, while other signed-in tabs can still type.
+Web shells stay alive while any signed-in owner session remains, subject to the five-minute detached grace limit.
+A remaining browser can be reloading or typing without reading output.
+The displaced tab explains how to take output back and checks for shell exit without taking over again.
+Logging out of the last web session closes all web shells.
+A service restart still closes the terminals.
 
 ## Connect the phone through WireGuard
 

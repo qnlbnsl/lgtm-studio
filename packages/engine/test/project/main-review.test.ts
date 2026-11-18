@@ -69,7 +69,7 @@ const setup = (base = "main") => Effect.gen(function* () {
   yield* registerRebuildCheck()
   if (base !== "main") git(rig.work, "branch", "-m", base)
   yield* seedAccount("launch", "cursor")
-  success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }] }) }))
+  success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }] }) }))
   success(yield* call(owner, "accounts set-secret", { accountId: "launch", name: "CURSOR_API_KEY", nonce: "review-fixture", value: Redacted.make("synthetic-review-fixture-key") }))
   const socket = join(rig.stateFolder, "review.sock"), token = randomBytes(32).toString("base64url")
   yield* Server.serve({ socketPath: socket, ownerCredential: Redacted.make(token), debug: false })

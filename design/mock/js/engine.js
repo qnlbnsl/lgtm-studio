@@ -15,7 +15,7 @@
 //                      in the store's shape, such as { session }, { conn } or { repos, projects,
 //                      teams, agents, requests, machines, owner }. Only this route changes them.
 //   signIn(password)   resolves to the session's new status: 'in', 'rejected' or 'unavailable'
-//   signOut()          ends the session for every browser
+//   signOut()          ends this browser's signed-in session
 //   reconnect()        tries the engine again at once
 //   close()            stops reading, when the website is unmounted
 // The live connection is written in TypeScript in packages/studio. No file here knows which

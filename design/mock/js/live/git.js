@@ -232,7 +232,7 @@ async function writeSettings(patch, current) {
     if (!service.project) throw new Error('Configure the project workspace and shell first.');
     const h = service.harnesses.find((h) => h.id === (patch.defaultHarness || service.project.lead?.harness));
     if (!h) throw new Error('Choose a harness first.');
-    const permission = { 'Read only': 'read-only', 'Ask before every change': 'ask', 'Edit files without asking': 'edit', 'Full access': 'full' };
+    const permission = { 'Read only': 'read-only', 'Ask before every change': 'ask', 'Edit files without asking': 'edit', 'Automatic review': 'auto', 'Full access': 'full' };
     const lead = key === 'defaultHarness' || !service.project.lead ? { harness: h.id, account: { _tag: 'any' }, permission: h.defaultPermission,
       ...(h.defaultModel ? { model: h.defaultModel } : {}), ...(h.defaultEffort ? { effort: h.defaultEffort } : {}) } : { ...service.project.lead };
     if (key === 'defaultModel') lead.model = patch[key];

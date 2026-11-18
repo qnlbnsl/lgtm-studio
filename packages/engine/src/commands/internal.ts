@@ -11,6 +11,7 @@ import type * as SqlClient from "effect/sql/SqlClient";
 import type * as Rpc from "effect/rpc/Rpc";
 import type * as RpcGroup from "effect/rpc/RpcGroup";
 
+import { effectiveHarnessSettings } from "../runner/harnesses.ts";
 import type { EngineLists } from "../pieces/lists.ts";
 import { LogWriteFailed, type EventLog, type SideRows } from "../log/EventLog.ts";
 import type { Runner } from "../runner/Runner.ts";
@@ -44,6 +45,7 @@ export interface Runtime {
 }
 export interface Input {
   readonly connectionId?: string;
+  readonly ownerSessionId?: string;
   readonly connectionSignal?: AbortSignal;
   readonly runtime: Runtime;
   readonly actor: Caller;
@@ -85,7 +87,7 @@ export const readHarnesses = (runtime: Runtime): Effect.Effect<ReadonlyArray<Har
           const event = Schema.decodeUnknownSync(EventSchema)(JSON.parse(row.payload_json));
           if (event._tag === "HarnessChanged") settings.set(event.harness.id, event.harness);
         }
-        return [...settings.values()];
+        return [...settings.values()].map(effectiveHarnessSettings);
       },
       catch: () => new LogWriteFailed({ reason: "stored harness settings are unreadable" }),
     });

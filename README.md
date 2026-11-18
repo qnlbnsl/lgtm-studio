@@ -92,6 +92,17 @@ The `read` command above works in Bash and Zsh.
 Enter a long, random password at its prompt, then press Enter.
 Open `http://127.0.0.1:8787` and log in with that password.
 The web password must contain at least eight characters.
+A browser stays signed in across service restarts for at most 30 days from sign-in.
+Up to eight browsers or devices may stay signed in together.
+A ninth sign-in ends the oldest session.
+Signing out ends only that browser's session.
+Changing or removing the password ends every session.
+The Terminal tab restores the owner's web shells and recent output after a reload within five minutes.
+Another signed-in device can pick up the same shell.
+Web shells stay alive while any signed-in owner session remains, subject to the five-minute detached grace limit.
+The last session ending closes every web shell.
+A displaced tab explains how to take output back and learns when its shell ends.
+A service restart closes all shells.
 The engine's default state folder is `~/.local/state/lgtm`.
 Set `LGTM_HOME` on the service and command processes to use another folder.
 With `serve --detach`, the service continues running after the launching terminal closes.
@@ -134,7 +145,8 @@ A reviewer or evaluator can use that field with the existing
 Before starting a test runner, the lead merges the builder's branch into its own worktree.
 The test runner starts without `worktreeId` and receives its own worktree at the lead's last commit.
 Its brief names an authorized writable permission and a log folder inside its own worktree.
-The permission level is still an explicit start option.
+The optional permission level defaults to `auto`, limited by the saved harness default and an agent starter's own level.
+Selecting another agent's checkout still requires an explicit `read-only` level.
 Roles parsed as leads or orchestrators keep their supplied folder.
 For an agent caller, selecting a checkout other than its own requires `read-only` permission.
 The owner can select a registered project checkout at any permission level.
@@ -143,8 +155,17 @@ A clean registered allocation whose harness never opened a session can be reused
 Reuse requires an unchanged source commit and no session or work from any previous attempt.
 An agent outside every project keeps the existing folder-based start behaviour.
 Manual worktree registration remains restricted to the owner.
-The existing folder ceiling refuses agent-started children inside the owner's home folder.
-Lead-started workers therefore need a repository outside that protected folder.
+On 2026-11-17, the owner allowed lead starts inside home for registered worktrees of the starter's project.
+The engine compares real directory identities for the project worktree, team worktrees and engine allocations.
+The home folder itself and its ancestors remain refused.
+The state folder, plugin root, home dotfolders and configured harness login folders remain protected.
+Protection applies to the child's folder.
+A clean worker may start beside a protected service checkout under the same registered repository.
+The nearest registered workspace sets the project boundary.
+Foreign and unregistered nested checkouts cannot inherit a broader grant.
+Registered paths must remain canonical directories.
+The engine refreshes these records before each spawn, recovery and resume.
+Removing a folder's registration makes a later resume refuse with a reason.
 
 The worker's stored folder is reused on recovery and either kind of resume.
 A missing folder is reported as unavailable instead of being recreated.
@@ -195,6 +216,30 @@ An explicit pull request creation refusal reports that the branch was pushed and
 There is no setting to force local mode.
 Only the authenticated owner can prepare, push, or approve these changes.
 See [the project Git guide](packages/engine/src/project/README.md) for the typed client API.
+
+## Agent permission levels
+
+On 2026-11-17, the owner chose `auto` as the default for new project leads and their workers.
+The ordered levels are `read-only`, `ask`, `edit`, `auto` and `full`.
+New harness defaults use `auto`.
+The historical upgrade is applied by field when settings are read.
+If the four old permission mappings and reported modes match the previous factory values, the row gains the automatic mapping and mode.
+This applies even when the owner edited the model, effort, run mode or adapter path.
+Every stored `defaultPermission` of `ask` reads as `auto` under the owner's decision of 2026-11-17.
+The website never offered a control for that harness field.
+A stored default other than `ask` is kept.
+Custom mappings, custom reported modes and unrelated owner edits are kept.
+Existing agents keep their levels.
+The stored event log is not rewritten.
+Factory adapter discovery runs once at service startup.
+`harnesses reset` uses the same startup snapshot.
+Ordinary starts and recovery read current stored settings without repeating discovery.
+Claude's automatic mode is `auto`.
+Codex's automatic review mode is `agent`.
+A harness without a configured automatic mode uses its edit mapping and reports the fallback in its status.
+The owner can choose any level.
+A child cannot exceed its starter's level.
+See [the adapter findings](docs/research/2026-11-17-auto-permissions.md) for the pinned versions and their limits.
 
 ## Documents
 

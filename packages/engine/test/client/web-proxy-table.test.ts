@@ -37,7 +37,7 @@ for (const row of cases) {
   it(`10.2 https ${row.id}: catches the wrong proxy-table decision or trusting X-Forwarded-Proto for Secure`, async () => {
     const publicAddress = "https://lgtm.example.test:9443";
     await withWeb((ctx) => Effect.gen(function* () {
-      const { cookie } = yield* login(ctx);
+      let { cookie } = yield* login(ctx);
       const origin = row.origin === "local" ? ctx.origin : row.origin === "public" ? publicAddress
         : row.origin === "missing" ? undefined : row.origin === "other-scheme" ? "http://lgtm.example.test:9443"
         : row.origin === "other-port" ? "https://lgtm.example.test:9444" : "https://evil.invalid";
@@ -58,6 +58,7 @@ for (const row of cases) {
         if (row.status === 204) {
           const attributes = (reply.headers["set-cookie"]?.[0] ?? "").split(";").map((part) => part.trim().toLowerCase());
           expect(attributes.includes("secure")).toBe(row.secure);
+          cookie = reply.headers["set-cookie"]![0]!.split(";")[0]!;
         } else expect(reply.headers["set-cookie"]).toBeUndefined();
       }
     }), { settings: { proxyMode: true, publicAddress } });

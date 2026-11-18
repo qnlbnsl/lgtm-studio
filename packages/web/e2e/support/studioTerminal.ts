@@ -43,7 +43,7 @@ export async function exerciseStudioTerminal(page: Page) {
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, redactor.layer)
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck(); yield* seedAccount('launch', 'cursor')
-        success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: harnessSettings('cursor', { adapterPath: process.execPath, reportedModes: [{ id: 'default', level: 'ask' }] }) }))
+        success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: harnessSettings('cursor', { adapterPath: process.execPath, reportedModes: [{ id: 'default', level: 'ask' }, { id: 'acceptEdits', level: 'edit' }] }) }))
         success(yield* call(ownerCredential, 'accounts set-secret', { accountId: 'launch', name: 'CURSOR_API_KEY', nonce: 'terminal', value: Redacted.make('synthetic-terminal-key') }))
         success(yield* call(ownerCredential, 'project.settings.set', { settings: { workspaceFolder: rig.root, shell: 'sh' } }))
         const repoId = success(yield* call(ownerCredential, 'project.repository.add', { name: 'Terminal repository', path: rig.work, machineId: 'local' })).repoId
@@ -53,7 +53,7 @@ export async function exerciseStudioTerminal(page: Page) {
         const projectViewPathValue = projectView(yield* (yield* Views).snapshot).workspaces[project.worktreeId]!.path
         yield* completedSetup(project.projectId)
         yield* appendSetup([eventOf({ _tag: 'project.WorktreeCreated', repoId, worktreeId: 'remote-terminal', branch: 'remote-terminal', path: '/unavailable/terminal', machineId: 'remote-terminal', checkout: 'main' })])
-        yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
+        yield* serve({ stateFolder: rig.stateFolder, password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {
           const base = `http://127.0.0.1:${port}/`, url = base + `#/p/${project.projectId}/terminal`
           await page.goto(url); await page.locator('#login-password').fill(password); await page.getByRole('button', { name: 'Sign in', exact: true }).click()
@@ -91,6 +91,43 @@ export async function exerciseStudioTerminal(page: Page) {
           await page.keyboard.type("printf '\\033[38;2;255;100;0mTRUE_FORE\\033[0m \\033[48;2;12;34;56mTRUE_BACK\\033[0m\\n'"); await page.keyboard.press('Enter')
           await expect(page.locator('.xterm-rows span').filter({ hasText: /^TRUE_FORE$/ }).first()).toHaveCSS('color', 'rgb(255, 100, 0)')
           await expect(page.locator('.xterm-rows span').filter({ hasText: /^TRUE_BACK$/ }).first()).toHaveCSS('background-color', 'rgb(12, 34, 56)')
+          // The shell variable and PID prove this is the same process after reload.
+          await page.keyboard.type("S28_SHELL=$$; echo S28_BEFORE_RELOAD:$S28_SHELL"); await page.keyboard.press('Enter')
+          await expect(page.locator('.xterm-rows')).toContainText(/S28_BEFORE_RELOAD:\d+/)
+          const prior = (await page.locator('.xterm-rows').innerText()).match(/S28_BEFORE_RELOAD:(\d+)/)![1]
+          await page.reload()
+          await expect(page.locator('.term-tab')).toHaveCount(1)
+          await expect(page.locator('.xterm-rows')).toContainText('BROWSER_TERMINAL_OK')
+          await input.focus(); await page.keyboard.type('echo S28_AFTER_RELOAD:$S28_SHELL:$$'); await page.keyboard.press('Enter')
+          await expect(page.locator('.xterm-rows')).toContainText('S28_AFTER_RELOAD:' + prior + ':' + prior)
+          const sibling = await page.context().newPage()
+          try {
+            await sibling.goto(url)
+            await expect(sibling.locator('.term-tab')).toHaveCount(1)
+            await expect(sibling.locator('.xterm-rows')).toContainText('S28_BEFORE_RELOAD:' + prior)
+            await expect(page.locator('.term-bar')).toContainText('Typing still works.')
+            await input.focus(); await page.keyboard.type("printf 'R2_OLD_TAB_%s\\n' INPUT"); await page.keyboard.press('Enter')
+            await expect(sibling.locator('.xterm-rows')).toContainText('R2_OLD_TAB_INPUT')
+            await sibling.locator('.xterm-helper-textarea').focus(); await sibling.keyboard.type('echo R2_NEW_TAB:$S28_SHELL:$$'); await sibling.keyboard.press('Enter')
+            await expect(sibling.locator('.xterm-rows')).toContainText('R2_NEW_TAB:' + prior + ':' + prior)
+          } finally { await sibling.close() }
+          await page.reload(); await expect(page.locator('.xterm-rows')).toContainText('R2_OLD_TAB_INPUT')
+          const phoneContext = await page.context().browser()!.newContext({ viewport: { width: 390, height: 844 } })
+          try {
+            const phone = await phoneContext.newPage()
+            await phone.goto(url); await phone.getByLabel('Password', { exact: true }).fill(password)
+            await phone.getByRole('button', { name: 'Sign in', exact: true }).click()
+            await expect(phone).toHaveURL(/#\/home/); await phone.goto(url)
+            await expect(phone.locator('.term-tab')).toHaveCount(1)
+            await expect(phone.locator('.xterm-rows')).toContainText('R2_NEW_TAB:' + prior + ':' + prior)
+            await expect(page.locator('.term-bar')).toContainText('Typing still works.')
+            await phone.locator('.xterm-helper-textarea').focus(); await phone.keyboard.type('echo R2_PHONE_BROWSER:$S28_SHELL:$$'); await phone.keyboard.press('Enter')
+            await expect(phone.locator('.xterm-rows')).toContainText('R2_PHONE_BROWSER:' + prior + ':' + prior)
+            expect(await phone.evaluate(async () => (await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' })).status)).toBe(204)
+          } finally { await phoneContext.close() }
+          await page.reload()
+          await expect(page.locator('.term-tab')).toHaveCount(1)
+          await expect(page.locator('.xterm-rows')).toContainText('R2_PHONE_BROWSER:' + prior + ':' + prior)
           const before = await page.locator('.term-status').innerText()
           await page.setViewportSize({ width: 1100, height: 740 })
           await expect(page.locator('.term-status')).not.toHaveText(before)
@@ -98,6 +135,17 @@ export async function exerciseStudioTerminal(page: Page) {
           expect(await page.evaluate(() => (window as any).terminalViolations)).toEqual([])
           const nonce = await page.evaluate(() => { const n = document.querySelector('meta[name="lgtm-style-nonce"]')!.getAttribute('content'); return [...document.querySelectorAll('.xterm style')].every(s => (s as HTMLStyleElement).nonce === n) })
           expect(nonce).toBe(true)
+          const finalReader = await page.context().newPage()
+          try {
+            await finalReader.goto(url)
+            await expect(finalReader.locator('.term-tab')).toHaveCount(1)
+            await expect(page.locator('.term-bar')).toContainText('Reload to take back its output.')
+            await finalReader.locator('.xterm-helper-textarea').focus()
+            await finalReader.keyboard.type('exit'); await finalReader.keyboard.press('Enter')
+            await expect(finalReader.locator('.term-bar')).toContainText('The shell exited.')
+            await expect(page.locator('.term-bar')).toContainText('This shell has ended. Open a new session.')
+            await expect(page.locator('.term-bar')).not.toContainText('Reload to reattach')
+          } finally { await finalReader.close() }
           await page.getByRole('button', { name: /^Close / }).last().click()
           await expect(page.locator('.term')).toContainText('No sessions are open')
           await folder.selectOption({ label: (await folder.locator('option').filter({ hasText: /^main ·/ }).textContent())! })

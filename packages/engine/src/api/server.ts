@@ -46,7 +46,7 @@ type Handlers = { readonly [R in RpcGroup.Rpcs<typeof CommandsRpcGroup> as R["_t
 const refused = (status: number, text: string) => HttpServerResponse.text(text, { status });
 const reasons = new Set([
   ...Object.values(terminalReasons), ...Object.values(signInReasons), ...Object.values(folderReasons),
-  "Confirm that every signed-in page is signed out and running agents are stopped.",
+  "Confirm that running agents are stopped and terminals close. Pages stay signed in.",
   "This service cannot restart itself on this platform.", "The service launch files are unavailable. Restart was refused before stopping agents.", "service restarting",
   "The workflow folder must be absolute, existing, owned by you, outside the service state folder, and have no symbolic links.",
   "Role instructions exceed 48 KiB.", "Role instructions could not be read.", "Role orientation exceeds 256 KiB.",
@@ -95,7 +95,7 @@ export const listen = (socketPath: string) => Effect.gen(function* () {
   };
 });
 
-export interface Identity { readonly credential: Credential; readonly agentId?: AgentId }
+export interface Identity { readonly credential: Credential; readonly ownerSessionId?: string; readonly agentId?: AgentId }
 type ApplicationOptions = { readonly debug: boolean; readonly lists?: Pick<EngineLists, "commands" | "access"> & { readonly reads: Readonly<Record<string, unknown>> } } & (
   | { readonly ownerCredential: Redacted.Redacted<string>; readonly webIdentity?: never }
   | { readonly ownerCredential?: never; readonly webIdentity: (request: HttpServerRequest.HttpServerRequest) => Identity | undefined }
@@ -129,7 +129,7 @@ export const application = (options: ApplicationOptions) => Effect.gen(function*
     if (options.webIdentity === undefined && (bearer === null || bearer[1]!.length > 256)) return refused(401, "invalid credential");
     const raw = bearer?.[1] ?? "";
     const currentIdentity = () => options.webIdentity === undefined ? authenticate(raw) : Effect.sync(() => Option.fromUndefinedOr(options.webIdentity!(request)));
-    const identity = yield* currentIdentity();
+    const identity: Option.Option<Identity> = yield* currentIdentity();
     if (Option.isNone(identity)) return refused(401, "invalid credential");
     const connectionId = randomUUID(), connection = new AbortController();
     yield* Effect.addFinalizer(() => Effect.sync(() => connection.abort()));
@@ -205,7 +205,7 @@ export const application = (options: ApplicationOptions) => Effect.gen(function*
         if (name === "debug.compare-views" && credential._tag !== "owner") return yield* refuseCommand();
         if (!lists.access[name]?.includes(actor._tag)) return yield* refuseCommand(name.startsWith("client.terminal.") ? terminalReasons.owner : name.startsWith("client.harness.signin.") ? signInReasons.owner : "command refused");
         const input = yield* handler.input(actor);
-        return { ...input, connectionId, connectionSignal: connection.signal };
+        return { ...input, connectionId, ...(identity.value.ownerSessionId === undefined ? {} : { ownerSessionId: identity.value.ownerSessionId }), connectionSignal: connection.signal };
       })));
       if (RpcSchema.isStreamSchema(rpc.successSchema)) return Stream.unwrap(prepare.pipe(Effect.map((input) =>
         read(input, payload) as Stream.Stream<unknown, unknown, Services>

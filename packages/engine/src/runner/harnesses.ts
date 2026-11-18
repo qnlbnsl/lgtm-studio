@@ -1,5 +1,6 @@
 import { delimiter, isAbsolute, join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
+import { isDeepStrictEqual } from "node:util"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { HarnessId, type Account, type HarnessSettings, type PermissionLevel } from "@lgtm/contracts"
 import * as Effect from "effect/Effect"
@@ -50,18 +51,47 @@ export const homeConflict = (harnessId: string, home: string | undefined, explic
   return isAbsolute(explicit) && resolve(explicit) === resolve(home) ? undefined : variable
 }
 
+const definitions = [
+  { id: "claude", command: "claude-agent-acp", args: [], modes: ["plan", "default", "acceptEdits", "auto", "bypassPermissions"] },
+  { id: "codex", command: "codex-acp", args: [], modes: ["read-only", "read-only", "workspace-write", "agent", "agent-full-access"] },
+  { id: "gemini", command: "gemini", args: ["--acp"], modes: ["plan", "default", "autoEdit", "autoEdit", "yolo"] },
+  // Cursor's Ask mode is read-only: https://cursor.com/docs/cli/overview (2026-11-01).
+  { id: "cursor", command: "agent", args: ["acp"], modes: ["ask", "ask", "agent", "agent", "agent"] }
+] as const
+
+const permissionFields = (definition: typeof definitions[number]) => {
+  const [readOnly, ask, edit, auto, full] = definition.modes;
+  const reportedModes: Array<{ id: string; level: PermissionLevel }> = [];
+  for (const [id, level] of [[readOnly, "read-only"], [ask, "ask"], [edit, "edit"], [auto, "auto"], [full, "full"]] as const) {
+    if (!reportedModes.some(mode => mode.id === id)) reportedModes.push({ id, level });
+  }
+  return { permissionMapping: { "read-only": readOnly, ask, edit, auto, full }, reportedModes };
+};
+
+// The owner's 2026-11-17 choice upgrades fields, without rewriting the log.
+// Factory permission fields are independent of executable discovery and of
+// model, effort, run-mode or launch-rule edits. Every stored ask default reads
+// as auto; other defaults and every existing agent retain their levels.
+export const effectiveHarnessSettings = (saved: HarnessSettings): HarnessSettings => {
+  const definition = definitions.find(row => row.id === saved.id);
+  let permissionMapping = saved.permissionMapping, reportedModes = saved.reportedModes;
+  if (definition && saved.permissionMapping.auto === undefined) {
+    const current = permissionFields(definition);
+    const { auto: _auto, ...previousMapping } = current.permissionMapping;
+    if (isDeepStrictEqual(saved.permissionMapping, previousMapping)
+      && isDeepStrictEqual(saved.reportedModes, current.reportedModes.filter(mode => mode.level !== "auto"))) {
+      permissionMapping = current.permissionMapping;
+      reportedModes = current.reportedModes;
+    }
+  }
+  return { ...saved, permissionMapping, reportedModes, defaultPermission: saved.defaultPermission === "ask" ? "auto" : saved.defaultPermission };
+};
+
 export const resolveHarnessDefaults = (options: { readonly binDirectory: string; readonly path: string }) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const harnesses: HarnessSettings[] = []
     const missing: Array<{ id: string; command: string; reason: string }> = []
-    const definitions = [
-      { id: "claude", command: "claude-agent-acp", args: [], modes: ["plan", "default", "acceptEdits", "bypassPermissions"] },
-      { id: "codex", command: "codex-acp", args: [], modes: ["read-only", "read-only", "workspace-write", "agent-full-access"] },
-      { id: "gemini", command: "gemini", args: ["--acp"], modes: ["plan", "default", "autoEdit", "yolo"] },
-      // Cursor's Ask mode is read-only: https://cursor.com/docs/cli/overview (2026-11-01).
-      { id: "cursor", command: "agent", args: ["acp"], modes: ["ask", "ask", "agent", "agent"] }
-    ] as const
     for (const definition of definitions) {
       const directories = definition.id === "claude" || definition.id === "codex"
         ? [resolve(options.binDirectory)]
@@ -79,20 +109,11 @@ export const resolveHarnessDefaults = (options: { readonly binDirectory: string;
         missing.push({ id: definition.id, command: definition.command, reason: "Executable not installed in the configured search path" })
         continue
       }
-      const [readOnly, ask, edit, full] = definition.modes
-      // Fix round 1, A16: the modes the harness reports, each at the lowest
-      // level that asks for it, so a harness that serves two levels with one
-      // mode (Codex's read-only, Cursor's ask and agent) lists the mode once.
-      // An empty list would make every mode change look unrecorded. The
-      // levels run from the lowest, so the first one to name a mode keeps it.
-      const reportedModes: Array<{ id: string; level: PermissionLevel }> = []
-      for (const [id, level] of [[readOnly, "read-only"], [ask, "ask"], [edit, "edit"], [full, "full"]] as const) {
-        if (!reportedModes.some((mode) => mode.id === id)) reportedModes.push({ id, level })
-      }
+      // Each reported mode keeps the lowest level that requests it.
+      const fields = permissionFields(definition);
       harnesses.push({
         id: Schema.decodeUnknownSync(HarnessId)(definition.id), runMode: "acp", adapterPath, adapterArguments: [...definition.args],
-        permissionMapping: { "read-only": readOnly, ask, edit, full },
-        reportedModes, defaultPermission: "ask", models: [], efforts: [], denyReadMechanism: { _tag: "none" }
+        ...fields, defaultPermission: "auto", models: [], efforts: [], denyReadMechanism: { _tag: "none" }
       })
     }
     return { harnesses, missing }

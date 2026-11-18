@@ -19,9 +19,12 @@ it("5.17/E34 secret collection: catches omitting a scalar-looking password or th
     // must register this usable password explicitly, even after deletion.
     const password = randomBytes(8).readBigUInt64BE().toString();
     const process = yield* processWeb(password);
-    const { ctx, root, service } = process;
+    const { ctx, root } = process;
+    let service = process.service;
     const { cookie } = yield* login(ctx);
     const session = decodeURIComponent(cookie.slice(cookie.indexOf("=") + 1));
+    // Before any cookie is presented again, only its persisted hash is known.
+    service = yield* process.restart();
     const wrong = yield* Effect.promise(() => post(ctx, "/api/login", { password: `${password}x` }));
     expect(wrong.status).toBe(401);
     // The adapter substitutes these generated test values at its stdout
@@ -71,12 +74,12 @@ await import(${JSON.stringify(pathToFileURL(fakeAgentPath).href)});
   })));
 });
 
-it("5.6 service restart: catches a session token surviving a real engine process restart", async () => {
+it("s28 the web session survives a real engine process restart", async () => {
   await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
     const process = yield* processWeb();
     const { cookie } = yield* login(process.ctx);
     yield* process.restart();
-    expect((yield* Effect.promise(() => post(process.ctx, "/api/session", undefined, { Cookie: cookie }))).status).toBe(401);
+    expect((yield* Effect.promise(() => post(process.ctx, "/api/session", undefined, { Cookie: cookie }))).status).toBe(204);
     const fresh = yield* login(process.ctx);
     expect(fresh.cookie === cookie, "engine restart reused the session token").toBe(false);
   })));

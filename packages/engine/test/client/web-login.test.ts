@@ -10,7 +10,8 @@ it("5.5 login: catches missing browser cookie protections or a password returned
   const { setCookie, cookie, reply } = yield* login(ctx);
   const attributes = setCookie.split(";").slice(1).map((part) => part.trim().toLowerCase());
   expect(attributes).toEqual(expect.arrayContaining(["httponly", "samesite=strict", "path=/"]));
-  expect(attributes.some((part) => /^(max-age|expires|domain)=/.test(part))).toBe(false);
+  expect(attributes).toContain("max-age=2592000");
+  expect(attributes.some((part) => /^(expires|domain)=/.test(part))).toBe(false);
   expect(attributes).not.toContain("secure");
   expect(reply.body.includes(ctx.password), "login body leaked the password").toBe(false);
   expect(cookie.includes(ctx.password), "cookie holds the password instead of the session token").toBe(false);

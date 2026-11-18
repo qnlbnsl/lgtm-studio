@@ -168,3 +168,15 @@ Test requests name that runner's folder and exact commit.
 A lead can merge the worker's branch with its own Git commands.
 The owner can use Integrate to merge into the recorded parent worktree.
 An instruction file does not create a blind review.
+
+## Defaults for starting agents
+
+The owner's decision of 2026-11-17 makes automatic review the default for new leads and workers.
+The ordered permission levels are `read-only`, `ask`, `edit`, `auto` and `full`.
+An omitted start permission uses `auto`, capped at the saved harness default and the starter's level.
+A lead still supplies `read-only` explicitly for another agent's checkout.
+An explicit level remains valid when it does not exceed the starter's ceiling.
+Existing agents keep their stored levels.
+A registered worktree of the starter's project may be inside the owner's home.
+The home itself, state folder, plugin root and home dotfolders remain protected.
+A removed registration prevents a later resume.

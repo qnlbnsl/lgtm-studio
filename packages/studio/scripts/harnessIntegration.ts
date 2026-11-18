@@ -8,6 +8,10 @@ export function harnessIntegrationSource(path: string, source: string): string {
     replace("Object.assign(HARNESSES, mapping.mapHarnesses([h], [report]))", "Object.assign(HARNESSES, mapping.mapInstalledHarnesses({ ...HARNESSES, ...mapping.mapHarnesses([h], [report]) }, installationReply.harnesses, recipes))")
   }
   if (path === "js/screens/service.js") {
+    // The fallback status lives in the mock screen and receives typed live
+    // installation metadata. Fail if the screen drops its display anchor.
+    replace('${h.autoPermissionReason && html`<p class="muted">${h.autoPermissionReason}</p>`}',
+      '${h.autoPermissionReason && html`<p class="muted" role="status">${h.autoPermissionReason}</p>`}')
     // Keep the old explicit defaults bookmark usable through the shared editor.
     replace('<${Body} key=${cur[0]', '${want === \'defaults\' && html`<${HarnessDefaults} s=${s} />`}<${Body} key=${cur[0]')
   }

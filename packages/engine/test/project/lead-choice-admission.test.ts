@@ -27,7 +27,7 @@ const settings = (lead?: Record<string, unknown>) => ({ workspaceFolder: rig.roo
 const lead = (axis: typeof axes[number], value: string) => ({ harness: "cursor", account: { _tag: "named", accountId: "ready" }, permission: "ask", [axis]: value })
 const harness = (axis: typeof axes[number], value: string, listed: boolean, fallback = false) => harnessSettings("cursor", {
   adapterPath: process.execPath, models: axis === "model" && listed ? [value] : [],
-  efforts: axis === "effort" && listed ? [value] : [], reportedModes: [{ id: "default", level: "ask" }],
+  efforts: axis === "effort" && listed ? [value] : [], reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }],
   ...(fallback ? { [axis === "model" ? "defaultModel" : "defaultEffort"]: value } : {}),
 })
 const setup = () => Effect.gen(function* () {

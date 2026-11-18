@@ -52,3 +52,18 @@ test('settings fieldsets block workflow checks and restarts, while ordinary save
     for (const operation of ['settings', 'read-service']) expect(disabled({ on: true }, { busy: (key: string) => key === operation }, { busy: () => false })).toBe(false)
   }
 })
+
+for (const status of [204, 401]) test(`s28 service restart reconnects when the session probe returns ${status}`, async () => {
+  const source = readFileSync('design/mock/js/live/service-settings.js', 'utf8').replace(/^import .*;$/gm, '').replace(/^export \{.*;$/gm, '').replace(/export /g, '')
+  let reconnected = 0, probes = 0
+  const messages: string[] = [], connection = { reconnect: () => { reconnected++ } }
+  const restart = new Function('store', 'engine', 'engineWrite', 'run', 'toast', 'fetch', 'setTimeout', `${source}; return restart;`)(
+    { state: { session: { status: 'in' } } }, { request: async () => ({ restarting: true }), connection: () => connection }, () => {},
+    (_key: string, operation: () => unknown) => operation(), (message: string) => messages.push(message),
+    async () => { probes++; return { status } }, (resume: () => void) => resume())
+  await restart()
+  expect(probes).toBe(1)
+  expect(reconnected).toBe(1)
+  expect(messages.some(message => message.includes('every page is signed out'))).toBe(false)
+  expect(messages.at(-1)).toBe(status === 204 ? 'The service is responding. Your sign-in is still valid.' : 'The service is back. Sign in again.')
+})

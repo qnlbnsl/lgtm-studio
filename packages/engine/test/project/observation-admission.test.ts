@@ -177,7 +177,7 @@ it.live("issue 579/583: registered parent changes invalidate a physical checkout
 it.live("issue 579/583: final creation admission refuses changed settings after real verification, retains the owned intent, and recovers on the same body", () => provideBoard(rig, Effect.gen(function* () {
   yield* setup()
   yield* seedAccount("launch", "cursor")
-  success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }] }) }))
+  success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }] }) }))
   success(yield* call(owner, "accounts set-secret", { accountId: "launch", name: "CURSOR_API_KEY", nonce: "observation-fixture", value: Redacted.make("synthetic-observation-fixture-key") }))
   const gate = yield* barrier(), actual = Lifecycle.prepareProjectLifecycle
   vi.spyOn(Lifecycle, "prepareProjectLifecycle").mockImplementation((...args) => gate.pause(actual(...args)))

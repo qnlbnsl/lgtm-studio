@@ -1,3 +1,4 @@
+import { permissionModeFor } from "@lgtm/contracts";
 import { instructionEnvelope } from "../routing/envelope.ts";
 import { instructionEcho } from "../roles/instructionEcho.ts";
 import { randomUUID } from "node:crypto";
@@ -424,7 +425,7 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
     });
   });
   const setMode = (entry: Process, permission: PermissionLevel) => Effect.gen(function* () {
-    const mode = entry.input.harness.permissionMapping[permission];
+    const mode = permissionModeFor(entry.input.harness, permission);
     entry.mode = mode;
     entry.options = yield* setConfig(entry.client, entry.sessionId, entry.options, "mode", mode, entry.version);
   });
@@ -459,7 +460,7 @@ export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, E
     if (harness.runMode !== "acp" || !isAbsolute(harness.adapterPath) || resolve(harness.adapterPath) !== harness.adapterPath) return yield* rejected("adapter path is not resolved");
     if ((input.model !== undefined && harness.models.length > 0 && !harness.models.includes(input.model))
       || (input.effort !== undefined && harness.efforts.length > 0 && !harness.efforts.includes(input.effort))) return yield* rejected("configuration is not recorded");
-    const startingMode = harness.permissionMapping[input.permission];
+    const startingMode = permissionModeFor(harness, input.permission);
     if (harness.reportedModes.length > 0 && !harness.reportedModes.some((mode) => mode.id === startingMode)) return yield* rejected("mode is not recorded");
     // Fix round 2, F-1: a field the harness cannot apply would run the agent on
     // another login than the account names, so it is refused here as well as

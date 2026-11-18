@@ -112,7 +112,7 @@ export async function exerciseStudioSettings(page: Page) {
           await expect(page.locator('.svc-pane')).not.toContainText('git merge --ff-only FETCH_HEAD')
           await expect(page.getByRole('button', { name: 'Update the service', exact: true })).toHaveCount(0)
           await page.getByRole('button', { name: 'Restart', exact: true }).click()
-          await expect(page.getByRole('dialog')).toContainText('Every signed-in page is signed out and running agents are stopped.')
+          await expect(page.getByRole('dialog')).toContainText('Running agents are stopped and terminals close. This page reconnects and stays signed in.')
           await page.getByRole('dialog').getByRole('button', { name: 'Restart', exact: true }).click()
           await expect(page.locator('.toasts')).toContainText('This service cannot restart itself on this platform.')
           expect(errors).toEqual([])

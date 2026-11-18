@@ -47,6 +47,74 @@ user. It is still planned. On 2026-11-03 the owner approved building remote
 access before it, so that LGTM Studio is in use sooner. Until it is built, any
 agent can read LGTM Studio's state folder, including the stored account keys.
 
+On 2026-11-17, the owner approved a narrow exception to the home-folder rule.
+An agent-started child may work inside home only beneath a currently registered worktree of its starter's own project.
+Only the project worktree, team worktrees and engine-allocated worker worktrees grant this exception.
+A manually registered descendant alone grants nothing.
+Real paths are resolved and compared by device and inode along their ancestors.
+The existing parent-folder and same-repository checks still apply.
+Selecting another agent's checkout still requires read-only permission.
+The home folder itself and any folder containing it remain refused.
+The state folder and plugin root remain refused, together with their ancestors and descendants.
+The engine enumerates immediate home dotdirectories and resolves directory aliases without reading their contents.
+These directories and existing configured account login folders receive the same protection.
+Login paths include account homes and harness home-variable overrides, including resolved secret references.
+They also include login-store fallbacks under an alternate `HOME` and Cursor's `XDG_CONFIG_HOME`.
+The child's own folder must pass the protection checks, including the Linux mount-table check.
+A protected sibling elsewhere in the registered root does not refuse a clean child folder.
+The root of the main checkout containing the service remains refused as a child folder.
+A clean subfolder such as `<repository>/packages` is admitted when the starter is already in that main checkout and the other rules pass.
+A worker allocated beside the service checkout may start.
+These worktrees share Git's common directory, including configuration and hooks, with the service checkout.
+The folder rule does not isolate that shared metadata.
+Before allocation, the source may contain a protected folder but cannot be one or be inside one.
+That preliminary check returns no spawn grant.
+Before creating a worker checkout, the engine also checks the allocation directory and Git common directory against protected identities.
+Neither may be a protected folder or be inside one.
+A missing allocation directory is checked through its nearest existing ancestor before Git can create it or change the exclusion file.
+A protected sibling in the allocation directory remains allowed.
+The allocated child receives ordinary admission before registration and again before spawn.
+The nearest registered workspace across all projects sets the boundary, including outside home when no own-project root contains the folder.
+A nested foreign or unregistered checkout cannot inherit a broader project root's grant.
+Registered paths must still be canonical real directories.
+Relative login paths and regular files are excluded from login-directory discovery.
+An unreadable immediate home dotfolder fails closed for every agent-started child, including outside home, recovery and resume.
+The reason is `a home dotfolder cannot be checked`.
+An unresolved directory alias could point into the requested folder, so identity comparison cannot prove it unrelated.
+The owner must restore access or remove the stale entry before retrying.
+The owner caller retains its exception.
+The engine reads the current project views again before every spawn, recovery reload and resume.
+The allocator may validate its own pending registration at the same log head before the atomic append.
+After that append, the grant relies exclusively on the committed registration.
+A later registration removal makes a later resume refuse with a sentence reason.
+The owner caller keeps the existing exception.
+The spawn race and non-Linux mount limits in issue 49 remain unchanged.
+
+The owner also chose the `auto` default on 2026-11-17.
+The owner's decision of 2026-11-17 accepts the harness's own reviewer approving routine commands at `auto`.
+Only requests the harness raises reach the engine and its owner-only routing for persistent settings.
+A command approved within the harness can change `.claude/settings.json` or `.mcp.json` without an owner prompt.
+Codex's automatic reviewer may approve a sandbox escalation without asking the owner.
+Automatic review may also refuse an action.
+The folder ceiling limits the start folder, not the paths touched by approved commands.
+The declared permission-level ceiling still applies to child starts and modes the adapter reports.
+The scale is `read-only`, `ask`, `edit`, `auto`, then `full`.
+An omitted child permission uses the lowest of `auto`, the saved harness default and its starter's level.
+Existing agents retain their levels.
+The historical upgrade applies by field at read time without rewriting stored events.
+A row whose four old mappings and reported modes equal the previous factory values gains the automatic mapping and mode.
+Model, effort, run-mode, adapter-path and other unrelated edits do not block that upgrade.
+Custom mappings and custom reported modes are kept.
+Every stored `defaultPermission` of `ask` reads as `auto` under the owner's decision of 2026-11-17.
+This includes a factory-identical row that the owner previously kept at `ask`.
+The website never offered a control for that harness field.
+A stored default other than `ask` is kept.
+Factory adapter discovery runs once at service startup.
+`harnesses reset` uses the same startup snapshot.
+Ordinary starts and recovery read current stored settings without repeating discovery.
+An older harness mapping without `auto` falls back to its `edit` mode.
+Harness status reports that fallback.
+
 The harness installation receipts are in that state folder.
 A hostile process running as the same user can rewrite a receipt and make a
 changed program pass the "changed since install" check.
@@ -118,11 +186,45 @@ These rules apply to every change. A change that breaks one is a security bug.
 3. **The password is checked in constant time and is not kept by the browser.**
    A login carries it in the request body, never in a URL. One person uses
    LGTM Studio, and the owner chose no rate limits and no lockouts on 2026-11-03.
-4. **A session is one random token per engine start, held in memory only.**
-   Logging out replaces the token, which signs out every client. Changing the
-   password means restarting the engine, which also ends the session. A browser
-   holds the token in an `HttpOnly`, `SameSite=Strict` cookie, which is `Secure`
-   on a public request when the public address is `https`.
+4. **Up to eight web sessions survive service restarts for at most 30 days each.**
+   The owner approved survival across a service restart on 2026-11-17.
+   Several signed-in browsers at once preserve the behaviour from before this unit.
+   Each sign-in creates an independent random 256-bit token.
+   A ninth sign-in evicts the oldest session.
+   Signing out ends only the presenting browser's session.
+   Changing or removing `LGTM_WEB_PASSWORD` invalidates every session before the listener starts.
+   A successfully committed invalidation survives restoring an earlier password.
+   Restoring an older copy of the state folder can restore signed-out sessions while their original password and 30-day lifetime still match.
+   There is no revocation authority outside that folder to detect a restored backup.
+   Each session expires 30 days after its own sign-in.
+   The browser holds its token in an `HttpOnly`, `SameSite=Strict` cookie with that maximum age.
+   The cookie is `Secure` on a public request when the public address is `https`.
+   The private `web-session.json` file holds one record per session.
+   Each record contains only a Secure Hash Algorithm 256 (SHA-256) token verifier, a creation time, an independent random 16-byte salt, and a keyed password binding.
+   The binding key comes from scrypt with fixed parameters N=65536, r=8, and p=1.
+   The binding authenticates a fixed domain label, the token verifier, and its creation time.
+   Version 3 records replace the earlier development format, which is refused rather than migrated.
+   These scrypt parameters deliberately use less work than the common N=131072, r=8, p=1 recommendation.
+   This unit keeps N=65536 to bound synchronous startup verification of at most eight records to about two seconds on the review host, with about 64 mebibytes per derivation.
+   The derivations run before the listener starts, and sign-in performs one derivation.
+   This choice trades password-guessing cost for startup latency and does not claim to meet that higher recommendation.
+   The reference is the [Open Worldwide Application Security Project password storage guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
+   Checking a stored binding requires about 64 mebibytes of derivation memory for each password guess.
+   A file reader cannot forge a cookie from a verifier or test a password with a single fast digest.
+   The service verifies every password binding at startup.
+   It checkpoints the validated collection before accepting any cookie.
+   If that checkpoint and invalidation both fail, this service accepts no session and refuses sign-ins until restart.
+   If all writes fail, the service cannot promise durable invalidation of the unchanged file.
+   A later restart with an earlier password can then accept an unchanged record if storage becomes writable.
+   Repairing storage and restarting with the intended password is required to commit invalidation.
+   Each update replaces the entire bounded collection through an exclusive mode-0600 temporary file, a file flush, a rename, and a directory flush.
+   Memory changes only after that update succeeds.
+   A failed update attempts an empty snapshot and then a mode-zero fallback before rejecting the old in-memory sessions.
+   If storage cannot be invalidated, the request fails without claiming a successful revocation or clearing the pre-operation memory state.
+   Invalid, expired, unreadable, wrongly permissioned, symbolic-link, hard-linked, oversized, or more than five minutes future-dated records do not authenticate a browser.
+   Startup permits five minutes of clock skew.
+   A backward clock step while running does not expire or delete a record.
+   The 30-day boundary still uses wall-clock time, so a backward clock step can delay expiry.
 5. **An encrypted channel for remote access is the owner's setup**, such as TLS, a
    Tailscale tailnet, or an SSH tunnel. LGTM Studio serves plain HTTP on loopback and
    does not offer it to a non-loopback address. A configured public address must use
@@ -196,9 +298,12 @@ These rules apply to every change. A change that breaks one is a security bug.
    nor `false`, and is not a plain number.
    On 2026-11-14, the owner authorized ephemeral output for the project terminal and the harness sign-in terminal.
    The owner ruled: "what you echo on terminal is none of our business. just keep it away from log. if they use tmux or something and it hold this in the buffer then that is not on us."
-   Only the authenticated owner connection that opens a session may receive its output.
+   On 2026-11-17, the owner approved reattachment after a page reload by the signed-in owner.
+   Sharing web project terminals among that owner's signed-in browsers is this unit's design choice for a single-owner product.
+   Harness sign-in output remains restricted to its opening owner connection.
    Both terminals send the program's output byte for byte, with no redaction, hold, or idle timer.
-   Neither output nor typed keys are stored, logged, traced, posted, sent as alerts, or included in error messages, crash reports, snapshots, or protocol logs.
+   Project terminals retain at most 64 kibibytes of recent output in memory for reattachment.
+   Neither output nor typed keys are written to disk, logged, traced, posted, sent as alerts, or included in error messages, crash reports, snapshots, or protocol logs.
    A secret printed in either terminal appears on the owner's screen and in any scrollback the owner's own tools keep.
    Rule 6 continues to apply without these exceptions to every other path.
 
@@ -214,6 +319,10 @@ For Gemini without a managed install, the executable comes from the owner's harn
 The service uses the same login folder that the account gives its agents.
 Resolved `secret:` values in the account environment are passed to the child.
 Only the initiating owner connection may read output, type keys, resize the terminal, or stop it.
+Sign-in terminals do not reattach after reload because their credential flow stays bound to that initiating connection.
+Their five-minute total time limit and five-second connection grace remain unchanged.
+Signing out closes only harness sign-ins initiated by that web session.
+Local socket sign-ins and other web sessions' sign-ins remain unaffected.
 Agent and service credentials cannot use these requests.
 The service kills a live process group when the owner stops it, the connection grace period ends, the time limit passes, or engine shutdown begins.
 After the child exits, the service does not signal its former process group because the identifier may be reused.
@@ -232,7 +341,18 @@ The stored project terminal switch starts off in Service settings.
 While it is off, every open request is refused before a shell can start.
 Only an authenticated owner may open a terminal.
 Agent and service credentials are refused.
-Only the connection that opened a session may read its output, type into it, resize it, or close it.
+On 2026-11-17, the owner approved terminal reattachment after a page reload.
+Sharing web terminals across authenticated sessions is this unit's design choice for the single-owner product.
+Any such session may list the web project terminals, read output, type into them, resize them, or close them.
+A new output subscription takes over from the previous reader and replays recent output.
+The previous stream ends cleanly even when its connection is half-open.
+The last reader wins, while both signed-in connections may still type.
+The displaced tab uses the existing notice bar to explain how to take output back.
+While that tab displays the shell, it checks the existing terminal list once per second and learns when the shell ends.
+Opening the Terminal tab still attaches listed shells automatically.
+An agent, a service credential, an unauthenticated caller, or a local socket connection cannot use web terminals.
+A local socket terminal remains bound to its opening connection.
+A web session cannot use a local socket terminal.
 The request names a project and a registered worktree by their engine identifiers.
 It cannot supply a path, command, executable, argument, environment variable, or shell expression.
 Only a worktree on the local machine can open a shell.
@@ -240,9 +360,18 @@ The executable is the owner's shell from the service environment, when it is an 
 Otherwise, the executable is `/bin/sh`.
 The shell inherits the service environment with every `LGTM_` entry removed.
 An environment entry containing any registered secret is removed too.
-At most eight project terminals may be live at once.
+At most eight project terminals may be live at once, including detached terminals.
+A detached web terminal remains available for five minutes.
+The service closes it after that grace period.
+A local socket terminal keeps its five-second connection grace.
 A shell has no time limit.
-The service kills its live process groups on close, sign-out, switch-off, connection loss past the grace period, and engine shutdown.
+The service kills its live process groups on close, switch-off, connection loss past the grace period, and engine shutdown.
+A web shell survives while any signed-in owner web session remains, subject to its detached grace period.
+The remaining browser may be typing without reading or reloading.
+Cleanup assigns a surviving shell to a remaining session without requiring a current reader.
+When its reader signs out, the shell detaches with its usual grace period.
+The last web session's sign-out closes all web shells.
+Web sign-in, sign-out, eviction, and expiry do not close local socket shells.
 On Linux, the service reads `/proc` to find and kill jobs in the shell's operating-system session.
 It does this when the shell exits too.
 After the shell exits, it signals only processes still found in that session.
@@ -254,10 +383,17 @@ The scan stops when no member is found or after five passes.
 A process that continues to fork beyond that bound may survive.
 If the former leader's process identifier exists again after exit, discovery stops without signalling that new session.
 Input and output are ephemeral.
-They are never stored by the service, logged, posted, sent as events, or included in snapshots or protocol logs.
+The service retains at most 64 kibibytes of recent output per project terminal in memory.
+Reattachment sends that recent output before subsequent live output.
+A detached shell pauses reads when its replay ring first turns over.
+Kernel backpressure then bounds processing until reattachment or the grace limit.
+Reattachment resumes reads even when the retained output has no complete escape-safe prefix.
+Input is not retained for replay.
+Neither stream is written to disk, logged, posted, sent as events, or included in snapshots or protocol logs.
 The owner's ruling of 2026-11-14 covers both this stream and the harness sign-in stream.
-The program's output reaches the opening connection byte for byte, with no redaction, hold, or idle timer.
-The output never goes to another subscriber or agent.
+The program's live output reaches the attached connection byte for byte, with no redaction, hold, or idle timer.
+The output goes only to the attached authenticated owner web session or the opening local socket connection.
+It never goes to an agent.
 Neither output nor typed keys are traced or included in an error message.
 A secret printed in the terminal appears on the owner's screen and in any scrollback the owner's own tools keep.
 The shell runs as the owner and can change files with that user's permissions.

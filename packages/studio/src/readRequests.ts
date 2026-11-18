@@ -2,7 +2,7 @@
 import type { Client } from "@lgtm/client/browser"
 
 const reads = new Set<string>([
-  'client.snapshot', 'client.roster', 'client.requests', 'client.thread', 'client.event', 'client.sequence',
+  'client.terminal.list', 'client.snapshot', 'client.roster', 'client.requests', 'client.thread', 'client.event', 'client.sequence',
   'client.agent.configuration', 'client.agent.context', 'client.web.settings',
   'client.alerts.settings', 'client.alerts.list', 'client.harness.status', 'client.harness.recipe', 'client.harness.choices',
   'client.service.version', 'client.workflows.list', 'client.workflows.read', 'client.workflows.validate',

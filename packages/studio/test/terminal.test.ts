@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { terminalSize, terminalWorktrees, terminalState, terminalSelection } from '../src/terminal.ts'
+import { terminalSize, terminalWorktrees, terminalState, terminalSelection, terminalAttachments } from '../src/terminal.ts'
 import { terminalSource, xtermSource } from '../scripts/terminalSource.ts'
 import { readFileSync } from 'node:fs'
 describe('project terminal mapping and build boundary', () => {
@@ -44,4 +44,41 @@ it('includes allocated project workers and excludes another project in the same 
     { id: 'other-worker', repo: 'r', project: 'other', machine: 'local', checkout: 'worktree', parentId: 'other' },
   ] }
   expect(terminalWorktrees(state, { id: 'p', repo: 'r', worktree: 'project' }).map(w => w.id)).toEqual(['project', 'worker'])
+})
+
+it('reattaches only the selected project even when projects share a main checkout', () => {
+  const main = { id: 'main' }
+  expect(terminalAttachments([
+    { sessionId: 'mine', projectId: 'p', worktreeId: 'main' },
+    { sessionId: 'other', projectId: 'q', worktreeId: 'main' },
+    { sessionId: 'removed', projectId: 'p', worktreeId: 'gone' }
+  ], [main], 'p')).toEqual([{ sessionId: 'mine', worktree: main }])
+})
+
+it('r2 offers reattachment only after connection loss and keeps takeover input enabled', async () => {
+  const source = readFileSync('design/mock/js/live/terminal.js', 'utf8').replace(/^import .*;$/gm, '').replace(/export /g, '')
+  // Evaluate the module with its ordinary function declarations and a stubbed preference.
+  const helpers = new Function('persist', 'notify', `${source}; return { isConnectionLoss, outputEnded, outputClosed };`)(() => 13, () => {})
+  expect(helpers.isConnectionLoss('The connection ended. Reconnecting checks for this shell.')).toBe(true)
+  for (const reason of ['The shell exited.', 'The owner closed the terminal.', 'The owner signed out.', 'This shell has ended. Open a new session.']) expect(helpers.isConnectionLoss(reason)).toBe(false)
+  const item = { ended: '', terminal: { options: { disableStdin: false } } }
+  helpers.outputEnded(item, 'Output is open in another owner connection. Typing still works.')
+  helpers.outputClosed(item)
+  expect(item.ended).toBe('')
+  expect(item.terminal.options.disableStdin).toBe(false)
+  helpers.outputEnded(item, 'The shell exited.')
+  expect(item.terminal.options.disableStdin).toBe(true)
+})
+
+it('r3 a displaced tab learns that its live shell has exited without taking output back', () => {
+  const source = readFileSync('design/mock/js/live/terminal.js', 'utf8').replace(/^import .*;$/gm, '').replace(/export /g, '')
+  const helpers = new Function('persist', 'notify', `${source}; return { outputEnded, reconcileTerminals };`)(() => 13, () => {})
+  const item = { id: 'shell', ended: '', terminal: { options: { disableStdin: false } } }
+  helpers.outputEnded(item, 'Output is open in another owner connection. Typing still works.')
+  helpers.reconcileTerminals({ sessions: [item] }, [{ sessionId: 'shell' }])
+  expect(item.ended).toBe('')
+  expect(item.terminal.options.disableStdin).toBe(false)
+  helpers.reconcileTerminals({ sessions: [item] }, [])
+  expect(item.ended).toBe('This shell has ended. Open a new session.')
+  expect(item.terminal.options.disableStdin).toBe(true)
 })

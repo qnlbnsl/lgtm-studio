@@ -29,7 +29,7 @@ export async function exerciseStudioLeadDefinition(page: Page) {
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, Layer.succeed(Redactor, { redact: (event) => Effect.succeed(event), redactText: (text) => Effect.succeed(text) }))
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck()
-        success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: harnessSettings('cursor', { adapterPath: process.execPath, reportedModes: [{ id: 'default', level: 'ask' }] }) }))
+        success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: harnessSettings('cursor', { adapterPath: process.execPath, reportedModes: [{ id: 'default', level: 'ask' }, { id: 'acceptEdits', level: 'edit' }] }) }))
         success(yield* call(ownerCredential, 'accounts', { operation: 'add', account: { id: 'ready', harness: 'cursor', enabled: true } }))
         success(yield* call(ownerCredential, 'accounts set-secret', { accountId: 'ready', name: 'CURSOR_API_KEY', nonce: freshRequest(), value: Redacted.make('synthetic-browser-readiness-key') }))
         success(yield* call(ownerCredential, 'project.settings.set', { settings: { workspaceFolder: rig.work, shell: '/bin/sh', displayName: 'Maya Okafor' } }))

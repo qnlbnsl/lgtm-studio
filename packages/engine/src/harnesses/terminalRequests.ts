@@ -34,7 +34,7 @@ const open = (input: Input, p: Record<string, unknown>) => Effect.gen(function* 
     if ((yield* input.runtime.log.redactText(value)) === value) environment[name] = value
   }
   const disconnected = () => manager.disconnect(connection)
-  const session = yield* Effect.tryPromise({ try: () => manager.start({ kind: 'project', worktreeId: workspace.worktreeId, accountId: '', connectionId: connection, executable: shell, args: ['-l'], cwd: workspace.path, environment,
+  const session = yield* Effect.tryPromise({ try: () => manager.start({ ownerSessionId: input.ownerSessionId, kind: 'project', projectId: p.projectId as string, worktreeId: workspace.worktreeId, accountId: '', connectionId: connection, executable: shell, args: ['-l'], cwd: workspace.path, environment,
     cols: p.cols as number, rows: p.rows as number, allowed: () => manager.terminalGeneration === generation && !input.connectionSignal?.aborted,
     check: async () => ({ state: 'unavailable' }), onEnd: () => input.connectionSignal?.removeEventListener('abort', disconnected) }), catch: failure })
   input.connectionSignal?.addEventListener('abort', disconnected, { once: true })
@@ -45,13 +45,17 @@ const control = (method: 'write' | 'resize' | 'close') => (input: Input, p: Reco
   const connection = yield* Effect.try({ try: () => owner(input), catch: e => e as ReturnType<typeof refused> })
   yield* Effect.try({ try: () => {
     const manager = sessions(input), id = p.sessionId as string
-    if (method === 'write') manager.write(id, connection, p.text as string, 'project')
-    else if (method === 'resize') manager.resize(id, connection, p.cols as number, p.rows as number, 'project')
-    else manager.stop(id, connection, 'project')
+    if (method === 'write') manager.write(id, connection, p.text as string, 'project', input.ownerSessionId)
+    else if (method === 'resize') manager.resize(id, connection, p.cols as number, p.rows as number, 'project', input.ownerSessionId)
+    else manager.stop(id, connection, 'project', input.ownerSessionId)
   }, catch: failure })
   return { reply: { requestId: p.requestId } }
 })
 export const terminalReads = {
+  'client.terminal.list': (input: Input, p: Record<string, unknown>) => Effect.gen(function* () {
+    const connection = yield* Effect.try({ try: () => owner(input), catch: e => e as ReturnType<typeof refused> })
+    return { reply: { requestId: p.requestId, sessions: sessions(input).list(input.ownerSessionId, connection) } }
+  }),
   'client.terminal.open': open,
   'client.terminal.write': control('write'),
   'client.terminal.resize': control('resize'),
