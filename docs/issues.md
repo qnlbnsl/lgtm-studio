@@ -19753,3 +19753,35 @@ The earlier isolated attribution also passed the main merge, temporary remote, p
 That attribution used a synthetic outer home with a one-minute load between 14.27 and 23.39.
 It did not reproduce those historical failures on any revision.
 The long Git workspace journey at `studio.spec.ts:970` passed the whole run in 5.4 minutes.
+
+## s26-24. A custom harness that reports no edit mode can no longer start with its default.
+
+State: Open. Found by the third independent review of unit s26-leadstart on 2026-11-17.
+
+A stored harness default of "ask" is read as "auto" for every harness row (`packages/engine/src/runner/harnesses.ts`).
+A harness without an automatic mode falls back to its "edit" mapping.
+An owner-added harness that reports only its plan and ask modes then fails a start with an omitted permission level, with "mode is not recorded".
+The fix keeps "ask" when the row's reported modes contain neither its automatic nor its edit mapping.
+
+## s26-25. The harness default "ask" is accepted on save and never takes effect.
+
+State: Open. Found by the third independent review of unit s26-leadstart on 2026-11-17.
+
+The `harnesses set` command accepts a default permission of "ask" and replies with success.
+Every later read returns "auto", following the owner's decision of 2026-11-17 that "auto" is the default.
+The command should refuse "ask" with a sentence, or the engine should store a marker for an explicit choice.
+
+## s26-26. Resetting harness settings uses the probe taken at service start.
+
+State: Open. Found by the third independent review of unit s26-leadstart on 2026-11-17.
+
+The service resolves the installed harness defaults once at start.
+A harness installed while the service runs is not found by `harnesses reset` until a restart.
+Before unit s26-leadstart the reset probed again.
+
+## s26-27. The visible changes list of unit s26-leadstart omitted three effects.
+
+State: Recorded. Found by the third independent review of unit s26-leadstart on 2026-11-17.
+
+The list omitted the reset behaviour of issue s26-26 and the start refusal of issue s26-24.
+It also omitted that a lead's worker start now reports an unregistered checkout or a machine mismatch before a permission or folder refusal.
