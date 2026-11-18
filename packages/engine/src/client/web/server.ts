@@ -27,7 +27,7 @@ import { installWebRuntime, settingsOf, type ClientWebView } from "../settings.t
 import { initializeAlerts } from "../alerts/reactor.ts";
 import { clientPieceView } from "../alerts/view.ts";
 import { makeSession } from "./session.ts";
-import { webCaller } from "./webCaller.ts";
+import { loginOwner, webCaller } from "./webCaller.ts";
 import { requestPolicy } from "./proxy.ts";
 import { staticResponse } from "./static.ts";
 import { CommandHandler } from "../../commands/CommandHandler.ts";
@@ -47,6 +47,8 @@ export const serve = (options: {
   readonly password: Redacted.Redacted<string> | undefined;
   // The website's built files. The service passes the folder that packages/studio builds from design/mock.
   readonly staticRoot: string;
+  readonly stateFolder?: string;
+  readonly registerSessionHash?: (hash: string) => void;
   readonly settings?: WebSettings;
   readonly lists?: EngineLists;
   readonly registerSecret?: (secret: Redacted.Redacted<string>) => void;
@@ -69,26 +71,29 @@ export const serve = (options: {
   const port = settings.port;
   const usable = options.password !== undefined && Redacted.value(options.password).length >= 8;
   let state: "off" | "no-password" | "running" | "port-taken" = settings.enabled ? (usable ? "port-taken" : "no-password") : "off";
-  const session = makeSession(options.password, options.registerSecret ?? (() => {}));
+  const session = makeSession(options.password, options.registerSecret ?? (() => {}), { stateFolder: options.stateFolder, registerHash: options.registerSessionHash });
   const rpc = yield* application({ debug: false, lists, webIdentity: (request) => {
     const credential = webCaller(session, request.headers);
-    return credential === undefined ? undefined : { credential };
+    return credential === undefined ? undefined : { credential, ownerSessionId: session.identify(request.headers.cookie)! };
   } });
   let stopped = false;
   let listener: { readonly stop: Effect.Effect<void>; readonly close: Effect.Effect<void> } | undefined;
   let retry: Fiber.Fiber<void, never> | undefined;
-  const connections = new Map<NodeWS.WebSocket, { missed: number }>();
+  const connections = new Map<NodeWS.WebSocket, { missed: number; ownerSessionId: string }>();
   const needsRetry = Latch.makeUnsafe(false);
   const lifecycle = yield* Semaphore.make(1);
-  const disconnect = Effect.sync(() => { for (const socket of connections.keys()) socket.terminate(); connections.clear(); });
+  const disconnect = (ids?: ReadonlySet<string>) => Effect.sync(() => {
+    for (const [socket, connection] of connections) if (ids === undefined || ids.has(connection.ownerSessionId)) { socket.terminate(); connections.delete(socket); }
+  });
   let display: Awaited<ReturnType<typeof serveDisplay>> | undefined;
   let displayGeneration = 0, displayCleanupFailed = false;
+  const displayOwners = new Map<string, { owner: string; expiresAt: number }>();
   const stopDisplay = Effect.suspend(() => {
     displayGeneration++;
     const active = display;
     if (active === undefined) return Effect.succeed(true);
     return Effect.tryPromise(() => active.close()).pipe(
-      Effect.andThen(Effect.sync(() => { if (display === active) display = undefined; return true; })),
+      Effect.andThen(Effect.sync(() => { if (display === active) display = undefined; displayOwners.clear(); return true; })),
       Effect.catchCause(() => {
         displayCleanupFailed = true;
         return Effect.logError("isolated display cleanup unconfirmed").pipe(Effect.as(false));
@@ -105,9 +110,8 @@ export const serve = (options: {
         dockerSocket: "/var/run/docker.sock",
         input: () => Effect.runPromise(Effect.gen(function* () {
           if (Option.isSome(recovery) && !(yield* recovery.value.ready)) throw new Error("recovering");
-          const caller = webCaller(session, headers);
-          if (caller === undefined) throw new Error("display session unavailable");
-          return yield* handler.input(caller);
+          if (!settings.enabled || displayCleanupFailed || !session.ids.length) throw new Error("display session unavailable");
+          return yield* handler.input(loginOwner());
         })),
         registerSecret: (secret) => options.registerSecret?.(Redacted.make(secret)),
         onCleanupFailure: () => { displayCleanupFailed = true; }
@@ -117,6 +121,27 @@ export const serve = (options: {
     }
     return { service: display, generation: displayGeneration };
   }));
+
+  const cleanupRevoked = Effect.gen(function* () {
+    const ids = new Set(session.takeRevoked());
+    if (!ids.size) return true;
+    const log = (yield* handler.input(loginOwner())).runtime.log;
+    for (const id of ids) signOutTerminals(log, id, new Set(session.ids));
+    yield* disconnect(ids);
+    return yield* lifecycle.withPermits(1)(Effect.gen(function* () {
+      const active = display;
+      if (active === undefined) return true;
+      const cleaned = yield* Effect.tryPromise(async () => {
+        for (const [frame, entry] of displayOwners) if (ids.has(entry.owner)) { await active.closeSession(frame); displayOwners.delete(frame); }
+      }).pipe(Effect.option);
+      if (Option.isNone(cleaned)) { displayCleanupFailed = true; yield* stopDisplay; return false; }
+      return session.ids.length ? true : yield* stopDisplay;
+    }));
+  });
+  const expiry = yield* Effect.forever(Effect.sleep(1000).pipe(Effect.andThen(Effect.gen(function* () {
+    yield* Effect.try(() => session.expire()).pipe(Effect.option);
+    yield* cleanupRevoked;
+  })))).pipe(Effect.forkScoped);
 
   const ready = Option.isSome(recovery) ? recovery.value.whenReady : Effect.void;
   const outage = (down: boolean) => ready.pipe(Effect.andThen(writePieceBatch({ namespace: "client", kind: "reactor", sourceSequence: 0,
@@ -146,7 +171,11 @@ export const serve = (options: {
       let value: unknown;
       try { value = (JSON.parse(text) as { password?: unknown }).password; } catch { value = undefined; }
       if (!session.checkPassword(value)) return HttpServerResponse.empty({ status: 401 });
-      return HttpServerResponse.empty({ status: 204, headers: { "set-cookie": session.cookie(policy.secure) } });
+      // Adding a device keeps the other sessions and their streams alive.
+      const issued = yield* Effect.try(() => { session.rotate(); return session.cookie(policy.secure); }).pipe(Effect.option);
+      const cleaned = yield* cleanupRevoked;
+      if (Option.isNone(issued) || !cleaned) return HttpServerResponse.empty({ status: 503 });
+      return HttpServerResponse.empty({ status: 204, headers: { "set-cookie": issued.value } });
     }
     if (navigation) {
       const configuration = yield* Effect.try(() => configuredDisplay(settings, port)).pipe(Effect.orElseSucceed(() => undefined));
@@ -157,6 +186,12 @@ export const serve = (options: {
       return yield* staticResponse(options.staticRoot, request.url, request.method === "HEAD", configuration?.displayOrigin);
     }
     if (caller === undefined) return HttpServerResponse.empty({ status: 401 });
+    if (path === "/api/logout" && request.method === "POST" && !upgrade) {
+      const id = session.identify(request.headers.cookie)!;
+      const revoked = yield* Effect.try(() => session.revoke(id)).pipe(Effect.option);
+      const cleaned = yield* cleanupRevoked;
+      return HttpServerResponse.empty({ status: cleaned && Option.isSome(revoked) ? 204 : 503 });
+    }
     // Recovery mutates credentials, holders and agent state. Keep every data
     // endpoint behind both the session boundary and the complete recovery gate.
     if (Option.isSome(recovery) && !(yield* recovery.value.ready)) {
@@ -166,11 +201,7 @@ export const serve = (options: {
       return HttpServerResponse.jsonUnsafe(progress, { status: 503, headers: { "cache-control": "no-store", "retry-after": "1" } });
     }
     if (path === "/api/session" && request.method === "POST" && !upgrade) return HttpServerResponse.empty({ status: 204 });
-    if (path === "/api/logout" && request.method === "POST" && !upgrade) {
-      session.rotate(); signOutTerminals((yield* handler.input(caller)).runtime.log); yield* disconnect;
-      const cleaned = yield* lifecycle.withPermits(1)(stopDisplay);
-      return HttpServerResponse.empty({ status: cleaned ? 204 : 503 });
-    }
+
     if ((path === "/api/display/open" || path === "/api/display/close") && !upgrade) {
       if (request.method !== "POST" || request.url !== path) return HttpServerResponse.empty({ status: 405 });
       const body = yield* boundedBody(request);
@@ -186,7 +217,7 @@ export const serve = (options: {
       if (!requestPolicy(request.headers, settings, port, false).accepted) return HttpServerResponse.empty({ status: 403 });
       if (decoded.value.kind === "close") {
         const id = decoded.value.value.id;
-        return yield* Effect.tryPromise(async () => { await display?.closeSession(id); return HttpServerResponse.empty({ status: 204 }); })
+        return yield* Effect.tryPromise(async () => { await display?.closeSession(id); displayOwners.delete(id); return HttpServerResponse.empty({ status: 204 }); })
           .pipe(Effect.orElseSucceed(() => HttpServerResponse.empty({ status: 503 })));
       }
       const active = yield* displayFor(request.headers);
@@ -204,6 +235,8 @@ export const serve = (options: {
             await active.service.closeSession(frame.id);
             return HttpServerResponse.empty({ status: 401 });
           }
+          for (const [id, entry] of displayOwners) if (entry.expiresAt <= Date.now()) displayOwners.delete(id);
+          displayOwners.set(frame.id, { owner: session.identify(request.headers.cookie)!, expiresAt: frame.expiresAt });
           return HttpServerResponse.text(JSON.stringify(frame), { headers: { "content-type": "application/json", "cache-control": "no-store" } });
         } catch { return HttpServerResponse.empty({ status: 503 }); }
       });
@@ -234,7 +267,7 @@ export const serve = (options: {
           const oldest = connections.keys().next().value;
           if (oldest !== undefined) { connections.delete(oldest); oldest.terminate(); }
         }
-        const heartbeat = { missed: 0 };
+        const heartbeat = { missed: 0, ownerSessionId: session.identify(headers.cookie)! };
         connections.set(ws, heartbeat);
         ws.on("pong", () => { heartbeat.missed = 0; });
         const heartbeatFiber = Fiber.runIn(Effect.runForkWith(services)(Effect.forever(
@@ -287,7 +320,7 @@ export const serve = (options: {
     const next = settingsOf((yield* views.snapshot).client) ?? settings;
     if (stopped || next === settings) return;
     settings = next;
-    yield* disconnect;
+    yield* disconnect();
     yield* stopDisplay;
     if (!settings.enabled) {
       if (listener !== undefined) {
@@ -307,7 +340,8 @@ export const serve = (options: {
     if (stopped) return;
     stopped = true; removeRuntime();
     if (retry !== undefined) yield* Fiber.interrupt(retry);
-    yield* disconnect;
+    yield* Fiber.interrupt(expiry);
+    yield* disconnect();
     yield* lifecycle.withPermits(1)(stopDisplay);
     if (listener !== undefined) { yield* listener.close; listener = undefined; }
   });

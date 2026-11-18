@@ -40,7 +40,7 @@ const expectedCommands = [
   "debug.compare-views"
 ]
 const harnessCommands = ["client.harness.account.add", "client.harness.signin.start", "client.harness.signin.write", "client.harness.signin.resize", "client.harness.signin.stop", "client.harness.signin.subscribe", "client.harness.status", "client.harness.recipe", "client.harness.install", "client.harness.account.check"]
-const terminalCommands = ["client.terminal.open", "client.terminal.write", "client.terminal.resize", "client.terminal.close", "client.terminal.subscribe"]
+const terminalCommands = ["client.terminal.list", "client.terminal.open", "client.terminal.write", "client.terminal.resize", "client.terminal.close", "client.terminal.subscribe"]
 const clientReads = [...terminalCommands, ...harnessCommands, "client.harness.choices", "client.snapshot", "client.roster", "client.thread", "client.subscribe", "client.event", "client.sequence", "client.requests", "client.agent.configuration", "client.agent.context"]
 
 // Row 55 names `accounts set-secret`, `accounts mark-available` and `debug.compare-views` outright

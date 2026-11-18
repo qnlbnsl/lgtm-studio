@@ -11,7 +11,7 @@ export interface ProcessWeb {
   readonly root: ServiceRoot;
   readonly ctx: WebEndpoint;
   readonly service: CheckedWebService;
-  readonly restart: () => Effect.Effect<CheckedWebService, unknown, import("effect/Scope").Scope>;
+  readonly restart: (...override: [password?: string]) => Effect.Effect<CheckedWebService, unknown, import("effect/Scope").Scope>;
 }
 
 export const processWeb = (password = freshSecret()) => Effect.gen(function* () {
@@ -29,10 +29,12 @@ export const processWeb = (password = freshSecret()) => Effect.gen(function* () 
   yield* initial.stop;
   const ctx: WebEndpoint = { settings, origin: `http://127.0.0.1:${port}`, host: `127.0.0.1:${port}`, password };
   let service: CheckedWebService;
-  const restart = () => Effect.gen(function* () {
+  const restart = (...override: [password?: string]) => Effect.gen(function* () {
     if (service !== undefined) yield* service.stop;
-    service = yield* startCheckedWebService(root, { LGTM_WEB_PASSWORD: password });
+    const selected = override.length ? override[0] : password;
+    service = yield* startCheckedWebService(root, { LGTM_WEB_PASSWORD: selected });
     yield* waitServing(root, service);
+    if (selected === undefined) return service;
     let listening = false;
     for (let attempt = 0; attempt < 100; attempt++) {
       listening = yield* Effect.promise(() => http(ctx, "/api/session", { method: "POST" }).then((reply) => reply.status === 401, () => false));

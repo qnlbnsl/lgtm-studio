@@ -149,6 +149,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
       .map((value) => Redacted.make(value));
     // Issue 223: the harness login stores the runner opens, re-read live.
     const credentials = makeCredentialRegistry();
+    const webSessionHashes = new Set<string>();
     const redactor = makeRedactor({
       secrets: () => {
         const known = [...explicitSecrets, ...inheritedSecrets, ...credentials.secrets()];
@@ -157,7 +158,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
           return [...known, ...Object.values(values as Record<string, unknown>).filter((value): value is string => typeof value === "string").map((value) => Redacted.make(value))];
         } catch { return known; }
       },
-      tokenHashes: () => new Set((registry.prepare("SELECT token_hash FROM agent_tokens").all() as Array<{ token_hash: string }>).map((row) => row.token_hash)),
+      tokenHashes: () => new Set([...webSessionHashes, ...(registry.prepare("SELECT token_hash FROM agent_tokens").all() as Array<{ token_hash: string }>).map((row) => row.token_hash)]),
     });
     const managedRoot = userHarnessPrefix(process.env.HOME ?? folder);
     const harnessPath = (process.env.PATH ?? "").split(delimiter).filter((path) => isAbsolute(path) && resolve(path) !== managedRoot && !resolve(path).startsWith(managedRoot + "/")).join(delimiter);
@@ -180,7 +181,7 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
     return yield* Effect.gen(function* () {
       if (debug) yield* Effect.logInfo("debug RPC group enabled");
       yield* listener.install(yield* application({ ownerCredential, debug, lists }));
-      const web = yield* serveWeb({ password: webPassword, lists, staticRoot: fileURLToPath(new URL("../../studio/dist", import.meta.url)),
+      const web = yield* serveWeb({ password: webPassword, lists, stateFolder: folder, registerSessionHash: (hash) => webSessionHashes.add(hash), staticRoot: fileURLToPath(new URL("../../studio/dist", import.meta.url)),
         registerSecret: (secret) => { explicitSecrets.push(secret); } });
       yield* Effect.addFinalizer(() => web.close);
       if (process.connected && !foreground) process.disconnect?.();

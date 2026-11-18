@@ -12,11 +12,12 @@ export const TerminalOutput = Schema.Union([
 ])
 export type TerminalOutput = typeof TerminalOutput.Type
 export const TerminalRpcGroup = RpcGroup.make(
+  Rpc.make('list', { payload: strict(request), success: Schema.Struct({ ...request, sessions: Schema.Array(Schema.Struct({ sessionId: Schema.String, projectId: ProjectId, worktreeId: WorkspaceId })) }), error: Refused }),
   Rpc.make('open', { payload: strict({ ...request, projectId: ProjectId, worktreeId: WorkspaceId, ...size }), success: Schema.Struct(session), error: Refused }),
   Rpc.make('write', { payload: strict({ ...session, text: Schema.String.check(Schema.isMaxLength(4096)) }), success: Schema.Struct(request), error: Refused }),
   Rpc.make('resize', { payload: strict({ ...session, ...size }), success: Schema.Struct(request), error: Refused }),
   Rpc.make('close', { payload: strict(session), success: Schema.Struct(request), error: Refused }),
   Rpc.make('subscribe', { payload: strict(session), success: TerminalOutput, stream: true, error: Refused }).setError(Refused)
 ).prefix('client.terminal.')
-export const terminalCommandNames = ['client.terminal.open', 'client.terminal.write', 'client.terminal.resize', 'client.terminal.close', 'client.terminal.subscribe'] as const
+export const terminalCommandNames = ['client.terminal.list', 'client.terminal.open', 'client.terminal.write', 'client.terminal.resize', 'client.terminal.close', 'client.terminal.subscribe'] as const
 export const terminalAccess = Object.fromEntries(terminalCommandNames.map(name => [name, ['owner']])) as unknown as { readonly [K in typeof terminalCommandNames[number]]: readonly ['owner'] }

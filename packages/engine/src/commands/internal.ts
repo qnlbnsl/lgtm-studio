@@ -45,6 +45,7 @@ export interface Runtime {
 }
 export interface Input {
   readonly connectionId?: string;
+  readonly ownerSessionId?: string;
   readonly connectionSignal?: AbortSignal;
   readonly runtime: Runtime;
   readonly actor: Caller;
