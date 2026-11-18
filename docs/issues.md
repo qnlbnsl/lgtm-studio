@@ -19456,7 +19456,7 @@ In the orchestrator's whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `
 
 State: open. Recorded on 2026-11-17.
 
-## s26-1. Restricted process execution can make installer output tests report empty output.
+## 1376. Restricted process execution can make installer output tests report empty output.
 
 State: Diagnosed as an execution sandbox limitation during unit s26.
 
@@ -19466,7 +19466,7 @@ The same three tests passed outside that sandbox without a production code chang
 Chromium also exited with an operation-not-permitted error inside that sandbox.
 The required suites were rerun outside it with temporary homes and local test services.
 
-## s26-2. Older harness settings have no automatic permission mapping.
+## 1377. Older harness settings have no automatic permission mapping.
 
 State: Handled with an explicit edit fallback in unit s26.
 
@@ -19480,7 +19480,7 @@ Gemini and Cursor defaults also use the edit fallback because this unit verifies
 The harness status reports the fallback.
 Existing agents and owner-edited permission defaults are not changed.
 
-## s26-3. Alternate environment homes can place harness login stores inside a worktree.
+## 1378. Alternate environment homes can place harness login stores inside a worktree.
 
 State: Protected in unit s26.
 
@@ -19491,7 +19491,7 @@ The folder ceiling protects the existing login directories derived from these fa
 Secret references are resolved without reading credential files.
 Handler regressions cover both override paths under a registered project root.
 
-## s26-4. Seven browser journeys failed in the whole run and passed separately.
+## 1379. Seven browser journeys failed in the whole run and passed separately.
 
 State: Open as whole-run-only failures observed during unit s26.
 
@@ -19510,7 +19510,7 @@ That variant passed in the whole suite but timed out when run after the main var
 It passed when rerun by its own title.
 The permission-settings journey passed in the whole run.
 
-## s26-5. The whole unit run failed a sign-in cleanup check that passed alone.
+## 1380. The whole unit run failed a sign-in cleanup check that passed alone.
 
 State: Open as a whole-run-only failure observed during unit s26.
 
@@ -19521,7 +19521,7 @@ The failure was `ENOENT` at the existing `readFileSync(pidfile)` assertion setup
 The exact case passed when rerun alone with its existing assertions and timing limits.
 This unit changes no sign-in session or process-group cleanup implementation.
 
-## s26-6. Stored factory defaults kept new leads at ask after the upgrade.
+## 1381. Stored factory defaults kept new leads at ask after the upgrade.
 
 State: Fixed in round 2 of unit s26 and refined by the owner's round-three field policy.
 
@@ -19533,9 +19533,9 @@ Other defaults and custom permission fields are kept.
 The stored log and existing agents remain unchanged.
 Status distinguishes an older stored mapping from a harness with no separate automatic mode.
 The current pre-unit-log regressions cover all four factory harness shapes through restart and real start handlers.
-Issue s26-14 records the field policy.
+Issue 1389 records the field policy.
 
-## s26-7. Automatic review can approve commands without raising an engine permission request.
+## 1382. Automatic review can approve commands without raising an engine permission request.
 
 State: Documented as an accepted limit under the owner's decision of 2026-11-17.
 
@@ -19545,7 +19545,7 @@ The folder ceiling constrains the start folder rather than the paths those comma
 SECURITY.md and decision row 56 now state these limits.
 The website's Automatic review description no longer promises that risky actions ask.
 
-## s26-8. A broad project registration admitted nested foreign or unregistered checkouts.
+## 1383. A broad project registration admitted nested foreign or unregistered checkouts.
 
 State: Fixed in round 2 of unit s26.
 
@@ -19557,7 +19557,7 @@ Real directory identities grant admission.
 Path spelling is used only to refuse a replaced registration.
 Two-project and hand-made linked-worktree regressions cover this distinction.
 
-## s26-9. Invalid login paths blocked unrelated agent starts and recovery.
+## 1384. Invalid login paths blocked unrelated agent starts and recovery.
 
 State: Fixed in round 2 of unit s26.
 
@@ -19565,7 +19565,7 @@ Login-folder discovery now excludes relative paths, missing paths and regular fi
 Existing absolute login directories remain protected.
 Regressions cover a relative Codex home and a regular file through start and resume.
 
-## s26-10. Protecting an entire registration blocked the self-hosted build loop.
+## 1385. Protecting an entire registration blocked the self-hosted build loop.
 
 State: Fixed under the owner's round 2 clarification of the decision of 2026-11-17.
 
@@ -19579,7 +19579,7 @@ The actual allocated child passes ordinary folder admission before registration 
 Regressions preserve the no-Git and unchanged-inventory assertions for a protected start.
 A real Git allocation beside a synthetic service checkout also survives fresh resume.
 
-## s26-11. An omitted worker level ignored the owner's saved harness default.
+## 1386. An omitted worker level ignored the owner's saved harness default.
 
 State: Fixed in round 2 of unit s26.
 
@@ -19587,10 +19587,10 @@ An omitted permission uses the lowest of automatic review, the saved harness def
 An explicit permission remains subject to the starter's ceiling.
 A full-permission lead respects a saved edit default when it omits the worker level.
 The owner's round-three decision upgrades stored ask harness defaults to auto.
-Issue s26-14 records that explicit default change.
+Issue 1389 records that explicit default change.
 The role instructions and start-tool description state this rule.
 
-## s26-12. The whole round-two unit run failed a secret-carry stop check that passed alone.
+## 1387. The whole round-two unit run failed a secret-carry stop check that passed alone.
 
 State: Open as a whole-run-only failure observed during round 2 of unit s26.
 
@@ -19601,7 +19601,7 @@ It expected the message and queued tool updates.
 The exact case passed alone with its existing assertions and timing limits.
 This round changes no stop or redaction implementation.
 
-## s26-13. The round-two browser run had eight failures, and merge-to-main still failed alone.
+## 1388. The round-two browser run had eight failures, and merge-to-main still failed alone.
 
 State: Open as browser failures observed during round 2 of unit s26.
 
@@ -19623,10 +19623,10 @@ Its final individual run had no competing whole suite.
 The browser gate therefore remains failing.
 This round changes no Git merge implementation or existing browser assertion.
 The round-three comparison did not reproduce the named historical failures on the base or either tested unit revision.
-Issue s26-23 records the round-three whole-run failures and their separate passing reruns.
+Issue 1398 records the round-three whole-run failures and their separate passing reruns.
 
 
-## s26-14. Owner model edits prevented the automatic permission upgrade.
+## 1389. Owner model edits prevented the automatic permission upgrade.
 
 State: Fixed in round 3 of unit s26 under the owner's explicit default decision.
 
@@ -19640,7 +19640,7 @@ Existing test fixtures now use the current auto default.
 The saved-default cap regression uses edit because the owner explicitly replaced stored ask defaults.
 A future website control is recorded in the feature list.
 
-## s26-15. A refused worker allocation could change a protected checkout.
+## 1390. A refused worker allocation could change a protected checkout.
 
 State: Fixed in round 3 of unit s26.
 
@@ -19651,7 +19651,7 @@ Missing allocation directories are checked through their nearest existing ancest
 The regression preserves the existing exclusion bytes, branch inventory and workspace inventory.
 The preliminary check returns no spawn grant.
 
-## s26-16. A foreign checkout outside home bypassed the project boundary check.
+## 1391. A foreign checkout outside home bypassed the project boundary check.
 
 State: Fixed in round 3 of unit s26.
 
@@ -19664,7 +19664,7 @@ Those manual registrations still grant no admission inside home.
 Existing non-local starts that retain their folder still avoid Git.
 Allocation registration and machine refusals retain their specific recovery sentences.
 
-## s26-17. Reading harness settings repeated executable discovery.
+## 1392. Reading harness settings repeated executable discovery.
 
 State: Fixed in round 3 of unit s26.
 
@@ -19674,7 +19674,7 @@ Reset uses that startup snapshot.
 Ordinary settings reads use the latest stored rows and pure permission migration.
 A regression counts discovery across settings reads and starts.
 
-## s26-18. An unreadable home dotfolder blocks unrelated agent starts.
+## 1393. An unreadable home dotfolder blocks unrelated agent starts.
 
 State: Documented as a fail-closed limitation in round 3 of unit s26.
 
@@ -19683,7 +19683,7 @@ An unresolved alias could point into the requested folder.
 The engine cannot prove that entry unrelated by directory identity.
 SECURITY.md now states this refusal and the owner's remedy.
 
-## s26-19. The folder documentation omitted shared Git settings and clean subfolders.
+## 1394. The folder documentation omitted shared Git settings and clean subfolders.
 
 State: Clarified in round 3 of unit s26.
 
@@ -19694,7 +19694,7 @@ A clean subfolder such as packages remains admitted when the parent is already i
 The clean-subfolder regression passed before the clarification.
 
 
-## s26-20. Project fixtures advertised only the previous default mode.
+## 1395. Project fixtures advertised only the previous default mode.
 
 State: Fixed in round 3 of unit s26.
 
@@ -19707,7 +19707,7 @@ The existing assertions and time limits remain unchanged.
 Frozen historical factory fixtures retain their old shapes.
 
 
-## s26-21. The boundary fix mistook a broad own registration for a foreign project.
+## 1396. The boundary fix mistook a broad own registration for a foreign project.
 
 State: Fixed in round 3 of unit s26.
 
@@ -19720,7 +19720,7 @@ The existing resume assertions remain unchanged.
 The foreign-checkout regressions still require refusal.
 
 
-## s26-22. Some test fixtures inherit the invoking home for readiness checks.
+## 1397. Some test fixtures inherit the invoking home for readiness checks.
 
 State: Open as a test-isolation gap found in round 3 of unit s26.
 
@@ -19735,7 +19735,7 @@ The wrapper keeps the installed browser binary cache available without using it 
 A repository-wide test-environment fix remains separate work.
 
 
-## s26-23. Seven browser journeys failed in the whole run and passed separately.
+## 1398. Seven browser journeys failed in the whole run and passed separately.
 
 State: Open as whole-run-only browser failures observed in round 3 of unit s26.
 
@@ -19754,7 +19754,7 @@ That attribution used a synthetic outer home with a one-minute load between 14.2
 It did not reproduce those historical failures on any revision.
 The long Git workspace journey at `studio.spec.ts:970` passed the whole run in 5.4 minutes.
 
-## s26-24. A custom harness that reports no edit mode can no longer start with its default.
+## 1399. A custom harness that reports no edit mode can no longer start with its default.
 
 State: Open. Found by the third independent review of unit s26-leadstart on 2026-11-17.
 
@@ -19763,7 +19763,7 @@ A harness without an automatic mode falls back to its "edit" mapping.
 An owner-added harness that reports only its plan and ask modes then fails a start with an omitted permission level, with "mode is not recorded".
 The fix keeps "ask" when the row's reported modes contain neither its automatic nor its edit mapping.
 
-## s26-25. The harness default "ask" is accepted on save and never takes effect.
+## 1400. The harness default "ask" is accepted on save and never takes effect.
 
 State: Open. Found by the third independent review of unit s26-leadstart on 2026-11-17.
 
@@ -19771,7 +19771,7 @@ The `harnesses set` command accepts a default permission of "ask" and replies wi
 Every later read returns "auto", following the owner's decision of 2026-11-17 that "auto" is the default.
 The command should refuse "ask" with a sentence, or the engine should store a marker for an explicit choice.
 
-## s26-26. Resetting harness settings uses the probe taken at service start.
+## 1401. Resetting harness settings uses the probe taken at service start.
 
 State: Open. Found by the third independent review of unit s26-leadstart on 2026-11-17.
 
@@ -19779,9 +19779,9 @@ The service resolves the installed harness defaults once at start.
 A harness installed while the service runs is not found by `harnesses reset` until a restart.
 Before unit s26-leadstart the reset probed again.
 
-## s26-27. The visible changes list of unit s26-leadstart omitted three effects.
+## 1402. The visible changes list of unit s26-leadstart omitted three effects.
 
 State: Recorded. Found by the third independent review of unit s26-leadstart on 2026-11-17.
 
-The list omitted the reset behaviour of issue s26-26 and the start refusal of issue s26-24.
+The list omitted the reset behaviour of issue 1401 and the start refusal of issue 1399.
 It also omitted that a lead's worker start now reports an unregistered checkout or a machine mismatch before a permission or folder refusal.
