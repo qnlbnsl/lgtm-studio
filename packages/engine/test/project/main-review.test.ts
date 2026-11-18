@@ -259,6 +259,11 @@ for (const hosted of [false, true]) it.live(`refuses partial or binary review da
   expect(yield* refusal(prepare(f))).toBe("Git: unsupported_review")
   expect(Object.values(projectView(yield* snapshot).gitAttempts)).toHaveLength(0)
   expect((yield* run(f.api, "project.review.status", f)).result.review).toBe(null)
+  if (gh) {
+    const fetches = readFileSync(gh.gitCalls, "utf8").split('\n').filter(Boolean).map(line => JSON.parse(line) as string[]).filter(args => args.includes('fetch'));
+    expect(fetches).toHaveLength(1);
+    expect(fetches[0]).toContain('+refs/heads/main:refs/remotes/origin/main');
+  }
   git(f.source, "reset", "--hard", f.head)
   save(f.source, "binary", "\0binary"); commit(f.source, "Binary change")
   expect(yield* refusal(prepare(f))).toBe("Git: unsupported_review")
@@ -269,8 +274,12 @@ for (const hosted of [false, true]) it.live(`refuses partial or binary review da
   commit(f.source, "Too many files for complete review")
   expect(yield* refusal(prepare(f))).toBe("Git: unsupported_review")
   expect((yield* run(f.api, "project.review.status", f)).result.review).toBe(null)
+  expect(Object.values(projectView(yield* snapshot).gitAttempts)).toHaveLength(0)
+  if (gh) expect(readFileSync(gh.gitCalls, "utf8")).not.toContain('"push"')
   git(f.source, "reset", "--hard", f.head)
-  expect((yield* prepare(f)).result.review.outcome).toBe("open")
+  const final = (yield* prepare(f)).result.review
+  expect(final.outcome).toBe("open")
+  expect(final.delivery.mode).toBe(hosted ? "github" : "local")
 })).pipe(Effect.orDie))
 
 it.live("redacts reports, comparison prose and durable outcomes through the production redactor while preserving protocol enums", () => provideBoard(rig, Effect.gen(function* () {
@@ -1383,3 +1392,27 @@ for (const mode of ["local", "signed-out", "github"]) it.live(`s27 R4: compariso
   boundary.mockRestore()
   expect((yield* prepare(f)).result.review.outcome).toBe("open")
 })).pipe(Effect.orDie))
+
+it.live('s29 1452: a stale descendant tracking ref cannot prevent pull request creation after a push', () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work);
+  vi.stubEnv('PATH', `${gh.bin}:${process.env.PATH}`);
+  const branch = git(f.source, 'branch', '--show-current'), stale = `refs/remotes/origin/${branch}/stale`;
+  git(rig.work, 'update-ref', stale, f.baseHead);
+  const review = (yield* prepare(f)).result.review;
+  expect(review.delivery).toMatchObject({ mode: 'github', state: 'OPEN', number: 17 });
+  expect(git(gh.bare, 'rev-parse', `refs/heads/${branch}`)).toBe(f.head);
+  expect(git(rig.work, 'rev-parse', stale)).toBe(f.baseHead);
+  expect(Object.values(projectView(yield* snapshot).gitAttempts)).toHaveLength(0);
+})).pipe(Effect.orDie));
+
+it.live('s29 1453: Prepare refuses a symbolic base tracking ref before fetch can move the local base', () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(), gh = fakeGithub(rig.root, rig.work);
+  vi.stubEnv('PATH', `${gh.bin}:${process.env.PATH}`);
+  const remoteBase = git(gh.bare, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit-tree', `${f.baseHead}^{tree}`, '-p', f.baseHead, '-m', 'Remote advance');
+  git(gh.bare, 'update-ref', 'refs/heads/main', remoteBase);
+  git(rig.work, 'symbolic-ref', 'refs/remotes/origin/main', 'refs/heads/main');
+  expect(yield* refusal(prepare(f))).toBe('Git: invalid_ref');
+  expect(git(rig.work, 'rev-parse', 'HEAD')).toBe(f.baseHead);
+  expect(readFileSync(gh.gitCalls, 'utf8')).not.toContain('"fetch"');
+  expect(Object.values(projectView(yield* snapshot).gitAttempts)).toHaveLength(0);
+})).pipe(Effect.orDie));

@@ -9,7 +9,7 @@ import { afterEach, beforeEach, expect, vi } from "vitest";
 
 import { makeFakeRunner } from "../support/fakeRunner.ts";
 import {
-  agentCredential, call, failureOf, harnessSettings, headSequence, logAfter, makeFakeSecrets, makeRig, ownerCredential,
+  agentCredential, appendSetup, call, failureOf, harnessSettings, headSequence, logAfter, makeFakeSecrets, makeRig, ownerCredential,
   provideRig, readLog, removeRig, seedAccount, seedAgent, startPayload, success, type Fakes, type Rig,
 } from "../support/handlerRig.ts";
 import { registerRebuildCheck } from "../support/rebuildCheck.ts";
@@ -178,7 +178,7 @@ for (const [id] of oldDefinitions) {
     const legacy = oldFactory(id, join(rig.root, 'factory-adapters'));
     const edited = decode({ ...legacy, adapterPath: '/opt/owner/' + id, defaultModel: 'owner-model', defaultEffort: 'owner-effort', runMode: 'interactive' });
     yield* serviceStart({}, () => Effect.gen(function* () {
-      success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: edited }));
+      yield* appendSetup([{ _tag: 'HarnessChanged', harness: edited }]);
       yield* seedAgent({ id: 'old-agent', permission: 'ask' });
     }));
     const effective = { ...edited, permissionMapping: current.permissionMapping, reportedModes: current.reportedModes, defaultPermission: 'auto' };
@@ -202,7 +202,7 @@ for (const [id] of oldDefinitions) {
     const legacy = oldFactory(id, join(rig.root, 'factory-adapters'));
     for (const permission of ['read-only', 'edit', 'full'] as const) {
       const saved = decode({ ...legacy, defaultPermission: permission, defaultModel: 'owner-model' });
-      yield* serviceStart({}, () => call(ownerCredential, 'harnesses', { operation: 'set', harness: saved }));
+      yield* serviceStart({}, () => appendSetup([{ _tag: 'HarnessChanged', harness: saved }]));
       yield* serviceStart({ defaults: Effect.succeed(factories) }, () => Effect.gen(function* () {
         expect(yield* listed).toEqual([{ ...saved, permissionMapping: current.permissionMapping, reportedModes: current.reportedModes }]);
       }));
@@ -212,9 +212,9 @@ for (const [id] of oldDefinitions) {
       { reportedModes: [...legacy.reportedModes, { id: 'owner-mode', level: 'ask' }] },
     ]) {
       const saved = decode({ ...legacy, ...override });
-      yield* serviceStart({}, () => call(ownerCredential, 'harnesses', { operation: 'set', harness: saved }));
+      yield* serviceStart({}, () => appendSetup([{ _tag: 'HarnessChanged', harness: saved }]));
       yield* serviceStart({ defaults: Effect.succeed(factories) }, () => Effect.gen(function* () {
-        expect(yield* listed).toEqual([{ ...saved, defaultPermission: 'auto' }]);
+        expect(yield* listed).toEqual([{ ...saved, defaultPermission: 'permissionMapping' in override ? 'ask' : 'auto' }]);
       }));
     }
   }).pipe(Effect.orDie));
@@ -231,3 +231,28 @@ it.effect('s26 r3 m4: listing and starting do not repeat installed-default disco
     expect(probes).toBe(1);
   }));
 }).pipe(Effect.orDie));
+
+for (const mapping of [undefined, 'unreported-auto', 'ask-mode'] as const) it.effect(`s29 1399: ask-only custom default starts when auto mapping is ${mapping}`, () =>
+  serviceStart({}, fakes => Effect.gen(function* () {
+    const custom = decode({ ...defaultClaude, defaultPermission: 'ask',
+      permissionMapping: { 'read-only': 'plan-mode', ask: 'ask-mode', edit: 'edit-mode', full: 'full-mode', ...(mapping === undefined ? {} : { auto: mapping }) },
+      reportedModes: [{ id: 'plan-mode', level: 'read-only' }, { id: 'ask-mode', level: 'ask' }] });
+    yield* appendSetup([{ _tag: 'HarnessChanged', harness: custom }]);
+    const expected = mapping === 'ask-mode' ? 'auto' : 'ask';
+    expect((yield* listed)[0]!.defaultPermission).toBe(expected);
+    yield* seedAccount('primary', 'first');
+    const payload = { ...startPayload(rig) }; delete payload.permission;
+    success(yield* call(ownerCredential, 'start', payload));
+    expect(fakes.runner.callsOf('start').at(-1)!.input.permission).toBe(expected);
+  })).pipe(Effect.orDie));
+
+it.effect('s29 1400: set refuses an ask default that would upgrade to auto without changing settings', () =>
+  serviceStart({ defaults }, () => Effect.gen(function* () {
+    const before = yield* listed;
+    const reason = failureOf(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: { ...defaultClaude, defaultPermission: 'ask', reportedModes: [...defaultClaude.reportedModes, { id: defaultClaude.permissionMapping.edit, level: 'edit' }] } }))?.reason;
+    expect(reason).toBe('The harness default is auto, as decided by the owner on 2026-11-17; ask is only valid when no automatic or edit mode is reported.');
+    expect(yield* listed).toEqual(before);
+    const custom = decode({ ...defaultClaude, defaultPermission: 'ask', reportedModes: [...defaultClaude.reportedModes, { id: defaultClaude.permissionMapping.ask, level: 'ask' }] });
+    success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: custom }));
+    expect(yield* listed).toEqual([custom, defaultCodex]);
+  })).pipe(Effect.orDie));

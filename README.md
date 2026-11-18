@@ -194,7 +194,9 @@ A failed Prepare is reported separately from that refresh.
 Approval is required for the refreshed review.
 Automatic background reads never push.
 A binary or oversized comparison refuses before publication without leaving an uncertain operation.
-A successful Prepare updates the project branch's remote-tracking reference.
+After a successful push, Prepare attempts to update the project branch's remote-tracking reference.
+A failed local tracking update does not prevent pull request creation.
+Prepare refuses a symbolic base tracking reference before fetching.
 
 Approve merges the reviewed pull request on GitHub with a merge commit.
 The engine refuses a changed reviewed head, a remote base that differs from the reviewed base, a closed request, conflicts, or checks and reviews that GitHub has not marked ready.
@@ -225,14 +227,16 @@ New harness defaults use `auto`.
 The historical upgrade is applied by field when settings are read.
 If the four old permission mappings and reported modes match the previous factory values, the row gains the automatic mapping and mode.
 This applies even when the owner edited the model, effort, run mode or adapter path.
-Every stored `defaultPermission` of `ask` reads as `auto` under the owner's decision of 2026-11-17.
+A stored `defaultPermission` of `ask` reads as `auto` when the harness reports its automatic or edit mapping.
+A custom harness that reports neither mapping keeps `ask`.
+Saving an `ask` default that would read as `auto` is refused with the owner's decision of 2026-11-17.
 The website never offered a control for that harness field.
 A stored default other than `ask` is kept.
 Custom mappings, custom reported modes and unrelated owner edits are kept.
 Existing agents keep their levels.
 The stored event log is not rewritten.
-Factory adapter discovery runs once at service startup.
-`harnesses reset` uses the same startup snapshot.
+Factory adapter discovery runs on the first load of an empty harness list and on every `harnesses reset`.
+A reset finds adapters installed since the service started.
 Ordinary starts and recovery read current stored settings without repeating discovery.
 Claude's automatic mode is `auto`.
 Codex's automatic review mode is `agent`.

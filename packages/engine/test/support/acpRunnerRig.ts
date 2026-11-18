@@ -151,7 +151,7 @@ export const harnessFor = (id: string, adapterPath: string, overrides: Record<st
     { id: "read-only", level: "read-only" }, { id: "default", level: "ask" },
     { id: "accept-edits", level: "edit" }, { id: "full-access", level: "full" },
   ],
-  defaultPermission: "ask", models: [], efforts: [], denyReadMechanism: { _tag: "none" },
+  defaultPermission: "auto", models: [], efforts: [], denyReadMechanism: { _tag: "none" },
   ...overrides,
 });
 

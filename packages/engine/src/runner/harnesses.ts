@@ -70,8 +70,8 @@ const permissionFields = (definition: typeof definitions[number]) => {
 
 // The owner's 2026-11-17 choice upgrades fields, without rewriting the log.
 // Factory permission fields are independent of executable discovery and of
-// model, effort, run-mode or launch-rule edits. Every stored ask default reads
-// as auto; other defaults and every existing agent retain their levels.
+// model, effort, run-mode or launch-rule edits. An ask default reads as auto
+// only when an automatic or edit mapping is reported. Existing agents keep their levels.
 export const effectiveHarnessSettings = (saved: HarnessSettings): HarnessSettings => {
   const definition = definitions.find(row => row.id === saved.id);
   let permissionMapping = saved.permissionMapping, reportedModes = saved.reportedModes;
@@ -84,7 +84,8 @@ export const effectiveHarnessSettings = (saved: HarnessSettings): HarnessSetting
       reportedModes = current.reportedModes;
     }
   }
-  return { ...saved, permissionMapping, reportedModes, defaultPermission: saved.defaultPermission === "ask" ? "auto" : saved.defaultPermission };
+  const supportsAutomatic = reportedModes.some(mode => mode.id === permissionMapping.auto || mode.id === permissionMapping.edit);
+  return { ...saved, permissionMapping, reportedModes, defaultPermission: saved.defaultPermission === "ask" && supportsAutomatic ? "auto" : saved.defaultPermission };
 };
 
 export const resolveHarnessDefaults = (options: { readonly binDirectory: string; readonly path: string }) =>

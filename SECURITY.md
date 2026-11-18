@@ -105,12 +105,14 @@ The historical upgrade applies by field at read time without rewriting stored ev
 A row whose four old mappings and reported modes equal the previous factory values gains the automatic mapping and mode.
 Model, effort, run-mode, adapter-path and other unrelated edits do not block that upgrade.
 Custom mappings and custom reported modes are kept.
-Every stored `defaultPermission` of `ask` reads as `auto` under the owner's decision of 2026-11-17.
-This includes a factory-identical row that the owner previously kept at `ask`.
+A stored `defaultPermission` of `ask` reads as `auto` when the harness reports its automatic or edit mapping.
+A custom harness that reports neither mapping keeps `ask`.
+This upgrade includes a factory-identical row that the owner previously kept at `ask`.
+Saving an `ask` default that would read as `auto` is refused with the owner's decision of 2026-11-17.
 The website never offered a control for that harness field.
 A stored default other than `ask` is kept.
-Factory adapter discovery runs once at service startup.
-`harnesses reset` uses the same startup snapshot.
+Factory adapter discovery runs on the first load of an empty harness list and on every `harnesses reset`.
+A reset finds adapters installed since the service started.
 Ordinary starts and recovery read current stored settings without repeating discovery.
 An older harness mapping without `auto` falls back to its `edit` mode.
 Harness status reports that fallback.
@@ -222,7 +224,8 @@ These rules apply to every change. A change that breaks one is a security bug.
    A failed update attempts an empty snapshot and then a mode-zero fallback before rejecting the old in-memory sessions.
    If storage cannot be invalidated, the request fails without claiming a successful revocation or clearing the pre-operation memory state.
    Invalid, expired, unreadable, wrongly permissioned, symbolic-link, hard-linked, oversized, or more than five minutes future-dated records do not authenticate a browser.
-   Startup permits five minutes of clock skew.
+   Startup skips only an authenticated record that exceeds five minutes of clock skew.
+   Other valid sessions in the same file survive.
    A backward clock step while running does not expire or delete a record.
    The 30-day boundary still uses wall-clock time, so a backward clock step can delay expiry.
 5. **An encrypted channel for remote access is the owner's setup**, such as TLS, a
@@ -442,10 +445,12 @@ Delivery commands disable the external transport protocol, push signing, and Git
 They also disable tag following, submodule recursion, automatic HTTP redirects, and custom remote receive and upload programs.
 The push also disables mirror mode and force mode.
 It uses the validated push URL instead of the remote name because Git applies configured fetch mappings to local references after a named-remote push.
-After a successful push, it updates only the selected project tracking reference to the pushed commit.
+After a successful push, it attempts to update only the selected project tracking reference to the pushed commit.
+A failed local tracking update does not block pull request creation.
 That update replaces a symbolic reference without following its target.
 The fetch disables pruning and configured destination ref mappings.
 It writes only the selected base under the selected remote-tracking namespace.
+A symbolic base tracking reference is refused before the fetch can follow its target.
 A renamed repository requires an updated remote URL.
 Delivery does not follow redirects or accept a different canonical repository.
 A canonical-name mismatch gives a fixed remote-URL explanation.

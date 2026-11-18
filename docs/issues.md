@@ -19766,16 +19766,20 @@ No assertion or timeout was changed, and the cause remains unproven.
 
 ## 1452. A failed tracking-ref update after the push makes Prepare report an uncertain outcome.
 
-State: Open. Found by the fourth independent review of unit s27-pullrequest on 2026-11-18.
+State: Fixed in unit s29-smallfix on 2026-11-18. Found by the fourth independent review of unit s27-pullrequest on 2026-11-18.
 
 After the push, the engine updates the project branch's remote-tracking ref through the mutating Git path (`packages/engine/src/project/git/index.ts`).
 A stale local ref such as `refs/remotes/origin/feat/x` conflicts with a branch named `feat`, and the update fails.
 Prepare then reports "Git outcome is uncertain" on every retry and opens no pull request.
 The fix makes the update best-effort and continues to pull request creation.
 
+The project tracking-reference update is now best effort after a successful push.
+A regression test plants a conflicting descendant reference and still creates the pull request.
+The test verifies the pushed head, the preserved stale reference and the absence of a pending Git attempt.
+
 ## 1453. The Prepare fetch writes through a symbolic base tracking ref.
 
-State: Open. Found by the fourth independent review of unit s27-pullrequest on 2026-11-18.
+State: Fixed in unit s29-smallfix on 2026-11-18. Found by the fourth independent review of unit s27-pullrequest on 2026-11-18.
 
 The Prepare fetch forces the base branch's remote-tracking ref to the fetched commit.
 When that tracking ref is a symbolic ref to the local base branch, the fetch moves the owner's local base branch.
@@ -19783,12 +19787,20 @@ When that tracking ref is a symbolic ref to the local base branch, the fetch mov
 Planting the symbolic ref already needs write access to the repository.
 The fix refuses, or deletes the symbolic ref, before the fetch.
 
+Prepare now refuses a symbolic base tracking reference before fetching.
+A regression test advances the fake remote base and plants a symbolic tracking reference to the local base.
+The test verifies that no fetch occurs, the local base stays unchanged and no Git attempt remains pending.
+
 ## 1454. The hosted unsupported-review test does not prove that it ran in GitHub mode.
 
-State: Open. Found by the fourth independent review of unit s27-pullrequest on 2026-11-18.
+State: Fixed in unit s29-smallfix on 2026-11-18. Found by the fourth independent review of unit s27-pullrequest on 2026-11-18.
 
 The hosted variant in `packages/engine/test/project/main-review.test.ts` never asserts a fetch call or a GitHub delivery mode.
 Its 201-file case does not check that no Git attempt is left pending.
+
+The hosted unsupported-review test now requires the explicit base fetch and a later GitHub delivery mode.
+The 201-file refusal now requires no pending Git attempt and no push.
+Deliberately signing out the fake identity makes the fetch assertion fail.
 
 ## 1403. A disconnect before the first terminal subscription retained its unread queue.
 
@@ -20040,12 +20052,16 @@ A real web-server case logs in nine times and requires only the oldest browser's
 
 ## 1425. One session record dated in the future still voids every web session.
 
-State: Open. Found by the third independent review of unit s28-session on 2026-11-17.
+State: Fixed in unit s29-smallfix on 2026-11-18. Found by the third independent review of unit s28-session on 2026-11-17.
 
 At load, a session record dated more than five minutes ahead of the clock empties the whole session file (`packages/engine/src/client/web/session.ts`).
 A host that starts with its clock an hour behind, before time synchronisation, signs every device out.
 The creation time is authenticated by the record's binding, so the test is redundant.
 The fix drops the test, or skips only that record.
+
+Startup now skips only an authenticated record more than five minutes ahead of the clock.
+A regression test keeps an older device signed in when a second device's record is an hour ahead.
+The existing skew-boundary and binding-tamper assertions remain in place.
 
 ## 1376. Restricted process execution can make installer output tests report empty output.
 
@@ -20347,28 +20363,40 @@ The long Git workspace journey at `studio.spec.ts:970` passed the whole run in 5
 
 ## 1399. A custom harness that reports no edit mode can no longer start with its default.
 
-State: Open. Found by the third independent review of unit s26-leadstart on 2026-11-17.
+State: Fixed in unit s29-smallfix on 2026-11-18. Found by the third independent review of unit s26-leadstart on 2026-11-17.
 
 A stored harness default of "ask" is read as "auto" for every harness row (`packages/engine/src/runner/harnesses.ts`).
 A harness without an automatic mode falls back to its "edit" mapping.
 An owner-added harness that reports only its plan and ask modes then fails a start with an omitted permission level, with "mode is not recorded".
 The fix keeps "ask" when the row's reported modes contain neither its automatic nor its edit mapping.
 
+The read-time upgrade now keeps an ask default unless the reported modes include the automatic or edit mapping.
+Regression tests start custom harnesses with omitted permissions and cover absent, unreported and reported automatic mappings.
+
 ## 1400. The harness default "ask" is accepted on save and never takes effect.
 
-State: Open. Found by the third independent review of unit s26-leadstart on 2026-11-17.
+State: Fixed in unit s29-smallfix on 2026-11-18. Found by the third independent review of unit s26-leadstart on 2026-11-17.
 
 The `harnesses set` command accepts a default permission of "ask" and replies with success.
 Every later read returns "auto", following the owner's decision of 2026-11-17 that "auto" is the default.
 The command should refuse "ask" with a sentence, or the engine should store a marker for an explicit choice.
 
+The set command now refuses an ask default that would be upgraded to auto.
+The refusal names the owner's decision of 2026-11-17.
+An ask default remains valid when neither the automatic nor edit mapping is reported.
+Historical migration tests append old events directly because new commands now refuse these obsolete defaults.
+
 ## 1401. Resetting harness settings uses the probe taken at service start.
 
-State: Open. Found by the third independent review of unit s26-leadstart on 2026-11-17.
+State: Fixed in unit s29-smallfix on 2026-11-18. Found by the third independent review of unit s26-leadstart on 2026-11-17.
 
 The service resolves the installed harness defaults once at start.
 A harness installed while the service runs is not found by `harnesses reset` until a restart.
 Before unit s26-leadstart the reset probed again.
+
+The service now supplies a repeatable discovery effect for the first empty load and every reset.
+A real service test installs a fake adapter after startup and finds it on reset.
+Ordinary reads and starts retain their existing stored-settings cache.
 
 ## 1402. The visible changes list of unit s26-leadstart omitted three effects.
 
@@ -20376,3 +20404,34 @@ State: Recorded. Found by the third independent review of unit s26-leadstart on 
 
 The list omitted the reset behaviour of issue 1401 and the start refusal of issue 1399.
 It also omitted that a lead's worker start now reports an unregistered checkout or a machine mismatch before a permission or folder refusal.
+
+## s29-1. Shared fake harness fixtures used a now-refused default.
+
+State: Fixed during unit s29-smallfix on 2026-11-18.
+The shared service and runner fixtures saved an ask default for harnesses with a reported edit mapping.
+The validation added for issue 1400 correctly refused those new settings.
+The first whole test run exposed those obsolete fixture inputs.
+Both helpers now save auto, which was already their effective default when settings were read.
+Historical migration tests still append old events with ask defaults directly.
+No existing assertion was removed or loosened.
+
+## s29-2. Ten browser journeys failed in the whole run.
+
+State: Open as browser failures observed during unit s29-smallfix on 2026-11-18.
+The whole browser suite passed 68 journeys and failed ten journeys.
+The main review at `packages/web/e2e/git.spec.ts:183` still showed its loading comparison after five seconds.
+The stale-head review at `packages/web/e2e/git.spec.ts:222` still had a disabled approval button after five seconds.
+The repository Design case at `packages/web/e2e/new-project.spec.ts:433` still reported that its design was not loaded after five seconds.
+The newline-path case at `packages/web/e2e/git.spec.ts:303` did not find Refresh Git within five seconds.
+The temporary-remote case at `packages/web/e2e/git.spec.ts:316` did not find Refresh Git within five seconds.
+The projects-and-board case at `packages/web/e2e/studio.spec.ts:372` did not observe the expected project name in the topbar within five seconds.
+The extended Git case at `packages/web/e2e/studio.spec.ts:970` reached its six-minute overall limit.
+The Files case at `packages/web/e2e/studio.spec.ts:1200` did not observe its expected file-panel attribute within five seconds.
+The Terminal case at `packages/web/e2e/studio.spec.ts:1202` did not observe its expected terminal-tab count within five seconds.
+The clean-base hosted review at `packages/web/e2e/studio.spec.ts:1208` did not find the dialog's approval button within ten seconds.
+All ten cases passed as separate single-test reruns with their existing assertions and time limits.
+The extended Git case passed alone in 3.8 minutes.
+These ten failures were observed only in the whole run during this task.
+No assertion or time limit was changed.
+No unit test or typecheck from this task ran during these browser checks.
+The cause remains unproven.

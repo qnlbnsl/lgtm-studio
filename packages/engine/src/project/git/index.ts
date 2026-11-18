@@ -385,6 +385,9 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     const tracking = `refs/remotes/${remote}/${base}`;
     if ((await run(folder, ["check-ref-format", tracking], signal)).code !== 0
       || (await run(folder, ["check-ref-format", `refs/heads/${base}`], signal)).code !== 0) return fail("invalid_ref");
+    const symbolic = await run(folder, ["symbolic-ref", "--quiet", tracking], signal);
+    if (symbolic.code === 0) return fail("invalid_ref");
+    if (symbolic.code !== 1) throw processFailure(symbolic);
     // This repeatable bookkeeping fetch publishes nothing and changes no
     // checkout. Later comparison refusals must remain determinate.
     const reply = await run(folder, [...deliveryOptions, "fetch", "--upload-pack=git-upload-pack", "--no-tags", "--no-prune", "--no-recurse-submodules", "--refmap=", "--", remote,
@@ -809,7 +812,10 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
         `${reviewed.head}:refs/heads/${reviewed.branch}`], signal, "push");
       // URL pushes skip named-remote bookkeeping. Replace only this tracking
       // ref, never a symbolic target that could name the owner's local branch.
-      await mutateGit(from.path, ["update-ref", "--no-deref", `refs/remotes/${mode.remote}/${reviewed.branch}`, reviewed.head], signal);
+      // The branch is already published. A stale conflicting local ref must
+      // not prevent creation of its pull request or make publication uncertain.
+      try { await git(from.path, ["update-ref", "--no-deref", `refs/remotes/${mode.remote}/${reviewed.branch}`, reviewed.head], signal); }
+      catch { /* local tracking bookkeeping is best effort */ }
       let found = await list("open");
       if (found.length === 0) {
         const created = await gh.run(["pr", "create", ...args, "--head", reviewed.branch, "--base", reviewed.base, "--title", text.title, "--body", text.body]);

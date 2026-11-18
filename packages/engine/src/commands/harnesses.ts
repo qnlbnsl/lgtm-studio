@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import * as Effect from "effect/Effect";
 
+import { effectiveHarnessSettings } from "../runner/harnesses.ts";
 import type { LogWriteFailed } from "../log/EventLog.ts";
 import { freshRequest, readHarnesses, refused, type Input, type Payload, type Plan, type Runtime } from "./internal.ts";
 
@@ -8,7 +9,12 @@ export const harnesses = (input: Input, payload: Payload<"harnesses">): Effect.E
   Effect.gen(function* () {
     switch (payload.operation) {
       case "list": return { events: [] };
-      case "set": return { events: [{ _tag: "HarnessChanged", harness: payload.harness }] };
+      case "set": {
+        if (payload.harness.defaultPermission === "ask" && effectiveHarnessSettings(payload.harness).defaultPermission !== "ask") {
+          return yield* refused("The harness default is auto, as decided by the owner on 2026-11-17; ask is only valid when no automatic or edit mode is reported.");
+        }
+        return { events: [{ _tag: "HarnessChanged", harness: payload.harness }] };
+      }
       // Fix round 1, N-1: the owner's way back to the defaults. A harness the
       // defaults do not name, such as one the owner added, is left as it is.
       case "reset": {

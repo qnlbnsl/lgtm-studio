@@ -82,11 +82,13 @@ export const makeSession = (password: Redacted.Redacted<string> | undefined, reg
       const seen = new Set<string>();
       for (const r of parsed) {
         if (r === null || !hex(r.verifier, 64) || !hex(r.passwordSalt, 32) || !hex(r.passwordBinding, 64)
-          || !Number.isSafeInteger(r.createdAt) || r.createdAt > Date.now() + clockSkewMs || seen.has(r.verifier)
+          || !Number.isSafeInteger(r.createdAt) || seen.has(r.verifier)
           || !equal(r.passwordBinding, binding(r, plain))) throw new Error('invalid');
         seen.add(r.verifier);
       }
-      const next = parsed.filter(live);
+      // A clock step can place one authenticated record in the future. Skip
+      // only that record; it cannot invalidate other devices in the collection.
+      const next = parsed.filter(r => live(r) && r.createdAt <= Date.now() + clockSkewMs);
       // Prove this file can be updated before accepting its cookies. If both
       // checkpoint and invalidation fail, this instance stays closed to login.
       write(next);
