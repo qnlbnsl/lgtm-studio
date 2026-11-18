@@ -1,5 +1,5 @@
 import {
-  closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readlinkSync, readSync, realpathSync, statSync,
+  closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readFileSync, readlinkSync, readSync, realpathSync, statSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, parse, resolve, sep } from "node:path";
 
@@ -28,6 +28,10 @@ interface FolderRequest {
   readonly home: string;
   readonly stateFolder: string;
   readonly pluginRoot: string;
+  // Engine-owned live views, evaluated again immediately before each spawn.
+  readonly registeredWorktrees?: Effect.Effect<ReadonlyArray<string>>;
+  readonly projectWorktrees?: Effect.Effect<{ readonly allowed: ReadonlyArray<string>; readonly boundaries: ReadonlyArray<string>; readonly outsideHome?: ReadonlyArray<string> }>;
+  readonly harnessHomes?: Effect.Effect<ReadonlyArray<string>>;
 }
 
 // `readMountInfo` replaces the read of `/proc/self/mountinfo`, for tests.
@@ -230,31 +234,85 @@ const containsMountedProtected = (
   return false;
 };
 
-const check = (request: FolderRequest, dependencies: Dependencies): FolderGrant => {
+const check = (request: FolderRequest, dependencies: Dependencies, registered: ReadonlyArray<string>, harnessHomes: ReadonlyArray<string>, boundaries: ReadonlyArray<string> = [], kind: "child" | "allocation-source" | "allocation-directory" = "child", outsideHome: ReadonlyArray<string> = []): FolderGrant => {
   const real = realDirectory(request.folder, "folder is not an existing directory");
   const identity = identityOf(real);
   if (request.caller._tag === "owner") return new FolderGrant(real, request, dependencies, identity);
 
-  // Refused folders (decision rows 56 and 65): the folder may not be, be
-  // inside, or contain the owner's home folder, the state folder or the
-  // plugin root, compared by device and inode. A protected folder that
-  // cannot be resolved refuses every agent-started child.
   const own = ancestry(real);
-  const protectedLines: Array<Identity> = [];
-  for (const protectedPath of [request.home, request.stateFolder, request.pluginRoot]) {
-    const protectedReal = realDirectory(protectedPath, "a protected folder cannot be resolved");
-    const protectedIdentity = identityOf(protectedReal);
-    if (own.some((ancestor) => sameIdentity(ancestor, protectedIdentity))) {
-      throw new Refusal("folder is, or is inside, a protected folder");
+  const homeReal = realDirectory(request.home, "a protected folder cannot be resolved");
+  const homeIdentity = identityOf(homeReal);
+  const homeLine = ancestry(homeReal);
+  if (homeLine.some((ancestor) => sameIdentity(ancestor, identity)))
+    throw new Refusal(sameIdentity(identity, homeIdentity) ? "folder is, or is inside, a protected folder" : "folder contains a protected folder");
+  const inHome = own.some((ancestor) => sameIdentity(ancestor, homeIdentity));
+  // Enumerate only immediate home dotdirectories, never their contents or
+  // credential files. Follow directory aliases so protection uses identity.
+  const dotFolders = readdirSync(homeReal).filter((name) => name.startsWith(".")).flatMap((name) => {
+    const path = join(homeReal, name);
+    try { return statSync(path).isDirectory() ? [path] : []; }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw new Refusal("a home dotfolder cannot be checked");
     }
-    const line = ancestry(protectedReal);
-    if (line.some((ancestor) => sameIdentity(ancestor, identity))) {
-      throw new Refusal("folder contains a protected folder");
-    }
+  });
+  const protectedLines: Array<Identity> = [...homeLine];
+  const protectedRoots = [request.stateFolder, request.pluginRoot, ...dotFolders, ...harnessHomes].map((path) => {
+    const resolved = realDirectory(path, "a protected folder cannot be resolved");
+    const line = ancestry(resolved);
     protectedLines.push(...line);
+    return { identity: identityOf(resolved), line };
+  });
+  const protect = (folder: string) => {
+    const id = identityOf(folder), line = ancestry(folder);
+    for (const protectedRoot of protectedRoots) {
+      if (line.some((ancestor) => sameIdentity(ancestor, protectedRoot.identity)))
+        throw new Refusal("folder is, or is inside, a protected folder");
+      if (kind === "child" && protectedRoot.line.some((ancestor) => sameIdentity(ancestor, id)))
+        throw new Refusal("folder contains a protected folder");
+    }
+    if (kind === "child" && containsMountedProtected(dependencies, folder, protectedLines))
+      throw new Refusal("folder contains a mounted protected folder");
+  };
+  protect(real);
+  if (kind === "allocation-directory") return new FolderGrant(real, request, dependencies, identity);
+  const roots = (inHome ? registered : [...registered, ...outsideHome]).flatMap((path) => {
+      try {
+        const resolved = realDirectory(path, "registered worktree is unavailable");
+        if (resolved !== path) return [];
+        const identity = identityOf(resolved);
+        const distance = own.findIndex((ancestor) => sameIdentity(ancestor, identity));
+        return distance < 0 ? [] : [{ path: resolved, distance, identity }];
+      } catch { return []; }
+  }).sort((a, b) => a.distance - b.distance);
+  const root = roots.find(row => !homeLine.some(ancestor => sameIdentity(ancestor, row.identity)));
+  // A broad own registration can identify a project boundary outside home
+  // without granting home admission or changing the older containment rule.
+  const boundaryRoot = inHome ? root : roots[0];
+  if (inHome && root === undefined) throw new Refusal("This folder inside home is not a registered worktree of the starter's project. Ask the owner to restore its registration before retrying.");
+  for (const path of [...registered, ...boundaries]) {
+    let resolved: string;
+    try { resolved = realDirectory(path, "registered worktree is unavailable"); } catch { continue; }
+    // A registration is a canonical path, never a movable symbolic alias.
+    // Spelling is used only to refuse an alias, never to grant admission.
+    const supplied = resolve(request.folder);
+    if (resolved !== path && (supplied === path || supplied.startsWith(path + sep)))
+      throw new Refusal("The registered worktree path is now a symbolic link. Ask the owner to restore its directory before retrying.");
+    const distance = own.findIndex(ancestor => sameIdentity(ancestor, identityOf(resolved)));
+    if (distance >= 0 && (boundaryRoot === undefined || distance < boundaryRoot.distance))
+      throw new Refusal(root === undefined ? "This folder belongs to a worktree outside the starter's project." : "This folder belongs to a nested worktree outside the starter's project.");
   }
-  if (containsMountedProtected(dependencies, real, protectedLines)) {
-    throw new Refusal("folder contains a mounted protected folder");
+  if (root !== undefined) {
+    // A linked checkout without a registration must not inherit an enclosing
+    // main checkout's grant. The nearest own registration is the boundary.
+    for (let path = real, depth = 0; depth < root.distance; path = dirname(path), depth++) {
+      try { lstatSync(join(path, ".git")); }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
+        throw new Refusal("A nested checkout cannot be checked.");
+      }
+      throw new Refusal("This nested checkout is not registered to the starter's project.");
+    }
   }
 
   // Containment (decision row 35a), by identity rather than by spelling.
@@ -283,7 +341,47 @@ const run = <A>(body: () => A): Effect.Effect<A, FolderRefused> =>
 export const checkFolder = (
   request: FolderRequest, dependencies: Dependencies = {},
 ): Effect.Effect<FolderGrant, FolderRefused> =>
-  run(() => check(request, dependencies));
+  Effect.gen(function* () {
+    if (request.caller._tag === "owner") return yield* run(() => check(request, dependencies, [], []));
+    const scope = yield* (request.projectWorktrees ?? Effect.succeed(undefined));
+    const registered = scope?.allowed ?? (yield* (request.registeredWorktrees ?? Effect.succeed([])));
+    const homes = yield* (request.harnessHomes ?? Effect.succeed([]));
+    return yield* run(() => check(request, dependencies, registered, homes, scope?.boundaries, "child", scope?.outsideHome));
+  });
+
+// Pre-allocation validation may use a source containing a protected sibling.
+// It never produces a grant that a runner can use. The actual child still
+// needs ordinary admission and live revalidation after allocation.
+export const checkAllocationSource = (request: FolderRequest): Effect.Effect<void, FolderRefused> => Effect.gen(function* () {
+  if (request.caller._tag === "owner") return yield* checkFolder(request).pipe(Effect.asVoid);
+  const scope = yield* (request.projectWorktrees ?? Effect.succeed(undefined));
+  const registered = scope?.allowed ?? (yield* (request.registeredWorktrees ?? Effect.succeed([])));
+  const homes = yield* (request.harnessHomes ?? Effect.succeed([]));
+  yield* run(() => check(request, {}, registered, homes, scope?.boundaries, "allocation-source", scope?.outsideHome));
+});
+
+// Check the destination's existing directory ancestry before Git can create
+// .worktrees or write shared metadata. The allocation parent may contain the
+// service as a sibling, but cannot be protected itself or be inside it.
+// Missing suffixes are checked through their nearest existing parent. This
+// returns no admission grant; the actual child still needs normal admission.
+export const checkAllocationDirectory = (request: FolderRequest): Effect.Effect<void, FolderRefused> => Effect.gen(function* () {
+  if (request.caller._tag === "owner") return;
+  const homes = yield* (request.harnessHomes ?? Effect.succeed([]));
+  yield* run(() => {
+    if (!isAbsolute(request.folder)) throw new Refusal("allocation directory is not absolute");
+    let path = request.folder;
+    for (;;) {
+      try { lstatSync(path); break; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT" || dirname(path) === path)
+          throw new Refusal("allocation directory cannot be checked");
+        path = dirname(path);
+      }
+    }
+    check({ ...request, folder: path }, {}, [], homes, [], "allocation-directory");
+  });
+});
 
 // Called immediately before every spawn, `resume` and reload (decision rows
 // 56 and 65). The original request is checked again from the start, the
@@ -292,18 +390,20 @@ export const checkFolder = (
 // `session/new`, only the path this returns. Issue 49 records the gap left
 // between this check and the spawn.
 export const folderForSpawn = (grant: FolderGrant, operation: Operation): Effect.Effect<string, FolderRefused> =>
-  run(() => {
-    if (!(grant instanceof FolderGrant)) throw new Refusal("folder grant is not valid");
-    const again = check(FolderGrant.request(grant), FolderGrant.dependencies(grant));
-    const stored = grant.realPath;
-    if (again.realPath !== stored || realpathSync(stored) !== stored) {
-      throw new Refusal(`folder moved before ${operation}`);
-    }
-    if (!sameIdentity(identityOf(stored), FolderGrant.identity(grant))
-      || !sameIdentity(FolderGrant.identity(again), FolderGrant.identity(grant))) {
-      throw new Refusal(`folder was replaced before ${operation}`);
-    }
-    return stored;
+  Effect.gen(function* () {
+    if (!(grant instanceof FolderGrant)) return yield* run(() => { throw new Refusal("folder grant is not valid"); });
+    const again = yield* checkFolder(FolderGrant.request(grant), FolderGrant.dependencies(grant));
+    return yield* run(() => {
+      const stored = grant.realPath;
+      if (again.realPath !== stored || realpathSync(stored) !== stored) {
+        throw new Refusal(`folder moved before ${operation}`);
+      }
+      if (!sameIdentity(identityOf(stored), FolderGrant.identity(grant))
+        || !sameIdentity(FolderGrant.identity(again), FolderGrant.identity(grant))) {
+        throw new Refusal(`folder was replaced before ${operation}`);
+      }
+      return stored;
+    });
   });
 
 // An agent may give a child its own mode or a lower one; the owner may give

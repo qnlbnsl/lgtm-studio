@@ -235,8 +235,17 @@ What an agent may do depends on who started whom. That gives two rules:
 **Chosen in this spec:** permission modes are compared on LGTM Studio's own
 scale, because each harness names its modes differently. The scale, from
 narrowest to widest, is: read only, ask before every change, edit files
-without asking, and full access. Each harness maps its own modes onto this
-scale in its settings.
+without asking, automatic review, and full access.
+The owner added automatic review on 2026-11-17 as the default for new leads and workers.
+An omitted child level is limited by the saved harness default and the starter's ceiling.
+Existing agents keep their levels.
+Unrelated owner edits, custom permission mappings and non-ask harness defaults are kept.
+Factory-identical permission mappings and reported modes receive automatic mode fields at read time, even when other fields were edited.
+Every stored ask default reads as auto under the owner's decision of 2026-11-17.
+The website never offered a control for that harness field.
+Each harness maps its own modes onto this scale in its settings.
+Claude uses `auto`, and Codex uses `agent` for automatic review.
+An older or unsupported automatic mapping falls back to `edit` and reports that fact in harness status.
 
 An answer to a permission request routed to a person is an authenticated
 `answer` command. It is never read out of an agent's text. LGTM Studio's own
@@ -620,10 +629,25 @@ The owner chose fully automatic recovery (row 49). In order:
   live stream and the secret-setting command.
 - The engine offers agents no file or terminal access through ACP. Agents use
   their own harness's tools and sandbox.
-- The permission ceiling also covers where a child works (inside its
-  parent's folder, or a worktree of the same repository, and never the
-  owner's home folder, LGTM Studio's state folder or LGTM Studio's own install),
-  the "allow always" kind of answer, and mode changes the adapter reports.
+- The permission ceiling also covers where a child works, the "allow always" kind of answer, and mode changes the adapter reports.
+  A child stays inside its parent's folder or a worktree of the same repository.
+  On 2026-11-17, the owner allowed home descendants only under registered project or team worktrees, or engine allocations, of the starter's own project.
+  The home itself and its ancestors remain refused.
+  The state folder, plugin root, immediate home dotdirectories and existing configured login folders remain protected with their ancestors and descendants.
+  The engine resolves directory aliases and compares device and inode identities along real ancestors.
+  It checks the child folder, including protected mounts.
+  A protected sibling elsewhere in a registration does not refuse a clean child.
+  The source of a new allocation may contain the service checkout.
+  The source cannot be a protected folder or be inside one.
+  That source check returns no spawn grant.
+  The nearest registered workspace across all projects sets the boundary.
+  A foreign or unregistered nested checkout cannot inherit a broader grant.
+  Registered paths must remain canonical directories.
+  The trusted records are refreshed at every spawn, recovery and resume.
+  The allocator's pending registration is usable only at its validated log head before append.
+  The committed registration is required after append.
+  A removed registration makes a later resume refuse with a sentence reason.
+  The owner's exception and the read-only foreign-checkout rule remain.
   An answer that would save a permission rule, or a request to edit a
   harness's settings file, always goes to the owner.
 - Every secret LGTM Studio knows is removed from every event before it is

@@ -362,16 +362,16 @@ export function makeHarnessPrograms(options: { home: string; path: string; state
     },
     defaultSettings: (id, path) => {
       if (!["claude", "codex", "gemini", "cursor"].includes(id)) return undefined
-      const mapping = id === "claude" ? ["plan", "default", "acceptEdits", "bypassPermissions"] : id === "codex"
-        ? ["read-only", "read-only", "workspace-write", "agent-full-access"] : id === "gemini" ? ["plan", "default", "autoEdit", "yolo"] : ["ask", "ask", "agent", "agent"]
+      const mapping = id === "claude" ? ["plan", "default", "acceptEdits", "auto", "bypassPermissions"] : id === "codex"
+        ? ["read-only", "read-only", "workspace-write", "agent", "agent-full-access"] : id === "gemini" ? ["plan", "default", "autoEdit", "autoEdit", "yolo"] : ["ask", "ask", "agent", "agent", "agent"]
       const adapterPath = id === "claude" || id === "codex" ? fileURLToPath(new URL(`../../node_modules/.bin/${id === "claude" ? "claude-agent-acp" : "codex-acp"}`, import.meta.url)) : path
-      const [readOnly, ask, edit, full] = mapping as [string, string, string, string]
+      const [readOnly, ask, edit, auto, full] = mapping as [string, string, string, string, string]
       const reportedModes: HarnessSettings["reportedModes"][number][] = []
-      for (const [id, level] of [[readOnly, "read-only"], [ask, "ask"], [edit, "edit"], [full, "full"]] as const) {
+      for (const [id, level] of [[readOnly, "read-only"], [ask, "ask"], [edit, "edit"], [auto, "auto"], [full, "full"]] as const) {
         if (!reportedModes.some((mode) => mode.id === id)) reportedModes.push({ id, level })
       }
       return { id: id as HarnessSettings["id"], runMode: "acp", adapterPath, adapterArguments: id === "gemini" ? ["--acp"] : id === "cursor" ? ["acp"] : [],
-        permissionMapping: { "read-only": readOnly, ask, edit, full }, reportedModes, defaultPermission: "ask", models: [], efforts: [], denyReadMechanism: { _tag: "none" } }
+        permissionMapping: { "read-only": readOnly, ask, edit, auto, full }, reportedModes, defaultPermission: "auto", models: [], efforts: [], denyReadMechanism: { _tag: "none" } }
     }
   }
 }

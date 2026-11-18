@@ -47,6 +47,74 @@ user. It is still planned. On 2026-11-03 the owner approved building remote
 access before it, so that LGTM Studio is in use sooner. Until it is built, any
 agent can read LGTM Studio's state folder, including the stored account keys.
 
+On 2026-11-17, the owner approved a narrow exception to the home-folder rule.
+An agent-started child may work inside home only beneath a currently registered worktree of its starter's own project.
+Only the project worktree, team worktrees and engine-allocated worker worktrees grant this exception.
+A manually registered descendant alone grants nothing.
+Real paths are resolved and compared by device and inode along their ancestors.
+The existing parent-folder and same-repository checks still apply.
+Selecting another agent's checkout still requires read-only permission.
+The home folder itself and any folder containing it remain refused.
+The state folder and plugin root remain refused, together with their ancestors and descendants.
+The engine enumerates immediate home dotdirectories and resolves directory aliases without reading their contents.
+These directories and existing configured account login folders receive the same protection.
+Login paths include account homes and harness home-variable overrides, including resolved secret references.
+They also include login-store fallbacks under an alternate `HOME` and Cursor's `XDG_CONFIG_HOME`.
+The child's own folder must pass the protection checks, including the Linux mount-table check.
+A protected sibling elsewhere in the registered root does not refuse a clean child folder.
+The root of the main checkout containing the service remains refused as a child folder.
+A clean subfolder such as `<repository>/packages` is admitted when the starter is already in that main checkout and the other rules pass.
+A worker allocated beside the service checkout may start.
+These worktrees share Git's common directory, including configuration and hooks, with the service checkout.
+The folder rule does not isolate that shared metadata.
+Before allocation, the source may contain a protected folder but cannot be one or be inside one.
+That preliminary check returns no spawn grant.
+Before creating a worker checkout, the engine also checks the allocation directory and Git common directory against protected identities.
+Neither may be a protected folder or be inside one.
+A missing allocation directory is checked through its nearest existing ancestor before Git can create it or change the exclusion file.
+A protected sibling in the allocation directory remains allowed.
+The allocated child receives ordinary admission before registration and again before spawn.
+The nearest registered workspace across all projects sets the boundary, including outside home when no own-project root contains the folder.
+A nested foreign or unregistered checkout cannot inherit a broader project root's grant.
+Registered paths must still be canonical real directories.
+Relative login paths and regular files are excluded from login-directory discovery.
+An unreadable immediate home dotfolder fails closed for every agent-started child, including outside home, recovery and resume.
+The reason is `a home dotfolder cannot be checked`.
+An unresolved directory alias could point into the requested folder, so identity comparison cannot prove it unrelated.
+The owner must restore access or remove the stale entry before retrying.
+The owner caller retains its exception.
+The engine reads the current project views again before every spawn, recovery reload and resume.
+The allocator may validate its own pending registration at the same log head before the atomic append.
+After that append, the grant relies exclusively on the committed registration.
+A later registration removal makes a later resume refuse with a sentence reason.
+The owner caller keeps the existing exception.
+The spawn race and non-Linux mount limits in issue 49 remain unchanged.
+
+The owner also chose the `auto` default on 2026-11-17.
+The owner's decision of 2026-11-17 accepts the harness's own reviewer approving routine commands at `auto`.
+Only requests the harness raises reach the engine and its owner-only routing for persistent settings.
+A command approved within the harness can change `.claude/settings.json` or `.mcp.json` without an owner prompt.
+Codex's automatic reviewer may approve a sandbox escalation without asking the owner.
+Automatic review may also refuse an action.
+The folder ceiling limits the start folder, not the paths touched by approved commands.
+The declared permission-level ceiling still applies to child starts and modes the adapter reports.
+The scale is `read-only`, `ask`, `edit`, `auto`, then `full`.
+An omitted child permission uses the lowest of `auto`, the saved harness default and its starter's level.
+Existing agents retain their levels.
+The historical upgrade applies by field at read time without rewriting stored events.
+A row whose four old mappings and reported modes equal the previous factory values gains the automatic mapping and mode.
+Model, effort, run-mode, adapter-path and other unrelated edits do not block that upgrade.
+Custom mappings and custom reported modes are kept.
+Every stored `defaultPermission` of `ask` reads as `auto` under the owner's decision of 2026-11-17.
+This includes a factory-identical row that the owner previously kept at `ask`.
+The website never offered a control for that harness field.
+A stored default other than `ask` is kept.
+Factory adapter discovery runs once at service startup.
+`harnesses reset` uses the same startup snapshot.
+Ordinary starts and recovery read current stored settings without repeating discovery.
+An older harness mapping without `auto` falls back to its `edit` mode.
+Harness status reports that fallback.
+
 The harness installation receipts are in that state folder.
 A hostile process running as the same user can rewrite a receipt and make a
 changed program pass the "changed since install" check.

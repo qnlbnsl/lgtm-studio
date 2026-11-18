@@ -4,6 +4,8 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 
+import { defaultChildPermission } from "../src/permission.ts"
+import { HarnessSettings, permissionModeFor, autoPermissionStatus } from "../src/harnesses.ts"
 import {
   acpPermissionOptionKinds,
   comparePermission,
@@ -13,12 +15,12 @@ import {
 } from "../src/permission.ts"
 import * as Schema from "effect/Schema"
 
-const ascending = ["read-only", "ask", "edit", "full"] as const
+const ascending = ["read-only", "ask", "edit", "auto", "full"] as const
 
 describe("permission scale order", () => {
   // Catches: a level added, dropped or reordered in `permissionLevels`, which would
   // let `full` sort below `edit` and break every "at or below its own mode" check.
-  it("lists the levels from lowest to highest, exactly four", () => {
+  it("lists the levels from lowest to highest, exactly five", () => {
     expect([...permissionLevels]).toEqual([...ascending])
   })
 
@@ -34,7 +36,7 @@ describe("permission scale order", () => {
   })
 
   // Catches: the literal schema accepting a level outside the scale, or rejecting one inside it.
-  it("decodes exactly the four level names", () => {
+  it("decodes exactly the five level names", () => {
     const decode = Schema.decodeUnknownSync(PermissionLevel)
     for (const level of ascending) expect(decode(level)).toBe(level)
     for (const bad of ["", "readonly", "Full", "admin", "plan", 3, null]) {
@@ -105,3 +107,33 @@ describe("ACP permission option kinds", () => {
     expect(permissionForOptionKind("")).toEqual({ level: "full", persistent: true })
   })
 })
+
+it("preserves historical harness settings and falls back from auto to edit without changing saved defaults", () => {
+  const old = { id: "legacy", runMode: "acp", adapterPath: "/tmp/adapter", adapterArguments: [],
+    permissionMapping: { "read-only": "r", ask: "a", edit: "e", full: "f" },
+    reportedModes: [], defaultPermission: "ask", models: [], efforts: [], denyReadMechanism: { _tag: "none" } };
+  const decoded = Schema.decodeUnknownSync(HarnessSettings)(old);
+  expect(decoded).toEqual(old);
+  expect(permissionModeFor(decoded, "auto")).toBe("e");
+  expect(autoPermissionStatus(decoded)).toContain("auto uses this harness's edit mode");
+  for (const level of ["read-only", "ask", "edit", "full"] as const)
+    expect(permissionModeFor(decoded, level)).toBe(old.permissionMapping[level]);
+  expect(defaultChildPermission()).toBe("auto");
+});
+
+it('s26 r2 M1: status distinguishes an older mapping from an unsupported automatic mode', () => {
+  const legacy = Schema.decodeUnknownSync(HarnessSettings)({ id: 'claude', runMode: 'acp', adapterPath: '/tmp/adapter', adapterArguments: [],
+    permissionMapping: { 'read-only': 'plan', ask: 'default', edit: 'acceptEdits', full: 'bypassPermissions' }, reportedModes: [], defaultPermission: 'ask', models: [], efforts: [], denyReadMechanism: { _tag: 'none' } });
+  expect(autoPermissionStatus(legacy)).toMatch(/stored.*mapping.*no auto/i);
+  expect(autoPermissionStatus({ ...legacy, permissionMapping: { ...legacy.permissionMapping, auto: 'acceptEdits' } })).toMatch(/no separate automatic review mode/);
+});
+
+it('s26 r2 M2: security documentation states the automatic reviewer and folder-ceiling limits', () => {
+  const security = readFileSync(new URL('../../../SECURITY.md', import.meta.url), 'utf8');
+  const decisions = readFileSync(new URL('../../../.plans/plans/lgtm-engine/decisions.md', import.meta.url), 'utf8');
+  for (const text of [security, decisions]) {
+    expect(text).toContain('Only requests the harness raises reach the engine');
+    expect(text).toContain('The folder ceiling limits the start folder');
+    expect(text).toContain('2026-11-17');
+  }
+});

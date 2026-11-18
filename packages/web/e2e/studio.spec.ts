@@ -443,7 +443,7 @@ test("live projects and board: signs in through the engine, shows its real recor
         const taskId = success(yield* call(ownerCredential, "project.task.create", { ...project.task, title: "Engine task", label: "TK-1" })).taskId
         success(yield* call(ownerCredential, "project.task.note", { projectId: project.projectId, taskId, title: "Recorded note", detail: "Actual engine history" }))
         yield* seedAccount("studio-ready", "cursor")
-        success(yield* call(ownerCredential, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }] }) }))
+        success(yield* call(ownerCredential, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }] }) }))
         success(yield* call(ownerCredential, "accounts set-secret", { accountId: "studio-ready", name: "CURSOR_API_KEY", nonce: "studio-browser", value: Redacted.make("synthetic-studio-browser-key") }))
         const channelId = success(yield* call(ownerCredential, "board.open", { name: "project-updates" })).channelId
         success(yield* call(ownerCredential, "board.members", { channelId, add: [project.workerId], remove: [] }))
@@ -812,7 +812,7 @@ test("live first run: saves settings, registers the existing folder and creates 
         yield* registerRebuildCheck()
         yield* seedAccount("setup-ready", "cursor")
         success(yield* call(ownerCredential, "harnesses", { operation: "set", harness: harnessSettings("cursor", {
-          adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }]
+          adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }]
         }) }))
         success(yield* call(ownerCredential, "accounts set-secret", { accountId: "setup-ready", name: "CURSOR_API_KEY", nonce: "studio-setup", value: Redacted.make("synthetic-studio-setup-key") }))
         yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists,
@@ -950,7 +950,7 @@ test("live website: subscriptions, notifications and service settings persist th
         })
         const savedProject = success(yield* call(ownerCredential, 'project.settings', {})).settings
         expect(savedProject.workspaceFolder).toBe(rig.work)
-        expect(savedProject.lead).toMatchObject({ harness: 'first', model: 'other-model', effort: 'high', permission: 'edit' })
+        expect(savedProject.lead).toMatchObject({ harness: 'first', model: 'other-model', effort: 'high', permission: 'auto' })
         const savedRoles = success(yield* call(ownerCredential, 'roles.settings.get', {})).settings
         expect(savedRoles).toMatchObject({ stallWatch: true, limits: { stallMinutes: 37, capacityBackoffMinutes: 6, capacityRetries: 2, crashRetries: 0, teamIdleMinutes: 90 } })
       })).pipe(Effect.provide(buildServices(rig, engineLists).pipe(Layer.provide(dependencies))), Effect.provide(runner.layer))
@@ -991,7 +991,7 @@ test("live messages: a new project has General and Leads and accepts an owner po
         yield* registerRebuildCheck()
         yield* seedAccount("setup-ready", "cursor")
         success(yield* call(ownerCredential, "harnesses", { operation: "set", harness: harnessSettings("cursor", {
-          adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }]
+          adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }]
         }) }))
         success(yield* call(ownerCredential, "accounts set-secret", { accountId: "setup-ready", name: "CURSOR_API_KEY", nonce: "studio-setup", value: Redacted.make("synthetic-studio-setup-key") }))
         yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists,

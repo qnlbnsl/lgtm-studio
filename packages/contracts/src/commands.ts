@@ -62,7 +62,7 @@ export const EngineCommandsRpcGroup = RpcGroup.make(
       ]),
       model: Schema.optionalKey(ChoiceId),
       effort: Schema.optionalKey(ChoiceId),
-      permission: PermissionLevel,
+      permission: Schema.optionalKey(PermissionLevel),
       folder: Schema.String.check(Schema.isPattern(/^\/.*$/)),
       projectId: Schema.optionalKey(ProjectId),
       worktreeId: Schema.optionalKey(WorkspaceId),

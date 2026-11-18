@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema"
 
-export const permissionLevels = ["read-only", "ask", "edit", "full"] as const
+export const permissionLevels = ["read-only", "ask", "edit", "auto", "full"] as const
 export const PermissionLevel = Schema.Literals(permissionLevels)
 export type PermissionLevel = typeof PermissionLevel.Type
 
@@ -19,3 +19,8 @@ export function permissionForOptionKind(kind: string): { readonly level: Permiss
     default: return { level: "full", persistent: true }
   }
 }
+
+// Omitted levels honor the saved harness default and starter's ceiling,
+// with auto as the widest implicit choice.
+export const defaultChildPermission = (parent?: PermissionLevel, harnessDefault: PermissionLevel = "auto"): PermissionLevel =>
+  ([parent ?? "auto", harnessDefault, "auto"] as ReadonlyArray<PermissionLevel>).reduce((lowest, level) => comparePermission(level, lowest) < 0 ? level : lowest)

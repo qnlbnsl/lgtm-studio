@@ -18767,22 +18767,26 @@ Injected failures before checkout, after branch creation, and after checkout cov
 
 ## 1256. The existing home-folder ceiling blocks lead starts in home-hosted repositories.
 
-State: Open, preserving the existing security rule.
+State: Fixed by unit s26, under the owner's decision of 2026-11-17.
 
-The folder ceiling refuses an agent-started child anywhere inside the owner's home folder.
-The existing ceiling tests explicitly require that refusal for protected folders and their descendants.
-A project stored under the owner's home therefore cannot start workers through its lead.
-An owner-started worker still has the existing owner exception.
-A temporary-directory reproduction returned `FolderRefused` with the protected-folder reason.
-This unit does not weaken that rule.
-Using a repository outside the protected home permits lead-started workers under the current policy.
-Changing that policy requires the owner's explicit security decision.
-The independent review confirmed that `service.ts` supplies the actual `HOME` as the ceiling's home folder.
-The ceiling also refuses ancestors of protected folders and descendants of the state and plugin folders.
-Its owner exception returns before those checks.
-A round 2 regression places the whole repository inside a synthetic home.
-It asserts the exact existing protected-folder reason before any Git process, agent event or allocation.
-The ceiling implementation remains unchanged.
+The old ceiling refused lead-started workers in every repository under home.
+The owner authorized a narrow exception for registered worktrees of the starter's own project.
+The project worktree, team worktrees and engine allocations now grant that exception.
+An arbitrary manually registered descendant grants nothing.
+The engine compares real device and inode identities.
+The home itself, its ancestors, the state folder, plugin root, immediate home dotdirectories and existing configured login folders stay protected.
+Under the round 2 clarification, protection applies to the child folder, including mounted protected folders.
+A protected sibling elsewhere in the registration does not refuse a clean child.
+The nearest registered workspace across all projects sets the boundary.
+Foreign and unregistered nested checkouts cannot inherit a broader grant.
+The current engine records are consulted on each start, recovery reload and resume.
+The allocation's private pending registration is accepted only at its validated precommit log head.
+After append, only the committed registration grants admission.
+Registration removal makes a later resume refuse with a sentence reason.
+The intentional round 2 pin now asserts successful allocation inside a synthetic home.
+The new regressions cover aliases, protected folders, mounted identities, manual roots, a repository at home, defaults and recovery after registration replacement.
+There is no unregister command today.
+The recovery regression replaces the stored worktree row with a new path to remove the old folder's registration.
 
 ## 1257. The installer process-tree test can observe a live descendant after timeout cleanup.
 
@@ -19451,3 +19455,333 @@ The browser check that a repeated conflict choice shows no refusal compares the 
 In the orchestrator's whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:372` and `studio.spec.ts:1200` failed under load, and each passed when run alone.
 
 State: open. Recorded on 2026-11-17.
+
+## 1376. Restricted process execution can make installer output tests report empty output.
+
+State: Diagnosed as an execution sandbox limitation during unit s26.
+
+Three installer tests returned empty output when run inside the coding agent's restricted sandbox.
+A separate Node.js child-process reproduction also lost asynchronous standard output there.
+The same three tests passed outside that sandbox without a production code change.
+Chromium also exited with an operation-not-permitted error inside that sandbox.
+The required suites were rerun outside it with temporary homes and local test services.
+
+## 1377. Older harness settings have no automatic permission mapping.
+
+State: Handled with an explicit edit fallback in unit s26.
+
+The pinned Claude and Codex adapters expose automatic review.
+Historical harness events have only the original four mappings.
+Those events still decode without migration.
+Round 2 upgrades the effective value of an exact previous factory setting when read.
+An owner-edited historical mapping remains unchanged.
+An `auto` request falls back to the stored edit mapping when no automatic mapping is configured.
+Gemini and Cursor defaults also use the edit fallback because this unit verifies no separate automatic review mode for them.
+The harness status reports the fallback.
+Existing agents and owner-edited permission defaults are not changed.
+
+## 1378. Alternate environment homes can place harness login stores inside a worktree.
+
+State: Protected in unit s26.
+
+The harness-specific home variable is not the only way to move a login store.
+An account can override `HOME`.
+Cursor can also override `XDG_CONFIG_HOME`.
+The folder ceiling protects the existing login directories derived from these fallbacks.
+Secret references are resolved without reading credential files.
+Handler regressions cover both override paths under a registered project root.
+
+## 1379. Seven browser journeys failed in the whole run and passed separately.
+
+State: Open as whole-run-only failures observed during unit s26.
+
+The whole browser suite passed 68 journeys and failed seven journeys.
+The merge-to-main journey timed out while waiting for the merge result.
+The stale-evidence journey timed out while waiting for its review state.
+The temporary-remote journey timed out while waiting for its operation result.
+The project-creation journey timed out while the dialog was submitting.
+The projects-and-board journey timed out before the new project appeared.
+The workflow journey timed out before the phase status appeared.
+The file-editor journey timed out while its save was busy.
+Each failed journey passed in a separate run with its existing assertions and timeout.
+The affected cases are `git.spec.ts:183`, `git.spec.ts:253`, `git.spec.ts:316`, `new-project.spec.ts:149`, `studio.spec.ts:372`, `studio.spec.ts:1058`, and `studio.spec.ts:1200` under `packages/web/e2e/`.
+The shared merge source line also selected the master variant during its first rerun.
+That variant passed in the whole suite but timed out when run after the main variant.
+It passed when rerun by its own title.
+The permission-settings journey passed in the whole run.
+
+## 1380. The whole unit run failed a sign-in cleanup check that passed alone.
+
+State: Open as a whole-run-only failure observed during unit s26.
+
+The final whole unit run failed the existing process-group cleanup case in `packages/engine/test/harnesses/signin.test.ts`.
+The case is "stops the process group on timeout, owner stop and disconnection after the grace period".
+It tried to read the fake child's PID file after the session ended, but the file did not exist.
+The failure was `ENOENT` at the existing `readFileSync(pidfile)` assertion setup.
+The exact case passed when rerun alone with its existing assertions and timing limits.
+This unit changes no sign-in session or process-group cleanup implementation.
+
+## 1381. Stored factory defaults kept new leads at ask after the upgrade.
+
+State: Fixed in round 2 of unit s26 and refined by the owner's round-three field policy.
+
+The first implementation changed only defaults for fresh installations.
+Round two upgraded an exact previous factory row when read.
+Round three upgrades factory permission fields despite unrelated owner edits.
+Every stored ask default now reads as auto.
+Other defaults and custom permission fields are kept.
+The stored log and existing agents remain unchanged.
+Status distinguishes an older stored mapping from a harness with no separate automatic mode.
+The current pre-unit-log regressions cover all four factory harness shapes through restart and real start handlers.
+Issue 1389 records the field policy.
+
+## 1382. Automatic review can approve commands without raising an engine permission request.
+
+State: Documented as an accepted limit under the owner's decision of 2026-11-17.
+
+The engine's persistent-settings routing applies only to requests the harness raises.
+A command approved inside the harness may touch settings files without asking the owner.
+The folder ceiling constrains the start folder rather than the paths those commands touch.
+SECURITY.md and decision row 56 now state these limits.
+The website's Automatic review description no longer promises that risky actions ask.
+
+## 1383. A broad project registration admitted nested foreign or unregistered checkouts.
+
+State: Fixed in round 2 of unit s26.
+
+A main checkout can contain linked worktrees belonging to another project.
+The nearest registered workspace across all projects now sets the boundary.
+A nested checkout without its own project registration cannot inherit the broad root's grant.
+A registration that becomes a symbolic link cannot follow another checkout.
+Real directory identities grant admission.
+Path spelling is used only to refuse a replaced registration.
+Two-project and hand-made linked-worktree regressions cover this distinction.
+
+## 1384. Invalid login paths blocked unrelated agent starts and recovery.
+
+State: Fixed in round 2 of unit s26.
+
+Login-folder discovery now excludes relative paths, missing paths and regular files.
+Existing absolute login directories remain protected.
+Regressions cover a relative Codex home and a regular file through start and resume.
+
+## 1385. Protecting an entire registration blocked the self-hosted build loop.
+
+State: Fixed under the owner's round 2 clarification of the decision of 2026-11-17.
+
+A registration can contain the service checkout and a clean worker worktree beside it.
+Protection now tests the child's own folder and the protected mounts it contains.
+The nearest registration is selected without depending on record order.
+A main-checkout source may contain the service while allocating a worker.
+That preliminary source check returns no spawn grant.
+A source that is or is inside a protected folder remains refused before Git runs.
+The actual allocated child passes ordinary folder admission before registration and before spawn.
+Regressions preserve the no-Git and unchanged-inventory assertions for a protected start.
+A real Git allocation beside a synthetic service checkout also survives fresh resume.
+
+## 1386. An omitted worker level ignored the owner's saved harness default.
+
+State: Fixed in round 2 of unit s26.
+
+An omitted permission uses the lowest of automatic review, the saved harness default and the starter's ceiling.
+An explicit permission remains subject to the starter's ceiling.
+A full-permission lead respects a saved edit default when it omits the worker level.
+The owner's round-three decision upgrades stored ask harness defaults to auto.
+Issue 1389 records that explicit default change.
+The role instructions and start-tool description state this rule.
+
+## 1387. The whole round-two unit run failed a secret-carry stop check that passed alone.
+
+State: Open as a whole-run-only failure observed during round 2 of unit s26.
+
+The whole unit run failed the existing stop case in `packages/engine/test/runner/secret-carry-s19.test.ts`.
+The case is "s19 stop flushes a genuine secret prefix and its queued tool".
+It observed no delivery updates immediately after stopping the runner.
+It expected the message and queued tool updates.
+The exact case passed alone with its existing assertions and timing limits.
+This round changes no stop or redaction implementation.
+
+## 1388. The round-two browser run had eight failures, and merge-to-main still failed alone.
+
+State: Open as browser failures observed during round 2 of unit s26.
+
+The whole browser suite passed 67 journeys and failed eight journeys.
+The affected cases are `git.spec.ts:183` for main, `git.spec.ts:253`, `git.spec.ts:316`, `new-project.spec.ts:113`, `new-project.spec.ts:324`, `studio.spec.ts:372`, `studio.spec.ts:970`, and `studio.spec.ts:1200` under `packages/web/e2e/`.
+The main merge button stayed disabled in the whole run.
+The stale-evidence review button stayed disabled in the whole run.
+The temporary-remote case did not observe its pull result in time.
+The project-placement case exceeded its total time limit.
+The exhausted-recovery case did not find its expected browser test hook.
+The projects-and-board case did not observe its expected topbar text.
+The extended Git case exceeded its six-minute limit while refreshing.
+The file-editor case remained busy after saving.
+Seven of these cases passed individually with their existing assertions and time limits.
+The extended Git case passed in 5.3 minutes.
+The stale-evidence case failed its first individual run while the unit suite was active and passed its final individual run after that suite finished.
+The merge-to-main case failed both individual runs while waiting for the merged destination message.
+Its final individual run had no competing whole suite.
+The browser gate therefore remains failing.
+This round changes no Git merge implementation or existing browser assertion.
+The round-three comparison did not reproduce the named historical failures on the base or either tested unit revision.
+Issue 1398 records the round-three whole-run failures and their separate passing reruns.
+
+
+## 1389. Owner model edits prevented the automatic permission upgrade.
+
+State: Fixed in round 3 of unit s26 under the owner's explicit default decision.
+
+The old upgrade required the entire stored harness row to match the previous factory row.
+Factory permission mappings and reported modes now upgrade independently of model, effort, run mode and adapter edits.
+Every stored ask default reads as auto.
+Other defaults and custom permission fields remain intact.
+The event log and existing agent levels remain unchanged.
+Regressions use the previous factory shapes and current executable discovery for all four harnesses.
+Existing test fixtures now use the current auto default.
+The saved-default cap regression uses edit because the owner explicitly replaced stored ask defaults.
+A future website control is recorded in the feature list.
+
+## 1390. A refused worker allocation could change a protected checkout.
+
+State: Fixed in round 3 of unit s26.
+
+A clean linked source could allocate beneath a protected main checkout before child admission refused.
+Git could leave an empty allocation directory and a changed exclusion file after rollback.
+The allocation directory and common directory are now checked before worktree creation.
+Missing allocation directories are checked through their nearest existing ancestor.
+The regression preserves the existing exclusion bytes, branch inventory and workspace inventory.
+The preliminary check returns no spawn grant.
+
+## 1391. A foreign checkout outside home bypassed the project boundary check.
+
+State: Fixed in round 3 of unit s26.
+
+The boundary check previously ran only when an own-project registration enclosed the requested folder.
+A foreign sibling checkout outside home could pass through shared-repository containment.
+The check now also refuses that foreign boundary without an enclosing own registration.
+Read-only permission does not bypass the boundary.
+The earlier Git scope for direct manual team children outside home remains available.
+Those manual registrations still grant no admission inside home.
+Existing non-local starts that retain their folder still avoid Git.
+Allocation registration and machine refusals retain their specific recovery sentences.
+
+## 1392. Reading harness settings repeated executable discovery.
+
+State: Fixed in round 3 of unit s26.
+
+Commands and per-agent recovery could repeatedly probe the executable search path and repeat missing-adapter warnings.
+The real service now resolves factory discovery once at startup.
+Reset uses that startup snapshot.
+Ordinary settings reads use the latest stored rows and pure permission migration.
+A regression counts discovery across settings reads and starts.
+
+## 1393. An unreadable home dotfolder blocks unrelated agent starts.
+
+State: Documented as a fail-closed limitation in round 3 of unit s26.
+
+An unreadable home dotfolder can block starts and recovery outside home too.
+An unresolved alias could point into the requested folder.
+The engine cannot prove that entry unrelated by directory identity.
+SECURITY.md now states this refusal and the owner's remedy.
+
+## 1394. The folder documentation omitted shared Git settings and clean subfolders.
+
+State: Clarified in round 3 of unit s26.
+
+Sibling worktrees share the Git common directory, configuration and hooks with the service checkout.
+Folder admission does not isolate those settings.
+The main checkout root containing the service is refused as a child folder.
+A clean subfolder such as packages remains admitted when the parent is already in that main checkout.
+The clean-subfolder regression passed before the clarification.
+
+
+## 1395. Project fixtures advertised only the previous default mode.
+
+State: Fixed in round 3 of unit s26.
+
+The whole unit run found project fixtures that advertised only the fake harness's ask mode.
+The automatic default falls back to their configured edit mapping.
+Lead selection correctly refused that unreported mode before the intended Git and project assertions ran.
+The affected fake harness settings now advertise the existing edit mapping too.
+Production mode validation remains unchanged.
+The existing assertions and time limits remain unchanged.
+Frozen historical factory fixtures retain their old shapes.
+
+
+## 1396. The boundary fix mistook a broad own registration for a foreign project.
+
+State: Fixed in round 3 of unit s26.
+
+Two existing resume tests exposed an own-project registration spanning a home ancestor outside home.
+That broad registration cannot grant admission inside home.
+It still identifies the project's boundary outside home.
+The boundary comparison now distinguishes that membership from a grant for a home descendant.
+The ordinary protected-folder and containment checks still apply to the child's actual directory.
+The existing resume assertions remain unchanged.
+The foreign-checkout regressions still require refusal.
+
+
+## 1397. Some test fixtures inherit the invoking home for readiness checks.
+
+State: Open as a test-isolation gap found in round 3 of unit s26.
+
+The common unit setup clears provider variables but does not replace HOME.
+Some Git fixtures also omit their own HOME override.
+Lead readiness builds its environment from the invoking process before checking login stores.
+Those fixtures can therefore probe login paths outside their synthetic rig.
+The earlier round-three commands did not provide a synthetic outer home.
+No real login store was inspected to determine whether such a file existed.
+Subsequent validation uses a temporary outer home and clears provider variables before starting the test runner.
+The wrapper keeps the installed browser binary cache available without using it as a login directory.
+A repository-wide test-environment fix remains separate work.
+
+
+## 1398. Seven browser journeys failed in the whole run and passed separately.
+
+State: Open as whole-run-only browser failures observed in round 3 of unit s26.
+
+The whole browser run passed 68 journeys and failed seven journeys.
+The main merge case at `git.spec.ts:183` did not observe the merged dialog content within five seconds.
+The stale-evidence case at `git.spec.ts:253` timed out waiting for review dialog content.
+The temporary-remote case at `git.spec.ts:316` did not observe the fetch acknowledgment within five seconds.
+The eight-size creation case at `new-project.spec.ts:149` still showed the creation dialog after five seconds.
+The throttled-state case at `oversized-state.spec.ts:25` timed out waiting for a state-marker predicate.
+The projects-and-board case at `studio.spec.ts:372` timed out waiting for the expected topbar text.
+The file-editor case at `studio.spec.ts:1200` still reported itself busy after five seconds.
+All seven passed as exact-title single-test reruns with their existing assertions and time limits.
+No other test, typecheck or install of this worker was active during those reruns.
+The earlier isolated attribution also passed the main merge, temporary remote, placement and both issue-579 cases on the base, round one and round three.
+That attribution used a synthetic outer home with a one-minute load between 14.27 and 23.39.
+It did not reproduce those historical failures on any revision.
+The long Git workspace journey at `studio.spec.ts:970` passed the whole run in 5.4 minutes.
+
+## 1399. A custom harness that reports no edit mode can no longer start with its default.
+
+State: Open. Found by the third independent review of unit s26-leadstart on 2026-11-17.
+
+A stored harness default of "ask" is read as "auto" for every harness row (`packages/engine/src/runner/harnesses.ts`).
+A harness without an automatic mode falls back to its "edit" mapping.
+An owner-added harness that reports only its plan and ask modes then fails a start with an omitted permission level, with "mode is not recorded".
+The fix keeps "ask" when the row's reported modes contain neither its automatic nor its edit mapping.
+
+## 1400. The harness default "ask" is accepted on save and never takes effect.
+
+State: Open. Found by the third independent review of unit s26-leadstart on 2026-11-17.
+
+The `harnesses set` command accepts a default permission of "ask" and replies with success.
+Every later read returns "auto", following the owner's decision of 2026-11-17 that "auto" is the default.
+The command should refuse "ask" with a sentence, or the engine should store a marker for an explicit choice.
+
+## 1401. Resetting harness settings uses the probe taken at service start.
+
+State: Open. Found by the third independent review of unit s26-leadstart on 2026-11-17.
+
+The service resolves the installed harness defaults once at start.
+A harness installed while the service runs is not found by `harnesses reset` until a restart.
+Before unit s26-leadstart the reset probed again.
+
+## 1402. The visible changes list of unit s26-leadstart omitted three effects.
+
+State: Recorded. Found by the third independent review of unit s26-leadstart on 2026-11-17.
+
+The list omitted the reset behaviour of issue 1401 and the start refusal of issue 1399.
+It also omitted that a lead's worker start now reports an unregistered checkout or a machine mismatch before a permission or folder refusal.

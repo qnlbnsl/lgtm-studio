@@ -1,3 +1,4 @@
+import { permissionModeFor } from "@lgtm/contracts";
 import { recordSignInCheck } from "../accounts/signInEvidence.ts"
 import { constants } from "node:fs"
 import { access, stat } from "node:fs/promises"
@@ -78,7 +79,7 @@ export const leadDefaults = (input: Input, saved?: typeof ProjectLeadDefaults.Ty
     }
     if (!choicesValid || model !== undefined && harness.models.length > 0 && !harness.models.includes(model)
       || effort !== undefined && harness.efforts.length > 0 && !harness.efforts.includes(effort)
-      || harness.reportedModes.length > 0 && !harness.reportedModes.some((row) => row.id === harness.permissionMapping[permission])) continue
+      || harness.reportedModes.length > 0 && !harness.reportedModes.some((row) => row.id === permissionModeFor(harness, permission))) continue
     let remaining = input.snapshot.accounts
     let account: Account | undefined
     for (;;) {

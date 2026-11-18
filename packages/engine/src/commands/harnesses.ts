@@ -21,7 +21,8 @@ export const harnesses = (input: Input, payload: Payload<"harnesses">): Effect.E
 
 // Fix round 1, N-1: a service that finds no harness settings in its log loads
 // the defaults, as the owner's own changes, in one batch. Settings that exist
-// are never touched, so a start with settings changes nothing.
+// are never rewritten. readHarnesses upgrades historical factory permission
+// fields and ask defaults in memory while preserving unrelated owner edits.
 export const loadFirstDefaults = (runtime: Runtime): Effect.Effect<void, LogWriteFailed> => {
   const defaults = runtime.harnessDefaults;
   if (defaults === undefined) return Effect.void;

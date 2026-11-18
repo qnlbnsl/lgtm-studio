@@ -86,7 +86,7 @@ const mountedJourney = async (body: (journey: Journey) => Promise<void>, wrap?: 
     await Effect.runPromise(provideRig(rig, { runner, secrets: makeFakeSecrets() }, Effect.gen(function* () {
       yield* registerRebuildCheck()
       success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "zsh" } }))
-      success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }] }) }))
+      success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }] }) }))
       success(yield* call(owner, "accounts", { operation: "add", account: { id: "primary", harness: "cursor", enabled: true } }))
       success(yield* call(owner, "accounts set-secret", { accountId: "primary", name: "CURSOR_API_KEY", nonce: freshRequest(), value: Redacted.make("synthetic-mounted-new-project") }))
       yield* completedSetup(undefined, rig.work, "Actual Product")

@@ -38,7 +38,7 @@ export const HARNESSES = {
   claude: { name: 'Claude Code', models: ['Fable 5.2', 'Opus 5.5', 'Sonnet 5.5', 'Haiku 5.5'], efforts: ['Low', 'Medium', 'High', 'Max'], noEffort: ['Haiku 5.5'], runMode: 'ACP' },
   codex: { name: 'Codex', models: ['GPT-6.1 Sol', 'GPT-6 Luna'], efforts: ['Low', 'Medium', 'High'], noEffort: [], runMode: 'ACP' },
 };
-export const PERMISSION_MODES = ['Read only', 'Ask before every change', 'Edit files without asking', 'Full access'];
+export const PERMISSION_MODES = ['Read only', 'Ask before every change', 'Edit files without asking', 'Automatic review', 'Full access'];
 
 // ---- seed ------------------------------------------------------------------
 function agent(id, project, team, role, name, o = {}) {
@@ -353,7 +353,7 @@ function base() {
       removeCredits: false, gitModel: 'Haiku 5.5',
       notifyOn: { question: true, approval: true, merge: true, failed: true, sprint: false },
       quiet: { on: false, from: '22:00', to: '07:00', timeZone: 'UTC', failed: true },
-      defaultHarness: 'claude', defaultModel: 'Sonnet 5.5', defaultEffort: 'Medium', defaultPermission: 'Edit files without asking',
+      defaultHarness: 'claude', defaultModel: 'Sonnet 5.5', defaultEffort: 'Medium', defaultPermission: 'Automatic review',
       needToKnow: false, stallAssigned: 5, stallWorker: 10, stallLead: 20, autoNudge: true, replaceAfter: 3, capacityRetries: 12,
       workflowPath: '~/.lgtm', maxRounds: 6, testsDefault: true, reviewDefault: true,
       version: '', commit: '', dataFolder: '',
