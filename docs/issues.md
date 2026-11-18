@@ -20405,7 +20405,7 @@ State: Recorded. Found by the third independent review of unit s26-leadstart on 
 The list omitted the reset behaviour of issue 1401 and the start refusal of issue 1399.
 It also omitted that a lead's worker start now reports an unregistered checkout or a machine mismatch before a permission or folder refusal.
 
-## s29-1. Shared fake harness fixtures used a now-refused default.
+## 1455. Shared fake harness fixtures used a now-refused default.
 
 State: Fixed during unit s29-smallfix on 2026-11-18.
 The shared service and runner fixtures saved an ask default for harnesses with a reported edit mapping.
@@ -20415,7 +20415,7 @@ Both helpers now save auto, which was already their effective default when setti
 Historical migration tests still append old events with ask defaults directly.
 No existing assertion was removed or loosened.
 
-## s29-2. Ten browser journeys failed in the whole run.
+## 1456. Ten browser journeys failed in the whole run.
 
 State: Open as browser failures observed during unit s29-smallfix on 2026-11-18.
 The whole browser suite passed 68 journeys and failed ten journeys.
@@ -20436,7 +20436,7 @@ No assertion or time limit was changed.
 No unit test or typecheck from this task ran during these browser checks.
 The cause remains unproven.
 
-## s29-10. The review of the second small fix unit left five minor findings.
+## 1457. The review of the second small fix unit left five minor findings.
 
 State: Open. Found by the independent review of unit s29-smallfix on 2026-11-18.
 
@@ -20446,7 +20446,7 @@ A session record dated more than five minutes in the future is removed from the 
 The reset test in `packages/engine/test/api/harness-defaults.test.ts` assumes that no `gemini` program exists in `/usr/bin`.
 An existing installation no longer logs the "harness adapters not found" warning at every start.
 
-## s29-11. Seven unit tests failed in the orchestrator's whole run under load and passed alone.
+## 1458. Seven unit tests failed in the orchestrator's whole run under load and passed alone.
 
 State: Open. Found by the orchestrator's check of unit s29-smallfix on 2026-11-18, with a load average near 30.
 
