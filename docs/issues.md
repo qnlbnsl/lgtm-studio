@@ -19756,3 +19756,29 @@ It passed unchanged when rerun alone.
 The original output and error context were retained.
 The clean-base version showed a similar limit in s27-20.
 No assertion or timeout was changed, and the cause remains unproven.
+
+## s27-90. A failed tracking-ref update after the push makes Prepare report an uncertain outcome.
+
+State: Open. Found by the fourth independent review of unit s27-pullrequest on 2026-11-18.
+
+After the push, the engine updates the project branch's remote-tracking ref through the mutating Git path (`packages/engine/src/project/git/index.ts`).
+A stale local ref such as `refs/remotes/origin/feat/x` conflicts with a branch named `feat`, and the update fails.
+Prepare then reports "Git outcome is uncertain" on every retry and opens no pull request.
+The fix makes the update best-effort and continues to pull request creation.
+
+## s27-91. The Prepare fetch writes through a symbolic base tracking ref.
+
+State: Open. Found by the fourth independent review of unit s27-pullrequest on 2026-11-18.
+
+The Prepare fetch forces the base branch's remote-tracking ref to the fetched commit.
+When that tracking ref is a symbolic ref to the local base branch, the fetch moves the owner's local base branch.
+`SECURITY.md` says the fetch does not update the local base branch.
+Planting the symbolic ref already needs write access to the repository.
+The fix refuses, or deletes the symbolic ref, before the fetch.
+
+## s27-92. The hosted unsupported-review test does not prove that it ran in GitHub mode.
+
+State: Open. Found by the fourth independent review of unit s27-pullrequest on 2026-11-18.
+
+The hosted variant in `packages/engine/test/project/main-review.test.ts` never asserts a fetch call or a GitHub delivery mode.
+Its 201-file case does not check that no Git attempt is left pending.
