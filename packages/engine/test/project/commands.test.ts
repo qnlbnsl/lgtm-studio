@@ -136,7 +136,7 @@ const historicProject = (fields: Record<string, unknown>, requestId = freshReque
 })
 const launchSettings = () => Effect.gen(function* () {
   yield* seedAccount("launch", "cursor")
-  success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }] }) }))
+  success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }] }) }))
   success(yield* call(owner, "accounts set-secret", { accountId: "launch", name: "CURSOR_API_KEY", nonce: "project-test", value: Redacted.make("synthetic-project-test-key") }))
   success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "zsh" } }))
 })

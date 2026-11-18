@@ -2,6 +2,9 @@ import { it } from "@effect/vitest";
 import { HarnessSettings } from "@lgtm/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, beforeEach, expect, vi } from "vitest";
 
 import { makeFakeRunner } from "../support/fakeRunner.ts";
@@ -10,6 +13,7 @@ import {
   provideRig, readLog, removeRig, seedAccount, seedAgent, startPayload, success, type Fakes, type Rig,
 } from "../support/handlerRig.ts";
 import { registerRebuildCheck } from "../support/rebuildCheck.ts";
+import { resolveHarnessDefaults } from "../../src/runner/harnesses.ts";
 
 // Fix round 1, N-1 with A16 (owner choices, 2026-11-03): the service loads the
 // harness defaults itself on its first start, `harnesses reset` loads them
@@ -145,3 +149,85 @@ it.effect("A16 filled lists: catches a start that accepts a model the harness do
     expect(failureOf(yield* call(ownerCredential, "start", startPayload(rig, { model: "unlisted", effort: "high" })))?._tag).toBe("CommandRefused");
     expect(fakes.runner.callsOf("start")).toHaveLength(0);
   })).pipe(Effect.orDie));
+
+// Frozen factory shape from d4fb1877, runner/harnesses.ts. These are the
+// actual four old mappings, arguments, deduplicated modes and empty choices.
+const oldDefinitions = [
+  ['claude', 'claude-agent-acp', [], ['plan', 'default', 'acceptEdits', 'bypassPermissions']],
+  ['codex', 'codex-acp', [], ['read-only', 'read-only', 'workspace-write', 'agent-full-access']],
+  ['gemini', 'gemini', ['--acp'], ['plan', 'default', 'autoEdit', 'yolo']],
+  ['cursor', 'agent', ['acp'], ['ask', 'ask', 'agent', 'agent']],
+] as const;
+const oldFactory = (id: string, directory: string) => {
+  const [harness, command, args, rawModes] = oldDefinitions.find(row => row[0] === id)!;
+  const modes: ReadonlyArray<string> = rawModes;
+  const levels = ['read-only', 'ask', 'edit', 'full'] as const;
+  return decode({ id: harness, runMode: 'acp', adapterPath: join(directory, command), adapterArguments: [...args],
+    permissionMapping: Object.fromEntries(levels.map((level, index) => [level, modes[index]])),
+    reportedModes: levels.flatMap((level, index) => modes.indexOf(modes[index]!) === index ? [{ id: modes[index], level }] : []),
+    defaultPermission: 'ask', models: [], efforts: [], denyReadMechanism: { _tag: 'none' } });
+};
+const currentFactories = () => {
+  const binDirectory = join(rig.root, 'factory-adapters'); mkdirSync(binDirectory);
+  for (const [, command] of oldDefinitions) writeFileSync(join(binDirectory, command), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+  return resolveHarnessDefaults({ binDirectory, path: binDirectory }).pipe(Effect.provide(NodeServices.layer), Effect.map(result => result.harnesses));
+};
+for (const [id] of oldDefinitions) {
+  it.effect(`s26 r3 M1: ${id} upgrades factory permission fields despite model, effort, adapter and run-mode edits`, () => Effect.gen(function* () {
+    const factories = yield* currentFactories(), current = factories.find(row => row.id === id)!;
+    const legacy = oldFactory(id, join(rig.root, 'factory-adapters'));
+    const edited = decode({ ...legacy, adapterPath: '/opt/owner/' + id, defaultModel: 'owner-model', defaultEffort: 'owner-effort', runMode: 'interactive' });
+    yield* serviceStart({}, () => Effect.gen(function* () {
+      success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: edited }));
+      yield* seedAgent({ id: 'old-agent', permission: 'ask' });
+    }));
+    const effective = { ...edited, permissionMapping: current.permissionMapping, reportedModes: current.reportedModes, defaultPermission: 'auto' };
+    yield* serviceStart({ defaults: Effect.succeed(factories) }, fakes => Effect.gen(function* () {
+      expect(yield* listed).toEqual([effective]);
+      expect(yield* harnessEvents).toHaveLength(1);
+      yield* seedAccount('native-account', id);
+      const payload: Record<string, unknown> = { ...startPayload(rig), harness: id, role: 'lead:project', account: { _tag: 'any' }, runMode: 'interactive' };
+      delete payload.permission; delete payload.model; delete payload.effort;
+      success(yield* call(ownerCredential, 'start', payload));
+      expect(fakes.runner.callsOf('start').at(-1)!.input).toMatchObject({ permission: 'auto', harness: effective, model: 'owner-model', effort: 'owner-effort' });
+      const parent = yield* seedAgent({ id: 'auto-parent', folder: rig.work, permission: 'auto' });
+      success(yield* call(agentCredential(parent.token), 'start', { ...payload, name: 'Implicit worker', role: 'builder:typescript' }));
+      expect(fakes.runner.callsOf('start').at(-1)!.input.permission).toBe('auto');
+      expect((yield* readLog).find(row => row.event._tag === 'AgentStarted' && row.event.agentId === 'old-agent')!.event).toMatchObject({ permission: 'ask' });
+    }));
+  }).pipe(Effect.orDie));
+
+  it.effect(`s26 r3 M1: ${id} keeps non-ask defaults and custom permission fields`, () => Effect.gen(function* () {
+    const factories = yield* currentFactories(), current = factories.find(row => row.id === id)!;
+    const legacy = oldFactory(id, join(rig.root, 'factory-adapters'));
+    for (const permission of ['read-only', 'edit', 'full'] as const) {
+      const saved = decode({ ...legacy, defaultPermission: permission, defaultModel: 'owner-model' });
+      yield* serviceStart({}, () => call(ownerCredential, 'harnesses', { operation: 'set', harness: saved }));
+      yield* serviceStart({ defaults: Effect.succeed(factories) }, () => Effect.gen(function* () {
+        expect(yield* listed).toEqual([{ ...saved, permissionMapping: current.permissionMapping, reportedModes: current.reportedModes }]);
+      }));
+    }
+    for (const override of [
+      { permissionMapping: { ...legacy.permissionMapping, edit: 'owner-edit' } },
+      { reportedModes: [...legacy.reportedModes, { id: 'owner-mode', level: 'ask' }] },
+    ]) {
+      const saved = decode({ ...legacy, ...override });
+      yield* serviceStart({}, () => call(ownerCredential, 'harnesses', { operation: 'set', harness: saved }));
+      yield* serviceStart({ defaults: Effect.succeed(factories) }, () => Effect.gen(function* () {
+        expect(yield* listed).toEqual([{ ...saved, defaultPermission: 'auto' }]);
+      }));
+    }
+  }).pipe(Effect.orDie));
+}
+
+it.effect('s26 r3 m4: listing and starting do not repeat installed-default discovery', () => Effect.gen(function* () {
+  let probes = 0;
+  const current = decode({ ...defaultClaude, defaultPermission: 'auto' });
+  yield* serviceStart({ defaults: Effect.sync(() => { probes++; return [current]; }) }, () => Effect.gen(function* () {
+    expect(yield* listed).toEqual([current]);
+    yield* seedAccount('primary', 'first');
+    success(yield* call(ownerCredential, 'start', startPayload(rig)));
+    expect(yield* listed).toEqual([current]);
+    expect(probes).toBe(1);
+  }));
+}).pipe(Effect.orDie));

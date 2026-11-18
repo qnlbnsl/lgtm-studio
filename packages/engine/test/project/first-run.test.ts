@@ -27,7 +27,7 @@ beforeEach(() => {
 afterEach(() => { vi.unstubAllEnvs(); removeRig(rig) })
 const configured = () => Effect.gen(function* () {
   success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.work, shell: "zsh" } }))
-  success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("claude", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }] }) }))
+  success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("claude", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }] }) }))
   success(yield* call(owner, "accounts", { operation: "add", account: { id: "ready", harness: "claude", enabled: true } }))
   success(yield* call(owner, "accounts set-secret", { accountId: "ready", name: "ANTHROPIC_API_KEY", nonce: freshRequest(), value: Redacted.make("synthetic-first-run-credential") }))
 })

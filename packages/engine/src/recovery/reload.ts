@@ -11,6 +11,7 @@ import * as Option from "effect/Option";
 import type * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
+import { projectFolderScope } from "../project/folderScope.ts";
 import { checkFolder, folderForSpawn } from "../identity/ceiling.ts";
 import type { mintAgentToken } from "../identity/tokens.ts";
 import type { LogWriteFailed } from "../log/EventLog.ts";
@@ -42,7 +43,7 @@ export const spawnInput = (
   if (projectPreventsRun(snapshot, agent.agentId)) return yield* refused("project archive is unfinished because an agent could not stop");
   const parent = agent.parent._tag === "agent" ? snapshot.agents[agent.parent.agentId] : undefined;
   if (agent.parent._tag === "agent" && parent === undefined) return yield* refused();
-  const grant = yield* checkFolder({ ...runtime, caller: agent.parent,
+  const grant = yield* checkFolder({ ...runtime, ...projectFolderScope(runtime, parent?.agentId), caller: agent.parent,
     parentFolder: parent?.folder ?? agent.folder, folder: agent.folder,
   }).pipe(Effect.mapError((error) => refused(`Agent folder unavailable: ${error.reason}`)));
   if (grant.realPath !== agent.folder) return yield* refused();

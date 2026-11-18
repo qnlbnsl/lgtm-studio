@@ -54,7 +54,7 @@ export function seedService(st) {
   Object.assign(st.settings, {
     notifyOn: { question: true, approval: true, merge: true, failed: true, sprint: false },
     quiet: { on: false, from: '22:00', to: '07:00', timeZone: 'UTC', failed: true },
-    terminalEnabled: false, defaultHarness: 'claude', defaultModel: 'Sonnet 5.5', defaultEffort: 'Medium', defaultPermission: 'Edit files without asking',
+    terminalEnabled: false, defaultHarness: 'claude', defaultModel: 'Sonnet 5.5', defaultEffort: 'Medium', defaultPermission: 'Automatic review',
     needToKnow: false, stallAssigned: 5, stallWorker: 10, stallLead: 20, autoNudge: true, replaceAfter: 3, capacityRetries: 12,
     workflowPath: '~/.lgtm', maxRounds: 6, testsDefault: true, reviewDefault: true,
     version: '0.9.0', commit: '55e1bbd', dataFolder: '~/.local/state/lgtm',
@@ -354,6 +354,7 @@ export function Harnesses({ s }) {
           <button type="button" class="btn sm" onClick=${() => act.openDialog({ type: 'add-subscription', harness: hid })}><${Icon} name="plus" size=${13} />Add account</button></div>
         <div class="svc-seg"><h3 class="svc-seg-title">Program</h3>
           ${h.installationReason ? html`<p>${h.installationReason}</p>` : html`<p class="muted">${h.installed ? 'Installed on this machine.' : 'Not installed on this machine.'}</p>`}
+          ${h.autoPermissionReason && html`<p class="muted">${h.autoPermissionReason}</p>`}
           ${h.path && html`<details class="svc-path"><summary>Where it is installed</summary><p class="mono muted">${h.path}</p></details>`}
         </div>
         <div class="svc-seg"><h3 class="svc-seg-title">Defaults for this harness</h3>
@@ -601,6 +602,7 @@ const PERMISSION_HINT = {
   'Read only': 'The agent reads and searches. Every change and command is refused.',
   'Ask before every change': 'Each edit and each command becomes an approval for you.',
   'Edit files without asking': 'Edits inside the worktree are free. Commands still ask.',
+  'Automatic review': 'The harness may approve, ask or refuse an action. Uses edit mode when no automatic mapping is configured.',
   'Full access': 'Edits and commands inside the worktree run without asking.',
 };
 function PermissionPicker({ value, onChange, name }) {

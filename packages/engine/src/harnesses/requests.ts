@@ -1,6 +1,6 @@
 import { hasSignInCheck, recordSignInCheck, signInEvidence } from "../accounts/signInEvidence.ts"
 import * as Schema from "effect/Schema"
-import { HarnessSettings } from "@lgtm/contracts"
+import { HarnessSettings, autoPermissionStatus } from "@lgtm/contracts"
 import { harnesses as planHarnesses } from "../commands/harnesses.ts"
 import { randomUUID } from "node:crypto"
 import * as NodeServices from "@effect/platform-node/NodeServices"
@@ -28,6 +28,7 @@ const redactInstallation = (input: Input, value: HarnessInstallation) => Effect.
   const { settings, ...installation } = value
   const safeSettings = settings && (yield* input.runtime.log.redactText(JSON.stringify(settings))) === JSON.stringify(settings) ? settings : undefined
   return { ...installation, ...(safeSettings ? { settings: safeSettings } : {}), ...(value.path === undefined ? {} : { path: yield* input.runtime.log.redactText(value.path) }),
+    ...(value.autoPermissionReason === undefined ? {} : { autoPermissionReason: yield* input.runtime.log.redactText(value.autoPermissionReason) }),
     ...(value.reason === undefined ? {} : { reason: yield* input.runtime.log.redactText(value.reason) }),
     ...(value.version === undefined ? {} : { version: (yield* input.runtime.log.redactText(value.version)).trim().split(/\r?\n/)[0]!.slice(0, 200) }) }
 })
@@ -52,7 +53,9 @@ const status: ReadHandler = (input, p) => Effect.gen(function* () {
   for (const id of ids) {
     const saved = configured.find((h) => h.id === id), installation = yield* inspect(input, programs, id, saved, p.refresh === true)
     const settings = saved ?? (installation.path ? programs.defaultSettings(id, installation.path) : undefined)
-    harnesses.push(yield* redactInstallation(input, { ...installation, ...(settings ? { settings } : {}) }))
+    const autoPermissionReason = settings === undefined ? undefined : autoPermissionStatus(settings)
+    harnesses.push(yield* redactInstallation(input, { ...installation, ...(settings ? { settings } : {}),
+      ...(autoPermissionReason === undefined ? {} : { autoPermissionReason }) }))
   }
   return { reply: { requestId: p.requestId, harnesses } }
 })

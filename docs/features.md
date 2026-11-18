@@ -1387,6 +1387,28 @@ An unchanged sessionless allocation can be reused after a harness start fails.
 That retry keeps its worktree identifier and updates its owner.
 Remote allocation waits for machine pairing.
 
+The owner's decision of 2026-11-17 permits lead starts in registered worktrees inside home.
+Only the starter's current project worktree, team worktrees and engine allocations grant that exception.
+The home itself, state folder, plugin root, home dotdirectories and configured login folders remain protected.
+Recovery and resume refresh the registration before spawning.
+
+## Automatic permission defaults
+
+State: Implemented in unit s26, under the owner's decision of 2026-11-17.
+
+New harness defaults use `auto` for project leads.
+A worker start without a permission level uses the lowest of `auto`, the saved harness default and its starter's level.
+The ordered levels are `read-only`, `ask`, `edit`, `auto` and `full`.
+Claude uses its `auto` mode.
+Codex uses its `agent` automatic review mode.
+An unsupported or historical mapping falls back to edit and reports that fact in harness status.
+The website offers Automatic review alongside the existing choices.
+Existing agents keep their levels.
+Unrelated owner edits, custom permission mappings and non-ask harness defaults are kept.
+Factory-identical permission mappings and reported modes receive automatic mode fields at read time, even when other fields were edited.
+Every stored ask default reads as auto under the owner's decision of 2026-11-17.
+The website never offered a control for that harness field.
+
 ## Reconciliation of interrupted worker allocations
 
 State: Idea.
@@ -1411,3 +1433,56 @@ Without an active task, it uses the latest mapped tool summary or delivered mess
 The description preserves redaction and occupies one bounded line.
 An idle or stopped agent retains its lifecycle description.
 See issues s25-3 and s25-5 in `docs/issues.md`.
+
+## A website control for a harness's default permission
+
+State: Planned as an idea recorded in round 3 of unit s26.
+
+The website does not offer a control for a harness's `defaultPermission` field.
+The owner can currently choose a project lead permission in the existing Defaults editor.
+A future harness control should let the owner choose that separate harness default.
+It needs a stored indication of an explicit choice so a newly chosen ask default can survive the historical upgrade.
+This unit adds no website control.
+
+## A terminal view of each harness
+
+State: Idea. Requested by the owner on 2026-11-17, to be added later.
+
+The owner wants to see a harness's own terminal program from the website, as a view of an agent.
+The "Terminal, Git, machines, and subscriptions" section above already plans a main conversation that can switch to a terminal, and taking over an agent's terminal.
+An agent run in ACP (Agent Client Protocol) mode has no terminal program to show, so this view depends on the interactive run mode or on a rendering of the agent's session.
+`SECURITY.md` governs who may read and type into such a terminal.
+
+## Keyboard shortcuts for navigation
+
+State: Idea. Requested by the owner on 2026-11-17, to be added later.
+
+The owner wants keyboard shortcuts for moving around the website, in the manner of Vim and Visual Studio Code.
+Examples are moving between projects, tabs, agents and panes, and opening the quick switcher, without the pointer.
+The shortcut sets, whether they can be chosen or remapped, and how they coexist with typing in the chat composer and the terminal are not decided.
+
+## An escalation tool and an escalation agent
+
+State: Idea. Requested by the owner on 2026-11-17, to be built later.
+
+An agent whose command is blocked by its permission level, for example by the harness's automatic review, calls a tool named "request escalation".
+The call carries the exact command and the agent's explanation of what the command is for.
+The engine sends the call to an escalation agent that runs with full permissions.
+The escalation agent authorises the command, refuses it, or asks the owner.
+Open points are recorded here and are not decided.
+The explanation is text from an agent, so rule 7 of `SECURITY.md` treats it as data, and the escalation agent must judge the command itself.
+A request that touches a secret, an account, a persistent setting or a protected folder should always reach the owner.
+An authorisation should apply to one exact command, once, and should be stored as an event that the owner can read.
+The idea is related to the standing permission rules, which remain unbuilt.
+
+## Tool scripts that keep intermediate results out of the agent's context
+
+State: Idea. Requested by the owner on 2026-11-17, to be built later.
+
+An agent that needs several tool calls in a row writes one short script.
+The script runs the calls and passes each result to the next call.
+Only the script's final output enters the agent's context.
+The technique is known as programmatic tool calling, or code execution with the Model Context Protocol (MCP).
+The harness owns each agent's tool loop, so LGTM Studio could offer this only for its own tools, as one tool on its MCP server that runs a script.
+Every call inside a script would need the same caller checks, limits and redaction as a direct call.
+Running agent-written code inside the engine is a new security surface and needs a sandbox decision.

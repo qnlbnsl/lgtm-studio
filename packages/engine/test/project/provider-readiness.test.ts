@@ -25,7 +25,7 @@ const plant = (path: string, document: unknown) => {
   writeFileSync(path, JSON.stringify(document), { mode: 0o600 })
 }
 const harness = (id: string, adapterPath = process.execPath) => call(owner, "harnesses", { operation: "set",
-  harness: harnessSettings(id, { adapterPath, reportedModes: [{ id: "default", level: "ask" }] }) }).pipe(Effect.map(success))
+  harness: harnessSettings(id, { adapterPath, reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }] }) }).pipe(Effect.map(success))
 const account = (id: string, provider: string, extra: Record<string, unknown> = {}, operation = "add") =>
   call(owner, "accounts", { operation, account: { id, harness: provider, enabled: true, ...extra } }).pipe(Effect.map(success))
 const key = (id: string, name: string) => call(owner, "accounts set-secret", {

@@ -1,6 +1,7 @@
 import {
+  PermissionLevel,
   AgentChoice, AgentId, DeliveryId, EpochMilliseconds, ThreadContent, PermissionActionFields, PermissionOption, PermissionRequestId, TurnUsage,
-  type AgentChoices, type AgentConfiguration, type ContextUsage, type Account, type Delivery, type HarnessSettings, type PermissionLevel, type SessionReference,
+  type AgentChoices, type AgentConfiguration, type ContextUsage, type Account, type Delivery, type HarnessSettings, type SessionReference,
 } from "@lgtm/contracts";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -93,8 +94,8 @@ export const RunnerEvent = Schema.Union([
   Schema.TaggedStruct("configurationReported", { agentId: AgentId, incarnation: Schema.NonEmptyString, applied: AgentChoice }),
   Schema.TaggedStruct("modeReported", {
     agentId: AgentId, incarnation: Schema.NonEmptyString, mode: Schema.String,
-    level: Schema.optionalKey(Schema.Literals(["read-only", "ask", "edit", "full"])),
-    ceiling: Schema.Literals(["read-only", "ask", "edit", "full"]),
+    level: Schema.optionalKey(PermissionLevel),
+    ceiling: PermissionLevel,
   }),
   Schema.TaggedStruct("promptReply", {
     agentId: AgentId,

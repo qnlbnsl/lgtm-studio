@@ -51,7 +51,7 @@ export async function exerciseStudioFiles(page: Page) {
       }))
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck(); yield* seedAccount('launch', 'cursor')
-        success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: harnessSettings('cursor', { adapterPath: process.execPath, reportedModes: [{ id: 'default', level: 'ask' }] }) }))
+        success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: harnessSettings('cursor', { adapterPath: process.execPath, reportedModes: [{ id: 'default', level: 'ask' }, { id: 'acceptEdits', level: 'edit' }] }) }))
         success(yield* call(ownerCredential, 'accounts set-secret', { accountId: 'launch', name: 'CURSOR_API_KEY', nonce: 'studio-files', value: Redacted.make('synthetic-files-key') }))
         success(yield* call(ownerCredential, 'project.settings.set', { settings: { workspaceFolder: rig.root, shell: 'sh' } }))
         const repoId = success(yield* call(ownerCredential, 'project.repository.add', { name: 'Files repository', path: rig.work, machineId: 'local' })).repoId
