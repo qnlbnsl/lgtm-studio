@@ -41,7 +41,7 @@ export async function exerciseStudioGithub(page: Page, dirtyBase = false, moveBa
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, Layer.succeed(Redactor, { redact: e => Effect.succeed(e), redactText: s => Effect.succeed(s) }))
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck(); yield* seedAccount('launch', 'cursor')
-        success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: harnessSettings('cursor', { adapterPath: process.execPath, reportedModes: [{ id: 'default', level: 'ask' }] }) }))
+        success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: harnessSettings('cursor', { adapterPath: process.execPath, reportedModes: [{ id: 'default', level: 'ask' }, { id: 'acceptEdits', level: 'edit' }] }) }))
         success(yield* call(ownerCredential, 'accounts set-secret', { accountId: 'launch', name: 'CURSOR_API_KEY', nonce: 's27-browser', value: Redacted.make('synthetic-s27-browser-key') }))
         success(yield* call(ownerCredential, 'project.settings.set', { settings: { workspaceFolder: rig.root, shell: 'sh' } }))
         const repoId = success(yield* call(ownerCredential, 'project.repository.add', { name: 'GitHub fixture', path: rig.work, machineId: 'local' })).repoId
