@@ -3,7 +3,7 @@ import * as Data from "effect/Data";
 import type { Caller, GitMutationIdentity, GitReviewDelivery } from "@lgtm/contracts";
 
 export type GitFailureReason =
-  | "gh_unavailable" | "github_refused" | "github_remote_changed" | "github_create_refused" | "forbidden_remote" | "invalid_path" | "not_repository" | "invalid_ref" | "output_limit" | "timeout" | "cancelled"
+  | "gh_unavailable" | "github_refused" | "github_remote_changed" | "github_create_refused" | "github_base_moved" | "forbidden_remote" | "invalid_path" | "not_repository" | "invalid_ref" | "output_limit" | "timeout" | "cancelled"
   | "git_unavailable" | "git_failed" | "busy" | "collision" | "dirty_destination" | "dirty_source"
   | "conflicts" | "confirmation_required" | "stale_state" | "nothing_staged" | "invalid_message"
   | "missing_remote" | "missing_upstream" | "authentication_required" | "network_failed" | "push_rejected"
@@ -11,7 +11,7 @@ export type GitFailureReason =
   | "unsupported_conflict" | "incomplete_choices" | "owner_required" | "unsupported_review" | "no_merge" | "abort_blocked";
 
 // Neither subprocess output nor rejected paths are attached to a failure.
-export class GitFailure extends Data.TaggedError("GitFailure")<{ readonly reason: GitFailureReason; readonly uncertain?: boolean; readonly determinate?: boolean; readonly pullRequestState?: "OPEN" | "CLOSED" | "MERGED" }> {}
+export class GitFailure extends Data.TaggedError("GitFailure")<{ readonly reason: GitFailureReason; readonly uncertain?: boolean; readonly determinate?: boolean; readonly githubDelivery?: boolean; readonly pullRequestState?: "OPEN" | "CLOSED" | "MERGED" }> {}
 export type GitOperation<A> = Effect.Effect<A, GitFailure>;
 export interface Bounded<A> { readonly items: ReadonlyArray<A>; readonly truncated: boolean }
 export interface Repository { readonly path: string; readonly name: string; readonly commonDirectory: string }

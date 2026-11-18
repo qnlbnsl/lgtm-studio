@@ -68,7 +68,7 @@ const prepare: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const { project, source, target, comparison } = yield* withGit(input, (git) => Effect.gen(function* () {
     const { project, source } = yield* scope(input, raw, git)
     const target = yield* destination(input, raw, git, project.repoId)
-    const comparison = yield* gitCall(git.reviewMain(source.path, target.path, input.actor), true)
+    const comparison = yield* gitCall(git.reviewMain(source.path, target.path, input.actor))
     return { project, source, target, comparison }
   }))
   yield* identity(input, [comparison.head, comparison.baseHead, comparison.branch, comparison.base])
@@ -124,7 +124,7 @@ const approve: PiecePlanner = (input, raw) => Effect.gen(function* () {
     // A provider outage does not constitute a pull request verdict. Preserve
     // the open review so a fresh owner request can retry or reconcile it.
     if (result._tag === "Failure" && review.delivery?.mode === "github" && result.failure.pullRequestState === undefined
-      && ["github_refused", "github_remote_changed", "timeout", "network_failed"].includes(result.failure.reason)) {
+      && ["github_refused", "github_remote_changed", "github_base_moved", "timeout", "network_failed"].includes(result.failure.reason)) {
       return yield* refused(githubPublicReason(result.failure.reason) ?? githubRequestFailureReason)
     }
     const decided: GitMainReview = { ...review, decision: p.decision, decidedAt: (yield* Clock.currentTimeMillis) as GitMainReview["decidedAt"],

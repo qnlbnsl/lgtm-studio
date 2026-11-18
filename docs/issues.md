@@ -19699,3 +19699,60 @@ The trace retained request names and timing without request data or credentials.
 The dirty-base hosted journey passed both the focused invocation and the whole run.
 The original journey passed unchanged in a second isolated invocation.
 The cause of the intermittent clean-base failure remains unproven.
+
+## s27-21. A comparison fetch made unsupported hosted reviews uncertain.
+
+State: fixed in round 4.
+Found: 2026-11-17, in the third review.
+The repeatable comparison fetch no longer marks publication as having started.
+Binary, oversized, and partial comparisons refuse before any push.
+The hosted regression verifies the refusal and the absence of a pending Git attempt.
+The local comparison retains the same unsupported-review refusal.
+
+## s27-22. A diverged base tracking reference blocked the delivery fetch.
+
+State: fixed in round 4.
+Found: 2026-11-17, in the third review.
+The selected tracking reference now mirrors the remote base with an explicit forced fetch refspec.
+The fetch still ignores configured mappings and does not update a local branch.
+A private native Git fixture reproduced the rejected non-fast-forward update.
+The regression also checks that the local base stays unchanged.
+
+## s27-23. Base movement after Prepare returned a raw refusal code.
+
+State: fixed in round 4.
+Found: 2026-11-17, in the third review.
+Hosted approval now explains that the GitHub base moved and asks the owner to open the merge review again.
+It sends no merge request and keeps the existing review open.
+A fresh Prepare replaces that review with the current remote base.
+A root-website journey checks the visible explanation and successful recovery.
+The stored event shapes remain unchanged.
+
+## s27-24. A successful URL push left the project tracking reference behind.
+
+State: fixed in round 4.
+Found: 2026-11-17, in the third review.
+Delivery now records the pushed commit in only its project tracking reference.
+The update does not follow a symbolic reference to a local branch.
+A regression checks the published head, upstream counts, and unchanged owner base.
+The push still targets the validated URL and never uses force.
+
+## s27-25. A local comparison timeout used a GitHub availability sentence.
+
+State: fixed in round 4.
+Found: 2026-11-17, in the third review.
+Comparison failures now carry the selected delivery context internally.
+Authentication failures retain the GitHub context.
+A proven local fallback clears that context before comparison.
+Regressions cover no remote, a signed-out fallback, and a hosted comparison.
+
+## s27-26. The dirty-base browser journey intermittently exceeds its approval-click limit.
+
+State: open.
+Found: 2026-11-17, during the round 4 focused browser run.
+The three-journey invocation passed the clean-base and moved-base cases.
+The dirty-base case reached the existing ten-second approval-click limit while its control was becoming stable.
+It passed unchanged when rerun alone.
+The original output and error context were retained.
+The clean-base version showed a similar limit in s27-20.
+No assertion or timeout was changed, and the cause remains unproven.

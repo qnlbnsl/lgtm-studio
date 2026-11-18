@@ -1209,3 +1209,5 @@ test("studio GitHub: owner prepares, refreshes and approves a hosted pull reques
 
 
 test("studio GitHub: a dirty local base behind GitHub does not block hosted review", async ({ page }) => { test.setTimeout(120_000); await (await import('./support/studioGithub.ts')).exerciseStudioGithub(page, true) })
+
+test("studio GitHub: a moved base explains the refusal and a fresh review recovers", async ({ page }) => { test.setTimeout(120_000); await (await import('./support/studioGithub.ts')).exerciseStudioGithub(page, false, true) })

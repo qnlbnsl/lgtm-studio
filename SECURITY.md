@@ -291,6 +291,8 @@ Each Git service operation that contacts GitHub has a two-minute limit.
 The engine disables interactive Git and GitHub prompts.
 Prepare first fetches the remote base into its explicit remote-tracking reference and computes the review against the fetched commit.
 That fetch does not update the local base branch or its files.
+It force-updates only the selected base tracking reference so it can mirror a rewritten remote base.
+This repeatable tracking fetch does not mark a later comparison refusal as an uncertain publication.
 Prepare pushes the reviewed commit only to the project's registered branch on an existing repository remote.
 It never forces a push or pushes tags or submodules with that operation.
 The engine checks the configured and resolved remote URLs before preparing a pull request.
@@ -304,6 +306,8 @@ Delivery commands disable the external transport protocol, push signing, and Git
 They also disable tag following, submodule recursion, automatic HTTP redirects, and custom remote receive and upload programs.
 The push also disables mirror mode and force mode.
 It uses the validated push URL instead of the remote name because Git applies configured fetch mappings to local references after a named-remote push.
+After a successful push, it updates only the selected project tracking reference to the pushed commit.
+That update replaces a symbolic reference without following its target.
 The fetch disables pruning and configured destination ref mappings.
 It writes only the selected base under the selected remote-tracking namespace.
 A renamed repository requires an updated remote URL.
@@ -326,6 +330,7 @@ It reads the live base branch through GitHub’s reference endpoint at Prepare a
 The pull request’s `baseRefOid` metadata is not used as a live branch head.
 It checks that the live remote base still matches the fetched base recorded at Prepare.
 The local base branch head does not gate hosted approval.
+A moved remote base returns a fixed refusal before the merge request and preserves the open review for a fresh Prepare.
 GitHub enforces the merge request against its current server state.
 The remote base can move between the preflight and the merge request because GitHub offers a head condition but no base condition on that endpoint.
 The local checkout is updated only after GitHub confirms the merge.

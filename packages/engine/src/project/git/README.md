@@ -168,3 +168,12 @@ An explicit create refusal explains that the branch was pushed and the CLI repor
 The push targets the validated existing push URL to avoid named-remote fetch mappings.
 Remote-name-only proxy settings do not apply to that push.
 Use Git's URL-based or global proxy configuration when required.
+
+The comparison fetch mirrors a rewritten remote base into only its explicit tracking reference.
+A later binary, partial, or oversized comparison refuses without an uncertain publication attempt.
+A successful delivery push updates only its project tracking reference without following a symbolic target.
+Existing upstream counts therefore reflect that successful push.
+A remote base that moved since Prepare returns a fixed explanation to open the merge review again.
+That refusal preserves the open review until a fresh Prepare replaces it.
+Comparison timeouts use the selected delivery context.
+A local fallback retains its local Git reason.

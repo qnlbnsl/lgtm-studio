@@ -61,6 +61,9 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
   // The runtime owns the single bounded queue. A service operation owns only
   // its cancellation budget and whether an external mutation may have started.
   const mutations = new WeakSet<AbortSignal>();
+  // Authentication failures belong to GitHub. A proven local fallback clears
+  // this context before the comparison, without changing stored event shapes.
+  const githubOperations = new WeakSet<AbortSignal>();
   const operation = <A>(body: (signal: AbortSignal) => Promise<A>, network = false) => Effect.tryPromise({
     try: async (interrupted) => {
       const signal = AbortSignal.any([interrupted, AbortSignal.timeout(network ? 120_000 : operationMs)]);
@@ -68,7 +71,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       try { return await body(signal); }
       catch (error) {
         const failure = error instanceof GitFailure ? error : new GitFailure({ reason: "invalid_path" });
-        throw new GitFailure({ reason: failure.reason, ...(failure.pullRequestState === undefined ? {} : { pullRequestState: failure.pullRequestState }), ...(failure.uncertain || mutations.has(signal) && !failure.determinate ? { uncertain: true } : {}) });
+        throw new GitFailure({ reason: failure.reason, ...(githubOperations.has(signal) ? { githubDelivery: true } : {}), ...(failure.pullRequestState === undefined ? {} : { pullRequestState: failure.pullRequestState }), ...(failure.uncertain || mutations.has(signal) && !failure.determinate ? { uncertain: true } : {}) });
       }
     },
     catch: (error) => error instanceof GitFailure ? error : new GitFailure({ reason: "invalid_path" }),
@@ -382,9 +385,11 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     const tracking = `refs/remotes/${remote}/${base}`;
     if ((await run(folder, ["check-ref-format", tracking], signal)).code !== 0
       || (await run(folder, ["check-ref-format", `refs/heads/${base}`], signal)).code !== 0) return fail("invalid_ref");
-    // Ignore configured ref mappings, updating only this known tracking ref.
-    await mutateGit(folder, [...deliveryOptions, "fetch", "--upload-pack=git-upload-pack", "--no-tags", "--no-prune", "--no-recurse-submodules", "--refmap=", "--", remote,
-      `refs/heads/${base}:${tracking}`], signal, "fetch");
+    // This repeatable bookkeeping fetch publishes nothing and changes no
+    // checkout. Later comparison refusals must remain determinate.
+    const reply = await run(folder, [...deliveryOptions, "fetch", "--upload-pack=git-upload-pack", "--no-tags", "--no-prune", "--no-recurse-submodules", "--refmap=", "--", remote,
+      `+refs/heads/${base}:${tracking}`], signal);
+    if (reply.code !== 0) throw processFailure(reply, "fetch");
     return ref(folder, tracking, signal);
   };
   const syncHostedBase = async (from: Repository, to: Repository, base: string, delivery: GithubDelivery, mergedHead: string, signal: AbortSignal) => {
@@ -409,7 +414,11 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     if (caller !== undefined) {
       if (caller._tag !== "owner") return fail("owner_required");
       const gh = githubCommands(from.path, signal, networkMs);
-      const mode = await deliveryMode((args) => run(from.path, args, signal), gh.run);
+      const mode = await deliveryMode((args) => run(from.path, args, signal), (args) => {
+        githubOperations.add(signal);
+        return gh.run(args);
+      });
+      if (mode.mode === "local") githubOperations.delete(signal);
       if (mode.mode === "github") {
         liveBase = await gh.baseHead(mode.repository, base);
         if (await fetchDeliveryBase(from.path, mode.remote, base, signal) !== liveBase) return determinate("stale_state");
@@ -798,6 +807,9 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       if (await gh.baseHead(mode.repository, reviewed.base) !== reviewed.baseHead) return fail("stale_state");
       await mutateGit(from.path, [...deliveryOptions, "-c", `remote.${mode.remote}.mirror=false`, "-c", "push.followTags=false", "push", "--no-mirror", "--no-force", "--receive-pack=git-receive-pack", "--no-follow-tags", "--recurse-submodules=no", "--", mode.pushUrl,
         `${reviewed.head}:refs/heads/${reviewed.branch}`], signal, "push");
+      // URL pushes skip named-remote bookkeeping. Replace only this tracking
+      // ref, never a symbolic target that could name the owner's local branch.
+      await mutateGit(from.path, ["update-ref", "--no-deref", `refs/remotes/${mode.remote}/${reviewed.branch}`, reviewed.head], signal);
       let found = await list("open");
       if (found.length === 0) {
         const created = await gh.run(["pr", "create", ...args, "--head", reviewed.branch, "--base", reviewed.base, "--title", text.title, "--body", text.body]);
@@ -837,7 +849,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       } else {
         if (fresh.state !== "OPEN" || pr.mergeable !== "MERGEABLE" || pr.mergeStateStatus !== "CLEAN") throw new GitFailure({ reason: "github_refused", determinate: true, pullRequestState: fresh.state });
         const liveBase = await gh.baseHead(mode.repository, reviewed.base);
-        if (liveBase !== delivery.remoteBaseHead || liveBase !== reviewed.baseHead) return fail("stale_state");
+        if (liveBase !== delivery.remoteBaseHead || liveBase !== reviewed.baseHead) return fail("github_base_moved");
         mutations.add(signal);
         const merged = await gh.json(["api", "--method", "PUT", `repos/${mode.repository}/pulls/${delivery.number}/merge`,
           "-f", "merge_method=merge", "-f", `sha=${reviewed.head}`]);

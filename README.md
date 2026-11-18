@@ -172,9 +172,13 @@ It prepares a new review only when the local project head differs from the recor
 A failed Prepare is reported separately from that refresh.
 Approval is required for the refreshed review.
 Automatic background reads never push.
+A binary or oversized comparison refuses before publication without leaving an uncertain operation.
+A successful Prepare updates the project branch's remote-tracking reference.
 
 Approve merges the reviewed pull request on GitHub with a merge commit.
 The engine refuses a changed reviewed head, a remote base that differs from the reviewed base, a closed request, conflicts, or checks and reviews that GitHub has not marked ready.
+If the GitHub base moved, the refusal asks the owner to open the merge review again.
+That refusal leaves the review open until Prepare replaces it.
 A clean local base checkout on its registered base branch is fetched and fast-forwarded.
 A dirty checkout or a checkout on another branch is preserved.
 The Git tab reports whether that local update completed.

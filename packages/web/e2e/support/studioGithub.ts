@@ -23,7 +23,7 @@ import { completedSetup } from './completedSetup.ts'
 
 const expect = baseExpect.configure({ timeout: 30_000 })
 
-export async function exerciseStudioGithub(page: Page, dirtyBase = false) {
+export async function exerciseStudioGithub(page: Page, dirtyBase = false, moveBaseBeforeApproval = false) {
   const rig = makeRig(), previousHome = process.env.LGTM_HOME, previousPath = process.env.PATH
   process.env.LGTM_HOME = rig.stateFolder
   const git = (folder: string, ...args: string[]) => execFileSync('/usr/bin/git', ['-C', folder, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
@@ -79,6 +79,18 @@ export async function exerciseStudioGithub(page: Page, dirtyBase = false) {
           await expect(page.locator('.git')).toHaveAttribute('aria-busy', 'false')
           expect(git(gh.bare, 'rev-parse', `refs/heads/${source.branch}`)).toBe(git(source.path, 'rev-parse', 'HEAD'))
           await page.getByRole('button', { name: 'Open merge review', exact: true }).click()
+          if (moveBaseBeforeApproval) {
+            await expect(page.locator('#pr-body')).toHaveValue(new RegExp(`Reviewed base: ${remoteBase}`))
+            const moved = git(gh.bare, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', 'commit-tree', `${remoteBase}^{tree}`, '-p', remoteBase, '-m', 'Another project approved')
+            git(gh.bare, 'update-ref', 'refs/heads/main', moved)
+            await dialog.getByRole('button', { name: 'Approve without evidence', exact: true }).click()
+            await expect(page.locator('.toasts')).toContainText('The GitHub base moved since this review was prepared. Open the merge review again.')
+            expect(git(rig.work, 'rev-parse', 'HEAD')).toBe(original)
+            expect(gh.read().state).toBe('OPEN')
+            await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+            await page.getByRole('button', { name: 'Open merge review', exact: true }).click()
+            await expect(page.locator('#pr-body')).toHaveValue(new RegExp(`Reviewed base: ${moved}`))
+          }
           await dialog.getByRole('button', { name: 'Approve without evidence', exact: true }).click()
           await expect(dialog).toHaveCount(0); await expect(page.locator('.git')).toHaveAttribute('aria-busy', 'false')
           await expect(page.locator('.git-integrate')).toContainText('MERGED')
