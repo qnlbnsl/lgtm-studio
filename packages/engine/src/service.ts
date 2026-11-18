@@ -162,10 +162,10 @@ const program = (inheritedToken: string | undefined, webPassword: Redacted.Redac
     });
     const managedRoot = userHarnessPrefix(process.env.HOME ?? folder);
     const harnessPath = (process.env.PATH ?? "").split(delimiter).filter((path) => isAbsolute(path) && resolve(path) !== managedRoot && !resolve(path).startsWith(managedRoot + "/")).join(delimiter);
-    // Factory discovery is a startup snapshot, shared by commands and recovery.
-    const harnessDefaults = yield* installedHarnessDefaults(harnessPath);
+    // Probe only when first loading defaults or explicitly resetting them.
+    const harnessDefaults = installedHarnessDefaults(harnessPath);
     const configuration = { credentials, home: process.env.HOME ?? folder, stateFolder: folder, pluginRoot: fileURLToPath(new URL("../../..", import.meta.url)),
-      harnessDefaults: Effect.succeed(harnessDefaults),
+      harnessDefaults,
       harnessPrograms: makeHarnessPrograms({ home: process.env.HOME ?? folder, path: harnessPath, stateFolder: folder, credentials }) };
     const base = baseServices(lists);
     const runnerEnvironment: NodeJS.ProcessEnv = { ...process.env, PATH: harnessPath };

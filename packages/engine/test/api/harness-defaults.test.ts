@@ -2,6 +2,8 @@
 // fresh state folder lists the pinned Claude and Codex adapters without any
 // `harnesses set`; a restart leaves the owner's edit alone; `harnesses reset`
 // through the client restores the default.
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { afterEach, expect, it } from "@effect/vitest";
 import type { HarnessSettings } from "@lgtm/contracts";
 import * as Effect from "effect/Effect";
@@ -49,3 +51,17 @@ live("N-1 a fresh service lists the pinned harnesses, a restart keeps the owner'
     }));
     expect((yield* listed(root)).find((harness) => harness.id === "claude")).toEqual(claude);
   }), 120_000);
+
+live('s29 1401: reset discovers an adapter installed after startup while ordinary reads remain cached', () => Effect.gen(function* () {
+  const root = makeServiceRoot();
+  const service = startService(root, { env: { PATH: `${root.bin}:/usr/bin:/bin` } });
+  yield* waitServing(root, service);
+  expect((yield* listed(root)).some(h => h.id === 'gemini')).toBe(false);
+  writeFileSync(join(root.bin, 'gemini'), '#!/bin/sh\nexit 0\n', { mode: 0o700 });
+  expect((yield* listed(root)).some(h => h.id === 'gemini')).toBe(false);
+  yield* Effect.scoped(Effect.gen(function* () {
+    const client = yield* ownerClient(root);
+    yield* client.harnesses({ requestId: requestId(), operation: 'reset' } as never);
+  }));
+  expect((yield* listed(root)).find(h => h.id === 'gemini')?.adapterPath).toBe(join(root.bin, 'gemini'));
+}), 120_000);

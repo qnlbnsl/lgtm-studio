@@ -189,7 +189,7 @@ export const fakeHarness = (adapterPath: string, id = "fake"): HarnessSettings =
     { id: "read-only", level: "read-only" }, { id: "default", level: "ask" },
     { id: "accept-edits", level: "edit" }, { id: "full-access", level: "full" },
   ],
-  defaultPermission: "ask", models: [], efforts: [], denyReadMechanism: { _tag: "none" },
+  defaultPermission: "auto", models: [], efforts: [], denyReadMechanism: { _tag: "none" },
 }) as unknown as HarnessSettings;
 
 export interface Echo {

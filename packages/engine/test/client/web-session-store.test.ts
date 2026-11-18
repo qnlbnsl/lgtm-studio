@@ -148,3 +148,17 @@ for (const [minutes, accepted] of [[5, true], [6, false]] as const) it(`r3 start
   try { expect(open(folder).valid(cookie)).toBe(accepted) }
   finally { clock.mockRestore() }
 }))
+
+it('s29 1425: one authenticated future record does not revoke an older device', () => fixture(folder => {
+  const now = Date.now(), clock = vi.spyOn(Date, 'now').mockReturnValue(now);
+  try {
+    const session = open(folder), older = mint(session);
+    clock.mockReturnValue(now + 3600000);
+    const future = mint(session);
+    clock.mockReturnValue(now);
+    const restored = open(folder);
+    expect(restored.valid(older)).toBe(true);
+    expect(restored.valid(future)).toBe(false);
+    expect(open(folder).valid(older)).toBe(true);
+  } finally { clock.mockRestore() }
+}));
