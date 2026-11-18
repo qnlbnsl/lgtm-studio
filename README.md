@@ -175,6 +175,48 @@ The engine does not automatically remove even a clean, merged worker checkout.
 Registered worker worktrees appear in the existing Git, Files, and Terminal choices.
 
 
+## Finish project work through a pull request
+
+The Git tab's existing merge review prepares a GitHub pull request when the repository has a GitHub.com remote and the service user has a signed-in GitHub command-line interface (CLI), `gh`.
+Prepare fetches the live remote base without changing the owner's checkout.
+Its comparison, commit list, and file totals use that fetched commit.
+A dirty local base can remain behind GitHub while hosted reviews continue.
+Prepare pushes only the project's registered branch without force.
+Its title uses the project name.
+Its description uses the goal and the reported review evidence.
+An existing open pull request for that branch and base is reused.
+Its description is refreshed with the current reviewed head, base, and evidence summary.
+The review area shows its number, link, and state.
+Preparing again pushes the reviewed project commits.
+Refresh always reads Git state.
+It prepares a new review only when the local project head differs from the recorded reviewed head.
+A failed Prepare is reported separately from that refresh.
+Approval is required for the refreshed review.
+Automatic background reads never push.
+A binary or oversized comparison refuses before publication without leaving an uncertain operation.
+A successful Prepare updates the project branch's remote-tracking reference.
+
+Approve merges the reviewed pull request on GitHub with a merge commit.
+The engine refuses a changed reviewed head, a remote base that differs from the reviewed base, a closed request, conflicts, or checks and reviews that GitHub has not marked ready.
+If the GitHub base moved, the refusal asks the owner to open the merge review again.
+That refusal leaves the review open until Prepare replaces it.
+A clean local base checkout on its registered base branch is fetched and fast-forwarded.
+A dirty checkout or a checkout on another branch is preserved.
+The Git tab reports whether that local update completed.
+
+When no suitable GitHub remote is configured, `gh` is missing, or the service user is signed out, Prepare records the existing local merge mode and explains why.
+That mode merges locally without pushing the base branch.
+A network failure or ambiguous authentication result refuses the request instead of offering a local merge.
+After a lost merge receipt, a new owner approval can reconcile GitHub’s confirmed merge without merging twice.
+An unverified approval failure leaves the review open.
+Prepare can also record an exact-head request already merged elsewhere, including after a prior refusal.
+The local update also refreshes the explicit remote-tracking base reference.
+Update the remote URL after a GitHub repository rename because hosted delivery does not follow repository redirects.
+An explicit pull request creation refusal reports that the branch was pushed and explains how to retry.
+There is no setting to force local mode.
+Only the authenticated owner can prepare, push, or approve these changes.
+See [the project Git guide](packages/engine/src/project/README.md) for the typed client API.
+
 ## Agent permission levels
 
 On 2026-11-17, the owner chose `auto` as the default for new project leads and their workers.

@@ -128,3 +128,52 @@ Reopening requires that fingerprint and explicit confirmation.
 Unsafe or oversized resolved paths are omitted without hiding other resolved paths.
 A stale file observation refuses before checkout replaces its contents.
 A proven overlapping-edit abort refusal returns `abort_blocked` without mutation uncertainty.
+
+## GitHub delivery of the owner's main review
+
+`prepareDelivery` selects an existing GitHub.com remote and checks `gh` authentication through a query filtered to active-account states.
+It returns an explicit local fallback when the CLI is absent or no active account is configured.
+It pushes the pinned project head to that project's branch without force, tags, or submodules.
+It creates or reuses an open pull request with bounded redacted project text.
+`approveDelivery` checks the reviewed heads and provider identity before merging through the GitHub merge endpoint.
+The endpoint requests a merge commit and conditions it on the reviewed head.
+A confirmed remote merge is followed by a best-effort fetch and fast-forward of a clean base checkout on its base branch.
+The owner receives a separate sentence describing local synchronization.
+Neither method accepts agent authority.
+The project command layer authorizes the owner again and wraps Prepare in a durable mutation attempt.
+Provider diagnostics stay private.
+Structured provider metadata is redacted by the project command and event log boundaries.
+
+Refresh always reads Git state before considering a new Prepare.
+It prepares again only when the project head differs from the recorded reviewed head.
+A failed Prepare is reported without discarding the refreshed Git state.
+GitHub connectivity or ambiguous authentication failures refuse the request instead of enabling a local merge.
+A new owner approval can reconcile a confirmed GitHub merge after a lost receipt.
+The live base head comes from GitHub's reference endpoint rather than pull request metadata.
+
+Hosted comparisons use the fetched live remote base rather than the local checkout's head.
+A dirty or outdated local base does not block hosted approval.
+The commit list, file totals, and patch are calculated against that fetched commit.
+Reported test and review results remain reports for the project head.
+Approval checks remote base movement and updates the local checkout only afterwards when safe.
+The fetch updates only the explicit remote-tracking base reference.
+An unverified provider failure leaves the review open for a fresh owner request.
+Prepare records an exact-head pull request already merged elsewhere, including after a prior refusal.
+That reconciliation can conditionally fast-forward the local base without another hosted merge.
+Reusing an open request refreshes its redacted description through standard input.
+A canonical repository-name change gives an explanation to update the remote URL.
+Renamed remotes must be updated because delivery does not follow redirects.
+The transport can refuse the redirect before provider metadata is available.
+An explicit create refusal explains that the branch was pushed and the CLI reported a creation failure.
+The push targets the validated existing push URL to avoid named-remote fetch mappings.
+Remote-name-only proxy settings do not apply to that push.
+Use Git's URL-based or global proxy configuration when required.
+
+The comparison fetch mirrors a rewritten remote base into only its explicit tracking reference.
+A later binary, partial, or oversized comparison refuses without an uncertain publication attempt.
+A successful delivery push updates only its project tracking reference without following a symbolic target.
+Existing upstream counts therefore reflect that successful push.
+A remote base that moved since Prepare returns a fixed explanation to open the merge review again.
+That refusal preserves the open review until a fresh Prepare replaces it.
+Comparison timeouts use the selected delivery context.
+A local fallback retains its local Git reason.

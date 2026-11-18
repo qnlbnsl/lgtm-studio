@@ -9,9 +9,9 @@ import { admitMainReview } from "../project/gitReview.ts"
 import { own, projectKey, projectView } from "../project/view.ts"
 import { mockEditorUncertainReason } from "../project/mockEditorRecovery.ts"
 
-// Only external mutations require durable attempts. Read-backed review/report
-// planners still run outside the writer, without an invented mutation marker.
-export const gitMutationCommand = (name: string) => !["project.review.prepare", "project.review.report"].includes(name)
+// Prepare can push and create a hosted pull request, so it needs a durable attempt.
+// Evidence reports remain read-backed planners without an external mutation.
+export const gitMutationCommand = (name: string) => name !== "project.review.report"
 export const gitUncertain = (command?: string) => new CommandUncertain({ reason: command === "project.mocks.editor.save" ? mockEditorUncertainReason : "Git outcome is uncertain; refresh Git state" })
 
 // Only a read that observes a pending attempt owns the mutation interval. It
@@ -58,6 +58,7 @@ export const planGitOperation = (input: Input, name: string, payload: Record<str
   if (prior !== undefined) return yield* gitUncertain(name)
   if (!gitMutationCommand(name)) return { plan: yield* planner(input, payload) }
   if (prior === undefined) {
+    if (name === "project.review.prepare" && actor._tag !== "owner") return yield* refused("Git: owner_required")
     if (name === "project.review.approve") yield* admitMainReview(input, payload)
     const observed = yield* withGit(input, (git) => Effect.gen(function* () {
       const source = yield* workspacePath(input, payload, git)

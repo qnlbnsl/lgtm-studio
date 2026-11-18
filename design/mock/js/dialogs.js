@@ -154,7 +154,7 @@ function MergeReview({ s, d }) {
   for (const c of wt?.commits || []) for (const f of c.files || []) { const k = f.path || f[0]; const o = seen.get(k) || [k, 0, 0]; o[1] += f.add ?? f[2]?.add ?? 0; o[2] += f.del ?? f[2]?.del ?? 0; seen.set(k, o); }
   const files = live.on ? (r.files || []).map((f) => [f.path, '', '']) : r.project === 'apiref' || !seen.size ? (r.project === 'apiref' ? docs : []) : [...seen.values()].slice(0, 8);
   const subjects = (wt?.commits || []).slice(0, Math.max(1, ev.commits)).map((k) => k.subject);
-  const first = live.on ? { title: '', body: '' } : act.pullRequestText(subjects.length ? subjects : [r.title], ev);
+  const first = live.on ? { title: r.prTitle || '', body: r.body || '' } : act.pullRequestText(subjects.length ? subjects : [r.title], ev);
   const [title, setTitle] = useState(first.title); const [body, setBody] = useState(first.body); const [writing, setWriting] = useState(false);
   const regen = () => { if (live.on) return refuse(); setWriting(true); setTimeout(() => { const t = act.pullRequestText(subjects.length ? subjects : [r.title], ev); setTitle(t.title); setBody(t.body); setWriting(false); }, 900); };
   const over = title.length > act.PR_TITLE_LIMIT;
@@ -165,6 +165,8 @@ function MergeReview({ s, d }) {
       <button type="button" class=${cx('btn', ok && 'primary')} disabled=${live.on ? liveGit.busy('git') || r.status !== 'open' : over || !title.trim()} onClick=${merge}>${live.on && liveGit.busy('git') ? 'Merging…' : ok ? 'Approve and merge' : 'Approve without evidence'}</button>`}>
     <p class="mg-brief">${r.brief || r.body}</p>
     ${r.notice && html`<p class="mg-notice"><b>Users will notice:</b> ${r.notice}</p>`}
+    ${r.delivery && html`<p class="mg-brief">${r.delivery.mode === 'github' ? html`GitHub pull request <a class="link" href=${r.delivery.url} target="_blank" rel="noopener noreferrer">#${r.delivery.number}</a> · ${r.delivery.state}` : r.delivery.reason}</p>`}
+    ${r.localSync && html`<p class="mg-brief">${r.localSync}</p>`}
     <div class="pr-text">
       <div class="field"><div class="row"><label for="pr-title" class="grow">Pull request title</label>
           <span class=${cx('num pr-count', over && 'error-text')} aria-live="polite">${title.length} / ${act.PR_TITLE_LIMIT}</span>

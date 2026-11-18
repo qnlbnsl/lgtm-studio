@@ -1,3 +1,12 @@
+export const githubRequestFailureReason = "GitHub could not complete or verify the request. Check its availability, authentication, and pull request status, then refresh."
+
+export const githubRemoteChangedReason = "GitHub returned a different repository. If it was renamed, update the remote URL, then prepare again."
+export const githubCreateRefusedReason = "The project branch was pushed, but the GitHub CLI reported a pull request creation failure. Check permissions, commits, and existing pull requests, then prepare again."
+export const githubBaseMovedReason = "The GitHub base moved since this review was prepared. Open the merge review again."
+export const githubPublicReason = (reason: string): string | undefined => reason === "github_refused" ? githubRequestFailureReason
+  : reason === "github_remote_changed" ? githubRemoteChangedReason : reason === "github_create_refused" ? githubCreateRefusedReason
+  : reason === "github_base_moved" ? githubBaseMovedReason : undefined
+
 // Fixed public reasons contain no caller-controlled text or host error output.
 export const projectRefusalReasons = new Set([
   "Archive the project before deleting it.",
@@ -21,6 +30,7 @@ export const projectRefusalReasons = new Set([
   "the file contains private data and cannot be saved here",
   "Git outcome is uncertain; refresh Git state",
   "Git attempt metadata is unavailable",
+  githubRequestFailureReason, githubRemoteChangedReason, githubCreateRefusedReason, githubBaseMovedReason,
   "project placement cannot change before machine pairing",
   "only a project lead or owner can change the stage",
   "context reply exceeds the read budget",
@@ -100,4 +110,4 @@ export const projectRefusalReasons = new Set([
 ])
 
 // These fixed service reasons never include a path, URL or Git stderr.
-for (const reason of ["invalid_path", "not_repository", "invalid_ref", "output_limit", "timeout", "cancelled", "git_unavailable", "git_failed", "busy", "collision", "dirty_destination", "dirty_source", "conflicts", "confirmation_required", "stale_state", "nothing_staged", "invalid_message", "missing_remote", "missing_upstream", "authentication_required", "network_failed", "push_rejected", "pull_diverged", "base_requires_review", "unsupported_provider", "push_required", "unsupported_conflict", "incomplete_choices", "owner_required", "unsupported_review", "no_merge", "abort_blocked"]) projectRefusalReasons.add(`Git: ${reason}`)
+for (const reason of ["gh_unavailable", "github_refused", "forbidden_remote", "invalid_path", "not_repository", "invalid_ref", "output_limit", "timeout", "cancelled", "git_unavailable", "git_failed", "busy", "collision", "dirty_destination", "dirty_source", "conflicts", "confirmation_required", "stale_state", "nothing_staged", "invalid_message", "missing_remote", "missing_upstream", "authentication_required", "network_failed", "push_rejected", "pull_diverged", "base_requires_review", "unsupported_provider", "push_required", "unsupported_conflict", "incomplete_choices", "owner_required", "unsupported_review", "no_merge", "abort_blocked"]) projectRefusalReasons.add(`Git: ${reason}`)

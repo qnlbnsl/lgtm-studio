@@ -537,9 +537,17 @@ async function loadGitDetail(id, selectedCommit, automatic = false, force = fals
   } catch (error) { failed(error); }
   finally { if (!progressive && r.detailAbort === abort) r.detailAbort = undefined; }
 }
-export function refreshGit(project = screen?.project) { return run('git', () => {
+export function refreshGit(project = screen?.project) { return run('git', async () => {
   for (const r of gitController?.records.values() || []) supersedeGit(r);
-  return loadGit(project, undefined, true);
+  await loadGit(project, undefined, true);
+  const w = S().worktrees.find((w) => w.project === project && w.kind === 'project' && !w.stale && w.head && w.review?.delivery?.mode === 'github' && w.review.status === 'open' && w.head !== w.review.head);
+  if (w) {
+    try {
+      const target = destination(w);
+      const prepared = read(await request('project.review.prepare', { ...scope(w), projectId: project, destinationId: target.id }));
+      writeWt(w.id, { review: mapping.mapMainReview(prepared.review, prepared.comparison, S().projects.find((p) => p.id === project)?.lead || '') });
+    } catch (error) { act.toast(error, 'error', 'Git was refreshed, but the pull request could not be prepared.'); }
+  }
 }); }
 export function gitDetail(id, commit) { return run('git', () => loadGitDetail(id, commit)); }
 export function selectGit(id, tab, commit) {
@@ -602,7 +610,7 @@ export function answerReview(id, option, reason, approval) {
     const review = read(await request('project.review.approve', { ...scope(w), projectId: r.project, reviewId: r.id, expectedHead: shown.head, expectedBaseHead: shown.baseHead, confirmed: true,
       decision: shown.decision }));
     writeWt(w.id, { review: mapping.mapMainReview(review, undefined, r.agent) });
-    if (review.outcome === 'merged') act.closeDialog();
+    if (review.outcome === 'merged') { act.closeDialog(); if (review.localSync) act.toast(review.localSync); }
     await confirmGit(async () => { if (review.outcome !== 'merged') throw new Error(review.reason || 'The merge was refused.'); }, () => loadGit(r.project, affectedGit(w, wt(r.destinationId) || destination(w)), true));
   });
 }

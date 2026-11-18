@@ -1,3 +1,4 @@
+import { githubPublicReason, githubRequestFailureReason } from "./errors.ts"
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
@@ -18,10 +19,10 @@ const scope = (input: Input, raw: Record<string, unknown>, git: GitService) => E
   if (source.repoId !== project.repoId || source.machineId !== project.machineId) return yield* refused("project is unavailable to this caller")
   return { project, source }
 })
-const destination = (input: Input, raw: Record<string, unknown>, git: GitService, repoId: string) => Effect.gen(function* () {
+const destination = (input: Input, raw: Record<string, unknown>, git: GitService, repoId: string, allowOtherBranch = false) => Effect.gen(function* () {
   // Main is outside the project's member workspace set. This helper is used
   // only by owner-checked prepare/approve, never by an ordinary member read.
-  const target = yield* workspacePath(input, { worktreeId: raw.destinationId }, git)
+  const target = yield* (allowOtherBranch ? workspaceReference(input, { worktreeId: raw.destinationId }) : workspacePath(input, { worktreeId: raw.destinationId }, git))
   const { repository, location } = yield* repositoryPath(input, repoId)
   if (target.repoId !== repoId || target.checkout !== "main" || target.path !== repository.path || target.path !== location.path
     || !["main", "master"].includes(target.branch)) return yield* refused("main review requires the registered project and its repository base")
@@ -67,18 +68,37 @@ const prepare: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const { project, source, target, comparison } = yield* withGit(input, (git) => Effect.gen(function* () {
     const { project, source } = yield* scope(input, raw, git)
     const target = yield* destination(input, raw, git, project.repoId)
-    const comparison = yield* gitCall(git.reviewMain(source.path, target.path))
+    const comparison = yield* gitCall(git.reviewMain(source.path, target.path, input.actor))
     return { project, source, target, comparison }
   }))
-    yield* identity(input, [comparison.head, comparison.baseHead, comparison.branch, comparison.base])
-    const review = Schema.decodeUnknownSync(GitMainReview)({ reviewId: p.requestId, projectId: project.projectId,
-      worktreeId: source.worktreeId, destinationId: target.worktreeId, head: comparison.head, baseHead: comparison.baseHead,
-      branch: comparison.branch, base: comparison.base, evidence: yield* evidenceFor(input, project.projectId, source.worktreeId, comparison.head),
-      openedAt: yield* Clock.currentTimeMillis, decision: null, outcome: "open", mergeHead: null, reason: null, decidedAt: null })
-    // Budget and redact the complete comparison before recording an available
-    // review. A partial/oversized reply cannot produce an approvable ticket.
-    const reply = yield* gitReply(input, p.requestId, { review, comparison })
-    return { events: [{ _tag: "project.MainReviewOpened" as const, review }], reply: () => reply }
+  yield* identity(input, [comparison.head, comparison.baseHead, comparison.branch, comparison.base])
+  const evidence = yield* evidenceFor(input, project.projectId, source.worktreeId, comparison.head)
+  const summary = (kind: "tests" | "review") => {
+    const slot = evidence[kind]
+    return `${kind}: ${slot.state}${slot.report ? `; reported ${slot.report.status}. ${slot.report.summary}` : "; no report"}`
+  }
+  const title = (yield* input.runtime.log.redactText(project.name.replace(/[\r\n\0]/g, " "))).slice(0, 72) || "Project work"
+  // Each part has its own budget so a long goal cannot displace all evidence.
+  // Redact before truncation, which must never cut a secret out of its match.
+  const goal = (yield* input.runtime.log.redactText(project.goal)).slice(0, 3000)
+  const tests = (yield* input.runtime.log.redactText(summary("tests"))).slice(0, 2000)
+  const reviewer = (yield* input.runtime.log.redactText(summary("review"))).slice(0, 2000)
+  const body = `${goal}\n\n${tests}\n${reviewer}\n\nReviewed head: ${comparison.head}\nReviewed base: ${comparison.baseHead}`
+  const draft = Schema.decodeUnknownSync(GitMainReview)({ reviewId: p.requestId, projectId: project.projectId,
+    worktreeId: source.worktreeId, destinationId: target.worktreeId, head: comparison.head, baseHead: comparison.baseHead,
+    branch: comparison.branch, base: comparison.base, evidence,
+    openedAt: yield* Clock.currentTimeMillis, decision: null, outcome: "open", mergeHead: null, reason: null, decidedAt: null })
+  // Reserve space for bounded provider metadata before publishing the branch.
+  yield* gitReply(input, p.requestId, { review: draft, comparison }, false, 192 * 1024)
+  const prepared = yield* withGit(input, (git) => gitCall(git.prepareDelivery(source.path, comparison, { title, body }, input.actor, target.path), true))
+  const delivery = prepared.delivery
+  const review: GitMainReview = { ...draft, delivery, ...(prepared.merged ? { outcome: "merged", mergeHead: prepared.merged.head,
+    localSync: prepared.merged.localSync, decidedAt: yield* Clock.currentTimeMillis } : {}) }
+  const reply = yield* Effect.gen(function* () {
+    if (delivery.mode === "github") yield* identity(input, [delivery.repository, delivery.remote, delivery.url, delivery.remoteBaseHead])
+    return yield* gitReply(input, p.requestId, { review, comparison })
+  }).pipe(Effect.mapError((error) => delivery.mode === "github" ? new CommandUncertain({ reason: "Git outcome is uncertain; refresh Git state" }) : error))
+  return { events: [{ _tag: prepared.merged ? "project.MainReviewDecided" as const : "project.MainReviewOpened" as const, review }], reply: () => reply }
 })
 export const admitMainReview = (input: Input, raw: Record<string, unknown>) => Effect.gen(function* () {
   yield* owner(input)
@@ -94,14 +114,27 @@ const approve: PiecePlanner = (input, raw) => Effect.gen(function* () {
   const review = yield* admitMainReview(input, raw)
   return yield* withGit(input, (git) => Effect.gen(function* () {
     const { project, source } = yield* scope(input, raw, git)
-    const target = yield* destination(input, { ...raw, destinationId: review.destinationId }, git, project.repoId)
+    const target = yield* destination(input, { ...raw, destinationId: review.destinationId }, git, project.repoId, review.delivery?.mode === "github")
     // Evidence is recorded data. Both choices explicitly authorize this
     // reviewed pair; no test result or reviewer verdict is a merge policy.
-    const result = yield* git.approveMain(source.path, target.path, review, input.actor, p.confirmed).pipe(Effect.result)
+    const result = yield* (review.delivery?.mode === "github"
+      ? git.approveDelivery(source.path, target.path, review, review.delivery, input.actor, p.confirmed)
+      : git.approveMain(source.path, target.path, review, input.actor, p.confirmed).pipe(Effect.map((head) => ({ head, delivery: review.delivery ?? { mode: "local" as const, reason: "Local merge: this review predates GitHub support." }, localSync: "The local base checkout was merged." })))).pipe(Effect.result)
     if (result._tag === "Failure" && result.failure.uncertain) return yield* new CommandUncertain({ reason: "Git outcome is uncertain; refresh Git state" })
+    // A provider outage does not constitute a pull request verdict. Preserve
+    // the open review so a fresh owner request can retry or reconcile it.
+    if (result._tag === "Failure" && review.delivery?.mode === "github" && result.failure.pullRequestState === undefined
+      && ["github_refused", "github_remote_changed", "github_base_moved", "timeout", "network_failed"].includes(result.failure.reason)) {
+      return yield* refused(githubPublicReason(result.failure.reason) ?? githubRequestFailureReason)
+    }
     const decided: GitMainReview = { ...review, decision: p.decision, decidedAt: (yield* Clock.currentTimeMillis) as GitMainReview["decidedAt"],
-      outcome: result._tag === "Success" ? "merged" : "refused", mergeHead: result._tag === "Success" ? result.success : null,
-      reason: result._tag === "Failure" ? result.failure.reason : null }
+      outcome: result._tag === "Success" ? "merged" : "refused", mergeHead: result._tag === "Success" ? result.success.head : null,
+      ...(result._tag === "Success" ? { delivery: result.success.delivery, localSync: result.success.localSync }
+        : review.delivery?.mode === "github" && result.failure.pullRequestState !== undefined ? { delivery: { ...review.delivery, state: result.failure.pullRequestState } } : {}),
+      reason: result._tag === "Failure" ? result.failure.reason === "github_refused"
+        ? result.failure.pullRequestState === undefined ? githubRequestFailureReason
+          : "GitHub refused the merge. The pull request is closed, has conflicts, or its required checks or reviews are not passing. Refresh the review before trying again."
+        : review.delivery?.mode === "github" && ["timeout", "network_failed"].includes(result.failure.reason) ? githubRequestFailureReason : result.failure.reason : null }
     const reply = yield* gitReply(input, p.requestId, decided).pipe(Effect.mapError((error) => result._tag === "Success" ? new CommandUncertain({ reason: "Git outcome is uncertain; refresh Git state" }) : error))
     return { events: [{ _tag: "project.MainReviewDecided", review: decided }] as Event[], reply: () => reply }
   }))

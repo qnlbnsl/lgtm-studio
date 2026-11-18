@@ -12639,17 +12639,19 @@ There is no bounded short task that returns generated Git text with an owner-sel
 Commit and pull request generation therefore retain their existing refusal.
 This assignment adds no implicit account selection and sends no repository content to a model.
 
-## 738. Hosted pull request editing has no stored provider record.
+## 738. Hosted pull request text editing has no authenticated provider update action.
 
-State: open. Checked against the code on 2026-11-15. No hosted pull request record or provider update operation found; entry lists them as prerequisites and no later entry delivers them. Kind: visible to the owner.
+State: open for manual title and description editing.
+Checked against the code on 2026-11-17 after the s27 change.
+Kind: visible to the owner.
 
-GitMainReview is a local approval record for a reviewed pair of heads.
-It has no hosted pull request number, provider identity, title, or body.
-The Git service can read local review evidence and merge it with owner approval.
-It does not create a hosted pull request.
-No authenticated provider update operation exists in the engine.
-The title and body controls therefore retain their refusal.
-A hosted record and a bounded authenticated provider action are prerequisites for connecting them.
+The review originally stored only a local approval record for a reviewed pair of heads.
+The s27 change adds an optional GitHub delivery record with the pull request number, provider identity, title, description, and state.
+Prepare now creates or finds that pull request with redacted text from the project and reported evidence.
+Approval now merges that pull request when GitHub is available.
+No authenticated provider text update operation exists in the engine.
+The title and description controls therefore retain their refusal of manual live edits.
+A bounded authenticated provider update action is still required to connect those editors.
 
 
 ## 739. The required local live check passed sixteen of twenty-three steps.
@@ -19458,6 +19460,335 @@ The browser check that a repeated conflict choice shows no refusal compares the 
 In the orchestrator's whole browser run, `git.spec.ts:183`, `git.spec.ts:253`, `studio.spec.ts:372` and `studio.spec.ts:1200` failed under load, and each passed when run alone.
 
 State: open. Recorded on 2026-11-17.
+
+## 1426. Prepare and owner approval previously never reached GitHub.
+
+State: fixed in this change.
+Found: 2026-11-17, while verifying the s27 task brief against the main review command and Git service.
+Prepare previously recorded only a local comparison.
+Approval merged into the owner's local base without a push or a pull request.
+Prepare now uses a signed-in GitHub CLI to push the registered project branch and create or find a pull request.
+Approval merges that pull request with a merge commit and conditionally fast-forwards the local base.
+A missing GitHub remote, executable, or sign-in retains the explicitly described local fallback.
+The generated title and description are recorded from project data.
+Manual hosted title and description editing in issue 738 remains unavailable.
+
+## 1427. GitHub does not offer an atomic reviewed-base condition for its merge endpoint.
+
+State: open.
+Found: 2026-11-17, while checking the GitHub merge endpoint documentation.
+The engine checks the prepared remote base immediately before requesting the merge.
+The merge request atomically pins the reviewed head.
+The endpoint cannot atomically pin the prepared base as well.
+The remote base can therefore move between preflight and merge.
+GitHub still enforces its current merge and branch protection rules.
+A remote merge and a local checkout update also cannot share one transaction.
+The reply records a confirmed remote merge even when the later local update cannot complete.
+
+
+## 1428. Eight browser journeys failed in the whole run and passed on rerun.
+
+State: open.
+Found: 2026-11-17, during the required whole browser run for unit s27-pullrequest.
+The whole `pnpm test:browser` run passed 68 journeys and failed eight journeys.
+The existing Git cases for main approval, stale reviewed heads, evidence, and fetch/pull/push failed.
+The existing project creation case across eight viewport sizes failed.
+The existing website projects-and-board, workflows, and files cases failed.
+The new GitHub journey and the existing local fallback website journey both passed in the whole run.
+A serial rerun of only those eight failures passed five cases.
+The evidence, fetch/pull/push, and files cases failed again at different steps in that serial rerun.
+Each of those three cases then passed in a separate one-test run.
+Every existing assertion and timeout was retained.
+The whole unit and browser runs overlapped for part of the run.
+This observation does not establish the cause of the failures.
+Issues 1367 and 1375 record similar earlier observations.
+
+
+## 1429. Pull request metadata did not prove the live base branch head.
+
+State: fixed in round 2.
+Found: 2026-11-17, in the independent s27 review.
+Prepare and Approve previously treated `baseRefOid` as the live remote base.
+GitHub's schema documentation does not promise that this pull request metadata tracks the live branch head.
+The engine now reads the exact reference endpoint for the live base at Prepare and before an open request merge.
+The fake retains a creation-time base snapshot and merges against its actual current base.
+Regression tests cover remote movement and reusing a request after another project updates the base.
+The atomic base race in 1427 still applies.
+
+## 1430. A confirmed GitHub merge could remain refused after its receipt was lost.
+
+State: fixed in round 2.
+Found: 2026-11-17, in the independent s27 review.
+A new owner approval now recognizes a merged request with the exact reviewed head and a valid merge commit.
+It records the confirmed result and conditionally updates the local checkout.
+It does not issue another remote merge.
+Tests lose the merge response after a real remote merge and retry with both an unchanged and an already updated local base.
+The original uncertain request is never replayed.
+
+## 1431. Refresh could push an unchanged head and skip its read after a failed Prepare.
+
+State: fixed in round 2.
+Found: 2026-11-17, in the independent s27 review.
+Refresh now reads Git state before considering a new Prepare.
+It prepares again only for a changed project head.
+Prepare failures use a separate notification and preserve the refreshed state.
+Tests cover unchanged and changed heads with successful and failed Prepare requests.
+
+## 1432. GitHub delivery accepted redirected destinations and ambiguous authentication failures.
+
+State: fixed in round 2, within the existing trust limit for repository configuration.
+Found: 2026-11-17, in the independent s27 review.
+Resolved fetch and push destinations must now match the configured GitHub repository.
+A private fake executable supplies the offline test transport without a production exception.
+Forbidden paths are normalized before comparison, including repeated separators and dot segments in Secure Shell paths.
+Delivery commands disable external transports, push signing, custom remote programs, mirror pushes, pruning, and configured fetch destinations.
+The engine preserves credential helpers, Secure Shell commands, and proxies that the owner may need.
+An agent with write access to Git configuration can still cause code execution or credential exposure when an owner prepares or approves.
+SECURITY.md states that remaining limit.
+Authentication failures now refuse with a sentence unless the filtered account list proves sign-out.
+GitHub timeouts before a mutation also return a sentence during Prepare and Approve.
+An unreachable approval reports availability instead of claiming that pull request conditions failed.
+An uncertain outcome after a possible mutation retains the existing uncertainty receipt.
+The fake covers unreachable GitHub, signing and remote programs, and normalized forbidden destinations.
+
+## 1433. Numeric branches and fork requests could select the wrong pull request.
+
+State: fixed in round 2.
+Found: 2026-11-17, in the independent s27 review.
+Prepare now lists requests again after creation instead of passing the branch as a positional request selector.
+It filters out cross-repository requests before selecting the project's request.
+Approval independently validates that the request is in the same repository.
+Separate numeric-branch tests run with and without a matching fork request.
+Tests also cover a stalled create and a lost response after the merge.
+
+
+## 1434. The unit result omitted visible effects of the GitHub delivery change.
+
+State: fixed in round 2.
+Found: 2026-11-17, in the independent s27 review.
+The first list omitted the network effects of Open merge review.
+It also omitted forbidden-remote refusals, the replacement of branch-deletion advice, and the longer refusal reason.
+The result file now lists the whole unit against base d4fb1877 after walking the screen, dialog, live actions, typed mapping, API, and command-line consumers.
+
+
+## 1435. Twelve browser journeys failed in the round 2 whole run.
+
+State: open.
+Found: 2026-11-17, during the required whole browser run for the s27 revisions.
+The whole browser run passed 64 journeys and failed twelve journeys in 21.4 minutes.
+The legacy Git cases for main approval, master approval, bulk changes, stale reviewed heads, evidence, and remote operations failed.
+The creation case across eight viewport sizes and the lost-socket creation case failed.
+The website projects-and-board, Git integration, file-editor, and GitHub cases failed.
+The GitHub failure waited for the approval control while its final snapshot showed a reconnecting connection.
+Ten failures passed when each case ran in its own invocation.
+Stale reviewed heads and the file-editor case failed again in those individual runs.
+Stale reviewed heads then passed in another unchanged one-test run.
+The file-editor case still failed in its second unchanged one-test run.
+Its individual failures waited for the first and second external-edit conflict panels.
+The file-editor failure remains unresolved.
+The website Git journey and the hosted GitHub journey both passed alone.
+The unit suite had finished before this browser run began.
+Every existing assertion and timeout was retained.
+These observations do not establish the cause of the failures.
+
+
+## 1436. A dirty local base could block every later hosted approval.
+
+State: fixed in round 3.
+Found: 2026-11-17, in the second independent s27 review.
+Hosted Prepare now fetches the live remote base into an explicit tracking reference.
+Its commit list, file totals, and patch use that fetched commit.
+Hosted approval checks the recorded remote base instead of the local branch head.
+A dirty local checkout is preserved while successive hosted merges continue.
+A regression also prevents a sign-out between comparison and delivery from labelling a remote-base comparison as local.
+The local fallback still reviews the local base.
+
+## 1437. A refusal record could prevent reconciliation of a merge performed elsewhere.
+
+State: fixed in round 3.
+Found: 2026-11-17, in the second independent s27 review.
+An approval failure without a verified provider verdict now returns a command refusal and leaves the review open.
+Prepare also recognizes an already merged request with the exact project head.
+It records that result after a prior verified refusal without another push or remote merge.
+The same conditional local synchronization runs for that confirmed merge.
+Tests cover an externally performed merge, a deleted remote project branch, and a squash merge.
+The original uncertain receipt remains uncertain.
+
+## 1438. Delivery synchronization did not update the remote-tracking base.
+
+State: fixed in round 3.
+Found: 2026-11-17, in the second independent s27 review.
+The bounded fetch now writes the selected base to its explicit remote-tracking reference.
+It continues to ignore configured fetch mappings.
+A regression found that Git also consults that mapping after a successful push.
+An empty configuration override did not remove that multivalued mapping.
+The delivery push now uses the validated push URL to prevent unrelated local reference updates.
+The test verifies accurate ahead and behind counts after synchronization.
+It also verifies that a hostile configured mapping creates no unrelated branch.
+
+## 1439. Reused pull requests retained an outdated reviewed head in their descriptions.
+
+State: fixed in round 3.
+Found: 2026-11-17, in the second independent s27 review.
+Prepare refreshes the description of a reused open request with the current redacted text.
+The description includes the reviewed project head and the fetched base.
+The CLI receives that bounded text through standard input.
+It receives no caller-selected body filename.
+
+## 1440. Repository renames and explicit creation refusals lacked useful outcomes.
+
+State: fixed in round 3, with repository redirects remaining unsupported.
+Found: 2026-11-17, in the second independent s27 review.
+A canonical repository-name mismatch returns a fixed explanation to update the remote URL.
+The transport can refuse an old-name redirect before canonical metadata is available.
+The owner must update a renamed repository's remote URL before hosted delivery.
+An explicit positive nonzero creation exit now reports a determinate refusal after the successful branch push.
+A timeout after possible creation still remains uncertain.
+Provider diagnostics remain private.
+
+## 1441. Provider edge cases and final-code verification lacked coverage.
+
+State: fixed in round 3.
+Found: 2026-11-17, in the second independent s27 review.
+The fake now requires the authentication filter and supplies zero-exit error and timeout states.
+Tests cover those states, a different merged head, a squash merge, and an encoded slash in a base name.
+The transport test checks the complete delivery option set.
+The whole unit suite ran after the final behavior changes and passed all 672 files.
+It passed 10,335 tests and skipped two tests.
+
+## 1442. The file-editor browser failure also occurs on the unit's base commit.
+
+State: open.
+Found: 2026-11-17, during the round 3 baseline comparison required by the owner.
+Five sequential one-test invocations on d4fb1877 passed four times and failed once.
+The failure waited for the first external-edit conflict panel.
+That is also a failure point recorded for round 2 in 1435.
+This worker ran no other test job during those trials.
+Host load observations were retained because other users' processes are outside this worker's control.
+Five sequential one-test invocations on signed implementation 232b243b passed all five times.
+The file-editor implementation and its assertions have not been changed by this unit.
+These observations establish a baseline failure without establishing its cause or proving that the intermittent failure is gone.
+
+## 1443. An existing writer test intermittently misses its Git hold marker.
+
+State: open.
+Found: 2026-11-17, during round 3 focused verification.
+The issue 579/583 queued-registration test failed its existing five-second hold-marker assertion in two focused runs.
+It passed unchanged when rerun alone.
+The local approval path and its assertion timeout have not changed in this round.
+The failure does not yet establish its cause.
+The unchanged test also passed in the final whole unit run.
+
+## 1444. Seven browser journeys failed only in the round 3 whole run.
+
+State: open.
+Found: 2026-11-17, during the required round 3 browser gate.
+The whole run passed 69 journeys and failed eight journeys.
+Seven failures passed unchanged when each was rerun alone.
+They were main approval, stale reviewed heads, reported evidence, temporary-remote synchronization, registered component View, live projects and board, and the file editor.
+The first six waited for prepared data, updated evidence, a fetch notice, a rendered iframe attribute, or approval completion.
+The file editor waited for its existing five-second save-busy check.
+Its separate baseline comparison is recorded in 1442.
+The original errors and the isolated logs were retained.
+No assertion or timeout was weakened.
+These results do not establish the failures' cause.
+
+## 1445. The hosted browser journey intermittently exceeds its existing waits.
+
+State: open.
+Found: 2026-11-17, during the round 3 whole run and isolated rerun.
+The clean-base hosted journey passed the earlier focused invocation.
+It failed in the whole run while waiting ten seconds for its approval control.
+Its first isolated rerun failed while waiting thirty seconds for Refresh Git to release its busy state.
+An additional private diagnostic invocation of the unchanged helper passed.
+Its trace showed preparation, refresh, approval, and final status reads completing.
+The trace retained request names and timing without request data or credentials.
+The dirty-base hosted journey passed both the focused invocation and the whole run.
+The original journey passed unchanged in a second isolated invocation.
+The cause of the intermittent clean-base failure remains unproven.
+
+## 1446. A comparison fetch made unsupported hosted reviews uncertain.
+
+State: fixed in round 4.
+Found: 2026-11-17, in the third review.
+The repeatable comparison fetch no longer marks publication as having started.
+Binary, oversized, and partial comparisons refuse before any push.
+The hosted regression verifies the refusal and the absence of a pending Git attempt.
+The local comparison retains the same unsupported-review refusal.
+
+## 1447. A diverged base tracking reference blocked the delivery fetch.
+
+State: fixed in round 4.
+Found: 2026-11-17, in the third review.
+The selected tracking reference now mirrors the remote base with an explicit forced fetch refspec.
+The fetch still ignores configured mappings and does not update a local branch.
+A private native Git fixture reproduced the rejected non-fast-forward update.
+The regression also checks that the local base stays unchanged.
+
+## 1448. Base movement after Prepare returned a raw refusal code.
+
+State: fixed in round 4.
+Found: 2026-11-17, in the third review.
+Hosted approval now explains that the GitHub base moved and asks the owner to open the merge review again.
+It sends no merge request and keeps the existing review open.
+A fresh Prepare replaces that review with the current remote base.
+A root-website journey checks the visible explanation and successful recovery.
+The stored event shapes remain unchanged.
+
+## 1449. A successful URL push left the project tracking reference behind.
+
+State: fixed in round 4.
+Found: 2026-11-17, in the third review.
+Delivery now records the pushed commit in only its project tracking reference.
+The update does not follow a symbolic reference to a local branch.
+A regression checks the published head, upstream counts, and unchanged owner base.
+The push still targets the validated URL and never uses force.
+
+## 1450. A local comparison timeout used a GitHub availability sentence.
+
+State: fixed in round 4.
+Found: 2026-11-17, in the third review.
+Comparison failures now carry the selected delivery context internally.
+Authentication failures retain the GitHub context.
+A proven local fallback clears that context before comparison.
+Regressions cover no remote, a signed-out fallback, and a hosted comparison.
+
+## 1451. The dirty-base browser journey intermittently exceeds its approval-click limit.
+
+State: open.
+Found: 2026-11-17, during the round 4 focused browser run.
+The three-journey invocation passed the clean-base and moved-base cases.
+The dirty-base case reached the existing ten-second approval-click limit while its control was becoming stable.
+It passed unchanged when rerun alone.
+The original output and error context were retained.
+The clean-base version showed a similar limit in 1445.
+No assertion or timeout was changed, and the cause remains unproven.
+
+## 1452. A failed tracking-ref update after the push makes Prepare report an uncertain outcome.
+
+State: Open. Found by the fourth independent review of unit s27-pullrequest on 2026-11-18.
+
+After the push, the engine updates the project branch's remote-tracking ref through the mutating Git path (`packages/engine/src/project/git/index.ts`).
+A stale local ref such as `refs/remotes/origin/feat/x` conflicts with a branch named `feat`, and the update fails.
+Prepare then reports "Git outcome is uncertain" on every retry and opens no pull request.
+The fix makes the update best-effort and continues to pull request creation.
+
+## 1453. The Prepare fetch writes through a symbolic base tracking ref.
+
+State: Open. Found by the fourth independent review of unit s27-pullrequest on 2026-11-18.
+
+The Prepare fetch forces the base branch's remote-tracking ref to the fetched commit.
+When that tracking ref is a symbolic ref to the local base branch, the fetch moves the owner's local base branch.
+`SECURITY.md` says the fetch does not update the local base branch.
+Planting the symbolic ref already needs write access to the repository.
+The fix refuses, or deletes the symbolic ref, before the fetch.
+
+## 1454. The hosted unsupported-review test does not prove that it ran in GitHub mode.
+
+State: Open. Found by the fourth independent review of unit s27-pullrequest on 2026-11-18.
+
+The hosted variant in `packages/engine/test/project/main-review.test.ts` never asserts a fetch call or a GitHub delivery mode.
+Its 201-file case does not check that no Git attempt is left pending.
 
 ## 1403. A disconnect before the first terminal subscription retained its unread queue.
 

@@ -1204,3 +1204,10 @@ test('studio terminal: real shell, private output and renderer policy', async ({
 test("studio lead: Define, owner approval, rename and team deletion", async ({ page }) => { test.setTimeout(90_000); await exerciseStudioLeadDefinition(page) })
 
 test("studio project delete: archived confirmation, cancellation and persistent removal", async ({ page }) => { test.setTimeout(90_000); await exerciseStudioProjectDelete(page) })
+
+test("studio GitHub: owner prepares, refreshes and approves a hosted pull request", async ({ page }) => { test.setTimeout(120_000); await (await import('./support/studioGithub.ts')).exerciseStudioGithub(page) })
+
+
+test("studio GitHub: a dirty local base behind GitHub does not block hosted review", async ({ page }) => { test.setTimeout(120_000); await (await import('./support/studioGithub.ts')).exerciseStudioGithub(page, true) })
+
+test("studio GitHub: a moved base explains the refusal and a fresh review recovers", async ({ page }) => { test.setTimeout(120_000); await (await import('./support/studioGithub.ts')).exerciseStudioGithub(page, false, true) })

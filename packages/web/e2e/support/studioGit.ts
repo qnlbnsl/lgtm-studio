@@ -116,6 +116,7 @@ export async function exerciseStudioGit(page: Page) {
           await expect(page.getByRole('button', { name: 'Open merge review', exact: true })).toBeEnabled()
           await page.getByRole('button', { name: 'Open merge review', exact: true }).click()
           await expect(page.getByRole('dialog')).toContainText('Missing')
+          await expect(page.getByRole('dialog')).toContainText('Local merge: the repository remote is not on GitHub.com.')
           await page.locator('#pr-title').fill('Unsupported hosted title')
           await expect(page.locator('.toasts')).toContainText('not connected to the service yet')
           await page.getByRole('dialog').getByRole('button', { name: 'Generate', exact: true }).click()

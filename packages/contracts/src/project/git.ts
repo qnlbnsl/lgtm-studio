@@ -53,8 +53,15 @@ export const GitEvidenceSlot = Schema.Struct({ state: Schema.Literals(["missing"
 export const GitEvidenceSet = Schema.Struct({ tests: GitEvidenceSlot, review: GitEvidenceSlot })
 export type GitEvidenceSet = typeof GitEvidenceSet.Type
 export const GitApprovalDecision = Schema.Literals(["approve", "approve_without_evidence"])
+export const GitReviewDelivery = Schema.Union([
+  Schema.Struct({ mode: Schema.Literal("local"), reason: text }),
+  Schema.Struct({ mode: Schema.Literal("github"), repository: text, remote: text, number: count,
+    url: text, state: Schema.Literals(["OPEN", "CLOSED", "MERGED"]), title: text, body: text, remoteBaseHead: text }),
+])
+export type GitReviewDelivery = typeof GitReviewDelivery.Type
 export const GitMainReview = Schema.Struct({ reviewId: RequestId, projectId: ProjectId, worktreeId: WorkspaceId,
   destinationId: WorkspaceId, head: ProjectName, baseHead: ProjectName, branch: ProjectName, base: ProjectName,
+  delivery: Schema.optionalKey(GitReviewDelivery), localSync: Schema.optionalKey(text),
   evidence: GitEvidenceSet, openedAt: EpochMilliseconds,
   decision: Schema.NullOr(GitApprovalDecision), outcome: Schema.Literals(["open", "merged", "refused", "sent_back"]),
   mergeHead: nullable, reason: nullable, decidedAt: Schema.NullOr(EpochMilliseconds) })

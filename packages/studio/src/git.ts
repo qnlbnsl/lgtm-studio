@@ -125,7 +125,8 @@ export function mapMainReview(review: GitMainReview, comparison: typeof GitRevie
   return { id: review.reviewId, kind: 'merge', project: review.projectId, agent: lead, worktreeId: review.worktreeId, destinationId: review.destinationId,
     title: `Merge ${review.branch} into ${review.base}`, source: review.branch, target: review.base, head: review.head, baseHead: review.baseHead,
     status: review.outcome === 'open' ? 'open' : 'answered', outcome: review.outcome, answer: review.outcome === 'merged' ? 'Merged' : review.outcome === 'sent_back' ? 'Sent back: ' + (review.reason ?? '') : review.reason ?? '',
-    answeredAt: review.decidedAt, createdAt: review.openedAt, brief: '', body: '', notice: '',
+    answeredAt: review.decidedAt, createdAt: review.openedAt, brief: '', body: review.delivery?.mode === 'github' ? review.delivery.body : '', notice: '',
+    delivery: review.delivery, localSync: review.localSync, prTitle: review.delivery?.mode === 'github' ? review.delivery.title : '',
     evidence: { tests: evidence(freshEvidence.tests), review: evidence(freshEvidence.review), commits: comparison?.commits.items.length ?? null,
       files: comparison?.files.items.length ?? null, add: comparison?.diff.additions, del: comparison?.diff.deletions, conflicts: null },
     files: comparison ? mapCommitFiles(comparison.files.items) : [], truncated: !!(comparison?.files.truncated || comparison?.commits.truncated || comparison?.diff.truncated) }

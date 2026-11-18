@@ -179,3 +179,36 @@ Remote shells, agent terminal watching, and agent terminal takeover need engine 
 Those controls are disabled in the live screen, with the tooltip “Engine work needed”.
 The disabled Reconnect control explains that a closed shell cannot be restarted.
 The sample screen and its pretend shell remain unchanged when opened without the engine.
+
+## GitHub project merge reviews
+
+The connected Git tab uses the existing review ribbon and merge dialog for GitHub pull requests.
+The ribbon and dialog show the prepared mode, pull request number, link, and state.
+The dialog displays the generated title and description as recorded data.
+The title and description editors still refuse live edits.
+An explicit Git refresh pushes newer commits for an open GitHub review and replaces that review.
+Automatic background reads remain read-only.
+Approval records the remote merge and reports whether the local base was updated.
+The sample screens continue to work without an engine or a GitHub connection.
+
+Refresh always reads Git state before considering a new Prepare.
+It prepares again only when the project head differs from the recorded reviewed head.
+A failed Prepare is reported without discarding the refreshed Git state.
+GitHub connectivity or ambiguous authentication failures refuse the request instead of enabling a local merge.
+A new owner approval can reconcile a confirmed GitHub merge after a lost receipt.
+The live base head comes from GitHub's reference endpoint rather than pull request metadata.
+
+Hosted comparisons use the fetched live remote base rather than the local checkout's head.
+A dirty or outdated local base does not block hosted approval.
+The commit list, file totals, and patch are calculated against that fetched commit.
+Reported test and review results remain reports for the project head.
+Approval checks remote base movement and updates the local checkout only afterwards when safe.
+The fetch updates only the explicit remote-tracking base reference.
+An unverified provider failure leaves the review open for a fresh owner request.
+Prepare records an exact-head pull request already merged elsewhere, including after a prior refusal.
+That reconciliation can conditionally fast-forward the local base without another hosted merge.
+Reusing an open request refreshes its redacted description through standard input.
+A canonical repository-name change gives an explanation to update the remote URL.
+Renamed remotes must be updated because delivery does not follow redirects.
+The transport can refuse the redirect before provider metadata is available.
+An explicit create refusal explains that the branch was pushed and the CLI reported a creation failure.

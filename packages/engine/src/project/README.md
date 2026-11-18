@@ -102,15 +102,48 @@ Integration requires a registered team source and its project destination.
 The service refuses a dirty source or destination and direct integration into
 `main` or `master`. Conflict choices carry a fingerprint and choices, without
 client-supplied write content. The service reconstructs current canonical hunks.
-The visible owner review dialog uses local comparison data.
+The visible owner review dialog uses bounded local comparison data and shows the prepared delivery mode.
+The hosted title and description come from the project name, goal, and reported evidence.
+Manual editing and replacement generation remain unavailable.
 The unused external compare-link route has been removed.
 
 ## Explicit owner review and merge to main or master
 
 `project.review.prepare` takes `projectId`, its assigned `worktreeId`, and the
 registered repository base's `destinationId`. It reads complete bounded Git
-comparison data and records an open review with both heads. It does not approve
-or merge. Binary or truncated comparison data refuses. A newer preparation
+comparison data and records an open review with both heads.
+It does not approve or merge.
+When a GitHub.com remote and a signed-in `gh` are available, it pushes the reviewed project branch and creates or finds its open pull request.
+The optional typed `delivery` field records the mode.
+A GitHub delivery includes the remote, repository, pull request number, URL, state, title, description, and remote base head.
+A local delivery contains a sentence explaining the fallback.
+Old events without that optional field retain local merge behaviour.
+Prepare is a durable external operation because a push or pull request creation can outlive a missing receipt.
+There is no force-local setting.
+Refresh always reads Git state before considering a new Prepare.
+It prepares again only when the project head differs from the recorded reviewed head.
+A failed Prepare is reported without discarding the refreshed Git state.
+GitHub connectivity or ambiguous authentication failures refuse the request instead of enabling a local merge.
+A new owner approval can reconcile a confirmed GitHub merge after a lost receipt.
+The live base head comes from GitHub's reference endpoint rather than pull request metadata.
+
+Hosted comparisons use the fetched live remote base rather than the local checkout's head.
+A dirty or outdated local base does not block hosted approval.
+The commit list, file totals, and patch are calculated against that fetched commit.
+Reported test and review results remain reports for the project head.
+Approval checks remote base movement and updates the local checkout only afterwards when safe.
+The fetch updates only the explicit remote-tracking base reference.
+An unverified provider failure leaves the review open for a fresh owner request.
+Prepare records an exact-head pull request already merged elsewhere, including after a prior refusal.
+That reconciliation can conditionally fast-forward the local base without another hosted merge.
+Reusing an open request refreshes its redacted description through standard input.
+A canonical repository-name change gives an explanation to update the remote URL.
+Renamed remotes must be updated because delivery does not follow redirects.
+The transport can refuse the redirect before provider metadata is available.
+An explicit create refusal explains that the branch was pushed and the CLI reported a creation failure.
+The origin GitHub remote is preferred.
+A sole GitHub remote with another name is also supported.
+Several GitHub remotes without origin require the owner to resolve the ambiguity. Binary or truncated comparison data refuses. A newer preparation
 supersedes the previous open review for that workspace.
 
 `project.review.report` stores a reported test or reviewer outcome for the
@@ -131,8 +164,16 @@ Approval takes the open `reviewId`, `expectedHead`, `expectedBaseHead`,
 policy. Missing and failed evidence remain visible in the recorded review.
 Reports, compare URLs, and agent verdicts never supply approval authority.
 The service checks the authenticated owner again before execution. It validates
-both reviewed heads and branches, clean source and destination, no active merge,
-and exact common repository metadata. It merges the reviewed commit object.
+both reviewed heads and branch identities, and exact common repository metadata.
+The local fallback also requires clean source and destination checkouts with no active merge.
+A GitHub approval checks the pinned pull request and remote base before requesting a merge commit with the reviewed head condition.
+Closed pull requests, conflicts, and merge states that are not ready refuse with a sentence reason.
+The remote base must still match both Prepare and the reviewed local base.
+If it was already ahead at Prepare, the owner must update the local base and prepare again.
+It fetches and fast-forwards a clean local base checkout on its registered branch after the remote merge succeeds.
+It preserves a dirty checkout or a checkout on another branch.
+The optional `localSync` reply explains whether that update completed.
+A failed local update still records the confirmed remote merge.
 The original `project.integrate` and `mergeTeam` main/master refusal remains.
 
 The approval reply has an explicit `outcome` of `merged` or `refused`, with a

@@ -5,6 +5,7 @@ export function gitActionsSource(path: string, source: string): string {
     source = source.replace(from, to)
   }
   if (path === "js/screens/git.js") {
+    replace("${req?.delivery &&", "${req?.delivery && live.on &&")
     replace("onSelect=${() => setUi({ file: f.id })}", "onSelect=${() => { setUi({ file: f.id }); if (live.on) liveGit.gitDetail(w.id); }}")
     replace("onClick=${() => setUi({ cfile: f.id })}", "onClick=${() => { setUi({ cfile: f.id }); if (live.on) liveGit.gitDetail(w.id); }}")
     replace("<div class=\"cf-body\">${(() =>", "<div class=\"cf-body\">${live.on && !sel.loaded && html`<div class=\"diff-note\" role=\"status\">Loading conflicts…</div>`}${(() =>")
@@ -70,6 +71,7 @@ export async function declineReview(id, reason) { const completed = await run('g
     replace("return liveGit.answerReview(requestId, optionId);", "return liveGit.answerReview(requestId, optionId, text);")
   }
   if (path === "js/dialogs.js") {
+    replace("${r.delivery &&", "${r.delivery && live.on &&")
     replace("const approval = { head: r.head, baseHead: r.baseHead, decision: ok ? 'approve' : 'approve_without_evidence' };", "const approval = Object.freeze({ head: r.head, baseHead: r.baseHead, decision: ok ? 'approve' : 'approve_without_evidence' });")
     // Reuse the mock's existing send-back form and field, beside the merge action.
     replace("title=${r.title} size=\"wide\" onClose=${act.closeDialog}", "title=${r.title} size=\"wide\" onClose=${() => { if (!live.on || !liveGit.busy('git')) act.closeDialog(); }}")
