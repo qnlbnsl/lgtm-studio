@@ -20435,3 +20435,21 @@ These ten failures were observed only in the whole run during this task.
 No assertion or time limit was changed.
 No unit test or typecheck from this task ran during these browser checks.
 The cause remains unproven.
+
+## s29-10. The review of the second small fix unit left five minor findings.
+
+State: Open. Found by the independent review of unit s29-smallfix on 2026-11-18.
+
+A custom harness row with an empty list of reported modes now keeps a stored default of "ask", although such a row never failed with "mode is not recorded".
+A custom row that maps "auto" to a mode it does not report, while reporting its edit mode, still reads "ask" as "auto" and then fails to start; the check should use the mode that "auto" resolves to.
+A session record dated more than five minutes in the future is removed from the session file, and `SECURITY.md` should say that it is removed and not only skipped.
+The reset test in `packages/engine/test/api/harness-defaults.test.ts` assumes that no `gemini` program exists in `/usr/bin`.
+An existing installation no longer logs the "harness adapters not found" warning at every start.
+
+## s29-11. Seven unit tests failed in the orchestrator's whole run under load and passed alone.
+
+State: Open. Found by the orchestrator's check of unit s29-smallfix on 2026-11-18, with a load average near 30.
+
+The tests are in `board/error-recovery.test.ts`, `board/reactor.test.ts`, `harnesses/terminal-server.test.ts`, `project/main-review.test.ts` and `project/git/service.test.ts`.
+All five files passed when run alone, with 288 tests.
+Eight browser journeys failed in the same whole run and passed alone.
