@@ -19702,3 +19702,12 @@ Found in the second review and covered during s28-session round 3 on 2026-11-17.
 The existing guards were present in start, lookup, and list.
 Dedicated cases now test each guard while another owner session keeps the shell alive.
 A real web-server case logs in nine times and requires only the oldest browser's sockets and cookie to be rejected.
+
+## s28-23. One session record dated in the future still voids every web session.
+
+State: Open. Found by the third independent review of unit s28-session on 2026-11-17.
+
+At load, a session record dated more than five minutes ahead of the clock empties the whole session file (`packages/engine/src/client/web/session.ts`).
+A host that starts with its clock an hour behind, before time synchronisation, signs every device out.
+The creation time is authenticated by the record's binding, so the test is redundant.
+The fix drops the test, or skips only that record.
