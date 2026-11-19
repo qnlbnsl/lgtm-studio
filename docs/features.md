@@ -1500,3 +1500,49 @@ The technique is known as programmatic tool calling, or code execution with the 
 The harness owns each agent's tool loop, so LGTM Studio could offer this only for its own tools, as one tool on its MCP server that runs a script.
 Every call inside a script would need the same caller checks, limits and redaction as a direct call.
 Running agent-written code inside the engine is a new security surface and needs a sandbox decision.
+
+## Choosing the lead when a project is created
+
+State: Idea. Requested by the owner on 2026-11-18, after his first real project. The owner will build it through LGTM Studio.
+
+The new-project dialog shows the lead that the settings selected and offers no other choice.
+The owner wants to choose the lead's harness, and its model and effort, in that dialog, for that one project.
+His example is starting a project and saying that this one launches with Codex.
+The saved default stays as the value the dialog opens with.
+
+## Custom harnesses
+
+State: Idea. Requested by the owner on 2026-11-18. The owner will build it through LGTM Studio.
+
+LGTM Studio supports four harnesses today: Claude Code, Codex, Gemini and Cursor.
+The owner wants a survey of the major harnesses first.
+The owner then wants a simple way for a person to declare a custom harness.
+The engine already stores a settings row for each harness, and issues 1399 and 1457 describe gaps for custom rows.
+
+## LGTM Studio as a skill for other agents
+
+State: Idea. Requested by the owner on 2026-11-18. The owner will build it through LGTM Studio.
+
+The owner wants everything about LGTM Studio available as a skill.
+A person's own agent could then build a workflow, or work with LGTM Studio in another way, by reading that skill.
+`AGENTS.md` rule 6 already says that other workflows override the default in `~/.lgtm` or in a repository's `.lgtm`.
+
+## A testing skill with fixed rules
+
+State: Idea. Requested by the owner on 2026-11-18. The owner will build it through LGTM Studio.
+
+The owner finds testing in this project disorganised and expensive today.
+He wants a skill that sets specific rules for how testing is conducted.
+The aim is that agents do not spend compute on redundant test runs, for the owner and for other users of the software.
+The skill applies both to LGTM Studio's own development and to any project built with it.
+Issue 1458 and the earlier load-sensitive journey issues record what the current practice costs.
+
+## Test tools for each language, added by pull request
+
+State: Idea. Requested by the owner on 2026-11-18. The owner will build it through LGTM Studio.
+
+The owner uses JavaScript, TypeScript, Go and Python, and sometimes C++.
+LGTM Studio would ship test tools with scripts for some languages, starting with TypeScript and Go.
+Other people extend it by opening a pull request that adds a test tool for another language, such as Rust.
+The testing skill tells an agent adding a tool to read how the existing tools work and what the overall rules are, before it writes the new scripts.
+The same extension point covers simulator testing and testing on a physical phone.
