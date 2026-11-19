@@ -1,7 +1,8 @@
 # New project lead selection
 
-The owner requested four editable lead choices in the existing New project dialog on 2026-11-19.
-The existing dialog is the reference for the placement, native fields, spacing and footer.
+The owner requested editable harness, subscription, model and effort choices on 2026-11-19.
+He then rejected the wide paired-field layout and explicitly chose the chat composer's single row of dropdowns.
+The reference is the existing chat composer, including its shared Menu component and pick button style.
 The Field and Dusk palettes remain the design contract.
 
 ## Screen plan
@@ -9,58 +10,61 @@ The Field and Dusk palettes remain the design contract.
 | Region | Container and density | Interactive parts |
 | --- | --- | --- |
 | Goal | Existing form field, three textarea rows. | Native textarea. |
-| Placement | Existing two-column form row. | Native machine and repository selects. |
-| Project lead | Two form rows, two columns, with no additional card. | Native harness, subscription, model and effort selects. |
-| Submission | Existing dialog footer. | Native Cancel and Create project buttons. |
+| Placement | Two compact rows, with a shared label edge. | Native machine and repository selects. |
+| Project lead | One compact toolbar row, with a hairline above the section. | Four shared Menu dropdowns, using the chat composer's pick style. |
+| Submission | Existing footer, able to wrap a longer refusal sentence. | Native Cancel and Create project buttons. |
 
-There is no main-page offset because this is a dialog above the existing page.
-The lead fields use the existing form styles, with zero minimum grid-column width so long subscription names cannot enlarge the dialog.
-No new motion, component library, navigation or route is introduced.
+The dialog is at most 520 pixels wide, reduced from 880 pixels.
+There is no main-page offset because this is a dialog.
+The lead row keeps the harness, subscription, model and effort together at both shipping widths.
+Only the subscription takes the remaining row width, so a long account name cannot squeeze an ordinary model name to a single letter.
+Long trigger values can shorten, as in the chat composer.
+Their titles retain the complete value.
+The subscription menu wraps its full names and shows the account identifiers.
+No new component library, navigation, route or motion was introduced.
 
 ## Behavior and validation
 
 The saved lead supplies the initial selections.
 Changing the harness selects an available account for that harness.
-Changing the account clears the old model and effort.
-Changing the model clears the old effort and reads its actual choices.
+Changing the account clears the previous model and effort.
+Changing the model clears the previous effort and reads its actual choices.
 Creation waits for the current report and uses a named account.
-An unavailable report offers the harness default and explains the missing choices.
+The shared Menu component now accepts an optional disabled flag.
+Existing callers remain enabled by default.
+Model and effort dropdowns are disabled while loading or unavailable, and explanatory text appears beneath the row.
 The authenticated engine validates the lead before allocating a project.
+The saved global defaults stay unchanged.
 
-## Captured states and checks
+## Captures and checks
 
-The populated dialog was captured at 1440 by 1000 pixels and 390 by 844 pixels.
-The browser fixture includes a long subscription name, multiple harnesses, multiple accounts for one harness, and a model with no reported effort choices.
-The journey checks initial defaults, account-specific model options, clearing stale choices, disabled unavailable effort, successful creation and the actual runner input.
-Every select fits its viewport and passes center hit-testing at both widths.
-The captures disable resize transitions after the browser checks actual visibility.
+The populated dialog and its open subscription menu were captured at 1440 by 1000 pixels and 390 by 844 pixels.
+The fixture includes a long subscription name, multiple harnesses, two accounts for one harness, and a model without reported effort choices.
+The real-engine browser journey selects through the shared menus and verifies the launched runner input.
+It also verifies defaults, account-specific options, clearing stale choices, disabled effort, bounds and center hit testing.
+The existing standalone sample journey exercises the same four dropdowns and passes.
+The Studio and root TypeScript checks pass after the interaction changes.
+The website build and whitespace check pass.
+The earlier engine regressions are unchanged by this layout revision.
+The whole repository suite was not rerun for the layout change.
 
-The space gate was manual, using the screen-build space rules and the two captures.
-There are no repeated cards, covered controls, excessive row gaps or horizontal overflow in the dialog.
+The space gate was manual, using the screen-build space rules and all four captures.
+No repeated cards, covered closed controls or horizontal overflow were found.
+An open menu can temporarily cover footer actions, as in the existing shared component.
 List-row and main-list-offset checks do not apply to this form.
 No automated eight-check space report was produced.
-The optional detector reported no findings on the changed form files.
 
 ## Independent visual review
 
-The reviewer inspected the captures without the plan or source and returned a ship verdict.
-Three minor findings concern clipped native-select labels: the long subscription at both widths, and the existing machine label on the narrow layout.
-Those are retained because the native selector opens its full option label and the controls remain operable.
-No blocker or major finding was reported.
+A fresh reviewer inspected the final captures without the source or screen plan and returned a ship verdict with no findings.
+The earlier stacked-field proposal was superseded by the owner's explicit instruction to use one chat-style toolbar row.
+The final review checked both the closed row and the full-name subscription menu.
 
-## Verification and limits
+## Evidence and limits
 
-The full TypeScript checks pass.
-The creation-recovery suite passes all 26 tests.
-The Studio suite had 793 passing tests and one outdated exact mapping expectation, which was corrected; the two affected mapping suites then passed all 33 tests.
-An independent agent reran the two new engine regressions and the browser journey successfully.
-The existing standalone mock smoke journey also passes.
-The credits check and whitespace check pass.
-
-The browser test uses the real engine, authenticated API and durable project creation, with a fake harness runner and synthetic credentials.
-Physical mobile devices and real provider launches were not exercised by that test.
-The review was behavioral and visual; a separate full code-review round was not run.
-Loading and unavailable-effort states were exercised, but only the final populated state was captured.
-
-The captures are [desktop](new-project-lead-desktop.png) and [narrow](new-project-lead-narrow.png).
-
+The closed dialog captures are [desktop](new-project-lead-desktop.png) and [narrow](new-project-lead-narrow.png).
+The open subscription captures are [desktop](new-project-subscription-desktop.png) and [narrow](new-project-subscription-narrow.png).
+The fixture uses the real engine, authenticated API and durable project creation, with a fake harness runner and synthetic credentials.
+Physical mobile devices and real provider launches were not exercised by the fixture.
+Loading and unavailable-effort states were exercised, but only the final populated and open-menu states were captured.
+There was no separate full code-review round for this layout revision.

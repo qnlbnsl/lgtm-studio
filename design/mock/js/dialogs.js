@@ -118,21 +118,21 @@ function NewProject({ s, d }) {
   const hasRepo = isNew || !!r?.folders[machine];
   const why = m.status !== 'online' ? `${m.name} is offline.` : !hasRepo ? null : !goal.trim() ? 'Write the goal.' : isNew && !newRepo.trim() ? 'Name the new repository.' : selection.why;
   const create = () => { if (why || !hasRepo || creating) return; if (!live.on) act.closeDialog(); act.createProject({ repo, goal: goal.trim(), machine, subscription: selection.lead?.account.accountId, lead: selection.lead, newRepo: isNew ? newRepo.trim() : null }); };
-  return html`<${Dialog} title="New project" size="wide" onClose=${act.closeDialog} onSubmit=${create}
+  return html`<${Dialog} title="New project" size="new-project" onClose=${act.closeDialog} onSubmit=${create}
     foot=${html`${why && html`<span class="why">${why}</span>`}<button type="button" class="btn" onClick=${act.closeDialog}>Cancel</button><button type="submit" class="btn primary" disabled=${!!why || !hasRepo || creating} aria-busy=${creating}>${creating ? 'Creating…' : 'Create project'}</button>`}>
     <div class="field"><label for="np-goal">Goal</label>
       <textarea id="np-goal" class="textarea" rows="3" value=${goal} onInput=${(e) => setGoal(e.target.value)} placeholder="Make a mock for the LGTM Studio phone app" autofocus
         onKeyDown=${(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); create(); } }}></textarea></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3)">
-      <div class="field"><label for="np-machine">Run on</label>
+    <div class="new-project-rows">
+      <div class="field new-project-row"><label for="np-machine">Run on</label>
         <select id="np-machine" class="select" value=${machine} onChange=${(e) => setMachine(e.target.value)}>
           ${s.machines.filter((x) => !live.on || x.id === 'local').map((x) => html`<option value=${x.id} disabled=${x.status !== 'online'}>${x.name}${x.status !== 'online' ? ' (offline)' : x.here ? ' (this computer)' : ''}</option>`)}</select></div>
-      <div class="field"><label for="np-repo">Repository</label>
+      <div class="field new-project-row"><label for="np-repo">Repository</label>
         <select id="np-repo" class="select" value=${repo} onChange=${(e) => setRepo(e.target.value)}>
           ${s.repos.map((x) => html`<option value=${x.id}>${x.name}${x.folders[machine] ? '' : ` (not on ${m.name})`}</option>`)}
           <option value="__new">New repository…</option></select></div>
     </div>
-    ${isNew && html`<div class="field"><label for="np-newrepo">New repository name</label><input id="np-newrepo" class="input" value=${newRepo} onInput=${(e) => setNewRepo(e.target.value)} placeholder="notes-site" /></div>`}
+    ${isNew && html`<div class="field new-project-row"><label for="np-newrepo">New repository name</label><input id="np-newrepo" class="input" value=${newRepo} onInput=${(e) => setNewRepo(e.target.value)} placeholder="notes-site" /></div>`}
     ${!hasRepo && r && html`<div class="callout warn"><${Icon} name="triangle-alert" size=${15} /><span class="grow">${r.name} is not on ${m.name}.</span>
       <button type="button" class="btn sm" onClick=${() => { act.openDialog({ type: 'add-repository', machine, repo, back: { type: 'new-project', machine, repo, goal } }); }}>Add to ${m.name}</button></div>`}
     ${selection.fields}

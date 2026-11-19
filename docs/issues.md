@@ -20472,3 +20472,20 @@ Creation records the resolved lead in its existing durable intent and does not c
 The engine regression tests observed the original incorrect launch before the fix.
 They now check the launched lead, unchanged defaults, duplicate prevention, and refusal of an unavailable account before filesystem allocation.
 The browser journey uses the built website at a test engine's root, changes the harness and account, checks model-dependent efforts, and checks the launched lead.
+
+
+## 1463. New project spread a short form across a wide two-column dialog
+
+State: Fixed on 2026-11-19, following the owner's feedback.
+
+The dialog used the shared 880-pixel wide size for six short settings.
+It placed machine and repository beside each other, then paired the four project lead selectors in two columns.
+The owner found that arrangement wasteful.
+
+The dialog now uses a 520-pixel maximum width.
+Machine and repository occupy compact placement rows.
+The four lead dropdowns share one toolbar row, using the same Menu component and pick style as the chat composer.
+The lead section has a single hairline divider.
+The ordinary confirmation caption is removed, and the loading caption still appears when choices are being read.
+The footer can wrap a longer refusal sentence above its actions.
+The existing live launch journey and standalone sample journey verify that the same controls remain usable.

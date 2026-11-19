@@ -239,6 +239,28 @@ code { font-family: var(--font-mono); font-size: .92em; background: var(--color-
 .dialog-body { padding: var(--space-5); overflow: auto; display: grid; gap: var(--space-4); align-content: start; }
 .dialog-foot { display: flex; align-items: center; gap: var(--space-2); justify-content: flex-end; padding: var(--space-3) var(--space-5); border-top: 1px solid var(--color-line); }
 .dialog-foot .why { margin-right: auto; color: var(--color-muted); font-size: var(--text-sm); }
+/* New project is a compact form: one setting per row, one shared label edge. */
+.dialog.new-project { width: min(520px, 100%); }
+.new-project .dialog-body { gap: var(--space-3); }
+.new-project-rows { display: grid; gap: var(--space-2); min-width: 0; }
+.new-project-row.field { display: grid; grid-template-columns: 100px minmax(0, 1fr); align-items: center; gap: var(--space-2) var(--space-3); min-width: 0; }
+.new-project-row > .select, .new-project-row > .input { min-width: 0; width: 100%; }
+.new-project-row > .muted { grid-column: 2; }
+.new-project-lead { border-top: 1px solid var(--color-line); padding-top: var(--space-3); }
+.new-project-lead > .label { margin-bottom: var(--space-1); }
+.new-project-lead-row { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.new-project-lead-row > .pick { flex: 0 1 auto; }
+.new-project-lead-row > .pick[aria-label="Subscription"] { flex: 1 1 0; }
+.new-project-lead-row > .pick[aria-label="Model"] { max-width: 50%; }
+.new-project-lead-row > .pick:first-child, .new-project-lead-row > .pick:last-of-type { flex-shrink: 0; }
+.new-project-lead-row > .pick[disabled] { opacity: .6; cursor: default; }
+.new-project-lead-row .menu-item.two > .row { min-width: 0; }
+.new-project-lead-row .menu-item.two > .row > span { overflow-wrap: anywhere; }
+.new-project .dialog-foot { flex-wrap: wrap; }
+@media (max-width: 440px) {
+  .new-project-row.field { grid-template-columns: 84px minmax(0, 1fr); gap: var(--space-2); }
+}
+
 .toasts { position: fixed; top: calc(var(--topbar) + 8px); right: var(--space-4); z-index: 90; display: grid; gap: var(--space-2); justify-items: end; pointer-events: none; }
 .toast { pointer-events: auto; display: flex; align-items: center; gap: var(--space-2); max-width: 380px; padding: 8px 12px; border-radius: var(--radius-md); background: var(--color-surface); border: 1px solid var(--color-line-strong); box-shadow: var(--shadow-2); animation: rise var(--motion-slow) var(--ease); }
 .toast .icon { color: var(--color-success); }

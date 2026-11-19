@@ -1,6 +1,7 @@
 // The same four controls run on sample data and on the authenticated website.
-import { html, useState, useEffect, live } from './lib.js';
+import { html, useState, useEffect, live, Icon } from './lib.js';
 import { HARNESSES, usableSubscription } from './data.js';
+import { Menu } from './ui.js';
 import * as liveGit from './live/git.js';
 import { loadProjectLeadChoices } from './live/board.js';
 
@@ -61,25 +62,24 @@ export function useProjectLead(s, machine) {
     const account = accounts.find((a) => a.harness === id);
     setSelected({ harness: id, accountId: account?.id || '', model: '', effort: '' });
   };
-  const fields = html`<div class="field"><span class="label">Project lead</span>
-    <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-3)">
-      <div class="field" style="min-width:0"><label for="np-lead-harness">Harness</label>
-        <select id="np-lead-harness" class="select" value=${selected.harness} onChange=${(e) => changeHarness(e.target.value)} disabled=${!initialized || !accounts.length}>
-          ${!accounts.length && html`<option value="">No signed-in harness</option>`}
-          ${[...new Set(accounts.map((a) => a.harness))].map((id) => html`<option value=${id}>${HARNESSES[id].name}</option>`)}</select></div>
-      <div class="field" style="min-width:0"><label for="np-lead-account">Subscription</label>
-        <select id="np-lead-account" class="select" value=${selected.accountId} disabled=${!initialized || !available.length} onChange=${(e) => setSelected({ ...selected, accountId: e.target.value, model: '', effort: '' })}>
-          ${!available.length && html`<option value="">No signed-in subscription</option>`}
-          ${available.map((a) => html`<option value=${a.id}>${a.name}</option>`)}</select></div>
-      <div class="field" style="min-width:0"><label for="np-lead-model">Model</label>
-        <select id="np-lead-model" class="select" value=${model} disabled=${pending || !models.length} onChange=${(e) => setSelected({ ...selected, model: e.target.value, effort: '' })}>
-          <option value="">Harness default</option>${models.map((o) => html`<option value=${o.id}>${o.label || o.id}</option>`)}</select>
-        ${live.on && !pending && !models.length && html`<span class="muted">${current?.reason || 'This harness did not report available models.'}</span>`}</div>
-      <div class="field" style="min-width:0"><label for="np-lead-effort">Effort</label>
-        <select id="np-lead-effort" class="select" value=${effort} disabled=${pending || !efforts.length} onChange=${(e) => setSelected({ ...selected, effort: e.target.value })}>
-          <option value="">Harness default</option>${efforts.map((o) => html`<option value=${o.id}>${o.label || o.id}</option>`)}</select>
-        ${live.on && !pending && !efforts.length && html`<span class="muted">${current?.effortReason || 'This model did not report an effort setting.'}</span>`}</div>
-    </div><span class="muted" aria-live="polite">${pending ? 'Reading the project lead choices…' : 'These choices apply to this project.'}</span>
+  const selectedAccount = available.find((a) => a.id === selected.accountId);
+  const modelLabel = models.find((o) => o.id === model)?.label || model || 'Model';
+  const effortLabel = efforts.find((o) => o.id === effort)?.label || effort || 'Effort';
+  const trigger = (label) => html`<span class="truncate" title=${label}>${label}</span><${Icon} name="chevron-down" size=${12} />`;
+  const fields = html`<div class="field new-project-lead"><span class="label">Project lead</span>
+    <div class="new-project-lead-row" role="group" aria-label="Project lead">
+      <${Menu} class="pick" label="Harness" disabled=${!initialized || !accounts.length} trigger=${trigger(harness?.name || 'Harness')}
+        items=${[...new Set(accounts.map((a) => a.harness))].map((id) => ({ label: HARNESSES[id].name, checked: id === selected.harness, onSelect: () => changeHarness(id) }))} />
+      <${Menu} class="pick" label="Subscription" disabled=${!initialized || !available.length} trigger=${trigger(selectedAccount?.name || 'Subscription')}
+        items=${available.map((a) => ({ label: a.name, hint: a.id, checked: a.id === selected.accountId, onSelect: () => setSelected({ ...selected, accountId: a.id, model: '', effort: '' }) }))} />
+      <${Menu} class="pick" label="Model" disabled=${pending || !models.length} trigger=${trigger(modelLabel)}
+        items=${[{ label: 'Harness default', checked: !model, onSelect: () => setSelected({ ...selected, model: '', effort: '' }) }, ...models.map((o) => ({ label: o.label || o.id, checked: o.id === model, onSelect: () => setSelected({ ...selected, model: o.id, effort: '' }) }))]} />
+      <${Menu} class="pick" label="Effort" disabled=${pending || !efforts.length} trigger=${trigger(effortLabel)}
+        items=${[{ label: 'Harness default', checked: !effort, onSelect: () => setSelected({ ...selected, effort: '' }) }, ...efforts.map((o) => ({ label: o.label || o.id, checked: o.id === effort, onSelect: () => setSelected({ ...selected, effort: o.id }) }))]} />
+    </div>
+    ${pending && html`<span class="muted" aria-live="polite">Reading the project lead choices…</span>`}
+    ${live.on && !pending && !models.length && html`<span class="muted">${current?.reason || 'This harness did not report available models.'}</span>`}
+    ${live.on && !pending && !efforts.length && html`<span class="muted">${current?.effortReason || 'This model did not report an effort setting.'}</span>`}
   </div>`;
   return { lead, why, fields };
 }
