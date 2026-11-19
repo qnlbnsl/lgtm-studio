@@ -4,7 +4,7 @@ import * as RpcGroup from "effect/rpc/RpcGroup"
 import { ClientRequest } from "../requests.ts"
 import type { CallerKind } from "../commands.ts"
 import { AgentId, EventSequence, RequestId } from "../ids.ts"
-import { LeadPermission, LeadPermissionSetting, Project, ProjectRecord, ProjectCreation, ProjectId, ProjectName, ProjectSettings, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskHistoryEntry, TaskId, Team, Workspace } from "./schema.ts"
+import { LeadPermission, LeadPermissionSetting, ProjectLeadDefaults, Project, ProjectRecord, ProjectCreation, ProjectId, ProjectName, ProjectSettings, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskHistoryEntry, TaskId, Team, Workspace } from "./schema.ts"
 
 import { ProjectMockRpcGroup, projectMockAccess, SetupState } from "./mocks.ts"
 import { ProjectDesignRpcGroup, projectDesignAccess } from "./design.ts"
@@ -19,7 +19,7 @@ const page = <S extends Schema.Constraint>(item: S) => Schema.Struct({ ...reques
 const project = { ...request, projectId: ProjectId }
 const createPayload = { ...request, name: ProjectName, goal: ProjectText, machineId: ProjectName,
   repository: Schema.Union([Schema.TaggedStruct("existing", { repoId: Repository.fields.repoId }), Schema.TaggedStruct("new", { name: ProjectName })]),
-  useWorktree: Schema.optionalKey(Schema.Boolean) }
+  useWorktree: Schema.optionalKey(Schema.Boolean), lead: Schema.optionalKey(ProjectLeadDefaults) }
 const { projectId: _tp, teamId: _t, channelId: _c, group: _g, ...team } = Team.fields
 const { projectId: _sp, sprintId: _s, completion: _co, evidence: _e, completedAt: _a, ...sprint } = Sprint.fields
 const { projectId: _kp, taskId: _k, ...task } = Task.fields

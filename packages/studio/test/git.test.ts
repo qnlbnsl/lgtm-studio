@@ -12,7 +12,7 @@ const project = { workspaceFolder: '/tmp', shell: '/bin/sh', lead: { harness: 'c
 
 describe('service mapping', () => {
   it('maps harness choices without sample models', () => {
-    expect(mapHarnesses([harness])).toEqual({ codex: { name: 'codex', models: ['model'], efforts: ['high'], noEffort: [], runMode: 'ACP' } })
+    expect(mapHarnesses([harness])).toEqual({ codex: { name: 'codex', configuredModels: ['model'], configuredEfforts: ['high'], models: ['model'], efforts: ['high'], noEffort: [], runMode: 'ACP' } })
   })
   it('maps named accounts and harness defaults onto the local machine, without usage', () => {
     const [row] = mapAccounts([account], [{ id: account.id, status: 'out-of-usage', enabled: true, environment: [] }], [harness], project)

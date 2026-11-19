@@ -41,6 +41,9 @@ export function renameProject(projectId, name) {
 export function saveGoal(projectId, goal) {
   return run('project:' + projectId, () => engine.request('project.goal.set', { projectId, goal }), 'Goal saved');
 }
+export function loadProjectLeadChoices(harnessId, accountId, model) {
+  return engine.request('client.harness.choices', { harnessId, accountId, ...(model ? { model } : {}) });
+}
 export function createProject(input, { setup = false } = {}) {
   return run('create-project', async () => {
     const payload = maps().projectPayload(input, nameFromGoal(input.goal));

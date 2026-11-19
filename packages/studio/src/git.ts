@@ -5,7 +5,7 @@ import { LOCAL_MACHINE, mapPermission } from "./mapping.ts"
 export function mapHarnesses(rows: ReadonlyArray<HarnessSettings>, reports?: ReadonlyArray<HarnessChoices>) {
   return Object.fromEntries(rows.map((h) => {
     const report = reports?.find((r) => r.harnessId === h.id)
-    return [h.id, { name: h.id, models: report ? report.models.options.map((o) => o.id) : [...h.models],
+    return [h.id, { name: h.id, configuredModels: [...h.models], configuredEfforts: [...h.efforts], models: report ? report.models.options.map((o) => o.id) : [...h.models],
       efforts: report ? report.efforts.options.map((o) => o.id) : [...h.efforts], noEffort: [], runMode: h.runMode.toUpperCase(),
       ...(report ? { reason: report.reason, effortReason: report.effortReason,
         modelLabels: Object.fromEntries(report.models.options.map((o) => [o.id, o.label ?? o.id])),
@@ -39,7 +39,7 @@ export function mapAccounts(accounts: ReadonlyArray<Account>, statuses: ClientSn
 
 export function mapServiceSettings(project: ProjectSettings | undefined, harnesses: ReadonlyArray<HarnessSettings>, roles: RolesSettings, web: WebSettings, roleFile: RoleFile | null) {
   const lead = project?.lead, harness = harnesses.find((h) => h.id === lead?.harness)
-  return { defaultHarness: lead?.harness ?? "", defaultModel: lead?.model ?? harness?.defaultModel ?? "", defaultEffort: lead?.effort ?? harness?.defaultEffort ?? "",
+  return { projectLead: lead ?? null, defaultHarness: lead?.harness ?? "", defaultModel: lead?.model ?? harness?.defaultModel ?? "", defaultEffort: lead?.effort ?? harness?.defaultEffort ?? "",
     defaultPermission: lead ? mapPermission(lead.permission) : "", terminalEnabled: web.terminalEnabled === true, webEnabled: web.enabled, port: web.port, checkIn: web.heartbeatSeconds,
     proxyMode: web.proxyMode, publicAddress: web.publicAddress ?? "", stallWatch: roles.stallWatch ?? null, standingRules: roles.standingRules ?? null,
     stallWorker: roles.limits?.stallMinutes ?? null, stallLead: roles.leadStallMinutes ?? null, stallAssigned: roles.assignedStallMinutes ?? null, capacityBackoff: roles.limits?.capacityBackoffMinutes ?? null,

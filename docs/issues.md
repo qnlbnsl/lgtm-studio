@@ -20453,3 +20453,22 @@ State: Open. Found by the orchestrator's check of unit s29-smallfix on 2026-11-1
 The tests are in `board/error-recovery.test.ts`, `board/reactor.test.ts`, `harnesses/terminal-server.test.ts`, `project/main-review.test.ts` and `project/git/service.test.ts`.
 All five files passed when run alone, with 288 tests.
 Eight browser journeys failed in the same whole run and passed alone.
+
+
+## 1462. New project could launch only the saved lead
+
+State: Fixed on 2026-11-19.
+
+The owner found that New project displayed its saved Claude lead as fixed text.
+It offered no choice of harness, subscription, model or effort.
+The creation interface also discarded a supplied lead and always resolved the global settings.
+
+The dialog now exposes those four controls, initialized from the saved defaults.
+Its account-specific model and effort reports cannot overwrite a newer selection.
+The dialog waits for settings before initializing, so opening it immediately after sign-in preserves the configured lead.
+The placement preview and creation commands accept the same optional selection.
+Creation records the resolved lead in its existing durable intent and does not change global settings.
+
+The engine regression tests observed the original incorrect launch before the fix.
+They now check the launched lead, unchanged defaults, duplicate prevention, and refusal of an unavailable account before filesystem allocation.
+The browser journey uses the built website at a test engine's root, changes the harness and account, checks model-dependent efforts, and checks the launched lead.

@@ -9,6 +9,7 @@ import {
 import * as act from './actions.js';
 import * as board from './live/board.js';
 import * as mocks from './live/mocks.js';
+import { useProjectLead } from './project-lead.js';
 import { Dialog, registerDialog, Avatar, MergeFacts } from './ui.js';
 
 // ---- quick switcher ---------------------------------------------------------------
@@ -110,17 +111,13 @@ function NewProject({ s, d }) {
   const [repo, setRepo] = useState(d.repo || s.repos[0]?.id || '__new');
   const [newRepo, setNewRepo] = useState('');
   const [goal, setGoal] = useState(d.goal || '');
-  const ready = s.subscriptions.filter((x) => usableSubscription(x) && x.enabled && x.machine === machine);
-  const [sub, setSub] = useState(ready[0]?.id);
-  useEffect(() => { if (!ready.some((x) => x.id === sub)) setSub(ready[0]?.id); }, [machine]);
-  useEffect(() => { if (live.on) void board.loadSetup(); }, []);
+  const selection = useProjectLead(s, machine);
   const creating = live.on && board.busy('create-project');
-  const defaults = s.setupData?.lead;
   const m = machineOf(s, machine); const r = byId(s.repos, repo);
   const isNew = repo === '__new';
   const hasRepo = isNew || !!r?.folders[machine];
-  const why = m.status !== 'online' ? `${m.name} is offline.` : !hasRepo ? null : !goal.trim() ? 'Write the goal.' : isNew && !newRepo.trim() ? 'Name the new repository.' : !live.on && !sub ? `No subscription is signed in on ${m.name}.` : null;
-  const create = () => { if (why || !hasRepo || creating) return; if (!live.on) act.closeDialog(); act.createProject({ repo, goal: goal.trim(), machine, subscription: sub, newRepo: isNew ? newRepo.trim() : null }); };
+  const why = m.status !== 'online' ? `${m.name} is offline.` : !hasRepo ? null : !goal.trim() ? 'Write the goal.' : isNew && !newRepo.trim() ? 'Name the new repository.' : selection.why;
+  const create = () => { if (why || !hasRepo || creating) return; if (!live.on) act.closeDialog(); act.createProject({ repo, goal: goal.trim(), machine, subscription: selection.lead?.account.accountId, lead: selection.lead, newRepo: isNew ? newRepo.trim() : null }); };
   return html`<${Dialog} title="New project" size="wide" onClose=${act.closeDialog} onSubmit=${create}
     foot=${html`${why && html`<span class="why">${why}</span>`}<button type="button" class="btn" onClick=${act.closeDialog}>Cancel</button><button type="submit" class="btn primary" disabled=${!!why || !hasRepo || creating} aria-busy=${creating}>${creating ? 'Creating…' : 'Create project'}</button>`}>
     <div class="field"><label for="np-goal">Goal</label>
@@ -138,8 +135,7 @@ function NewProject({ s, d }) {
     ${isNew && html`<div class="field"><label for="np-newrepo">New repository name</label><input id="np-newrepo" class="input" value=${newRepo} onInput=${(e) => setNewRepo(e.target.value)} placeholder="notes-site" /></div>`}
     ${!hasRepo && r && html`<div class="callout warn"><${Icon} name="triangle-alert" size=${15} /><span class="grow">${r.name} is not on ${m.name}.</span>
       <button type="button" class="btn sm" onClick=${() => { act.openDialog({ type: 'add-repository', machine, repo, back: { type: 'new-project', machine, repo, goal } }); }}>Add to ${m.name}</button></div>`}
-    <div class="field"><span class="label">Project lead</span>
-      ${live.on ? html`<p class="muted" aria-live="polite">${board.busy('read-setup') ? 'Loading lead settings…' : defaults ? `${defaults.harness} · ${defaults.account._tag === 'named' ? defaults.account.accountId : 'Any ready account'}${defaults.model ? ' · ' + defaults.model : ''}${defaults.effort ? ' · ' + defaults.effort : ''}` : 'The service chooses the lead from its configured defaults.'}</p>` : html`<${SubscriptionTable} s=${s} machine=${machine} value=${sub} onPick=${setSub} />`}</div>
+    ${selection.fields}
   <//>`;
 }
 registerDialog('new-project', NewProject);
