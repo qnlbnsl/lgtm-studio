@@ -4,10 +4,10 @@ import { completionOwed, boardView } from "../board/wake.ts"
 import { requireEndResult, requireBuilding, permissionSetting, permissionOffReason } from "./approvals.ts"
 import { validateWorkflowFolder, workflowFolderReason } from "../workflows/folder.ts"
 import { declineMainReview } from "./gitReview.ts"
-import { checkoutHead, inside } from "./git/paths.ts"
+import { checkoutHead, checkedMetadata, inside } from "./git/paths.ts"
 import { randomUUID } from "node:crypto"
-import { realpath, stat } from "node:fs/promises"
-import { isAbsolute } from "node:path"
+import { lstat, realpath, stat } from "node:fs/promises"
+import { isAbsolute, join, parse } from "node:path"
 import { RepositoryId, WorkspaceId, TeamId, SprintId, TaskId, ChannelId,
   TaskNotificationId, stageLabel, projectTeamGroup, type Event, type Project, type Task } from "@lgtm/contracts"
 import * as Effect from "effect/Effect"
@@ -59,9 +59,35 @@ const settingsSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
     if (!(await stat(folder)).isDirectory()) throw new Error()
     return folder
   }, catch: () => refused("workspace folder must be an existing absolute directory") })
-  const excluded = Object.values(projectView(input.snapshot).repositories).find((repo) => !inside(workspaceFolder, repo.path))
-  if (excluded !== undefined) return yield* refused(yield* input.runtime.log.redactText(workspaceRepositoryRefusal(excluded.name, excluded.path)))
-  const previous = projectView(input.snapshot).settings
+  const view = projectView(input.snapshot), previous = view.settings
+  if (workspaceFolder !== previous?.workspaceFolder) {
+    const excluded = yield* Effect.tryPromise({ try: async () => {
+      const references = [...Object.values(view.repositories), ...Object.values(view.locations), ...Object.values(view.workspaces)]
+      const checked = new Set<string>()
+      for (const row of references) {
+        const name = view.repositories[row.repoId]?.name ?? row.repoId
+        let path = row.path
+        try { path = await realpath(path) }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return { name, path } }
+        if (!inside(workspaceFolder, path)) return { name, path }
+        if (checked.has(path)) continue
+        checked.add(path)
+        try {
+          await lstat(join(path, '.git'))
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+          return { name, path }
+        }
+        try {
+          // Observe the validated metadata without applying the old workspace
+          // boundary, so widening a legacy installation can repair it.
+          const common = await checkedMetadata(parse(workspaceFolder).root, path)
+          if (!inside(workspaceFolder, common)) return { name, path: common }
+        } catch { return { name, path } }
+      }
+    }, catch: () => refused('registered workspace not found') })
+    if (excluded !== undefined) return yield* refused(yield* input.runtime.log.redactText(workspaceRepositoryRefusal(excluded.name, excluded.path)))
+  }
   const workflowFolder = p.clearWorkflowFolder ? undefined : p.settings.workflowFolder === undefined ? previous?.workflowFolder : yield* Effect.tryPromise({
     try: () => validateWorkflowFolder(p.settings.workflowFolder!, input.runtime.stateFolder), catch: () => refused(workflowFolderReason),
   })

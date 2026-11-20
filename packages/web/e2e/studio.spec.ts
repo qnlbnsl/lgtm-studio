@@ -73,7 +73,7 @@ test("live chat: signs in through the engine, shows its real records, and keeps 
       }))
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck()
-        const project = yield* decisionSetup()
+        const project = yield* decisionSetup(rig.work)
         yield* completedSetup(project.projectId)
         success(yield* call(ownerCredential, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "sh" } }))
         yield* appendSetup([
@@ -416,7 +416,7 @@ test("live projects and board: signs in through the engine, shows its real recor
       }))
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck()
-        const project = yield* decisionSetup()
+        const project = yield* decisionSetup(rig.work)
         yield* appendSetup([eventOf({ _tag: "project.RepositoryAdded", repoId: project.repoId, name: "Repository", path: rig.work }),
           eventOf({ _tag: "project.RepositoryLocated", repoId: project.repoId, machineId: "local", path: rig.work }),
           eventOf({ _tag: "project.WorktreeCreated", repoId: project.repoId, worktreeId: project.worktreeId,
@@ -901,7 +901,7 @@ test("live website: subscriptions, notifications and service settings persist th
       }))
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck()
-        const project = yield* decisionSetup()
+        const project = yield* decisionSetup(rig.work)
         success(yield* call(ownerCredential, 'harnesses', { operation: 'set', harness: harnessSettings('first', { models: ['test-model', 'other-model'], efforts: ['high'], defaultModel: 'test-model', defaultEffort: 'high' }) }))
         success(yield* call(ownerCredential, 'project.settings.set', { settings: { workspaceFolder: rig.work, shell: 'zsh', lead: { harness: 'first', account: { _tag: 'any' }, permission: 'ask', model: 'test-model', effort: 'high' } } }))
         yield* completedSetup(project.projectId)
@@ -1079,7 +1079,7 @@ test('workflows: sees default phases, clones, edits and saves across reload with
       }))
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck()
-        const project = yield* decisionSetup(); yield* completedSetup(project.projectId)
+        const project = yield* decisionSetup(rig.work); yield* completedSetup(project.projectId)
         yield* appendSetup([eventOf({ _tag: 'project.Created', projectId: 's17-fresh', repoId: project.repoId,
           worktreeId: project.worktreeId, leadAgentId: 's17-fresh-lead', machineId: 'local', name: 'Fresh workflow', goal: 'Check timing', stage: 'define' })])
         yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })

@@ -42,7 +42,7 @@ beforeEach(() => { rig = makeRig(); vi.stubEnv('HOME', rig.home); vi.stubEnv('LG
 afterEach(() => { cleanupUnit7b(); vi.unstubAllEnvs(); removeRig(rig) })
 for (const example of cases) it.live(`scope ${example.id}: ${example.label}`, () => provideBoard(rig, Effect.gen(function* () {
   yield* registerRebuildCheck()
-  const p = yield* decisionSetup(), other = yield* decisionProject('other')
+  const p = yield* decisionSetup(rig.work), other = yield* decisionProject('other', rig.work)
   success(yield* call(owner, 'project.settings.set', { settings: { workspaceFolder: rig.root, shell: 'zsh' } }))
   const before = projectView(yield* snapshot)
   const repoId = example.missingRepository ? 'missing-repository' : p.repoId

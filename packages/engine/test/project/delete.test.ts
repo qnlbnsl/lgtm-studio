@@ -178,7 +178,7 @@ it.live('identifier secrets do not cause a partial deletion in the real writer',
 
 it.live('descendant workspaces without projectId disappear and every unscoped read refuses them', () => provideBoard(rig, Effect.gen(function* () {
   yield* registerRebuildCheck()
-  const p = yield* decisionSetup()
+  const p = yield* decisionSetup(rig.root)
   yield* appendSetup([eventOf({ _tag: 'project.WorktreeCreated', repoId: p.repoId, worktreeId: p.worktreeId, path: join(rig.root, 'parent'), branch: 'topic', machineId: 'local', checkout: 'worktree', projectId: p.projectId })])
   for (const [id, parent] of [['child', p.worktreeId], ['grandchild', 'child']]) yield* appendSetup([eventOf({ _tag: 'project.WorktreeCreated', repoId: p.repoId, worktreeId: id, parentId: parent, path: rig.work, branch: 'topic', machineId: 'local' })])
   success(yield* call(owner, 'project.settings.set', { settings: { workspaceFolder: rig.root, shell: 'zsh' } }))
@@ -222,7 +222,7 @@ it.live('late project, agent, board and alert delivery events cannot resurrect d
 
 it.live('shared-channel replies and repository design registrations survive deletion', () => provideBoard(rig, Effect.gen(function* () {
   yield* registerRebuildCheck()
-  const p = yield* decisionSetup(), other = yield* decisionProject('other')
+  const p = yield* decisionSetup(rig.root), other = yield* decisionProject('other', rig.root)
   execFileSync('git', ['init', '-b', 'main', rig.work], { stdio: 'ignore' })
   execFileSync('git', ['-C', rig.work, '-c', 'user.name=Test Author', '-c', 'user.email=test@example.test', '-c', 'commit.gpgsign=false', 'commit', '--allow-empty', '-m', 'Initial'], { stdio: 'ignore' })
   const projectFolder = join(rig.root, 'design-project'), survivorFolder = join(rig.root, 'design-survivor')

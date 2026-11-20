@@ -1591,7 +1591,9 @@ It shows the current folder and lets the owner change it.
 The engine validates the folder as an existing absolute directory.
 The helper says, "LGTM Studio's Git commands work in every repository under this folder."
 A change that excludes a registered repository is refused with the first excluded repository's name and path.
-An unchanged folder and a wider folder are accepted when they contain every registered repository.
+An unchanged folder skips containment validation so legacy installations can still save other settings.
+A changed folder must contain every registered repository, location, workspace and common Git directory.
+Repositories without projects still count.
 Saving the folder preserves the other settings, including the lead defaults and the explicit permission marker.
 The standalone mock uses Maya Okafor's sample path.
 

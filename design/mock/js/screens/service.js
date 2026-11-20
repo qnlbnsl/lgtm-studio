@@ -646,7 +646,7 @@ function Defaults({ s }) {
         onFocus=${() => { workspaceEditing.current = true; setWorkspaceDraft(set.workspaceFolder || ''); }}
         onInput=${(e) => setWorkspaceDraft(e.target.value)}
         onBlur=${() => { workspaceEditing.current = false; setWorkspaceDraft(''); }}
-        onChange=${(e) => setS({ workspaceFolder: e.target.value })} /><//>
+        onChange=${(e) => { workspaceEditing.current = false; setWorkspaceDraft(''); setS({ workspaceFolder: e.target.value.trim() }); }} /><//>
     <${Row} label="Permission" hint="What a new agent may do without asking. A project can set its own." top>
       <${PermissionPicker} name="df-perm" value=${set.defaultPermission} onChange=${(v) => setS({ defaultPermission: v })} /><//>
     <${Row} label="Need-to-know messages" hint="New teams keep direct messages private to the agents in them. You always see everything.">

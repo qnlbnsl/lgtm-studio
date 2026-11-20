@@ -21024,3 +21024,45 @@ The first workspace input read its value directly from refreshed settings.
 A background read could restore the saved path between typing and leaving the field.
 The input now keeps its focused draft until the change is submitted.
 A focused renderer regression verifies that a refresh preserves the draft and that an unfocused field returns to the saved value.
+
+## 1535. The first workspace setting change missed historical fixtures and legacy saves
+
+Found in review round 1 of unit s32-workspacesetting on 2026-11-20.
+State: Fixed in round 2.
+
+Several decision fixtures registered `/tmp` before saving a narrower private workspace.
+Those fixtures now name a private repository path explicitly.
+The deletion fixtures keep the repository root distinct from the project workspace, preserving their original deletion cases.
+The old invalid-workspace Git regression now seeds historical settings through the fixture writer.
+Containment validation now runs only when the canonical workspace folder changes.
+A regression verifies that a legacy installation can save its other settings with an unchanged folder.
+
+## 1536. Workspace containment missed secondary registrations and linked Git metadata
+
+Found in review round 1 of unit s32-workspacesetting on 2026-11-20.
+State: Fixed in round 2.
+
+The initial check covered only each repository's primary path.
+It now checks registered locations and workspaces too.
+It checks the common Git directory reached through validated linked-worktree metadata.
+Tests cover each excluded reference, redaction with the production redactor and preservation of the effective lead permission.
+
+## 1537. A repository has no removal command
+
+Found in review round 1 of unit s32-workspacesetting on 2026-11-20.
+State: Open.
+
+Deleting the last project leaves its repository in the registry.
+That repository and its retained registrations still constrain a changed workspace folder.
+No command currently removes the repository registration.
+The README now states this limit.
+
+## 1538. Workspace journeys rewrote tracked captures and retained refused focused drafts
+
+Found in review round 1 of unit s32-workspacesetting on 2026-11-20.
+State: Fixed in round 2.
+
+Captures now go into the browser test output folder unless `LGTM_CAPTURE_WORKSPACE_SETTINGS=1` is set.
+The input trims the submitted path.
+It releases the submitted draft so a refusal restores the saved value while focus remains in the field.
+The renderer and browser regressions cover that behavior.

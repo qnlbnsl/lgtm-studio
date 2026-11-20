@@ -73,13 +73,13 @@ it('keeps a focused workspace draft while refreshed settings arrive', async () =
   const draw = (workspaceFolder: string) => kit.render(kit.h(Defaults, { s: { settings: { workspaceFolder } } }), root)
   try {
     draw('/home/maya/projects'); const input = root.querySelector('input')!; input.focus()
-    input.value = '/home/maya/pro'; input.dispatchEvent(new Event('input', { bubbles: true }))
-    await vi.waitFor(() => expect(input.value).toBe('/home/maya/pro'))
-    draw('/home/maya/refreshed'); expect(input.value).toBe('/home/maya/pro')
+    input.value = ' /home/maya/pro '; input.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.waitFor(() => expect(input.value).toBe(' /home/maya/pro '))
+    draw('/home/maya/refreshed'); expect(input.value).toBe(' /home/maya/pro ')
     expect(save).not.toHaveBeenCalled()
     input.dispatchEvent(new Event('change', { bubbles: true }))
     expect(save).toHaveBeenLastCalledWith({ workspaceFolder: '/home/maya/pro' })
-    input.blur()
+    expect(document.activeElement).toBe(input)
     await vi.waitFor(() => expect(input.value).toBe('/home/maya/refreshed'))
   } finally { kit.render(null, root); root.remove() }
 })

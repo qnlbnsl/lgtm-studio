@@ -9,6 +9,8 @@ The label is "Where is your workspace?".
 The helper says, "LGTM Studio's Git commands work in every repository under this folder."
 The field saves when the owner leaves the changed input.
 A focused draft survives background settings refreshes.
+The submitted value is trimmed.
+The stored value replaces a refused draft even while the input keeps focus.
 The saved lead defaults and their explicit permission marker are preserved.
 The engine refuses a folder that excludes a registered repository.
 The existing error toast displays the engine's refusal and the field restores the saved path.
@@ -18,6 +20,8 @@ The [narrow capture](workspace-settings-narrow.png) is 390 by 844 pixels.
 Both captures show the standalone mock with Maya Okafor's sample path.
 The narrow layout stacks the existing row without horizontal page overflow.
 The workspace control remains inside the viewport at both widths.
+Journeys write fresh captures into their test output folder by default.
+Set `LGTM_CAPTURE_WORKSPACE_SETTINGS=1` to update these tracked reference captures.
 
 The focused browser journey opens the root address of a temporary test engine.
 It verifies a wider folder after reload, both refusal messages and the complete saved settings record.

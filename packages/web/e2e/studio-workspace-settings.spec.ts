@@ -56,7 +56,7 @@ test('Service settings saves a wider workspace after reload and displays the reg
           const field = page.getByLabel('Where is your workspace?', { exact: true })
           await expect(field).toHaveValue(rig.work)
           await expect(page.locator('.svc-pane')).toContainText("LGTM Studio's Git commands work in every repository under this folder.")
-          await field.fill(rig.root); await field.press('Tab')
+          await field.fill(` ${rig.root} `); await field.press('Tab')
           await expect.poll(async () => page.evaluate(async () => {
             const engine = await import('/js/engine.js' as string)
             return (await engine.request('project.settings', {})).settings.workspaceFolder
@@ -64,9 +64,10 @@ test('Service settings saves a wider workspace after reload and displays the reg
           await expect(page.getByText('Saving…', { exact: true })).toHaveCount(0)
           await page.reload()
           await expect(field).toHaveValue(rig.root)
-          await field.fill(rig.home); await field.press('Tab')
+          await field.fill(rig.home); await field.dispatchEvent('change')
           await expect(page.locator('.toasts')).toContainText(`The workspace folder must contain the registered repository "Repository" (${rig.work}).`)
           await expect(field).toHaveValue(rig.root)
+          await expect(field).toBeFocused()
           await page.reload()
           await expect(field).toHaveValue(rig.root)
           await field.fill(join(rig.root, 'missing')); await field.press('Tab')
@@ -84,7 +85,7 @@ test('Service settings saves a wider workspace after reload and displays the reg
   }
 })
 
-test('the sample workspace setting remains editable at desktop and narrow widths', async ({ page }) => {
+test('the sample workspace setting remains editable at desktop and narrow widths', async ({ page }, info) => {
   const design = resolve(fileURLToPath(new URL('../../../design/', import.meta.url)))
   const types: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.woff2': 'font/woff2' }
   const server = createServer(async (request, response) => {
@@ -111,7 +112,10 @@ test('the sample workspace setting remains editable at desktop and narrow widths
       expect(box!.x).toBeGreaterThanOrEqual(0)
       expect(box!.x + box!.width).toBeLessThanOrEqual(width)
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
-      await page.screenshot({ path: fileURLToPath(new URL(`../../../design/builds/workspace-settings-${name}.png`, import.meta.url)), animations: 'disabled' })
+      const path = process.env.LGTM_CAPTURE_WORKSPACE_SETTINGS === '1'
+        ? fileURLToPath(new URL(`../../../design/builds/workspace-settings-${name}.png`, import.meta.url))
+        : info.outputPath(`workspace-settings-${name}.png`)
+      await page.screenshot({ path, animations: 'disabled' })
     }
   } finally { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())) }
 })
