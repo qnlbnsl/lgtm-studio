@@ -1579,18 +1579,21 @@ It does not decide changes to the agents' message-board channels, delivery rules
 
 ## A "Where is your workspace?" setting in the Service settings
 
-State: To build. Requested by the owner on 2026-11-20.
+State: Built on 2026-11-20 in unit s32-workspacesetting.
+The owner requested it on 2026-11-20.
 
 The workspace folder is the one folder that must contain every repository that LGTM Studio may work in.
-Today the owner can choose it only in the first-run steps.
-After that, only the command `project.settings.set` can change it.
-The owner wants it as a visible setting of LGTM Studio, asked as "Where is your workspace?".
+The owner can choose it in the first-run steps.
+The Service settings screen now asks "Where is your workspace?" in Defaults.
+The command `project.settings.set` remains available too.
 
-The setting belongs on the Service settings screen, beside the shell and the defaults for new project leads.
 It shows the current folder and lets the owner change it.
-The engine already validates the folder as an existing absolute directory.
-The control must say what the change means: Git commands of LGTM Studio work in every repository under that folder.
-A change that would leave a registered repository outside the new folder needs a clear refusal or a warning; this is undecided.
+The engine validates the folder as an existing absolute directory.
+The helper says, "LGTM Studio's Git commands work in every repository under this folder."
+A change that excludes a registered repository is refused with the first excluded repository's name and path.
+An unchanged folder and a wider folder are accepted when they contain every registered repository.
+Saving the folder preserves the other settings, including the lead defaults and the explicit permission marker.
+The standalone mock uses Maya Okafor's sample path.
 
 Issue 1466 records the fault that led to the request: a repository in a sibling folder could not be registered.
 On 2026-11-20 the owner's own workspace folder was widened by command from one folder of projects to its parent.

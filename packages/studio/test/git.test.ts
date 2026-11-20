@@ -21,8 +21,8 @@ describe('service mapping', () => {
   })
   it('maps exact settings and keeps unavailable and unset values empty', () => {
     const result = mapServiceSettings(project, [harness], { stallWatch: false, limits: { stallMinutes: 37, crashRetries: 0 } }, { enabled: true, port: 8793, heartbeatSeconds: 31, proxyMode: false }, null)
-    expect(result).toMatchObject({ defaultModel: 'model', defaultPermission: 'Edit files without asking', port: 8793, checkIn: 31, stallWatch: false, stallWorker: 37, crashRetries: 0, stallLead: null, stallAssigned: null, gitModel: '', version: '' })
-    expect(mapServiceSettings(undefined, [], {}, { enabled: false, port: 1, heartbeatSeconds: 1, proxyMode: false }, null)).toMatchObject({ defaultHarness: '', capacityRetries: null, stallWatch: null })
+    expect(result).toMatchObject({ workspaceFolder: '/tmp', defaultModel: 'model', defaultPermission: 'Edit files without asking', port: 8793, checkIn: 31, stallWatch: false, stallWorker: 37, crashRetries: 0, stallLead: null, stallAssigned: null, gitModel: '', version: '' })
+    expect(mapServiceSettings(undefined, [], {}, { enabled: false, port: 1, heartbeatSeconds: 1, proxyMode: false }, null)).toMatchObject({ workspaceFolder: '', defaultHarness: '', capacityRetries: null, stallWatch: null })
   })
   it('never returns a saved token or invents quiet hours', () => {
     const settings = { carrier: { _tag: 'ntfy', server: 'http://127.0.0.1:9999', topic: 'test' }, tokenSet: true, kinds: [{ kind: 'failure', push: true }] } as AlertSettings

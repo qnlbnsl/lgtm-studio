@@ -4,7 +4,7 @@ import { completionOwed, boardView } from "../board/wake.ts"
 import { requireEndResult, requireBuilding, permissionSetting, permissionOffReason } from "./approvals.ts"
 import { validateWorkflowFolder, workflowFolderReason } from "../workflows/folder.ts"
 import { declineMainReview } from "./gitReview.ts"
-import { checkoutHead } from "./git/paths.ts"
+import { checkoutHead, inside } from "./git/paths.ts"
 import { randomUUID } from "node:crypto"
 import { realpath, stat } from "node:fs/promises"
 import { isAbsolute } from "node:path"
@@ -28,6 +28,7 @@ import { ownerNameSuggestion } from "./setup.ts"
 import { leadPermissionFor } from "./leadDefaults.ts"
 import { validChoiceId } from "../runner/choices.ts"
 import { searchContext } from "./context.ts"
+import { workspaceRepositoryRefusal } from "./errors.ts"
 
 const fresh = <S extends Schema.Top & { readonly Type: string }>(schema: S): S["Type"] => Schema.decodeUnknownSync(schema as never)(randomUUID()) as S["Type"]
 const ack = (requestId: unknown, events: ReadonlyArray<Event>) => ({ events, reply: () => ({ requestId }) })
@@ -58,6 +59,8 @@ const settingsSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
     if (!(await stat(folder)).isDirectory()) throw new Error()
     return folder
   }, catch: () => refused("workspace folder must be an existing absolute directory") })
+  const excluded = Object.values(projectView(input.snapshot).repositories).find((repo) => !inside(workspaceFolder, repo.path))
+  if (excluded !== undefined) return yield* refused(yield* input.runtime.log.redactText(workspaceRepositoryRefusal(excluded.name, excluded.path)))
   const previous = projectView(input.snapshot).settings
   const workflowFolder = p.clearWorkflowFolder ? undefined : p.settings.workflowFolder === undefined ? previous?.workflowFolder : yield* Effect.tryPromise({
     try: () => validateWorkflowFolder(p.settings.workflowFolder!, input.runtime.stateFolder), catch: () => refused(workflowFolderReason),

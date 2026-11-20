@@ -54,7 +54,7 @@ export function seedService(st) {
   Object.assign(st.settings, {
     notifyOn: { question: true, approval: true, merge: true, failed: true, sprint: false },
     quiet: { on: false, from: '22:00', to: '07:00', timeZone: 'UTC', failed: true },
-    terminalEnabled: false, defaultHarness: 'claude', defaultModel: 'Sonnet 5.5', defaultEffort: 'Medium', defaultPermission: 'Automatic review',
+    workspaceFolder: '/home/maya/projects', terminalEnabled: false, defaultHarness: 'claude', defaultModel: 'Sonnet 5.5', defaultEffort: 'Medium', defaultPermission: 'Automatic review',
     needToKnow: false, stallAssigned: 5, stallWorker: 10, stallLead: 20, autoNudge: true, replaceAfter: 3, capacityRetries: 12,
     workflowPath: '~/.lgtm', maxRounds: 6, testsDefault: true, reviewDefault: true,
     version: '0.9.0', commit: '55e1bbd', dataFolder: '~/.local/state/lgtm',
@@ -639,7 +639,14 @@ function HarnessDefaults({ s }) {
 }
 function Defaults({ s }) {
   const set = s.settings;
+  const workspaceEditing = useRef(false), [workspaceDraft, setWorkspaceDraft] = useState('');
   return html`<div class="svc-rows">
+    <${Row} label="Where is your workspace?" id="df-workspace" hint="LGTM Studio's Git commands work in every repository under this folder.">
+      <input id="df-workspace" class="input mono" value=${workspaceEditing.current ? workspaceDraft : set.workspaceFolder}
+        onFocus=${() => { workspaceEditing.current = true; setWorkspaceDraft(set.workspaceFolder || ''); }}
+        onInput=${(e) => setWorkspaceDraft(e.target.value)}
+        onBlur=${() => { workspaceEditing.current = false; setWorkspaceDraft(''); }}
+        onChange=${(e) => setS({ workspaceFolder: e.target.value })} /><//>
     <${Row} label="Permission" hint="What a new agent may do without asking. A project can set its own." top>
       <${PermissionPicker} name="df-perm" value=${set.defaultPermission} onChange=${(v) => setS({ defaultPermission: v })} /><//>
     <${Row} label="Need-to-know messages" hint="New teams keep direct messages private to the agents in them. You always see everything.">

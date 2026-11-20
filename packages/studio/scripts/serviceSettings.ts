@@ -15,6 +15,7 @@ export function serviceSettingsSource(path: string, source: string): string {
   }
   if (path === 'js/screens/service.js') {
     source = "import * as serviceSettings from '../live/service-settings.js';\n" + source
+    replace('onChange=${(e) => setS({ workspaceFolder: e.target.value })}', 'onChange=${(e) => setS({ workspaceFolder: e.target.value })} disabled=${live.on && !s.ui.serviceReady}')
     replace('The service stall time. Role files can override it.', 'Idle with unanswered board work. Active turns use the separate runaway timer. Role files can override this value.')
     replace('<${Row} label="Assigned, not started" id=', '<${Row} label="Assigned, not started" hint="Idle with unanswered board work before the first recorded turn." id=')
     replace('<${Row} label="Lead, no output" id=', '<${Row} label="Lead, no output" hint="Idle with unanswered board work. Role files can override this value." id=')

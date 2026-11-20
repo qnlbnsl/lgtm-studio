@@ -228,6 +228,9 @@ async function writeSettings(patch, current) {
   if (key in limits || ['stallWatch', 'standingRules'].includes(key)) {
     const settings = key in limits ? { ...service.roles, limits: { ...service.roles.limits, [limits[key]]: patch[key] } } : { ...service.roles, [key]: patch[key] };
     await request('roles.settings.set', { settings });
+  } else if (key === 'workspaceFolder') {
+    if (!service.project) throw new Error('Configure the project workspace and shell first.');
+    await request('project.settings.set', { settings: { ...service.project, workspaceFolder: patch.workspaceFolder } });
   } else if (['defaultHarness', 'defaultModel', 'defaultEffort', 'defaultPermission'].includes(key)) {
     if (!service.project) throw new Error('Configure the project workspace and shell first.');
     const h = service.harnesses.find((h) => h.id === (patch.defaultHarness || service.project.lead?.harness));

@@ -34,9 +34,55 @@ function fixture() {
     { state }, { on: true }, (patch: object) => Object.assign(state, patch), () => {}, { request, connection: () => connection },
     { toast: (text: string) => toasts.push(text) }, {}, { loadVersion: async () => {} }, () => {}, () => {})
   actions.installMappings({ mapHarnesses: (h: any[]) => Object.fromEntries(h.map(x => [x.id, x])), mapInstalledHarnesses: () => ({}), mapAccounts: () => [],
-    mapServiceSettings: (project: any, _h: any, roles: any) => ({ defaultHarness: project.lead.harness, stallWorker: roles.limits.stallMinutes, teamIdle: roles.limits.teamIdleMinutes }) })
+    mapServiceSettings: (project: any, _h: any, roles: any) => ({ workspaceFolder: project.workspaceFolder, defaultHarness: project.lead.harness, stallWorker: roles.limits.stallMinutes, teamIdle: roles.limits.teamIdleMinutes }) })
   return { state, backend, actions, writes, toasts, holdWrites: (f: typeof beforeWrite) => { beforeWrite = f }, holdReads: (f: typeof beforeProjectRead) => { beforeProjectRead = f } }
 }
+
+it('saves a workspace through the settings queue and preserves the complete project record and permission marker', async () => {
+  const f = fixture()
+  Object.assign(f.backend.project, { workspaceFolder: '/home/maya/projects/personal', shell: '/bin/sh', displayName: 'Maya Okafor',
+    workflowFolder: '/home/maya/workflows', reviewDefaults: { reviewers: 3, differentVendor: false } })
+  f.backend.project.lead.permissionChosen = true
+  const previous = structuredClone(f.backend.project)
+  await f.actions.refreshAccounts()
+  expect(await f.actions.saveSettings({ workspaceFolder: '/home/maya/projects' })).toBe(true)
+  expect(f.backend.project).toEqual({ ...previous, workspaceFolder: '/home/maya/projects' })
+  expect(f.state.settings.workspaceFolder).toBe('/home/maya/projects')
+  expect(f.writes).toEqual([{ tag: 'project.settings.set', settings: f.backend.project }])
+})
+
+it('shows the engine workspace refusal and restores the saved folder', async () => {
+  const f = fixture(), reason = 'The workspace folder must contain the registered repository "Product".'
+  f.backend.project.workspaceFolder = '/home/maya/projects'
+  await f.actions.refreshAccounts()
+  f.holdWrites(async () => { throw new Error(reason) })
+  expect(await f.actions.saveSettings({ workspaceFolder: '/home/maya/other' })).toBe(false)
+  expect(f.toasts.map(String)).toEqual([`Error: ${reason}`])
+  expect(f.state.settings.workspaceFolder).toBe('/home/maya/projects')
+  expect(f.writes).toEqual([])
+})
+
+it('keeps a focused workspace draft while refreshed settings arrive', async () => {
+  const source = readFileSync('design/mock/js/screens/service.js', 'utf8')
+  const start = source.indexOf('function Defaults('), end = source.indexOf('\nfunction Remote(', start)
+  const kit = await import('../../../design/mock/vendor/htm-preact/standalone.module.js' as string)
+  const save = vi.fn(), Row = ({ children }: any) => kit.html`<div>${children}</div>`
+  const Defaults = new Function('html', 'useState', 'useRef', 'Row', 'PermissionPicker', 'Switch', 'setS', `${source.slice(start, end)}\nreturn Defaults;`)(
+    kit.html, kit.useState, kit.useRef, Row, () => null, () => null, save)
+  const root = document.createElement('div'); document.body.append(root)
+  const draw = (workspaceFolder: string) => kit.render(kit.h(Defaults, { s: { settings: { workspaceFolder } } }), root)
+  try {
+    draw('/home/maya/projects'); const input = root.querySelector('input')!; input.focus()
+    input.value = '/home/maya/pro'; input.dispatchEvent(new Event('input', { bubbles: true }))
+    await vi.waitFor(() => expect(input.value).toBe('/home/maya/pro'))
+    draw('/home/maya/refreshed'); expect(input.value).toBe('/home/maya/pro')
+    expect(save).not.toHaveBeenCalled()
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    expect(save).toHaveBeenLastCalledWith({ workspaceFolder: '/home/maya/pro' })
+    input.blur()
+    await vi.waitFor(() => expect(input.value).toBe('/home/maya/refreshed'))
+  } finally { kit.render(null, root); root.remove() }
+})
 
 it('queues rapid settings changes through readback and preserves both fields and the following harness', async () => {
   const f = fixture(), pending = gate(); let started = 0
