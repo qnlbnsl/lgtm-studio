@@ -237,7 +237,7 @@ async function writeSettings(patch, current) {
       ...(h.defaultModel ? { model: h.defaultModel } : {}), ...(h.defaultEffort ? { effort: h.defaultEffort } : {}) } : { ...service.project.lead };
     if (key === 'defaultModel') lead.model = patch[key];
     if (key === 'defaultEffort') lead.effort = patch[key];
-    if (key === 'defaultPermission') lead.permission = permission[patch[key]];
+    if (key === 'defaultPermission') { lead.permission = permission[patch[key]]; lead.permissionChosen = true; }
     await request('project.settings.set', { settings: { ...service.project, lead } });
   } else if (key === 'terminalEnabled') {
     const { requestId, serverState, ...previous } = service.web;

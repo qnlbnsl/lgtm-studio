@@ -31,8 +31,16 @@ export const SprintPhase = Schema.Literals(["Define", "Design", "Plan", "Build",
 export const TaskState = Schema.Literals(["queue", "active", "review", "blocked", "done"])
 export const ProjectLeadDefaults = Schema.Struct({
   harness: HarnessId, account: Schema.Union([Schema.TaggedStruct("any", {}), Schema.TaggedStruct("named", { accountId: AccountId })]),
-  model: Schema.optionalKey(ProjectName), effort: Schema.optionalKey(ProjectName), permission: PermissionLevel
+  model: Schema.optionalKey(ProjectName), effort: Schema.optionalKey(ProjectName), permission: PermissionLevel,
+  // True only when the owner chose the permission level in its own control.
+  permissionChosen: Schema.optionalKey(Schema.Boolean)
 })
+// The owner chose "auto" as the default level on 2026-11-17. A saved "ask"
+// that the owner did not choose was copied from the old harness default when
+// another lead default was saved, so it follows the harness default instead.
+export const effectiveLeadPermission = (lead: { readonly permission: typeof PermissionLevel.Type; readonly permissionChosen?: boolean | undefined },
+  harnessDefault: typeof PermissionLevel.Type): typeof PermissionLevel.Type =>
+  lead.permission === "ask" && lead.permissionChosen !== true ? harnessDefault : lead.permission
 export const ProjectSettings = Schema.Struct({ workspaceFolder: ProjectPath, shell: ProjectName, workflowFolder: Schema.optionalKey(ProjectPath), reviewDefaults: Schema.optionalKey(Schema.Struct({ reviewers: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(9)), differentVendor: Schema.Boolean })), lead: Schema.optionalKey(ProjectLeadDefaults), displayName: Schema.optionalKey(ProjectName) })
 export type ProjectSettings = typeof ProjectSettings.Type
 export const Repository = Schema.Struct({ repoId: RepositoryId, name: ProjectName, path: ProjectPath })

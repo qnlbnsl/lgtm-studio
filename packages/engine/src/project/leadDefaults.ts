@@ -1,4 +1,4 @@
-import { permissionModeFor } from "@lgtm/contracts";
+import { effectiveLeadPermission, permissionModeFor } from "@lgtm/contracts";
 import { recordSignInCheck } from "../accounts/signInEvidence.ts"
 import { constants } from "node:fs"
 import { access, stat } from "node:fs/promises"
@@ -66,7 +66,7 @@ export const leadDefaults = (input: Input, saved?: typeof ProjectLeadDefaults.Ty
     .sort((a, b) => a.id.localeCompare(b.id))
   for (const harness of harnesses) {
     const model = saved?.model ?? harness.defaultModel, effort = saved?.effort ?? harness.defaultEffort
-    const permission = saved?.permission ?? harness.defaultPermission
+    const permission = saved === undefined ? harness.defaultPermission : effectiveLeadPermission(saved, harness.defaultPermission)
     // Check effective choices before persisting an intent or touching its Git
     // paths. Keep historical settings decodable, but never freeze a choice
     // that cannot be stored in the intent or admitted by normal start.

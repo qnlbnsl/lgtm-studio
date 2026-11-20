@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto"
 import { realpath, stat } from "node:fs/promises"
 import { isAbsolute } from "node:path"
 import { RepositoryId, WorkspaceId, TeamId, SprintId, TaskId, ChannelId,
-  TaskNotificationId, stageLabel, projectTeamGroup, type Event, type Project, type Task } from "@lgtm/contracts"
+  TaskNotificationId, effectiveLeadPermission, stageLabel, projectTeamGroup, type Event, type Project, type Task } from "@lgtm/contracts"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { agentReadReply, type ReadHandler } from "../api/reads.ts"
@@ -422,7 +422,11 @@ const restore: PiecePlanner = (input, raw) => Effect.gen(function* () {
   return ack(p.requestId, row.archivedAt === undefined ? [] : [{ _tag: "project.Restored", projectId: p.projectId }])
 })
 const settings: ReadHandler = (input, raw) => Effect.gen(function* () {
-  const settings = projectView(input.snapshot).settings
+  const stored = projectView(input.snapshot).settings
+  // Report the lead permission that a new project would actually receive.
+  const leadHarness = stored?.lead === undefined ? undefined : (yield* readHarnesses(input.runtime)).find((row) => row.id === stored.lead!.harness)
+  const settings = stored?.lead === undefined || leadHarness === undefined ? stored
+    : { ...stored, lead: { ...stored.lead, permission: effectiveLeadPermission(stored.lead, leadHarness.defaultPermission) } }
   const ownerNameSuggestionValue = yield* ownerNameSuggestion(input)
   return { reply: { requestId: raw.requestId, ...(settings === undefined ? {} : { settings }), ...(ownerNameSuggestionValue === undefined ? {} : { ownerNameSuggestion: ownerNameSuggestionValue }) } }
 })

@@ -232,6 +232,7 @@ A custom harness that reports neither mapping keeps `ask`.
 Saving an `ask` default that would read as `auto` is refused with the owner's decision of 2026-11-17.
 The website never offered a control for that harness field.
 A stored default other than `ask` is kept.
+A saved project-lead default of `ask` follows the harness default too, unless the owner chose it in the "Defaults for new project leads" permission control.
 Custom mappings, custom reported modes and unrelated owner edits are kept.
 Existing agents keep their levels.
 The stored event log is not rewritten.
