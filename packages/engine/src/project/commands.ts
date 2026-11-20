@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto"
 import { realpath, stat } from "node:fs/promises"
 import { isAbsolute } from "node:path"
 import { RepositoryId, WorkspaceId, TeamId, SprintId, TaskId, ChannelId,
-  TaskNotificationId, effectiveLeadPermission, stageLabel, projectTeamGroup, type Event, type Project, type Task } from "@lgtm/contracts"
+  TaskNotificationId, stageLabel, projectTeamGroup, type Event, type Project, type Task } from "@lgtm/contracts"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { agentReadReply, type ReadHandler } from "../api/reads.ts"
@@ -24,6 +24,7 @@ import { projectedTask, decisionHistory } from "./decisions.ts"
 import { taskNotificationSource } from "./taskDelivery.ts"
 import { projectRequests } from "./requests.ts"
 import { ownerNameSuggestion } from "./setup.ts"
+import { leadPermissionFor } from "./leadDefaults.ts"
 import { validChoiceId } from "../runner/choices.ts"
 import { searchContext } from "./context.ts"
 
@@ -426,7 +427,7 @@ const settings: ReadHandler = (input, raw) => Effect.gen(function* () {
   // Report the lead permission that a new project would actually receive.
   const leadHarness = stored?.lead === undefined ? undefined : (yield* readHarnesses(input.runtime)).find((row) => row.id === stored.lead!.harness)
   const settings = stored?.lead === undefined || leadHarness === undefined ? stored
-    : { ...stored, lead: { ...stored.lead, permission: effectiveLeadPermission(stored.lead, leadHarness.defaultPermission) } }
+    : { ...stored, lead: { ...stored.lead, permission: leadPermissionFor(leadHarness, stored.lead) } }
   const ownerNameSuggestionValue = yield* ownerNameSuggestion(input)
   return { reply: { requestId: raw.requestId, ...(settings === undefined ? {} : { settings }), ...(ownerNameSuggestionValue === undefined ? {} : { ownerNameSuggestion: ownerNameSuggestionValue }) } }
 })

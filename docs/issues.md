@@ -20683,3 +20683,18 @@ A review is refused above 200 commits or files, above 128 KiB of diff, or with a
 The file listing has a 1 MiB output budget, and the measured repository's tracked file list is already about 0.97 MiB.
 Past the budget, listings and file search drop entries without a message.
 State: Open.
+
+## 1473. The new-project dialog preselected a lead account that the engine refuses
+
+Found on 2026-11-20 by the journey "live projects and board", which failed on `master` after pull request 85.
+With no saved lead default, the dialog chose the first listed account and sent it as the requested lead.
+The engine refused with "no ready signed-in lead account is available", although another harness was ready.
+Before pull request 85 the engine chose the ready lead itself.
+State: Fixed on 2026-11-20. The dialog now asks the engine for its ready lead default when no lead default is saved.
+
+## 1474. Pull request 85 was merged without a code review or a whole test run
+
+Recorded on 2026-11-20. The owner asked for all open pull requests to be merged.
+The pull request's own description says that no full code review ran and that the whole suite was not rerun.
+Issue 1473 is one fault that the whole suite then showed.
+State: Open until an independent review of that change has run.

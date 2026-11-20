@@ -42,12 +42,13 @@ case $port in ''|*[!0-9]*|0*) usage;; esac
 [ "$port" != 8787 ] || { echo 'lgtm-dev: port 8787 belongs to the stable service; choose another.' >&2; exit 2; }
 [ -n "${LGTM_WEB_PASSWORD:-}" ] || { echo 'lgtm-dev: set LGTM_WEB_PASSWORD for the development service.' >&2; exit 2; }
 
-mkdir -p "$HOME/.local/state/lgtm-dev"
-( cd "$root" && pnpm --filter @lgtm/studio build >/dev/null ) || { echo 'lgtm-dev: the website build failed; run pnpm install first.' >&2; exit 1; }
+# The client refuses a socket below a folder that others can write to.
+mkdir -p "$HOME/.local/state/lgtm-dev" && chmod 700 "$HOME/.local/state/lgtm-dev"
+( cd "$root" && pnpm --filter @lgtm/studio build >/dev/null 2>&1 ) || { echo 'lgtm-dev: the website build failed; run pnpm install first.' >&2; exit 1; }
 
 export LGTM_HOME=$state
 settings() { "$root/bin/lgtm" client.web.settings --input '{}' 2>/dev/null; }
-wait_ready() { n=0; until settings >/dev/null; do n=$((n + 1)); [ "$n" -lt 60 ] || { echo 'lgtm-dev: the service did not answer.' >&2; exit 1; }; sleep 1; done; }
+wait_ready() { n=0; until settings >/dev/null; do n=$((n + 1)); [ "$n" -lt 60 ] || { echo 'lgtm-dev: the service did not answer:' >&2; "$root/bin/lgtm" client.web.settings --input '{}' >&2 || true; exit 1; }; sleep 1; done; }
 running_pid() { "$root/bin/lgtm" serve --detach 2>&1 | sed -n 's/.*pid \([0-9][0-9]*\).*/\1/p' | head -n 1; }
 
 pid=$(running_pid); wait_ready

@@ -3,12 +3,17 @@ import { html, useState, useEffect, live, Icon } from './lib.js';
 import { HARNESSES, usableSubscription } from './data.js';
 import { Menu } from './ui.js';
 import * as liveGit from './live/git.js';
-import { loadProjectLeadChoices } from './live/board.js';
+import { loadProjectLeadChoices, loadSetup } from './live/board.js';
 
 export function useProjectLead(s, machine) {
   const accounts = s.subscriptions.filter((a) => a.enabled && usableSubscription(a) && a.machine === machine && HARNESSES[a.harness]);
   const defaults = s.settings.projectLead || s.setupData?.lead;
-  const serviceReady = !live.on || s.ui.serviceReady === true;
+  // With no saved lead default, ask the engine which lead is ready, so the
+  // dialog does not preselect an account that the engine would refuse.
+  const [setupTried, setSetupTried] = useState(false);
+  const defaultsKnown = !live.on || !!defaults || !!s.setupData || setupTried;
+  useEffect(() => { if (!defaultsKnown) void Promise.resolve(loadSetup()).catch(() => {}).finally(() => setSetupTried(true)); }, []);
+  const serviceReady = (!live.on || s.ui.serviceReady === true) && defaultsKnown;
   const [initialized, setInitialized] = useState(serviceReady);
   const initial = () => {
     const harness = defaults?.harness || s.settings.defaultHarness;
