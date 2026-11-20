@@ -246,9 +246,10 @@ export const prepareProjectLifecycle = (input: Input, name: string, payload: Rec
       plan = yield* creation(runtime, p.requestId)
     }
     const creationDetail = yield* withGit(input, (git) => Effect.gen(function* () {
+      yield* gitCall(git.excludePreparationFiles(plan.repository.path, plan.repository.preparation?.copyPaths ?? []))
       const worktreeDetail = yield* ensureWorktree(plan, git)
       yield* verifyCreation(plan, git)
-      const preparationDetail = yield* prepareWorktree(plan.repository.path, plan.workspace.path, plan.repository.preparation)
+      const preparationDetail = yield* prepareWorktree(plan.repository.path, plan.workspace.path, plan.repository.preparation, plan.repository.baseBranch)
       return [worktreeDetail, preparationDetail].filter(Boolean).join(" ")
     }))
     const observed = { ...input, snapshot: yield* runtime.views.snapshot }

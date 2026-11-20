@@ -46,7 +46,16 @@ export type ProjectSettings = typeof ProjectSettings.Type
 // Owner settings are engine state, never repository-authored configuration.
 export const validCopyPattern = (value: string) => new TextEncoder().encode(value).length <= 256 && !/[\\\x00-\x1f\x7f?:[\]{}]/.test(value)
   && !value.startsWith("/") && value.split("/").every(part => part !== "" && part !== "." && part !== ".." && part.toLowerCase() !== ".git")
+  && !["*", ".*"].includes(value.split("/")[0]!)
   && (value.match(/\*/g)?.length ?? 0) <= 1
+export const matchesCopyPattern = (pattern: string, path: string) => {
+  const parts = pattern.split("/"), names = path.split("/")
+  return parts.length === names.length && parts.every((part, i) => {
+    const name = names[i]!, star = part.indexOf("*")
+    return star === -1 ? part === name : name.length >= part.length - 1
+      && name.startsWith(part.slice(0, star)) && name.endsWith(part.slice(star + 1))
+  })
+}
 export const WorktreePreparation = Schema.Struct({
   copyPaths: Schema.optionalKey(Schema.Array(Schema.String.check(Schema.makeFilter(validCopyPattern))).check(Schema.isMaxLength(16))),
   submodules: Schema.optionalKey(Schema.Boolean),

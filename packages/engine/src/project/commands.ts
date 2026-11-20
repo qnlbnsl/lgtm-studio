@@ -28,12 +28,16 @@ import { ownerNameSuggestion } from "./setup.ts"
 import { leadPermissionFor } from "./leadDefaults.ts"
 import { validChoiceId } from "../runner/choices.ts"
 import { searchContext } from "./context.ts"
+import { validateRepositoryInstructions } from "../roles/compose.ts"
 
 const fresh = <S extends Schema.Top & { readonly Type: string }>(schema: S): S["Type"] => Schema.decodeUnknownSync(schema as never)(randomUUID()) as S["Type"]
 const preparationSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
   if (input.actor._tag !== "owner") return yield* refused()
   const p = raw as Payload<"project.repository.preparation.set">
-  if (own(projectView(input.snapshot).repositories, p.repoId) === undefined) return yield* refused("repository is unavailable")
+  const repository = own(projectView(input.snapshot).repositories, p.repoId)
+  if (repository === undefined) return yield* refused("repository is unavailable")
+  if (p.preparation.instructions !== undefined) yield* validateRepositoryInstructions(input.runtime, input.snapshot, p.preparation.instructions)
+  yield* withGit(input, git => gitCall(git.excludePreparationFiles(repository.path, p.preparation.copyPaths ?? [])))
   return ack(p.requestId, [{ _tag: "project.RepositoryPreparationChanged", repoId: p.repoId, preparation: p.preparation }])
 })
 const ack = (requestId: unknown, events: ReadonlyArray<Event>) => ({ events, reply: () => ({ requestId }) })

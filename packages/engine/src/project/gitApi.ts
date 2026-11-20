@@ -13,7 +13,7 @@ import { makeGitService, type GitService, type GitOperation, type Conflict, type
 
 // One queue owner per command runtime. The gate survives settings replacement,
 // including overlapping roots. It never releases an active child operation early.
-const owners = new WeakMap<Runtime, { gate: Semaphore.Semaphore; queued: number; root?: string; service?: GitService; bases?: Readonly<Record<string, string>>; starts?: Readonly<Record<string, string>> }>()
+const owners = new WeakMap<Runtime, { gate: Semaphore.Semaphore; queued: number; root?: string; service?: GitService; bases?: Readonly<Record<string, string>>; starts?: Readonly<Record<string, string>>; copies?: Readonly<Record<string, ReadonlyArray<string>>> }>()
 export const withGit = <A, E, R>(input: Input, body: (git: GitService) => Effect.Effect<A, E, R>) => Effect.suspend(() => {
   let owner = owners.get(input.runtime)
   if (owner === undefined) { owner = { gate: Semaphore.makeUnsafe(1), queued: 0 }; owners.set(input.runtime, owner) }
@@ -28,11 +28,15 @@ export const withGit = <A, E, R>(input: Input, body: (git: GitService) => Effect
     if (root !== projectView(input.snapshot).settings?.workspaceFolder) return yield* refused("workspace settings changed; refresh and retry")
     state.bases = Object.fromEntries(Object.values(projectView(input.snapshot).repositories).flatMap((repo) => repo.baseBranch === undefined ? [] : [[repo.path, repo.baseBranch]]))
     const view = projectView(input.snapshot)
+    state.copies = Object.fromEntries([
+      ...Object.values(view.repositories).map(repo => [repo.path, repo.preparation?.copyPaths ?? []]),
+      ...Object.values(view.workspaces).map(workspace => [workspace.path, view.repositories[workspace.repoId]?.preparation?.copyPaths ?? []]),
+    ])
     state.starts = Object.fromEntries(Object.values(view.projects).flatMap((project) => {
       const workspace = own(view.workspaces, project.worktreeId)
       return project.startingHead === undefined || workspace === undefined ? [] : [[workspace.path, project.startingHead]]
     }))
-    if (state.root !== root) { state.service = makeGitService({ workspaceFolder: root, baseBranches: () => state.bases ?? {}, startingHeads: () => state.starts ?? {} }); state.root = root }
+    if (state.root !== root) { state.service = makeGitService({ workspaceFolder: root, baseBranches: () => state.bases ?? {}, startingHeads: () => state.starts ?? {}, copyPaths: () => state.copies ?? {} }); state.root = root }
     // Service operations have a finite timeout. Waiting remains interruptible;
     // an active operation finishes before its gate is released, even on disconnect.
     return yield* Effect.uninterruptible(body(state.service!))

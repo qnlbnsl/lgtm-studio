@@ -161,7 +161,10 @@ export const prepareStartWorkspace = (input: Input, raw: Record<string, unknown>
     }));
     yield* safePath(input, tree.path); yield* safePath(input, tree.branch!);
     const repository = own(view.repositories, base!.repoId);
-    if (repository !== undefined) preparationDetail = yield* prepareWorktree(repository.path, tree.path, repository.preparation);
+    if (repository !== undefined) {
+      yield* gitCall(git.excludePreparationFiles(repository.path, repository.preparation?.copyPaths ?? []));
+      preparationDetail = yield* prepareWorktree(repository.path, tree.path, repository.preparation, repository.baseBranch);
+    }
   }));
   const checked = workspace, newWorkspace = created, retryWorkspace = reused;
   return ((current, payload) => Effect.gen(function* () {

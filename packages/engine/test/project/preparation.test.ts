@@ -13,6 +13,7 @@ import * as Processes from "../../src/project/git/process.ts";
 import { makeGitService } from "../../src/project/git/index.ts";
 import { Views } from "../../src/views/Views.ts";
 import { projectView } from "../../src/project/view.ts";
+import { snapshotFor } from "../../src/project/snapshot.ts";
 import { makeFakeRunner, type FakeRunner } from "../support/fakeRunner.ts";
 import { registerRebuildCheck } from "../support/rebuildCheck.ts";
 import { call, failureOf, freshRequest, makeFakeSecrets, makeRig, ownerCredential, provideRig, readLog, removeRig, seedAccount, seedHarness, success, type Rig } from "../support/handlerRig.ts";
@@ -26,7 +27,7 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); rmSync(root, { recursive: true, force: true }); });
 registerRebuildCheck({ noLog: true });
 
-for (const pattern of ["", "/etc/passwd", "../secret", "env/../secret", "env/./a", "env//a", ".git/config", "env/.GIT/config", "C:/secret", "env\\a", "env/a\0b", "env/a\nb", "env/??", "env/[ab]", "env/{a}", "env/**", "env/*/*.env", "a".repeat(257)]) {
+for (const pattern of ["", "*", "*/file", ".*", ".*/file", "/etc/passwd", "../secret", "env/../secret", "env/./a", "env//a", ".git/config", "env/.GIT/config", "C:/secret", "env\\a", "env/a\0b", "env/a\nb", "env/??", "env/[ab]", "env/{a}", "env/**", "env/*/*.env", "a".repeat(257)]) {
   it(`refuses unsafe preparation pattern ${JSON.stringify(pattern)}`, () => {
     expect(() => Schema.decodeUnknownSync(WorktreePreparation)({ copyPaths: [pattern] })).toThrow();
   });
@@ -64,11 +65,29 @@ for (const end of ["source", "destination"]) for (const position of ["leaf", "pa
     expect(readFileSync(join(outside, "local.env"), "utf8")).toBe("keep");
   });
 }
-it("refuses wildcard matches through a source symbolic link and a destination directory leaf", async () => {
+it("skips unsafe wildcard matches and refuses an explicit destination directory leaf with its pattern", async () => {
   writeFileSync(join(root, "outside"), "keep"); symlinkSync(join(root, "outside"), join(source, "local.env"));
-  await expect(copyPreparationFiles(source, destination, ["*.env"])).rejects.toThrow();
+  expect(await copyPreparationFiles(source, destination, ["*.env"])).toEqual({ copied: 0, skipped: 1 });
   rmSync(join(source, "local.env")); writeFileSync(join(source, "local.env"), "copy"); mkdirSync(join(destination, "local.env"));
-  await expect(copyPreparationFiles(source, destination, ["local.env"])).rejects.toThrow();
+  await expect(copyPreparationFiles(source, destination, ["local.env"])).rejects.toThrow('pattern "local.env"');
+});
+it("skips invalid wildcard names and does not overlap a wildcard's prefix and suffix", async () => {
+  mkdirSync(join(source, "env")); mkdirSync(join(source, "env", ".git"));
+  writeFileSync(join(source, "env", "[bad]"), "skip"); writeFileSync(join(source, "env", "good"), "copy");
+  writeFileSync(join(source, "env", "star*name"), "skip");
+  symlinkSync(join(root, "outside"), join(source, "env", "link"));
+  expect(await copyPreparationFiles(source, destination, ["env/*"])).toEqual({ copied: 1, skipped: 4 });
+  writeFileSync(join(source, "a"), "skip"); writeFileSync(join(source, "aa"), "copy");
+  expect(await copyPreparationFiles(source, destination, ["a*a"])).toEqual({ copied: 1, skipped: 0 });
+  expect(existsSync(join(destination, "a"))).toBe(false);
+});
+it("skips symbolic links below an intermediate wildcard and at matched destination files", async () => {
+  for (const name of ["env-good", "env-source-link", "env-destination-link"]) {
+    mkdirSync(join(source, name)); writeFileSync(join(source, name, "local.env"), "copy");
+  }
+  rmSync(join(source, "env-source-link", "local.env")); symlinkSync(join(root, "outside"), join(source, "env-source-link", "local.env"));
+  mkdirSync(join(destination, "env-destination-link")); symlinkSync(join(root, "outside"), join(destination, "env-destination-link", "local.env"));
+  expect(await copyPreparationFiles(source, destination, ["env-*/local.env"])).toEqual({ copied: 1, skipped: 2 });
 });
 it("bounds file count, file size, aggregate bytes, and wildcard enumeration", async () => {
   const file = join(source, "big"); writeFileSync(file, ""); truncateSync(file, 1024 * 1024 + 1);
@@ -97,10 +116,10 @@ it("initializes a submodule from a local repository using the fixed production a
   const { first, second } = localSubmodule();
   const worktree = join(root, "worktree"); git(destination, "worktree", "add", "-b", "project", worktree);
   const real = Processes.gitProcess;
-  const spy = vi.spyOn(Processes, "gitProcess").mockImplementation((cwd, args, ...rest) => real(cwd, [...args.slice(0, -4), "-c", "protocol.file.allow=always", ...args.slice(-4)], ...rest));
-  const detail = await Effect.runPromise(prepareWorktree(destination, worktree, { submodules: true }));
+  const spy = vi.spyOn(Processes, "gitProcess").mockImplementation((cwd, args, ...rest) => real(cwd, args.includes("submodule") ? [...args.slice(0, args.indexOf("submodule")), "-c", "protocol.file.allow=always", ...args.slice(args.indexOf("submodule"))] : args, ...rest));
+  const detail = await Effect.runPromise(prepareWorktree(destination, worktree, { submodules: true }, "main"));
   expect(detail).toContain("Submodules initialized."); expect(readFileSync(join(worktree, "tf", "initial.txt"), "utf8")).toBe("initial\n");
-  const args = spy.mock.calls[0]![1];
+  const args = spy.mock.calls.find(call => call[1].includes("submodule"))![1];
   spy.mockRestore();
   const service = makeGitService({ workspaceFolder: root });
   git(join(worktree, "tf"), "checkout", second);
@@ -117,12 +136,48 @@ it("ignores repository-authored custom update commands and records timeout failu
   const marker = join(root, "executed");
   git(destination, "config", "submodule.tf.update", `!touch ${marker}`);
   const real = Processes.gitProcess;
-  vi.spyOn(Processes, "gitProcess").mockImplementation((cwd, args, ...rest) => real(cwd, [...args.slice(0, -4), "-c", "protocol.file.allow=always", ...args.slice(-4)], ...rest));
-  expect(await Effect.runPromise(prepareWorktree(destination, worktree, { submodules: true }))).toContain("Submodules initialized.");
+  vi.spyOn(Processes, "gitProcess").mockImplementation((cwd, args, ...rest) => real(cwd, args.includes("submodule") ? [...args.slice(0, args.indexOf("submodule")), "-c", "protocol.file.allow=always", ...args.slice(args.indexOf("submodule"))] : args, ...rest));
+  expect(await Effect.runPromise(prepareWorktree(destination, worktree, { submodules: true }, "main"))).toContain("Submodules initialized.");
   expect(existsSync(marker)).toBe(false);
   vi.mocked(Processes.gitProcess).mockRejectedValue(new Error("private timeout diagnostic"));
-  const detail = await Effect.runPromise(prepareWorktree(destination, worktree, { submodules: true }));
+  const detail = await Effect.runPromise(prepareWorktree(destination, worktree, { submodules: true }, "main"));
   expect(detail).toContain("Submodule initialization failed"); expect(detail).not.toContain("private timeout");
+});
+for (const change of ["url", "path", "added", "duplicate"]) it(`skips unapproved ${change} entries committed by a worker`, async () => {
+  const { first } = localSubmodule();
+  const project = join(root, "untrusted-project"), worker = join(root, "untrusted-worker");
+  git(destination, "worktree", "add", "-b", "project", project);
+  if (change === "url") git(project, "config", "--file", ".gitmodules", "submodule.tf.url", "ssh://invalid.example/agent-chosen");
+  if (change === "path") git(project, "config", "--file", ".gitmodules", "submodule.tf.path", "elsewhere");
+  if (change === "added" || change === "duplicate") {
+    git(project, "config", "--file", ".gitmodules", "submodule.extra.path", change === "added" ? "extra" : "tf");
+    git(project, "config", "--file", ".gitmodules", "submodule.extra.url", change === "added" ? source : "ssh://invalid.example/duplicate");
+    if (change === "added") git(project, "update-index", "--add", "--cacheinfo", `160000,${first},extra`);
+  }
+  git(project, "add", ".gitmodules"); git(project, "commit", "-m", "Agent changes modules");
+  git(project, "worktree", "add", "-b", "worker", worker);
+  // A dirty main-checkout file is not authority for the agent's new URL.
+  if (change === "url") writeFileSync(join(destination, ".gitmodules"), readFileSync(join(project, ".gitmodules")));
+  const real = Processes.gitProcess;
+  const spy = vi.spyOn(Processes, "gitProcess").mockImplementation((cwd, args, ...rest) => args.includes("submodule")
+    ? Promise.resolve({ code: 0, stdout: "", stderr: "", truncated: false }) : real(cwd, args, ...rest));
+  const detail = await Effect.runPromise(prepareWorktree(destination, worker, { submodules: true }, "main"));
+  expect(detail).toContain("Unapproved submodules were skipped.");
+  const updates = spy.mock.calls.filter(call => call[1].includes("submodule"));
+  if (change === "added") expect(updates[0]![1].slice(-2)).toEqual(["--", "tf"]);
+  else expect(updates).toHaveLength(0);
+});
+it("refuses a file URL with the unchanged production transport options", async () => {
+  localSubmodule(); git(destination, "config", "protocol.file.allow", "always");
+  git(destination, "config", "--file", ".gitmodules", "submodule.tf.url", `file://${source}`);
+  git(destination, "add", ".gitmodules"); git(destination, "commit", "-m", "Local URL");
+  const worktree = join(root, "file-url-worktree"); git(destination, "worktree", "add", "-b", "file-url", worktree);
+  const spy = vi.spyOn(Processes, "gitProcess");
+  const detail = await Effect.runPromise(prepareWorktree(destination, worktree, { submodules: true }, "main"));
+  expect(detail).toContain("Submodule initialization failed; creation continued.");
+  expect(existsSync(join(worktree, "tf", ".git"))).toBe(false);
+  const options = spy.mock.calls.find(call => call[1].includes("submodule"))![1];
+  expect(options).toContain("protocol.allow=never"); expect(options).toContain("protocol.file.allow=never"); expect(options).not.toContain("protocol.file.allow=always");
 });
 it("handles status, aggregate and path diffs, stage, review, and safe discard for a changed gitlink", async () => {
   const { first, second } = localSubmodule(); git(destination, "checkout", "-b", "project"); git(join(destination, "tf"), "checkout", second);
@@ -182,6 +237,53 @@ it("keeps removed and uninitialized gitlinks out of ordinary file reads", async 
   expect((await run(service.diff(destination))).patch).toBe("");
   expect((await run(service.listFolder(destination))).items.map(row => row.path)).not.toContain("tf");
 });
+it("handles an embedded .git directory without hiding other changes and safely discards its pointer", async () => {
+  initialize(destination);
+  const embedded = join(destination, "embedded"); mkdirSync(embedded); const first = initialize(embedded);
+  git(destination, "add", "embedded"); git(destination, "commit", "-m", "Embedded gitlink");
+  const second = workerCommit(embedded, "next.txt", "next\n"); writeFileSync(join(destination, "initial.txt"), "other change\n");
+  const service = makeGitService({ workspaceFolder: root }), run = Effect.runPromise;
+  const changes = (await run(service.changes(destination))).items;
+  expect(changes.find(row => row.path === "embedded")).toMatchObject({ submodule: { oldHead: first, newHead: second } });
+  expect(changes.some(row => row.path === "initial.txt")).toBe(true);
+  await run(service.discard(destination, await run(service.planDiscard(destination, ["embedded"])), true));
+  expect(git(embedded, "rev-parse", "HEAD")).toBe(first);
+  expect((await run(service.diff(destination, { path: "initial.txt" }))).patch).toContain("other change");
+});
+it("keeps ordinary status and file reads available when a gitlink has malformed metadata", async () => {
+  localSubmodule(); writeFileSync(join(destination, "tf", ".git"), "not a gitdir marker\n");
+  writeFileSync(join(destination, "initial.txt"), "ordinary change\n");
+  const service = makeGitService({ workspaceFolder: root }), run = Effect.runPromise;
+  expect((await run(service.changes(destination))).items.some(row => row.path === "initial.txt")).toBe(true);
+  expect(await run(service.readFile(destination, "initial.txt"))).toMatchObject({ text: "ordinary change\n" });
+  expect((await run(service.listFolder(destination))).items.some(row => row.path === "initial.txt")).toBe(true);
+  expect((await run(service.diff(destination, { path: "initial.txt" }))).patch).toContain("ordinary change");
+  await expect(run(service.planDiscard(destination, ["tf"]))).rejects.toMatchObject({ reason: "dirty_source" });
+});
+it("reports an uninitialized changed pointer and a missing submodule directory without reading either as a file", async () => {
+  const { first, second } = localSubmodule();
+  git(join(destination, "tf"), "checkout", second); git(destination, "add", "tf");
+  git(destination, "submodule", "deinit", "-f", "--", "tf");
+  const service = makeGitService({ workspaceFolder: root }), run = Effect.runPromise;
+  expect((await run(service.changes(destination))).items).toMatchObject([{ path: "tf", submodule: { oldHead: first, indexHead: second, newHead: second } }]);
+  expect((await run(service.diff(destination))).patch).toContain(second);
+  expect((await run(service.planDiscard(destination, ["tf"]))).paths).toEqual([]);
+  rmSync(join(destination, "tf"), { recursive: true });
+  expect((await run(service.changes(destination))).items).toMatchObject([{ path: "tf", submodule: { newHead: null } }]);
+});
+it("batches gitlink metadata for ordinary deleted rows and preserves renamed gitlinks in review", async () => {
+  const { first } = localSubmodule();
+  for (let i = 0; i < 12; i++) workerCommit(destination, `delete-${i}`, "delete\n");
+  for (let i = 0; i < 12; i++) rmSync(join(destination, `delete-${i}`));
+  const spy = vi.spyOn(Processes, "gitProcess"), service = makeGitService({ workspaceFolder: root });
+  expect((await Effect.runPromise(service.changes(destination))).items).toHaveLength(12);
+  expect(spy.mock.calls.filter(call => call[1][0] === "ls-files")).toHaveLength(1);
+  expect(spy.mock.calls.filter(call => call[1][0] === "ls-tree")).toHaveLength(1);
+  git(destination, "restore", "."); git(destination, "checkout", "-b", "renamed");
+  git(destination, "mv", "tf", "renamed-tf"); git(destination, "commit", "-m", "Rename module");
+  const review = await Effect.runPromise(service.review(destination, "main", true));
+  expect(review.files.items.find(row => row.path === "renamed-tf")).toMatchObject({ originalPath: "tf", submodule: { oldHead: first, newHead: first } });
+});
 
 const integrated = (test: (rig: Rig, runner: FakeRunner) => Effect.Effect<void, unknown, any>) => Effect.gen(function* () {
   const rig = makeRig(); vi.stubEnv("HOME", rig.home); vi.stubEnv("LGTM_HOME", rig.stateFolder);
@@ -191,13 +293,18 @@ const integrated = (test: (rig: Rig, runner: FakeRunner) => Effect.Effect<void, 
 }).pipe(Effect.scoped, Effect.orDie);
 effectIt.live("owner preparation reaches project and worker worktrees and their started prompts; submodule failure is nonfatal", () => integrated((rig, runner) => Effect.gen(function* () {
   const p = yield* workerProject(rig);
+  initialize(source);
+  git(rig.work, "-c", "protocol.file.allow=always", "submodule", "add", "--", source, "tf");
+  git(rig.work, "add", ".gitmodules", "tf"); git(rig.work, "commit", "-m", "Base submodule");
+  git(p.path, "merge", "--ff-only", "main");
   mkdirSync(join(rig.work, "env")); writeFileSync(join(rig.work, "env", "local.env"), "synthetic-env");
-  // Ignore the build files so the base checkout remains eligible for creation.
-  writeFileSync(join(rig.work, ".git", "info", "exclude"), "/.worktrees/\n/env/\n");
   const preparation = { copyPaths: ["env/*.env"], submodules: true, instructions: "Run pnpm install before building." };
   expect(failureOf(yield* call(p.leadCredential, "project.repository.preparation.set", { repoId: p.repoId, preparation }))).toBeDefined();
   success(yield* call(ownerCredential, "project.repository.preparation.set", { repoId: p.repoId, preparation }));
   expect(success(yield* call(ownerCredential, "project.repositories", {})).items).toMatchObject([{ preparation }]);
+  expect(snapshotFor({ _tag: "agent", agentId: p.lead.agentId }, yield* (yield* Views).snapshot)?.repositories).toMatchObject([{ preparation: { copyPaths: ["env/*.env"] } }]);
+  expect(readFileSync(join(rig.work, ".git", "info", "exclude"), "utf8")).toContain("/env/*.env\n");
+  expect(git(rig.work, "status", "--porcelain")).toBe("");
   const real = Processes.gitProcess;
   vi.spyOn(Processes, "gitProcess").mockImplementation((cwd, args, ...rest) => args.includes("submodule") ? Promise.resolve({ code: 1, stdout: "", stderr: "private diagnostic", truncated: false }) : real(cwd, args, ...rest));
   const worker = success(yield* call(p.leadCredential, "start", workerPayload(p.path, { prompt: "Build it." })));
@@ -212,8 +319,58 @@ effectIt.live("owner preparation reaches project and worker worktrees and their 
   const view = projectView(yield* (yield* Views).snapshot), project = view.projects[created.projectId as string]!;
   expect(readFileSync(join(view.workspaces[project.worktreeId]!.path, "env", "local.env"), "utf8")).toBe("synthetic-env");
   expect(runner.callsOf("start")).toHaveLength(2);
-  for (const start of runner.callsOf("start")) expect(start.input.instructions).toContain("Owner's repository settings\nRun pnpm install before building.");
+  for (const start of runner.callsOf("start")) {
+    expect(start.input.instructions).toContain("--- BEGIN OWNER REPOSITORY SETTINGS ---\nOwner's repository settings\nRun pnpm install before building.\n--- END OWNER REPOSITORY SETTINGS ---");
+  }
   const log = yield* readLog;
   expect(log.filter(row => row.event._tag === "project.CreationFinished").at(-1)?.event).toMatchObject({ detail: expect.stringContaining("Submodule initialization failed") });
   expect(JSON.stringify(log)).not.toContain("private diagnostic"); expect(JSON.stringify(log)).not.toContain("synthetic-env");
 })));
+effectIt.live("refuses excessive composed repository instructions when the owner sets them", () => integrated((rig) => Effect.gen(function* () {
+  const p = yield* workerProject(rig);
+  const overrides = join(rig.home, ".lgtm", "roles"); mkdirSync(overrides, { recursive: true });
+  writeFileSync(join(overrides, "lead-base.md"), "a".repeat(24_500));
+  writeFileSync(join(overrides, "project-lead.md"), "b".repeat(24_500));
+  const response = yield* call(ownerCredential, "project.repository.preparation.set", { repoId: p.repoId, preparation: { instructions: "x".repeat(1024) } });
+  expect(failureOf(response)).toMatchObject({ reason: "Role instructions exceed 48 KiB." });
+  expect(projectView(yield* (yield* Views).snapshot).repositories[p.repoId as string]!.preparation).toBeUndefined();
+})));
+effectIt.live("surfaces the offending copy pattern through project creation and worker start", () => integrated((rig, runner) => Effect.gen(function* () {
+  const p = yield* workerProject(rig);
+  writeFileSync(join(rig.work, "private-config"), ""); truncateSync(join(rig.work, "private-config"), 1024 * 1024 + 1);
+  success(yield* call(ownerCredential, "project.repository.preparation.set", { repoId: p.repoId, preparation: { copyPaths: ["private-config"] } }));
+  const worker = yield* call(p.leadCredential, "start", workerPayload(p.path));
+  expect(failureOf(worker)).toMatchObject({ reason: 'Worktree preparation refused pattern "private-config": unsafe path or copy limit.' });
+  yield* seedAccount("lead-account", "cursor"); yield* seedHarness("cursor");
+  success(yield* call(ownerCredential, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }] }) }));
+  success(yield* call(ownerCredential, "accounts set-secret", { accountId: "lead-account", name: "CURSOR_API_KEY", nonce: "refusal-key", value: Redacted.make("synthetic-preparation-key-012345") }));
+  const created = yield* call(ownerCredential, "project.create", { requestId: freshRequest(), name: "Refused copy", goal: "Build", machineId: "local", repository: { _tag: "existing", repoId: p.repoId }, lead: { harness: "cursor", account: { _tag: "any" }, permission: "ask" } });
+  expect(failureOf(created)).toMatchObject({ reason: 'Worktree preparation refused pattern "private-config": unsafe path or copy limit.' });
+  expect(runner.callsOf("start")).toHaveLength(0);
+})));
+it("excludes copy patterns in every checkout and protects tracked matching files in agent reads", async () => {
+  initialize(destination); mkdirSync(join(destination, "config"));
+  workerCommit(destination, "config/private token", "synthetic secret\n");
+  git(destination, "checkout", "-b", "project"); workerCommit(destination, "config/private token", "changed secret\n");
+  const patterns = ["config/private*", "other private"];
+  const service = makeGitService({ workspaceFolder: root, copyPaths: () => ({ [destination]: patterns }) }), run = Effect.runPromise;
+  await run(service.excludePreparationFiles(destination, patterns)); await run(service.excludePreparationFiles(destination, patterns));
+  const exclude = readFileSync(join(destination, ".git", "info", "exclude"), "utf8");
+  expect(exclude.match(/\/config\/private\*/g)).toHaveLength(1); expect(exclude).toContain("/other\\ private\n");
+  writeFileSync(join(destination, "other private"), "untracked secret");
+  const tree = await run(service.createWorktree(destination, "worker"));
+  writeFileSync(join(tree.path, "other private"), "worker secret");
+  expect(git(destination, "status", "--porcelain")).toBe(""); expect(git(tree.path, "status", "--porcelain")).toBe("");
+  git(destination, "add", "--all"); expect(git(destination, "diff", "--cached", "--name-only")).toBe("");
+  expect((await run(service.listFolder(destination, "config"))).items).toEqual([]);
+  await expect(run(service.readFile(destination, "config/private token"))).rejects.toMatchObject({ reason: "invalid_path" });
+  await expect(run(service.contextFile(destination, "config/private token"))).rejects.toMatchObject({ reason: "invalid_path" });
+  expect((await run(service.contextFiles(destination, "private"))).items).toEqual([]);
+  expect((await run(service.commitFiles(destination, "HEAD", true))).items).toEqual([]);
+  expect((await run(service.review(destination, "main", true))).files.items).toEqual([]);
+  expect((await run(service.diff(destination, { commit: "HEAD", agentRead: true }))).patch).toBe("");
+  await expect(run(service.diff(destination, { path: "config/private token", commit: "HEAD", agentRead: true }))).rejects.toMatchObject({ reason: "invalid_path" });
+  writeFileSync(join(destination, "config/private token"), "unstaged secret\n");
+  expect((await run(service.changes(destination, true))).items).toEqual([]);
+  expect((await run(service.diff(destination, { agentRead: true }))).patch).toBe("");
+});

@@ -650,15 +650,24 @@ A worker allocation reads the repository record and checks that it has not chang
 Both paths call `preparation.ts` after Git creates the worktree.
 Submodule failure appears as a fixed creation or start detail and does not refuse creation.
 Copied files never overwrite existing files.
+The setting command adds each pattern to the shared Git exclusion file.
+Agent-facing diffs and file reads treat matching paths as credential paths.
+Harnesses can still read the copied files, and their values are not registered secrets.
+Submodule initialization checks each path and URL against `.gitmodules` committed on the recorded base branch.
+Unapproved and duplicate paths are skipped with a fixed detail sentence.
 See the root security document for the copy bounds and descriptor requirements.
 
 Role composition selects the nearest registered repository or workspace containing the actual start folder.
 It appends the owner's instructions before redaction and slash escaping.
+Explicit start and end markers delimit the text.
+The setting command validates the total composed size against every current role.
 Normal starts, recovery, restoration and orientation use the same composition.
 The engine never treats the text as a setup command.
 
 Git views admit a tracked gitlink directory through a separate path check.
 Status includes its old, indexed and current commit identifiers.
+Index and tree metadata reads are batched across the changed paths.
+Embedded `.git` directories and missing markers are supported.
 Review files include the old and new identifiers.
 Diffs force the short submodule patch format.
 Discard fingerprints the index and nested head and refuses nested dirt before a checkout without fetching.

@@ -21054,3 +21054,97 @@ The implementation correctly added `project.RepositoryPreparationChanged`.
 The test now expects the new event in its schema order.
 The subscription-visibility fixture also includes the new event.
 Focused reruns verify both event inventories.
+
+## 1508. Embedded or malformed submodule metadata broke the checkout's status
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: fixed in round 2.
+
+The first implementation read every nested `.git` as a regular marker file.
+An embedded repository instead has a `.git` directory.
+Status now handles both forms and a missing marker.
+A malformed marker leaves the nested checkout ineligible for discard without hiding other status rows or files.
+
+## 1509. Worktree preparation trusted submodule URLs committed by agents
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: fixed in round 2.
+
+A worker branch can contain agent changes to `.gitmodules`.
+Preparation now compares each path and URL with the file committed on the repository's recorded local base branch.
+The update receives only matching paths.
+The creation detail records skipped entries with a fixed sentence.
+Shared Git configuration remains trusted as documented in the security policy.
+Duplicate candidate paths are refused because Git could select an unapproved name for an approved path.
+Production explicitly disables file transport even when shared configuration enables it.
+
+## 1510. Copied configuration files lacked Git exclusions and read protections
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: fixed in round 2.
+
+The first implementation copied selected files without adding shared exclusion rules.
+Preparation settings now add each pattern to `info/exclude` for every checkout.
+Agent-facing diff and file reads apply the credential-path restrictions to matching paths, including tracked files.
+The documentation explains that every agent can still read these files through its harness.
+Their contents are not registered secrets and are unknown to log redaction.
+
+## 1511. Unsafe wildcard entries blocked preparation and overlapping matches were incorrect
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: fixed in round 2.
+
+A planted symbolic link or invalid wildcard name initially stopped all preparation.
+Wildcard enumeration now skips those entries.
+A leading segment of only `*` or `.*` is refused.
+A wildcard's prefix and suffix cannot overlap.
+A copy refusal names its configured pattern.
+
+## 1512. Repository instructions could exceed the composed limit only at agent start
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: fixed in round 2.
+
+The stored text had a byte limit but did not account for existing role prose when saved.
+The setting command now validates the complete composition for each current role.
+Explicit start and end markers delimit the owner's repository instructions.
+
+## 1513. Gitlink metadata reads scaled with deleted files and disagreed on renames
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: fixed in round 2.
+
+Status initially started two Git processes for every deleted ordinary file.
+It now batches index and tree pointer reads.
+A missing submodule directory reports no new head.
+Review metadata and its file list use the same rename detection.
+
+## 1514. Worker rollback cannot remove a worktree containing a gitlink
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: open.
+
+Git refuses `git worktree remove` without force when a worktree contains a gitlink.
+A worker allocation that fails after creation can therefore leave its worktree behind.
+The rollback warning asks for inspection.
+Automatic cleanup still needs a safe policy that protects nested work and never forces removal blindly.
+
+## 1515. Project agents can read their repository's copy patterns
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: documented limitation.
+
+The project snapshot includes the repository's preparation settings.
+An agent in that project can read `copyPaths`, including configuration filenames.
+The patterns are not secret values.
+The documentation now states this visibility alongside the harness access to copied files.
+
+## 1516. A wildcard match containing an asterisk could be expanded repeatedly
+
+Found while implementing review round 2 of unit s31 on 2026-11-20.
+State: fixed in round 2.
+
+A filesystem name can contain a literal asterisk.
+The first expansion passed that name back to the wildcard parser.
+Wildcard enumeration now skips such names as invalid matches.
+The regression also covers unsafe source and destination links beneath an intermediate wildcard.

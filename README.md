@@ -195,6 +195,7 @@ The owner can save preparation settings on each registered repository through th
 The command replaces all three optional settings.
 An empty `preparation` object clears them.
 Repository reads include the saved settings.
+Agents in a project can read that repository's copy patterns.
 The engine stores them in its own state.
 It never loads them from a repository file.
 The website does not yet have controls for these settings.
@@ -207,7 +208,17 @@ Each wildcard directory scan visits at most 512 entries.
 Missing files and nonfiles are skipped.
 Existing destination files are kept.
 Symbolic links and Git metadata paths are refused.
+Unsafe wildcard matches are skipped without blocking other matches.
+A first segment consisting only of `*` or `.*` is refused.
+Copy refusals identify the configured pattern.
 Copies preserve only the source file's owner permission bits.
+The engine adds the copy patterns to Git's shared `info/exclude` file.
+These exclusions apply to the main checkout and every linked worktree.
+Clearing a setting leaves its existing exclusions in place.
+Agent-facing file reads and diffs hide paths matching the current copy patterns, including tracked paths.
+Every agent in the repository can read copied files through its harness, including leads and workers.
+Their values are not registered secrets, so log redaction does not know them.
+The owner chooses this access separately for each repository.
 Copying currently requires Linux directory descriptors through `/proc/self/fd`.
 A host without that facility refuses configured copying.
 An unsafe path or an exceeded limit refuses preparation.
@@ -215,12 +226,16 @@ Project creation retains its worktree for inspection and retry.
 Worker allocations keep their existing rollback policy.
 
 When `submodules` is true, the engine runs a bounded `git submodule update --init --checkout` after creating the worktree.
+It initializes only paths whose path and URL match an entry committed on the recorded base branch in the main checkout.
+Other submodules are skipped with a fixed sentence in the recorded detail.
 It does not recurse into nested submodules or follow remote branch tips.
 A failure leaves creation successful and appears in the creation event or worker start reply detail.
 Only Hypertext Transfer Protocol Secure (HTTPS) and Secure Shell (SSH) transports are enabled for this operation.
 Local file transports are refused in production.
 The saved instructions accept at most 8,192 bytes of plain text.
 Every new agent in that repository receives them under "Owner's repository settings" in its role instructions.
+The text has explicit start and end markers.
+The setting command checks the total composed instruction size before saving it.
 Recovery and instruction restoration use the same composition.
 The engine runs no setup command from that text or from a repository file.
 

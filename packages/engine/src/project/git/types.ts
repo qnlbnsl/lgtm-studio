@@ -60,6 +60,7 @@ export type FileRead =
 export interface DiscardPlan { readonly fingerprint: string; readonly paths: ReadonlyArray<string> }
 export interface PreparedDelivery { readonly delivery: GitReviewDelivery; readonly merged?: { readonly head: string; readonly localSync: string } }
 export interface GitService {
+  excludePreparationFiles(folder: string, patterns: ReadonlyArray<string>): GitOperation<void>;
   mutationIdentity(folder: string): GitOperation<GitMutationIdentity>;
   readonly contextFiles: (folder: string, query: string) => GitOperation<Bounded<string>>;
   readonly contextFile: (folder: string, path: string) => GitOperation<void>;

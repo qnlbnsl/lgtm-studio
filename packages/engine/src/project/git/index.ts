@@ -5,7 +5,7 @@ import { lstat, mkdir, mkdtemp, open, opendir, realpath, rename, rm, rmdir, stat
 import { basename, dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import * as Effect from "effect/Effect";
-import { fileTextLimit, isRepositoryCredentialPath, type Caller } from "@lgtm/contracts";
+import { fileTextLimit, isRepositoryCredentialPath, matchesCopyPattern, validCopyPattern, type Caller } from "@lgtm/contracts";
 import { checkedMetadata, cleanText, directory, filePath, inside, slug, smallFile } from "./paths.ts";
 import { parseChanges, parseConflict, parseFiles, parseHistory, parseNumstat } from "./parse.ts";
 import { replaceFile, ReplaceFileError, sha256 } from "./replace.ts";
@@ -19,6 +19,7 @@ export interface GitConfiguration {
   readonly workspaceFolder: string;
   readonly baseBranches?: () => Readonly<Record<string, string>>;
   readonly startingHeads?: () => Readonly<Record<string, string>>;
+  readonly copyPaths?: () => Readonly<Record<string, ReadonlyArray<string>>>;
   readonly maxOutputBytes?: number;
   readonly maxDiffBytes?: number;
   readonly maxEntries?: number;
@@ -46,6 +47,8 @@ const bound = (requested: number | undefined, fallback: number, maximum: number)
  * every returned string through the production redactor before API delivery.
  * This service neither registers commands nor writes project events. */
 export const makeGitService = (configuration: GitConfiguration): GitService => {
+  const protectedPath = (folder: string, path: string) => isRepositoryCredentialPath(path)
+    || (configuration.copyPaths?.()[folder] ?? []).some(pattern => matchesCopyPattern(pattern, path));
   const outputBytes = bound(configuration.maxOutputBytes, 1024 * 1024, 2 * 1024 * 1024);
   const diffBytes = bound(configuration.maxDiffBytes, 128 * 1024, 256 * 1024);
   const entries = bound(configuration.maxEntries, 200, 500);
@@ -109,14 +112,21 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
   const list = <A>(items: ReadonlyArray<A>, maximum = entries): Bounded<A> => ({ items: items.slice(0, maximum), truncated: items.length > maximum });
   // Gitlinks name commits, never file contents. Read index/tree metadata
   // with literal pathspecs and keep the nested checkout out of Files APIs.
+  const parseLinks = (text: string) => {
+    const links = new Map<string, string>();
+    for (const row of text.split("\0")) {
+      const match = /^160000 (?:commit )?([a-f0-9]{40,64})(?: 0)?\t([\s\S]*)$/.exec(row);
+      if (match) links.set(match[2]!, match[1]!);
+    }
+    return links;
+  };
+  const linkEntries = async (folder: string, signal: AbortSignal, tree?: string, paths?: string[]) => parseLinks(tree === undefined
+    ? await git(folder, ["ls-files", "--stage", "-z", ...(paths === undefined ? [] : ["--", ...paths])], signal)
+    : await git(folder, ["ls-tree", "-r", "-z", tree, ...(paths === undefined ? [] : ["--", ...paths])], signal));
   const linkEntry = async (folder: string, path: string, signal: AbortSignal, tree?: string): Promise<string | undefined> => {
     const text = tree === undefined ? await git(folder, ["ls-files", "--stage", "-z", "--", path], signal)
       : await git(folder, ["ls-tree", "-z", tree, "--", path], signal);
-    for (const row of text.split("\0")) {
-      const match = /^160000 (?:commit )?([a-f0-9]{40,64})(?: 0)?\t([\s\S]*)$/.exec(row);
-      if (match?.[2] === path) return match[1];
-    }
-    return undefined;
+    return parseLinks(text).get(path);
   };
   const gitlink = async (folder: string, path: string, signal: AbortSignal, trees: string[] = []) => {
     let pointer = await linkEntry(folder, path, signal);
@@ -140,44 +150,75 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     }
   };
   const linkState = async (folder: string, path: string, signal: AbortSignal) => {
-    const full = await linkPath(folder, path);
-    if (!await exists(join(full, ".git"))) return { head: null, dirty: false };
-    // Bound the nested metadata to this repository's modules directory.
-    const dot = join(full, ".git");
-    const marker = /^gitdir: ([^\r\n]+)\r?\n?$/.exec((await smallFile(dot, 4096)).toString("utf8"));
-    if (marker === null) return fail("invalid_path");
-    const metadata = resolve(full, marker[1]!);
-    const common = await checkedMetadata(await root(), folder);
-    const ownDirectory = (await git(folder, ["rev-parse", "--absolute-git-dir"], signal)).trim();
-    if ((!inside(join(common, "modules"), metadata) && !inside(join(ownDirectory, "modules"), metadata))
-      || await realpath(metadata) !== metadata) return fail("invalid_path");
-    const current = (await git(folder, ["-C", full, "rev-parse", "--verify", "HEAD"], signal)).trim();
-    const dirty = (await git(folder, ["-C", full, "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"], signal)) !== "";
-    return { head: current, dirty };
+    let present = false;
+    try {
+      const full = await linkPath(folder, path);
+      present = await exists(full);
+      const dot = join(full, ".git");
+      if (!await exists(dot)) return { head: null, dirty: false, present };
+      const info = await lstat(dot);
+      if (info.isDirectory()) {
+        // An embedded repository has its own metadata instead of a gitdir file.
+        if (await realpath(dot) !== dot) return fail("invalid_path");
+      } else {
+        const marker = /^gitdir: ([^\r\n]+)\r?\n?$/.exec((await smallFile(dot, 4096)).toString("utf8"));
+        if (marker === null) return fail("invalid_path");
+        const metadata = resolve(full, marker[1]!);
+        const common = await checkedMetadata(await root(), folder);
+        const ownDirectory = (await git(folder, ["rev-parse", "--absolute-git-dir"], signal)).trim();
+        if ((!inside(join(common, "modules"), metadata) && !inside(join(ownDirectory, "modules"), metadata))
+          || await realpath(metadata) !== metadata) return fail("invalid_path");
+      }
+      const current = (await git(folder, ["-C", full, "rev-parse", "--verify", "HEAD"], signal)).trim();
+      const dirty = (await git(folder, ["-C", full, "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"], signal)) !== "";
+      return { head: current, dirty, present };
+    } catch (error) {
+      if (error instanceof GitFailure && ["cancelled", "timeout", "output_limit", "git_unavailable"].includes(error.reason)) throw error;
+      // A broken or unsafe nested repository must not hide other status rows.
+      // It remains ineligible for discard because its state is not proven clean.
+      return { head: null, dirty: true, present };
+    }
   };
   const describeChanges = async (folder: string, changes: Change[], signal: AbortSignal) => {
+    if (changes.length === 0) return changes;
     const current = await head(folder, signal);
+    const paths = [...new Set(changes.flatMap(row => row.originalPath === null ? [row.path] : [row.path, row.originalPath]))];
+    const indexed = await linkEntries(folder, signal, undefined, paths), previous = current === null ? new Map<string, string>() : await linkEntries(folder, signal, current, paths);
     for (let i = 0; i < changes.length; i++) {
       const row = changes[i]!;
-      const info = await lstat(join(folder, row.path)).catch(() => undefined);
-      if (info !== undefined && !info.isDirectory()) continue;
-      const index = await linkEntry(folder, row.path, signal), old = current === null ? undefined : await linkEntry(folder, row.path, signal, current);
+      const index = indexed.get(row.path), old = previous.get(row.originalPath ?? row.path);
       if (index === undefined && old === undefined) continue;
       const nested = await linkState(folder, row.path, signal);
-      changes[i] = { ...row, submodule: { oldHead: old ?? null, indexHead: index ?? null, newHead: row.index === "D" ? null : nested.head ?? index ?? null } };
+      changes[i] = { ...row, submodule: { oldHead: old ?? null, indexHead: index ?? null, newHead: row.index === "D" || !nested.present || nested.dirty && nested.head === null ? null : nested.head ?? index ?? null } };
     }
     return changes;
   };
   const observedChanges = async (folder: string, signal: AbortSignal): Promise<Change[]> => {
-    const rows = parseChanges(await git(folder, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none"], signal));
+    const args = ["status", "--porcelain=v1", "-z", "--untracked-files=all"];
+    const status = await run(folder, [...args, "--ignore-submodules=none"], signal);
+    const rows = parseChanges(status.code === 0 ? status.stdout : await git(folder, [...args, "--ignore-submodules=all"], signal));
+    if (status.code !== 0) {
+      // Git's own status can fail on a malformed nested .git file. Preserve
+      // ordinary rows and describe each indexed link independently instead.
+      for (const [path, index] of await linkEntries(folder, signal)) {
+        const nested = await linkState(folder, path, signal);
+        const worktree = !nested.present ? "D" : nested.dirty || nested.head !== null && nested.head !== index ? "M" : " ";
+        if (worktree === " ") continue;
+        const i = rows.findIndex(row => row.path === path);
+        if (i >= 0) rows[i] = { ...rows[i]!, worktree, unstaged: true };
+        else rows.push({ path, originalPath: null, index: " ", worktree, staged: false, unstaged: true, untracked: false, conflict: false });
+      }
+    }
     const changes: Change[] = [];
     const deleted = new Set(rows.filter(row => row.index === "D").map(row => row.path));
+    const retained = rows.filter(row => row.untracked && row.path.endsWith("/") && deleted.has(row.path.slice(0, -1)));
+    const current = retained.length === 0 ? null : await head(folder, signal);
+    const previous = current === null ? new Map<string, string>() : await linkEntries(folder, signal, current, retained.map(row => row.path.slice(0, -1)));
     for (const row of rows) {
       // A staged gitlink deletion can leave its initialized directory behind.
       // Git also reports that directory as untracked. Keep one pointer entry.
       if (row.untracked && row.path.endsWith("/") && deleted.has(row.path.slice(0, -1))) {
-        const current = await head(folder, signal);
-        if (current !== null && await linkEntry(folder, row.path.slice(0, -1), signal, current) !== undefined) continue;
+        if (previous.has(row.path.slice(0, -1))) continue;
       }
       changes.push(row);
     }
@@ -224,11 +265,11 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
   // divergent bases may show extra inherited work without hiding project work.
   const comparisonBase = async (folder: string, current: string, target: string, start: string | undefined, signal: AbortSignal) =>
     (await git(folder, ["merge-base", current, target, ...(start === undefined ? [] : [start])], signal)).trim();
-  const readable = (row: { path: string; originalPath: string | null }) => !isRepositoryCredentialPath(row.path)
-    && (row.originalPath === null || !isRepositoryCredentialPath(row.originalPath));
+  const readable = (folder: string, row: { path: string; originalPath: string | null }) => !protectedPath(folder, row.path)
+    && (row.originalPath === null || !protectedPath(folder, row.originalPath));
   const filesBetween = async (folder: string, args: string[], signal: AbortSignal, agentRead = false) => {
     const files = parseFiles(await git(folder, [...args, "--no-ext-diff", "--no-textconv", "--name-status", "-z", "--find-renames", "--"], signal));
-    return list(agentRead ? files.filter(readable) : files);
+    return list(agentRead ? files.filter(row => readable(folder, row)) : files);
   };
   const patch = async (folder: string, args: string[], signal: AbortSignal, paths: string[] = []): Promise<Diff> => {
     const reply = await run(folder, [...args, "--no-ext-diff", "--no-textconv", "--submodule=short", "--ignore-submodules=none", "--no-color", "--patch", "--", ...paths], signal, true, diffBytes);
@@ -245,11 +286,11 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     const workingChanges = options.commit === undefined ? await completeChanges(folder, signal) : undefined;
     let aggregatePaths: string[] | undefined;
     if (options.agentRead) {
-      if (path !== undefined && isRepositoryCredentialPath(path)) return fail("invalid_path");
+      if (path !== undefined && protectedPath(folder, path)) return fail("invalid_path");
       const changes = workingChanges ?? parseFiles(await git(folder, ["diff-tree", "--root", "--no-commit-id", "-r", "-m", "--first-parent", await ref(folder, options.commit!, signal), "--name-status", "-z", "--find-renames", "--"], signal));
-      if (path !== undefined && changes.some((row) => row.path === path && !readable(row))) return fail("invalid_path");
+      if (path !== undefined && changes.some((row) => row.path === path && !readable(folder, row))) return fail("invalid_path");
       if (path === undefined) {
-        aggregatePaths = changes.filter(readable).flatMap((row) => row.originalPath === null ? [row.path] : [row.originalPath, row.path]);
+        aggregatePaths = changes.filter(row => readable(folder, row)).flatMap((row) => row.originalPath === null ? [row.path] : [row.originalPath, row.path]);
         // Never pass an empty path list to Git: that would mean all files.
         if (aggregatePaths.length === 0) return { patch: "", additions: 0, deletions: 0, binary: false, truncated: false };
         for (const name of aggregatePaths) await changePath(folder, name, signal, commitTrees);
@@ -287,7 +328,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     if (options.staged === true) return tracked;
     let result = tracked;
     for (const change of workingChanges!) {
-      if (options.agentRead && !readable(change)) continue;
+      if (options.agentRead && !readable(folder, change)) continue;
       if ((!change.untracked && !(options.staged === undefined && currentHead === null && change.index === "A")) || result.truncated) continue;
       // Issue 588: the aggregate already resolved HEAD and status. Use the
       // original Git author's bounded direct patch, after agent filtering.
@@ -425,12 +466,17 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     const start = await startingHead(folder, signal);
     const baseline = await comparisonBase(folder, currentHead, baseHead, start, signal);
     const files = await filesBetween(folder, ["diff", baseline, currentHead], signal, agentRead);
-    const raw = await git(folder, ["diff", "--raw", "--no-renames", "--no-ext-diff", "--no-textconv", "--no-abbrev", "-z", baseline, currentHead, "--"], signal);
+    const raw = await git(folder, ["diff", "--raw", "--find-renames", "--no-ext-diff", "--no-textconv", "--no-abbrev", "-z", baseline, currentHead, "--"], signal);
     const links = new Map<string, { oldHead: string | null; newHead: string | null }>();
     const fields = raw.split("\0");
     for (let i = 0; i < fields.length; i++) {
-      const match = /^:(\d{6}) (\d{6}) ([a-f0-9]+) ([a-f0-9]+) ([A-Z])$/.exec(fields[i]!);
-      if (match && (match[1] === "160000" || match[2] === "160000")) links.set(fields[++i]!, { oldHead: /^0+$/.test(match[3]!) ? null : match[3]!, newHead: /^0+$/.test(match[4]!) ? null : match[4]! });
+      const match = /^:(\d{6}) (\d{6}) ([a-f0-9]+) ([a-f0-9]+) ([A-Z](?:[0-9]+)?)$/.exec(fields[i]!);
+      if (match) {
+        let path = fields[++i]!;
+        if (/^[RC]/.test(match[5]!)) path = fields[++i]!;
+        if (match[1] === "160000" || match[2] === "160000") links.set(path, {
+          oldHead: match[1] === "160000" ? match[3]! : null, newHead: match[2] === "160000" ? match[4]! : null });
+      }
     }
     const describedFiles = { ...files, items: files.items.map(row => links.has(row.path) ? { ...row, submodule: links.get(row.path)! } : row) };
     const paths = files.items.flatMap((row) => row.originalPath === null ? [row.path] : [row.originalPath, row.path]);
@@ -605,10 +651,10 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     const reply = await run(folder, ["ls-files", "--cached", "--others", "--exclude-standard", "-z", ...(only === undefined ? [] : ["--", only])], signal, true);
     if (reply.code !== 0 && !reply.truncated) throw processFailure(reply);
     const names = reply.stdout.split("\0"); names.pop();
-    return { names: [...new Set(names)].filter((name) => !isRepositoryCredentialPath(name)), truncated: reply.truncated };
+    return { names: [...new Set(names)].filter((name) => !protectedPath(folder, name)), truncated: reply.truncated };
   };
   const listedFile = async (folder: string, requested: string, signal: AbortSignal) => {
-    if (!cleanText(requested) || isRepositoryCredentialPath(requested)) return fail("invalid_path");
+    if (!cleanText(requested) || protectedPath(folder, requested)) return fail("invalid_path");
     const full = await filePath(folder, requested);
     if (!(await listedFiles(folder, signal, requested)).names.includes(requested)) return fail("invalid_path");
     const info = await lstat(full);
@@ -617,7 +663,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
   };
   const folderPath = async (folder: string, requested: string | undefined) => {
     if (requested === undefined) return "";
-    if (!cleanText(requested) || requested.startsWith("/") || requested.includes("\\") || isRepositoryCredentialPath(requested)) return fail("invalid_path");
+    if (!cleanText(requested) || requested.startsWith("/") || requested.includes("\\") || protectedPath(folder, requested)) return fail("invalid_path");
     const parts = requested.split("/");
     if (parts.some((part) => part === "" || part === "." || part === ".." || part.toLowerCase() === ".git")) return fail("invalid_path");
     let current = folder;
@@ -633,19 +679,23 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     : /A/.test(change.index + change.worktree) ? "added" : "modified";
   const imageTypes: Readonly<Record<string, FileImageType>> = { png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml" };
   const withRepo = <A>(folder: string, body: (path: string, signal: AbortSignal) => Promise<A>, network = false, registration?: Repository) => operation(async (signal) => body((registration?.path === folder ? registration : await repository(folder, signal)).path, signal), network);
-  const excludeManagedWorktrees = async (common: string) => {
+  const excludePaths = async (common: string, patterns: ReadonlyArray<string>) => {
     const info = join(common, "info");
     if (!await exists(info)) await mkdir(info, { mode: 0o700 });
     if (await directory(await root(), info) !== info) return fail("invalid_path");
     const path = join(info, "exclude");
     const previous = await exists(path) ? (await smallFile(path, 65_536)).toString("utf8") : "";
-    if (previous.split(/\r?\n/).some((line) => line === "/.worktrees/" || line === ".worktrees/")) return;
+    const lines = new Set(previous.split(/\r?\n/));
+    const additions = patterns.filter(pattern => !lines.has(pattern));
+    if (additions.length === 0) return;
+    const text = `${previous.endsWith("\n") || previous === "" ? "" : "\n"}${additions.join("\n")}\n`;
+    if (Buffer.byteLength(previous) + Buffer.byteLength(text) > 65_536) return fail("output_limit");
     // Keep generated checkouts out of the parent's untracked changes without
     // changing a tracked .gitignore or the user's existing exclude rules.
     const file = await open(path, constants.O_WRONLY | constants.O_APPEND | constants.O_CREAT | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
     try {
       if (!(await file.stat()).isFile()) return fail("invalid_path");
-      await file.write(`${previous.endsWith("\n") || previous === "" ? "" : "\n"}/.worktrees/\n`);
+      await file.write(text);
     } finally { await file.close(); }
   };
   const integrate = (source: string, destination: string, expectedHead: string, requireCleanSource: boolean) => operation(async (signal) => {
@@ -733,12 +783,15 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       return { items: items.slice(0, entries), truncated };
     }),
     register: (folder) => operation((signal) => repository(folder, signal)),
+    excludePreparationFiles: (folder, patterns) => operation(async signal => {
+      if (patterns.length > 16 || patterns.some(pattern => !validCopyPattern(pattern))) return fail("invalid_path");
+      const repo = await repository(folder, signal);
+      await excludePaths(repo.commonDirectory, patterns.map(pattern => `/${pattern.replace(/ /g, "\\ ")}`));
+    }),
     listFolder: (folder, requested) => withRepo(folder, async (path, signal) => {
       const at = await folderPath(path, requested), prefix = at === "" ? "" : `${at}/`;
       const listed = await listedFiles(path, signal);
-      const status = await run(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none"], signal);
-      if (status.code !== 0) throw processFailure(status);
-      const changes = new Map(parseChanges(status.stdout).map((change) => [change.path, changeOf(change)] as const));
+      const changes = new Map((await observedChanges(path, signal)).map((change) => [change.path, changeOf(change)] as const));
       const folders = new Map<string, FileEntry>(), files: FileEntry[] = [];
       for (const name of listed.names) {
         if (!name.startsWith(prefix)) continue;
@@ -790,7 +843,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       return sha256(bytes);
     }),
     contextFile: (folder, requested) => withRepo(folder, async (path) => {
-      if (isRepositoryCredentialPath(requested)) return fail("invalid_path");
+      if (protectedPath(path, requested)) return fail("invalid_path");
       const full = await filePath(path, requested);
       if (!(await lstat(full)).isFile() || await realpath(full) !== full) return fail("invalid_path");
     }),
@@ -803,7 +856,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       const items: string[] = [];
       let truncated = reply.truncated;
       for (const name of new Set(names)) {
-        if (isRepositoryCredentialPath(name)) continue;
+        if (protectedPath(path, name)) continue;
         if (!name.toLowerCase().includes(query.toLowerCase())) continue;
         if (signal.aborted) return fail("cancelled");
         try {
@@ -844,7 +897,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       if (await exists(directoryPath)) {
         if ((await lstat(directoryPath)).isSymbolicLink() || await directory(await root(), directoryPath) !== directoryPath) return fail("invalid_path");
       } else await mkdir(directoryPath, { mode: 0o700 });
-      await excludeManagedWorktrees(repo.commonDirectory);
+      await excludePaths(repo.commonDirectory, ["/.worktrees/"]);
       for (let i = 1; i <= 100; i++) {
         const leaf = i === 1 ? stem : `${stem}-${i}`, name = prefix + leaf;
         const target = join(directoryPath, prefix.replaceAll("/", "-") + leaf);
@@ -886,7 +939,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     rollbackWorktree: (folder, worktree) => withRepo(folder, (path, signal) => rollbackAllocation(path, worktree, signal)),
     changes: (folder, agentRead = false) => withRepo(folder, async (path, signal) => {
       const changes = await observedChanges(path, signal);
-      const bounded = list(agentRead ? changes.filter(readable) : changes);
+      const bounded = list(agentRead ? changes.filter(row => readable(path, row)) : changes);
       return { ...bounded, items: await describeChanges(path, [...bounded.items], signal) };
     }),
     diff: (folder, options = {}) => withRepo(folder, (path, signal) => diff(path, options, signal)),
@@ -966,7 +1019,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
         // One file only. Its change is added, then committed with --only, so
         // other staged files stay staged and out of this commit.
         const change = changes.find((row) => row.path === file);
-        if (change === undefined || isRepositoryCredentialPath(change.path)) return fail("nothing_staged");
+        if (change === undefined || protectedPath(path, change.path)) return fail("nothing_staged");
         if (await mergeHead(path, signal) !== null) return fail("conflicts");
         const paths = changePaths(change);
         for (const name of paths) await changePath(path, name, signal);
@@ -1156,7 +1209,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       await conflict(path, requested, signal);
     }),
     conflict: (folder, path, agentRead = false) => withRepo(folder, (base, signal) => {
-      if (agentRead && isRepositoryCredentialPath(path)) return fail("invalid_path");
+      if (agentRead && protectedPath(base, path)) return fail("invalid_path");
       return conflict(base, path, signal);
     }),
     choose: (folder, selection, hunk, choice) => withRepo(folder, async (path, signal) => {

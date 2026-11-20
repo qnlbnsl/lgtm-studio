@@ -12,6 +12,7 @@ const mapping = {
   reviewer: ['reviewer-base'], 'test-runner': [], evaluator: [],
 } satisfies Record<string, string[]>
 type InstructionName = keyof typeof mapping
+export const instructionRoles = Object.keys(mapping)
 export const instructionKind = (name: InstructionName) => name === 'orchestrator' ? 'orchestrator'
   : ['project-lead', 'planning-lead', 'design-lead', 'build-lead'].includes(name) ? 'lead' : 'worker'
 

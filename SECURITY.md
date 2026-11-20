@@ -457,12 +457,16 @@ Each project creation uses the file and submodule settings recorded in its creat
 Each worker allocation uses the current repository record.
 Agent starts and instruction restoration include the saved plain text through the existing redaction, slash escaping and composition size limit.
 The heading identifies the text as the owner's repository settings.
+Explicit start and end markers delimit the text.
+The setting command checks its composed size against every current role before saving it.
 The engine does not interpret that text as a command.
 Repository scripts and session hooks are never a preparation step run by LGTM Studio.
 
 Copying admits at most 16 relative patterns with at most one wildcard in a single segment.
 Parent traversal, absolute paths, backslashes, control characters and `.git` segments are refused.
 A wildcard match receives the same path validation.
+An unsafe wildcard match is skipped without blocking the other matches.
+A first path segment consisting only of `*` or `.*` is refused.
 Each scan visits at most 512 directory entries.
 The operation accepts at most 128 regular files, one mebibyte per file and eight mebibytes in total.
 It skips missing paths and nonfiles.
@@ -473,28 +477,47 @@ An unsupported host refuses configured copying.
 The destination is created exclusively inside the new worktree.
 An existing regular file is kept without a write.
 A new file keeps only the source's owner permission bits.
-Copied bytes and rejected paths never enter an event, reply or diagnostic.
-An unsafe path or exceeded copy limit refuses preparation with a fixed sentence.
+Copied bytes and host diagnostics never enter an event or reply.
+An unsafe explicit path or exceeded copy limit refuses preparation with a fixed sentence naming the configured pattern.
+The engine adds each copy pattern to the repository's shared `info/exclude` file.
+The exclusions remain when a preparation setting is cleared.
+They prevent ordinary staging of untracked copied files across the main checkout and linked worktrees.
+Current copy patterns also receive the credential-path protections in agent-facing diff and file reads, including tracked matches.
+Every agent in the repository can read copied files through its harness, including leads and workers.
+Their values are not registered secrets, so log redaction does not know them.
+The owner chooses this access separately for each repository.
+Agents in a project can read the repository's copy patterns in its snapshot.
 Project creation retains its incomplete worktree for inspection and retry.
 Worker allocations keep their existing rollback policy.
 These descriptors do not isolate a hostile process running as the same user and moving open directories.
 The existing sandbox limitation still applies.
 
 Submodule initialization runs a fixed argument vector without a shell.
+It resolves the repository's recorded local base branch to a commit in the main checkout.
+It reads `.gitmodules` from that committed tree with configuration includes disabled.
+It initializes only paths whose path and URL in the new worktree's `.gitmodules` are identical to an entry in that committed file.
+Agent changes to a submodule path or URL therefore cannot authorize a new clone destination.
+Every other submodule is skipped with a fixed sentence in the recorded detail.
+Duplicate paths are skipped because they make the selected submodule name ambiguous.
+The update receives only the approved paths and their approved parent-level URL settings.
 It uses the existing hardened Git process wrapper with a 20-second deadline and 64 kibibytes of output.
 The operation allows only Hypertext Transfer Protocol Secure (HTTPS) and Secure Shell (SSH) transports.
+It explicitly refuses file and external transports even when repository configuration enables them.
 It disables hooks, external diff helpers, file-system monitoring, interactive prompts and automatic HTTP redirects.
 It disables recursive submodule fetching.
 It forces checkout mode so a configured submodule update command cannot execute.
 It does not use `--recursive` or `--remote`.
 A failure records only a fixed sentence and never prevents creation from completing.
 Git still uses the owner's credential helpers and SSH configuration.
-Shared Git configuration and checkout filters retain the trust limits described above.
+The owner must still trust shared Git configuration, including `core.sshCommand`, `url.*.insteadOf`, checkout filters and `.git/modules/<name>/config`.
+Those settings can run code or redirect a connection despite the committed path and URL check.
+The existing shared-user sandbox limitation remains.
 
 Gitlink entries carry commit identifiers instead of file contents.
 Git views validate the pointer path without entering the nested checkout as a regular file.
 The Files interface continues to exclude nested checkouts.
-Discard admits only an initialized, clean submodule whose metadata resolves into this repository's module metadata.
+Discard admits only an initialized, clean submodule whose metadata is an embedded `.git` directory or resolves into this repository's module metadata.
+Missing or malformed nested metadata cannot hide the checkout's other status entries.
 It restores the index pointer with a fixed detached checkout of an already-local commit.
 That checkout disables transports and refuses to overwrite ignored local files.
 It never fetches.
