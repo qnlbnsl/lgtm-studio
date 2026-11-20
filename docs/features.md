@@ -1703,3 +1703,52 @@ This matches the earlier entry about per-language test tools arriving by pull re
 - Whether an existing mock application is used as it is, with LGTM Studio only told how to build and serve it, before any conversion from the design file is attempted.
 - Who reviews a pull request that an agent opens against LGTM Studio from another repository's work, and where it is opened when the installation is not a checkout of LGTM Studio.
 - How a mock application that needs a device or a simulator is shown in the Mocks tab.
+
+## An extensible mockups module with one framework per language and tool
+
+State: Idea. Decided in direction by the owner on 2026-11-20. This corrects the entry "Bringing a repository's existing mocks into LGTM Studio, and support for other languages and tools".
+
+### The decision
+
+The owner does not want LGTM Studio to use a repository's own mock application as it is.
+That application was built for one product.
+Instead, LGTM Studio gets its own mockups module, and it is extensible.
+The second repository's existing mocks are then converted to it.
+The earlier recommendation, to point LGTM Studio at an existing mock application first, is withdrawn.
+
+### What the module does
+
+The module takes what a repository is building and renders it so that it runs in LGTM Studio's website.
+Each mockup is rendered in the repository's own language and toolkit, and the result shown is HTML.
+A phone project is shown inside a phone image, at a stated screen size and pixel ratio.
+A website or another kind of project gets its own presentation, which is not designed yet.
+The owner does not yet know how this works for native applications.
+
+The owner recalled a tool that loaded Angular, Vue, Svelte and React from a content delivery network at run time and rendered components from each.
+That is the model for how one page can render several toolkits.
+
+### What you see is what you get
+
+The Mocks tab must show exactly what users will get.
+The condition is the same screen size, pixel ratio and similar settings.
+This is the main requirement, and it is why the mockups render the real code in its own toolkit and are not redrawn.
+
+### One framework per language and tool
+
+A framework guide says how to add a language or a tool.
+Every language and every tool then gets its own framework.
+For mockups, a framework says: here is a new language, and here is how to render it. The language then shows up in the Mocks tab.
+
+The same idea applies to testing.
+Each test tool, such as Vitest or the TypeScript compiler written in Go, gets its own framework for how it runs tests and scripts.
+Those frameworks carry the lessons from testing the owner's second repository, and improve over time.
+This joins the earlier entries about a testing skill with fixed rules and per-language test tools.
+
+### Undecided
+
+- What a framework is in code: its files, its interface, and where it lives (inside LGTM Studio, in `~/.lgtm`, or in a repository's `.lgtm`).
+- How the module builds a repository's components for the browser: bundling on the server, loading libraries at run time, or both.
+- How sample data, fonts, images and the repository's own styling reach a mockup.
+- Native applications: a web build where the toolkit has one (such as React Native for Web), a simulator stream, or screenshots; each weakens the "what you see is what you get" promise in a different way.
+- How a mockup is isolated from LGTM Studio's own page, since it runs a repository's code inside the website.
+- How the existing conversion from the design file fits: the design file stays the source of truth, and mockups come from real code.
