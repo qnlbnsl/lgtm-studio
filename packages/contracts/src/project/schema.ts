@@ -43,7 +43,7 @@ export const effectiveLeadPermission = (lead: { readonly permission: typeof Perm
   lead.permission === "ask" && lead.permissionChosen !== true ? harnessDefault : lead.permission
 export const ProjectSettings = Schema.Struct({ workspaceFolder: ProjectPath, shell: ProjectName, workflowFolder: Schema.optionalKey(ProjectPath), reviewDefaults: Schema.optionalKey(Schema.Struct({ reviewers: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(9)), differentVendor: Schema.Boolean })), lead: Schema.optionalKey(ProjectLeadDefaults), displayName: Schema.optionalKey(ProjectName) })
 export type ProjectSettings = typeof ProjectSettings.Type
-export const Repository = Schema.Struct({ repoId: RepositoryId, name: ProjectName, path: ProjectPath })
+export const Repository = Schema.Struct({ repoId: RepositoryId, name: ProjectName, path: ProjectPath, baseBranch: Schema.optionalKey(ProjectName) })
 export type Repository = typeof Repository.Type
 export const RepositoryLocation = Schema.Struct({ repoId: RepositoryId, machineId: ProjectName, path: ProjectPath })
 export const Workspace = Schema.Struct({

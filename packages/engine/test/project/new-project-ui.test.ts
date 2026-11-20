@@ -379,7 +379,7 @@ it.live("the joined controller releases an effect-free main-branch refusal and p
     const replay = yield* Effect.result(api["project.create"](frozen))
     expect(replay._tag).toBe("Failure")
     if (replay._tag === "Failure") expect(replay.failure).toMatchObject({ _tag: "CommandError",
-      reason: "check out main or master in the main repository checkout before creating a project" })
+      reason: 'check out "main" in the main repository checkout before creating a project' })
     expect(Object.keys(projectView(yield* snapshot).projects)).toHaveLength(0)
     session.correctRefusal(); yield* promise(() => flush(session)); yield* promise(() => session.start())
     expect(session.getSnapshot().phase).toBe("created")

@@ -36,7 +36,6 @@ export function mapBoardRecords(snapshot: ClientSnapshot, records: EngineRecords
   const stalls = mapStalls(snapshot.roles)
   return {
     ...records,
-    repos: records.repos.map((r) => ({ ...r, main: "" })),
     projects: records.projects.map((p) => ({ ...p, prefix: "", tests: "", agentReview: "",
       archiving: section?.projects.find((r) => r.projectId === p.id)?.archiving ?? false,
       worktreeId: section?.projects.find((r) => r.projectId === p.id)?.worktreeId ?? "" })),

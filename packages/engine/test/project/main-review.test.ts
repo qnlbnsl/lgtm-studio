@@ -65,7 +65,7 @@ beforeEach(() => {
   save(rig.work, "file.txt", "base\n"); commit(rig.work, "Initial")
 })
 afterEach(() => { vi.unstubAllEnvs(); removeRig(rig) })
-const setup = (base = "main") => Effect.gen(function* () {
+const setup = (base = "main", beforeRegistration?: () => void) => Effect.gen(function* () {
   yield* registerRebuildCheck()
   if (base !== "main") git(rig.work, "branch", "-m", base)
   yield* seedAccount("launch", "cursor")
@@ -76,6 +76,7 @@ const setup = (base = "main") => Effect.gen(function* () {
   expect((yield* Effect.promise(() => upgradeStatus(socket, ancestryHeaders()))).status).toBe(401)
   const api = yield* client(socket, token)
   yield* run(api, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "zsh" } })
+  beforeRegistration?.()
   const { repoId } = yield* run(api, "project.repository.add", { name: "Product", path: rig.work, machineId: "local" })
   const { worktreeId: destinationId } = yield* run(api, "project.workspace.register", { repoId, path: rig.work, branch: base, checkout: "main", machineId: "local" })
   // The real lifecycle command creates and records the project/worktree. Only
@@ -99,9 +100,13 @@ const report = (f: Effect.Success<ReturnType<typeof setup>>, api = f.api, extra:
   summary: "Reported failure /tool <script>literal</script>", threadAgentId: f.member.agentId, threadSequence: f.threadSequence, ...extra,
 })
 
-for (const base of ["main", "master"]) it.live(`owner explicitly reviews and merges ${base} with missing or failed evidence; identical retry merges once`, () => provideBoard(rig, Effect.gen(function* () {
+for (const base of ["main", "master", "dev"]) it.live(`owner explicitly reviews and merges ${base} with missing or failed evidence; identical retry merges once`, () => provideBoard(rig, Effect.gen(function* () {
   const f = yield* setup(base)
-  if (base === "master") yield* report(f)
+  const service = makeGitService({ workspaceFolder: rig.root, baseBranches: () => ({ [rig.work]: base }) })
+  expect(yield* refusal(service.mergeTeam(f.source, rig.work, f.head))).toBe("base_requires_review")
+  expect(yield* refusal(run(f.api, "project.integrate", { worktreeId: f.worktreeId, destinationId: f.destinationId, expectedHead: f.head }))).toBe(`the base branch "${base}" requires the owner's review`)
+  expect((yield* run(f.api, "project.files.read", { worktreeId: f.destinationId, path: "file.txt" })).result.editable).toBe(false)
+  if (base !== "main") yield* report(f)
   const { result: opened } = yield* prepare(f), review = opened.review
   expect(opened.comparison).toMatchObject({ head: f.head, baseHead: f.baseHead, base, files: { items: [{ path: "feature.txt" }], truncated: false } })
   expect(opened.comparison.diff.patch).toContain("+actual feature")
@@ -176,7 +181,7 @@ it.live("denies agents, service/caller-less execution, missing approval and unre
   expect(yield* refusal(run(member, "project.review.prepare", f))).toBe("command refused")
   const payload = { projectId: f.projectId, worktreeId: f.worktreeId, reviewId: review.reviewId, expectedHead: f.head, expectedBaseHead: f.baseHead, confirmed: true, decision: "approve_without_evidence", actor: { _tag: "owner" } }
   expect(yield* refusal(run(member, "project.review.approve", payload))).toBe("command refused")
-  expect(yield* refusal(run(f.api, "project.integrate", { worktreeId: f.worktreeId, destinationId: f.destinationId, expectedHead: f.head }))).toBe("integration requires a registered team source and its project workspace")
+  expect(yield* refusal(run(f.api, "project.integrate", { worktreeId: f.worktreeId, destinationId: f.destinationId, expectedHead: f.head }))).toBe('the base branch "main" requires the owner\'s review')
   const service = makeGitService({ workspaceFolder: rig.root })
   const reviewed = (yield* service.reviewMain(f.source, rig.work))
   for (const caller of [undefined, { _tag: "agent", agentId: f.member.agentId } as const, { _tag: "piece", namespace: "project" } as const]) {
@@ -299,7 +304,7 @@ it.live("redacts reports, comparison prose and durable outcomes through the prod
   expect(readFileSync(join(rig.work, "secret.txt"), "utf8")).toBe("git-review-secret\n")
 }), ["git-review-secret", "failed", "current", "reported"]).pipe(Effect.orDie))
 
-for (const base of ["main", "master"]) for (const [options, divergent] of [
+for (const base of ["main", "master", "dev"]) for (const [options, divergent] of [
   ["--squash", false],
   ["--no-ff --no-commit", true],
   ["--squash --no-commit --ff-only -s ours", true],
@@ -333,7 +338,7 @@ for (const base of ["main", "master"]) for (const [options, divergent] of [
   expect(git(rig.work, "config", `branch.${base}.mergeOptions`)).toBe(options)
 })).pipe(Effect.orDie))
 
-for (const base of ["main", "master"]) it.live(`already-contained reviewed commit in ${base} is a verified no-op`, () => provideBoard(rig, Effect.gen(function* () {
+for (const base of ["main", "master", "dev"]) it.live(`already-contained reviewed commit in ${base} is a verified no-op`, () => provideBoard(rig, Effect.gen(function* () {
   const f = yield* setup(base)
   git(rig.work, "merge", "--ff-only", f.head)
   save(rig.work, "later-base.txt", "later base work\n"); const contained = commit(rig.work, "After integration")
@@ -1416,3 +1421,106 @@ it.live('s29 1453: Prepare refuses a symbolic base tracking ref before fetch can
   expect(readFileSync(gh.gitCalls, 'utf8')).not.toContain('"fetch"');
   expect(Object.values(projectView(yield* snapshot).gitAttempts)).toHaveLength(0);
 })).pipe(Effect.orDie));
+
+it.live("records origin HEAD, preserves an old repository row, and pins its inferred base on first need", () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  git(rig.work, "branch", "dev")
+  git(rig.work, "update-ref", "refs/remotes/origin/dev", git(rig.work, "rev-parse", "HEAD"))
+  git(rig.work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/dev")
+  success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "sh" } }))
+  const [original] = yield* appendSetup([
+    eventOf({ _tag: "project.RepositoryAdded", repoId: "old-repository", name: "Old", path: rig.work }),
+    eventOf({ _tag: "project.RepositoryLocated", repoId: "old-repository", machineId: "local", path: rig.work })
+  ])
+  expect(projectView(yield* snapshot).repositories["old-repository"]?.baseBranch).toBeUndefined()
+  const opening = success(yield* call(owner, "client.sequence", {}))
+  const reply = success(yield* call(owner, "project.repositories", {}))
+  expect(reply.items).toMatchObject([{ repoId: "old-repository", baseBranch: "dev" }])
+  expect(success(yield* call(owner, "client.sequence", {})).sequence).toBe(opening.sequence)
+  git(rig.work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
+  expect(success(yield* call(owner, "project.repositories", {})).items).toMatchObject([{ baseBranch: "dev" }])
+  expect((yield* readLog).find((row) => row.sequence === original!.sequence)?.event).toEqual(original!.event)
+  expect((yield* readLog).filter((row) => row.event._tag === "project.RepositoryBaseChanged")).toHaveLength(1)
+})).pipe(Effect.orDie))
+
+it.live("the owner changes the stored base to an existing branch without switching the checkout; open reviews and agents refuse", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup("dev")
+  git(rig.work, "branch", "release/next")
+  const member = yield* client(f.socket, f.member.token)
+  expect(yield* refusal(run(member, "project.repository.base.set", { repoId: f.repoId, baseBranch: "release/next" }))).toBe("command refused")
+  expect(yield* refusal(run(f.api, "project.repository.base.set", { repoId: f.repoId, baseBranch: "missing" }))).toBe("Git: invalid_ref")
+  yield* run(f.api, "project.repository.base.set", { repoId: f.repoId, baseBranch: "release/next" })
+  expect(projectView(yield* snapshot).repositories[f.repoId]?.baseBranch).toBe("release/next")
+  expect(git(rig.work, "branch", "--show-current")).toBe("dev")
+  expect(yield* refusal(run(f.api, "project.create", { name: "Second", goal: "Check base", machineId: "local", repository: { _tag: "existing", repoId: f.repoId } }))).toBe('check out "release/next" in the main repository checkout before creating a project')
+  git(rig.work, "checkout", "release/next")
+  const { review } = (yield* prepare(f)).result
+  expect(review.base).toBe("release/next")
+  expect(yield* refusal(run(f.api, "project.repository.base.set", { repoId: f.repoId, baseBranch: "dev" }))).toBe("finish the repository's open review, Git operation, or project creation before changing its base branch")
+  expect((yield* approve(f, review)).result.outcome).toBe("merged")
+})).pipe(Effect.orDie))
+
+it.live("a dev project starts at the fetched remote base and leaves a dirty local base and its branch untouched", () => provideBoard(rig, Effect.gen(function* () {
+  let remoteHead = "", localHead = "", transport: ReturnType<typeof fakeGithub> | undefined
+  const f = yield* setup("dev", () => {
+    transport = fakeGithub(rig.root, rig.work)
+    vi.stubEnv("PATH", `${transport.bin}:${process.env.PATH}`)
+    localHead = git(rig.work, "rev-parse", "HEAD")
+    const tree = git(rig.work, "rev-parse", "HEAD^{tree}")
+    remoteHead = git(transport.bare, "-c", "user.name=Remote", "-c", "user.email=remote@example.invalid", "commit-tree", tree, "-p", localHead, "-m", "Remote advance")
+    git(transport.bare, "update-ref", "refs/heads/dev", remoteHead)
+    save(rig.work, "file.txt", "Owner's uncommitted work\n")
+  })
+  expect(git(f.source, "rev-parse", "HEAD^")).toBe(remoteHead)
+  expect(git(rig.work, "rev-parse", "refs/heads/dev")).toBe(localHead)
+  expect(readFileSync(join(rig.work, "file.txt"), "utf8")).toBe("Owner's uncommitted work\n")
+  expect((yield* readLog).find((row) => row.event._tag === "project.CreationFinished")?.event).toMatchObject({ detail: "Started from the fetched remote base for dev. The local base checkout was preserved." })
+  const fetches = readFileSync(transport!.gitCalls, "utf8").trim().split("\n").map((line) => JSON.parse(line)).filter((args: string[]) => args.includes("fetch"))
+  expect(fetches).toHaveLength(1)
+  expect(fetches[0]).toEqual(expect.arrayContaining(["--no-tags", "--no-prune", "--no-recurse-submodules", "--refmap=", "+refs/heads/dev:refs/remotes/origin/dev"]))
+})).pipe(Effect.orDie))
+
+for (const mode of ["missing remote", "fetch failure", "diverged base"] as const) it.live(`dev creation records its local fallback for ${mode}`, () => provideBoard(rig, Effect.gen(function* () {
+  let localHead = ""
+  const f = yield* setup("dev", () => {
+    localHead = git(rig.work, "rev-parse", "HEAD")
+    if (mode === "fetch failure") git(rig.work, "remote", "add", "origin", "file:///unavailable-s30-fixture")
+    if (mode === "diverged base") {
+      const transport = fakeGithub(rig.root, rig.work)
+      vi.stubEnv("PATH", `${transport.bin}:${process.env.PATH}`)
+      const tree = git(rig.work, "rev-parse", "HEAD^{tree}")
+      const remoteHead = git(transport.bare, "-c", "user.name=Remote", "-c", "user.email=remote@example.invalid", "commit-tree", tree, "-m", "Unrelated remote")
+      git(transport.bare, "update-ref", "refs/heads/dev", remoteHead)
+    }
+  })
+  expect(git(f.source, "rev-parse", "HEAD^")).toBe(localHead)
+  expect(git(rig.work, "rev-parse", "HEAD")).toBe(localHead)
+  const finished = (yield* readLog).find((row) => row.event._tag === "project.CreationFinished")!.event
+  const reason = mode === "missing remote" ? "no remote is configured" : mode === "fetch failure" ? "fetching its remote base failed" : "not an ancestor"
+  expect(finished).toMatchObject({ detail: expect.stringContaining(reason) })
+})).pipe(Effect.orDie))
+
+it.live("changing a dev base refuses an active integration in any checkout", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup("dev")
+  git(rig.work, "branch", "release/next")
+  save(f.source, "file.txt", "Project change\n"); commit(f.source, "Project change")
+  save(rig.work, "file.txt", "Base change\n"); commit(rig.work, "Base change")
+  expect(() => git(f.source, "merge", "--no-edit", "dev")).toThrow()
+  expect(yield* refusal(run(f.api, "project.repository.base.set", { repoId: f.repoId, baseBranch: "release/next" }))).toBe("finish the repository's open review, Git operation, or project creation before changing its base branch")
+  expect(projectView(yield* snapshot).repositories[f.repoId]?.baseBranch).toBe("dev")
+  git(f.source, "merge", "--abort")
+  yield* run(f.api, "project.repository.base.set", { repoId: f.repoId, baseBranch: "release/next" })
+})).pipe(Effect.orDie))
+
+it.live("the owner can set an old repository's base from an existing branch while its checkout is detached", () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  git(rig.work, "branch", "dev"); git(rig.work, "checkout", "--detach")
+  success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "sh" } }))
+  yield* appendSetup([
+    eventOf({ _tag: "project.RepositoryAdded", repoId: "old-detached", name: "Old", path: rig.work }),
+    eventOf({ _tag: "project.RepositoryLocated", repoId: "old-detached", machineId: "local", path: rig.work })
+  ])
+  success(yield* call(owner, "project.repository.base.set", { repoId: "old-detached", baseBranch: "dev" }))
+  expect(projectView(yield* snapshot).repositories["old-detached"]?.baseBranch).toBe("dev")
+  expect(git(rig.work, "branch", "--show-current")).toBe("")
+})).pipe(Effect.orDie))

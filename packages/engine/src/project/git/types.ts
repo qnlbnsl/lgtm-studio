@@ -63,6 +63,10 @@ export interface GitService {
   discover(): GitOperation<Bounded<Repository>>;
   createRepository(name: string): GitOperation<Repository>;
   register(folder: string): GitOperation<Repository>;
+  detectBaseBranch(folder: string): GitOperation<string>;
+  repositoryBase(folder: string): GitOperation<string>;
+  projectStart(folder: string, base: string): GitOperation<{ head: string | null; detail: string }>;
+  validateBranch(folder: string, name: string): GitOperation<void>;
   branches(folder: string): GitOperation<Bounded<Branch>>;
   worktrees(folder: string): GitOperation<Bounded<Worktree>>;
   createWorktree(folder: string, name: string, from?: string, branchPrefix?: string): GitOperation<Worktree>;

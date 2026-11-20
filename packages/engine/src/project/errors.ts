@@ -94,6 +94,7 @@ export const projectRefusalReasons = new Set([
   "repository is already registered",
   "repository location not found",
   "repository not found",
+  "finish the repository's open review, Git operation, or project creation before changing its base branch",
   "sprint dependencies are incomplete",
   "sprint is already complete",
   "sprint label already exists",

@@ -1335,24 +1335,13 @@ The owner can overrule that choice.
 The standalone mock keeps the complete sample design.
 
 - The task label prefix needs a stored project prefix and task label allocation that uses it.
-- The base branch needs a stored owner setting, a read of existing local branches, and engine validation against those branches.
-  Changing it must be refused while a review or integration is open.
-  The repository's main checkout currently supplies the review destination.
-  The destination is a registered checkout with the branch checked out, not a stored branch name.
-  These seven independent read sites live under `packages/engine/src/project/`.
-  `lifecycle.ts:46` requires `main` or `master` at creation.
-  `gitReview.ts:27` checks the registered review destination.
-  `git/index.ts:362` checks the main comparison.
-  `git/index.ts:425` refuses ordinary integration into those branches.
-  `git/index.ts:693` checks the approved review's base.
-  `gitCommands.ts:108` resolves the registered parent for an update.
-  `files.ts:18` makes those branches read-only in Files.
-  The workspace access boundary in `gitApi.ts:56` also treats the repository checkout specially.
-  The project has its own dedicated branch in `Project.worktreeId`.
-  Team integration targets the project workspace.
-  Supporting an arbitrary destination requires changes to registration, the review destination, and the execution safety boundary.
-  This exceeds the brief's limit of one setting and one read site, so s14 uses its explicit fallback.
-  The eventual implementation must preserve the existing default and prevent branch names from being interpreted as Git options.
+- The base branch is now a stored repository setting, implemented by unit s30.
+  The owner command `project.repository.base.set` validates an existing local branch.
+  It refuses an open review, an unfinished Git operation, an active merge, or an unfinished project creation.
+  The website shows the recorded base through its existing branch display.
+  A website control for changing the base branch remains unbuilt.
+  The command line and client application programming interface can change it now.
+  The main checkout must still have that base checked out for project creation and local review approval.
 - The project permission picker needs an owner setting and a defined way to apply it across existing agents without exceeding their permission ceilings.
 - Write tests first needs a stored project policy and enforcement by the build workflow.
 - Agent review needs a stored project policy and enforcement when assigning reviewers and handing off work.

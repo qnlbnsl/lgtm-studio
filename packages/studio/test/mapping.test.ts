@@ -36,6 +36,9 @@ describe("small pieces", () => {
 })
 
 describe("machines, repositories and workspaces", () => {
+  it("shows the recorded dev base when the main checkout record names another branch", () => {
+    expect(mapRepository({ ...section.repositories[0]!, baseBranch: "dev" }, section.workspaces).main).toBe("dev")
+  })
   it("lists each machine the engine names once, with no invented figures", () => {
     const machines = mapMachines(section, now)
     expect(machines).toEqual([{ id: "local", name: "local", role: "master", status: "online", here: true,

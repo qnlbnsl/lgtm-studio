@@ -9,7 +9,8 @@ import * as Fiber from "effect/Fiber"
 import * as Redacted from "effect/Redacted"
 import * as SqlClient from "effect/sql/SqlClient"
 import { afterEach, beforeEach, expect, vi } from "vitest"
-import { checkoutMainReason } from "../../src/project/lifecycle.ts"
+import { checkoutBaseReason } from "../../src/project/baseBranch.ts"
+const checkoutMainReason = checkoutBaseReason("main")
 import * as Lifecycle from "../../src/project/lifecycle.ts"
 import { EventLog, LogWriteFailed } from "../../src/log/EventLog.ts"
 import { RunnerRejected } from "../../src/runner/Runner.ts"
@@ -569,6 +570,7 @@ live("issue 591: an existing master checkout remains a usable owner review desti
   yield* provideRig(rig, { runner, secrets }, Effect.gen(function* () {
     const repoId = yield* setup()
     git(rig.work, "branch", "-m", "master")
+    success(yield* call(owner, "project.repository.base.set", { repoId, baseBranch: "master" }))
     const request = payload(repoId), preview = success(yield* call(owner, "project.placement.preview", request)).result
     const created = success(yield* call(owner, "project.create", request))
     expect(success(yield* call(owner, "project.create", request))).toEqual(created)

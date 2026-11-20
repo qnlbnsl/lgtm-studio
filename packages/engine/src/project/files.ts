@@ -10,12 +10,13 @@ import type { ReadHandler } from "../api/reads.ts"
 import type { ReachInput } from "../routing/reach.ts"
 import { gitCall, gitReply, safePath, withGit, workspacePath } from "./gitApi.ts"
 import type { FileRead, GitFailure } from "./git/index.ts"
+import { readonlyBaseReason } from "./baseBranch.ts"
 import { own, projectView } from "./view.ts"
 
 // A file read may carry up to 512 KiB of text. The WebSocket frame limit is
 // 1 MiB, so the reply keeps a margin for JSON escaping.
 const fileReplyBudget = 960 * 1024
-export const baseBranch = (workspace: Workspace) => ["main", "master"].includes(workspace.branch)
+const baseBranch = (workspace: Workspace, base: string) => workspace.branch === base
 export const fileSaveSource = (noticeId: string) => `file-save:${noticeId}`
 
 // Valid at admission and at later dispatch, where the caller is absent. The
@@ -54,7 +55,7 @@ const readFile: ReadHandler = (input, raw) => withGit(input, (git) => Effect.gen
     // Text holding a registered secret is shown redacted and cannot be saved,
     // because a save would write the placeholder over the secret.
     const clean = yield* input.runtime.log.redactText(file.text)
-    result = { ...file, text: clean, editable: clean === file.text && !baseBranch(workspace) }
+    result = { ...file, text: clean, editable: clean === file.text && !baseBranch(workspace, yield* gitCall(git.repositoryBase(workspace.path))) }
   }
   if (Buffer.byteLength(JSON.stringify({ requestId: raw.requestId, result })) > fileReplyBudget - 4096) result = { kind: "large", path, size: file.size }
   return { reply: yield* gitReply(input, raw.requestId, result, false, fileReplyBudget) }
@@ -69,7 +70,8 @@ export const writeFile: PiecePlanner = (input, raw) => withGit(input, (git) => E
   const projectId = raw.projectId as string, path = raw.path as string, text = raw.text as string
   const project = own(projectView(input.snapshot).projects, projectId)
   if (project === undefined || project.archiving || project.archivedAt !== undefined) return yield* refused("project is unavailable to this caller")
-  if (baseBranch(workspace)) return yield* refused("the base branch is read-only; agents never edit it directly")
+  const base = yield* gitCall(git.repositoryBase(workspace.path))
+  if (baseBranch(workspace, base)) return yield* refused(readonlyBaseReason(base))
   yield* safePath(input, path)
   if ((yield* input.runtime.log.redactText(text)) !== text) return yield* refused("the file contains private data and cannot be saved here")
   const version = yield* git.writeFile(workspace.path, path, raw.version as string, Buffer.from(text, "utf8")).pipe(Effect.mapError((error: GitFailure) =>

@@ -91,6 +91,7 @@ export const eventStructure: RedactionStructure = { taggedFields: {
     alertIds: { elements: identity }, postIds: { elements: identity }, worktreeIds: { elements: identity } },
   "project.Restored": { projectId: identity },
   "project.RepositoryAdded": { repoId: identity },
+  "project.RepositoryBaseChanged": { repoId: identity },
   "project.RepositoryLocated": { repoId: identity },
   "project.WorktreeCreated": workspace,
   "project.Created": project,

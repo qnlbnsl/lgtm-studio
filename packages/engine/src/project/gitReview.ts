@@ -25,7 +25,7 @@ const destination = (input: Input, raw: Record<string, unknown>, git: GitService
   const target = yield* (allowOtherBranch ? workspaceReference(input, { worktreeId: raw.destinationId }) : workspacePath(input, { worktreeId: raw.destinationId }, git))
   const { repository, location } = yield* repositoryPath(input, repoId)
   if (target.repoId !== repoId || target.checkout !== "main" || target.path !== repository.path || target.path !== location.path
-    || !["main", "master"].includes(target.branch)) return yield* refused("main review requires the registered project and its repository base")
+    || target.branch !== (yield* gitCall(git.repositoryBase(repository.path)))) return yield* refused("main review requires the registered project and its repository base")
   return target
 })
 const validThread = (input: Input, projectId: string, agentId: string, sequence: number) => Effect.gen(function* () {

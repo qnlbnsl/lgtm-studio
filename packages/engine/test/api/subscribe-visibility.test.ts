@@ -89,6 +89,7 @@ const samples: Record<string, (a: string, n: string) => Record<string, unknown>>
   "project.MainReviewDecided": () => ({ review: { ...gitReviewSample, decision: "approve_without_evidence", outcome: "refused", reason: "stale_state", decidedAt: 2000 } }),
   "project.SettingsChanged": () => ({ settings: { workspaceFolder: "/tmp", shell: "zsh" } }),
   "project.RepositoryAdded": () => ({ repoId: "project-repo", name: "Repository", path: "/tmp" }),
+  "project.RepositoryBaseChanged": () => ({ repoId: "project-repo", baseBranch: "dev" }),
   "project.RepositoryLocated": () => ({ repoId: "project-repo", machineId: "local", path: "/tmp" }),
   "project.WorktreeCreated": () => ({ worktreeId: "project-workspace", repoId: "project-repo", machineId: "local", branch: "main", path: "/tmp", checkout: "main" }),
   "project.Created": () => ({ projectId: "project-one", repoId: "project-repo", name: "Project", goal: "Exercise event privacy", leadAgentId: "agent-self", worktreeId: "project-workspace", machineId: "local" }),

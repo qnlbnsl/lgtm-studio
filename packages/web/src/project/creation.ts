@@ -243,7 +243,7 @@ export class NewProjectSession {
         if (reply._tag === "Failure") {
           if (reply.failure._tag !== "CommandError") return yield* Effect.fail(reply.failure)
           const pending = yield* readCreations(client)
-          if (!correctable.has(reply.failure.reason)) return { kind: "uncertain" as const, pending }
+          if (!correctable.has(reply.failure.reason) && !/^check out "(?:[^"\\\x00-\x20\x7f]|\\")+" in the main repository checkout before creating a project$/.test(reply.failure.reason)) return { kind: "uncertain" as const, pending }
           return { kind: "refused" as const, pending }
         }
         const project = yield* readProject(client, reply.success.projectId)

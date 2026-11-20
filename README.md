@@ -138,6 +138,32 @@ See [remote access](docs/remote-access.md) before using a proxy or a phone.
 An installer, startup at login, and loading project configuration from
 `.lgtm` are the next piece of work.
 
+## Repository base branches
+
+Each registered repository records its own base branch.
+Registration uses the branch named by `refs/remotes/origin/HEAD` when it exists.
+Otherwise, registration uses the main checkout's current branch.
+Older repository records gain this setting on first use without changing old events.
+New repositories created by LGTM Studio use `main`.
+The main checkout must have the recorded base checked out before creating a project.
+
+The owner can change the base to an existing local branch through the client API or the command line:
+
+```sh
+./bin/lgtm project.repository.base.set --input '{"repoId":"<repository-id>","baseBranch":"dev"}'
+```
+
+The command refuses an open review, an unfinished Git operation, an active merge, or an unfinished project creation in that repository.
+Changing the setting does not switch the owner's checkout.
+The website displays the recorded base in its existing repository details.
+It does not yet have a control to change that setting.
+
+Before creating a project worktree, the engine fetches the base branch from its configured remote.
+It uses the fetched commit when the local base is its ancestor.
+A missing remote, a failed fetch, or a local base that is ahead or diverged uses the local base instead.
+The completed creation event records the selected source or the fallback reason.
+This operation never moves the local base branch or changes the main checkout's files.
+
 ## Worker worktrees
 
 A worker started inside a project receives its own registered Git worktree.

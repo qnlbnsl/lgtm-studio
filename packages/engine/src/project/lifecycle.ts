@@ -1,3 +1,4 @@
+import { checkoutBaseReason, isCheckoutBaseReason } from "./baseBranch.ts"
 import { openDefaultProjectChannels } from "./defaultChannels.ts"
 import { randomUUID } from "node:crypto"
 import { dirname, join } from "node:path"
@@ -42,10 +43,8 @@ ${goal}`
 export const projectLifecycleCommand = (name: string) => name === "project.create" || name === "project.archive"
 const fresh = <S extends Schema.Top & { readonly Type: string }>(schema: S): S["Type"] => Schema.decodeUnknownSync(schema as never)(randomUUID()) as S["Type"]
 const stem = (name: string) => name.normalize("NFKD").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60).replace(/-$/, "") || "project"
-// The New project consumer treats this fixed pre-effect reason as correctable.
-export const checkoutMainReason = "check out main or master in the main repository checkout before creating a project"
-const requireMainBranch = (branch: string | null) => branch !== null && ["main", "master"].includes(branch)
-  ? Effect.void : Effect.fail(refused(checkoutMainReason))
+const requireMainBranch = (branch: string | null, base: string) => branch === base
+  ? Effect.void : Effect.fail(refused(checkoutBaseReason(base)))
 
 const planCreation = (input: Input, payload: Payload<"project.create">, bodyHash: string) => Effect.gen(function* () {
   if (payload.machineId !== "local") return yield* refused("only the confirmed local machine can start a project")
@@ -70,9 +69,9 @@ const planCreation = (input: Input, payload: Payload<"project.create">, bodyHash
     const path = dirname(actual.commonDirectory)
     yield* withGit(input, (git) => Effect.gen(function* () {
       yield* git.register(path).pipe(Effect.mapError(() => refused("main repository checkout is required")))
-      yield* requireMainBranch((yield* gitCall(git.state(path))).branch)
+      yield* requireMainBranch((yield* gitCall(git.state(path))).branch, repo.baseBranch ?? (yield* gitCall(git.repositoryBase(path))))
     }))
-    repository = { ...repo, path }
+    repository = { ...repo, path, baseBranch: repo.baseBranch ?? (yield* withGit(input, (git) => gitCall(git.repositoryBase(path)))) }
     repositoryIdentity = yield* creationIo(() => folderIdentity(path))
   } else {
     const repoName = yield* cleanName(input, payload.repository.name)
@@ -84,7 +83,7 @@ const planCreation = (input: Input, payload: Payload<"project.create">, bodyHash
       }
       throw new Error()
     })
-    repository = { repoId: fresh(RepositoryId), name: repoName, path }
+    repository = { repoId: fresh(RepositoryId), name: repoName, path, baseBranch: "main" }
   }
   if (duplicateName(input, { repoId: repository.repoId, machineId: payload.machineId, name })
     || pending.some((row) => row.repository.repoId === repository.repoId && row.workspace.machineId === payload.machineId && row.name.toLowerCase() === name.toLowerCase())) return yield* refused("project name already exists in this repository")
@@ -165,7 +164,7 @@ export const prepareProjectLifecycle = (input: Input, name: string, payload: Rec
     if (prospective === undefined) {
       const selected = yield* planCreation(input, p, bodyHash).pipe(Effect.result)
       if (selected._tag === "Failure") {
-        if (selected.failure.reason !== checkoutMainReason) return yield* selected.failure
+        if (!isCheckoutBaseReason(selected.failure.reason)) return yield* selected.failure
         // Only an initial, effect-free refusal enters ordinary final admission.
         // Saved intents and other preparation failures keep their retry policy.
         const initialRefusal: Planner = (current) => Effect.gen(function* () {
@@ -178,7 +177,7 @@ export const prepareProjectLifecycle = (input: Input, name: string, payload: Rec
             || !same(before.settings, now.settings) || !same(related(before), related(now))) return yield* refused("project state changed; refresh and retry")
           yield* cleanName(current, p.name)
           yield* leadDefaults(current, p.lead === undefined ? now.settings?.lead : { ...p.lead, permissionChosen: true })
-          return yield* refused(checkoutMainReason)
+          return yield* refused(selected.failure.reason)
         })
         return initialRefusal
       }
@@ -205,7 +204,10 @@ export const prepareProjectLifecycle = (input: Input, name: string, payload: Rec
     yield* dedicatedCreation(plan)
     // Recheck saved intents too, before claiming folders or changing Git.
     if (!plan.newRepository || (yield* creationIo(() => exists(join(plan.repository.path, ".git"))))) yield* withGit(input, (git) => gitCall(git.state(plan.repository.path)).pipe(
-      Effect.flatMap((state) => requireMainBranch(state.branch))))
+      Effect.flatMap((state) => Effect.gen(function* () {
+        const base = plan.repository.baseBranch ?? (yield* gitCall(git.repositoryBase(plan.repository.path)))
+        yield* requireMainBranch(state.branch, base)
+      }))))
     const witness = `${p.requestId}\n${plan.bodyHash}\n`
     if (plan.repositoryIdentity === undefined) {
       const identity = yield* claimFolder(plan.workspaceFolder, plan.repository.path, witness)
@@ -223,14 +225,14 @@ export const prepareProjectLifecycle = (input: Input, name: string, payload: Rec
       }
       yield* clearFolderClaim(plan.workspaceFolder, plan.workspace.path, witness, plan.folderIdentity!)
     }
-    yield* withGit(input, (git) => ensureWorktree(plan, git))
+    const creationDetail = yield* withGit(input, (git) => ensureWorktree(plan, git))
     const observed = { ...input, snapshot: yield* runtime.views.snapshot }
     const mainState = yield* withGit(observed, (git) => Effect.gen(function* () {
       yield* verifyCreation(plan, git)
       return yield* gitCall(git.state(plan.repository.path))
     }))
-    yield* requireMainBranch(mainState.branch)
-    return finishCreation(observed, plan, mainState.branch!)
+    yield* requireMainBranch(mainState.branch, plan.repository.baseBranch ?? (yield* withGit(observed, (git) => gitCall(git.repositoryBase(plan.repository.path)))))
+    return finishCreation(observed, plan, mainState.branch!, creationDetail)
   }
   const projectId = payload.projectId as string
   yield* runtime.log.transact((append) => Effect.gen(function* () {
@@ -260,7 +262,7 @@ export const prepareProjectLifecycle = (input: Input, name: string, payload: Rec
 // The handler must supply the request-local physical observation. There is no
 // Git-reading fallback on the writer path.
 export const createProject: Planner = () => Effect.fail(refused("project creation intent is unavailable"))
-const finishCreation = (observed: Input, observedPlan: ProjectCreation, mainBranch: string): Planner => (input, raw) => Effect.gen(function* () {
+const finishCreation = (observed: Input, observedPlan: ProjectCreation, mainBranch: string, detail?: string): Planner => (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.create">
   const plan = own(projectView(input.snapshot).creations, p.requestId)
   if (plan === undefined) return yield* refused("project creation intent is unavailable")
@@ -287,7 +289,7 @@ const finishCreation = (observed: Input, observedPlan: ProjectCreation, mainBran
     { _tag: "project.Created", projectId: plan.projectId, repoId: plan.repository.repoId, name: plan.name, goal: plan.goal,
       leadAgentId: started.agentId, worktreeId: plan.workspace.worktreeId, machineId: plan.workspace.machineId, shell: plan.shell, stage: "define" },
     ...openDefaultProjectChannels({ projectId: plan.projectId, leadAgentId: started.agentId }),
-    { _tag: "project.CreationFinished", creationRequestId: p.requestId }
+    { _tag: "project.CreationFinished", creationRequestId: p.requestId, ...(detail === undefined ? {} : { detail }) }
   ], reply: () => ({ requestId: p.requestId, projectId: plan.projectId }) }
 })
 export const archiveProject: Planner = (input, raw) => Effect.gen(function* () {

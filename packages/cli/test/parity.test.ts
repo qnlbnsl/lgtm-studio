@@ -180,6 +180,7 @@ for (const { command, words, form } of invocations) {
       "project.design.read": { repoId: "repo", projectId: "project", revisionId: "before" },
       "project.settings": {},
       "project.settings.set": { settings: { workspaceFolder: root.work, shell: "zsh" } },
+      "project.repository.base.set": { repoId: "repo", baseBranch: "dev" },
       "project.repository.add": { name: "Product", path: root.work, machineId: "local" },
       "project.repository.locate": { repoId: "repo", machineId: "local", path: root.work },
       "project.repositories": { after: "repo", limit: 20 },

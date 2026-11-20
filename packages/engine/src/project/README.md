@@ -100,14 +100,14 @@ addresses are never attached to public failures.
 
 Integration requires a registered team source and its project destination.
 The service refuses a dirty source or destination and direct integration into
-`main` or `master`. Conflict choices carry a fingerprint and choices, without
+the repository's recorded base branch. Conflict choices carry a fingerprint and choices, without
 client-supplied write content. The service reconstructs current canonical hunks.
 The visible owner review dialog uses bounded local comparison data and shows the prepared delivery mode.
 The hosted title and description come from the project name, goal, and reported evidence.
 Manual editing and replacement generation remain unavailable.
 The unused external compare-link route has been removed.
 
-## Explicit owner review and merge to main or master
+## Explicit owner review and merge to the recorded base
 
 `project.review.prepare` takes `projectId`, its assigned `worktreeId`, and the
 registered repository base's `destinationId`. It reads complete bounded Git
@@ -174,7 +174,7 @@ It fetches and fast-forwards a clean local base checkout on its registered branc
 It preserves a dirty checkout or a checkout on another branch.
 The optional `localSync` reply explains whether that update completed.
 A failed local update still records the confirmed remote merge.
-The original `project.integrate` and `mergeTeam` main/master refusal remains.
+The `project.integrate` and `mergeTeam` refusal protects the repository's recorded base branch.
 
 The approval reply has an explicit `outcome` of `merged` or `refused`, with a
 fixed safe `reason` on refusal. A refusal is not a successful merge. The log and
@@ -429,7 +429,7 @@ Abandonment takes the lifecycle lane and records only `project.CreationFinished`
 It leaves the repository, checkout, branches, exclusions, witnesses, files, and modes untouched.
 
 
-The fixed correctable creation refusal for a main checkout outside main or master is “check out main or master in the main repository checkout before creating a project”.
+A main checkout outside the recorded base receives a correctable refusal that names that base.
 Creation checks this before effects, including saved intent retries, and never records a feature branch as its main review destination.
 Only a current-admitted initial branch refusal with no creation intent receives a terminal refusal receipt; unavailable accounts and unfinished intents retain their existing retry behavior.
 The later New project consumer joins this fixed reason directly; unknown creation errors retain their frozen request handling.
@@ -599,3 +599,20 @@ The command-line interface exposes the same operation:
 
 An archived project remains reachable through All projects and its repository's project list.
 Open its Settings tab to restore or delete it.
+
+### Changing a repository base branch
+
+`project.repository.base.set` takes `repoId` and `baseBranch` from the owner.
+The branch must exist locally.
+An open review, an unfinished Git operation, an active merge, or an unfinished project creation refuses the change.
+The main checkout must be switched to the recorded branch before project creation or local approval.
+The setting does not move a branch or switch a checkout.
+Registration records the branch named by `refs/remotes/origin/HEAD`, or the main checkout's current branch when it is absent.
+Old rows acquire the same inferred value through a new `project.RepositoryBaseChanged` event on first need.
+New repositories use `main`.
+
+Project creation fetches the configured remote base through the hardened explicit tracking-reference fetch.
+It uses the fetched commit when the local base is an ancestor.
+It otherwise uses the local commit and records why in `project.CreationFinished.detail`.
+A resumed creation that finds its existing worktree records that it reused that worktree.
+The fetch never updates a local branch or the main checkout's files.

@@ -14017,7 +14017,7 @@ The fix is to check the decoded text of a Scalable Vector Graphics file and to r
 ## 858. The "Files" tab decides the read-only base branch by name
 
 Found: 2026-11-14, in the review of pull request 47.
-State: open.
+State: fixed in unit s30 on 2026-11-20.
 
 `baseBranch` in `packages/engine/src/project/files.ts` treats only branches named `main` or `master` as the base branch.
 A repository whose base branch has another name can be edited from the "Files" tab.
@@ -14224,10 +14224,14 @@ The standalone sample keeps its existing behaviour.
 
 ## 877. A project has no configurable base branch.
 
-State: open. Checked against the code on 2026-11-15. grep of packages/contracts/src finds no project base branch setting or command. Kind: visible to the owner.
+State: fixed in unit s30 on 2026-11-20.
 
 The engine does not expose a project base branch setting or a command to change it.
 The live base branch picker is disabled.
+
+The setting belongs to the repository.
+The owner can change it through `project.repository.base.set`.
+The website control remains listed in `docs/features.md`.
 
 ## 878. A project lead cannot change its subscription.
 
@@ -20640,7 +20644,7 @@ Project creation requires "main" or "master" to be checked out (`requireMainBran
 The pull request flow refuses any other destination (`project/gitReview.ts`, `mainComparison` in `project/git/index.ts`).
 The guard against merging into the base and the Files tab's read-only rule also match those two names only.
 A repository whose base branch is "dev" can be registered, and then nothing can be created or delivered in it.
-State: Open.
+State: fixed in unit s30 on 2026-11-20.
 
 ## 1468. A new worktree starts from the local base branch without fetching
 
@@ -20648,7 +20652,12 @@ Found on 2026-11-20 by reading the code. This extends issue 355.
 The project worktree is created from the main checkout's local commit (`project/creationGit.ts`).
 A main checkout that is far behind its remote gives every agent an old tree.
 "Update from parent" merges the same stale local branch.
-State: Open.
+State: fixed in unit s30 on 2026-11-20.
+
+Creation fetches one remote base with the existing hardened Git options.
+It uses that commit only when the local base is an ancestor.
+The creation records a local fallback for a missing remote, a failed fetch, or a base that is ahead or diverged.
+The local base branch and checkout are preserved.
 
 ## 1469. Nothing prepares a new worktree: no submodules, no ignored environment files, no setup command
 
@@ -20698,3 +20707,24 @@ Recorded on 2026-11-20. The owner asked for all open pull requests to be merged.
 The pull request's own description says that no full code review ran and that the whole suite was not rerun.
 Issue 1473 is one fault that the whole suite then showed.
 State: Open until an independent review of that change has run.
+
+## 1475. The website blanks the repository base after mapping it
+
+Found on 2026-11-20 during unit s30's browser journey.
+State: fixed in unit s30 on 2026-11-20.
+
+`mapBoardRecords` replaced every repository's mapped base branch with an empty string.
+The existing repository details therefore showed a blank base even when the engine held it.
+The board mapping now preserves the repository mapping, including its recorded base branch.
+The browser journey checks the value before an owner change and after a reload.
+
+## 1476. Legacy base inference invalidates the opening creation read
+
+Found on 2026-11-20 during unit s30's full regression run.
+State: fixed in unit s30 on 2026-11-20.
+
+The creation form reads the event sequence before and after loading repository details.
+Inferring a legacy repository's base during that load appended an event between those reads.
+The form therefore rejected its own first load as changed state.
+The owner's opening sequence and snapshot reads now pin available legacy repositories before reporting their sequence.
+The existing mounted creation journeys cover the initial load and its later owner sessions.
