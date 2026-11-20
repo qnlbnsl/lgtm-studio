@@ -1658,3 +1658,48 @@ The owner finds the present Define phase poor and wants a much better user exper
 When a project starts with a goal, the Define agent must read the repository, run scripts where needed, ask questions, and then produce the end-result document.
 The entry "A Define workspace with a conversation and an evolving end-result document" and issue 1464 record earlier observations.
 The design is worked out in the mock first; nothing here is decided yet.
+
+## Bringing a repository's existing mocks into LGTM Studio, and support for other languages and tools
+
+State: Idea. Stated by the owner on 2026-11-20, after registering a second repository.
+
+### The problem the owner saw
+
+The second repository is registered, but LGTM Studio shows no mocks for it.
+That repository already has its own mock application, a separate package that runs the product's real components on sample data.
+It also already has a design file in the Figma format.
+LGTM Studio has no way to take either of them in.
+
+### The process the owner described
+
+1. Produce the OpenPencil design file, in the Figma format, holding all design components and mock screens.
+2. Convert that file into the mock application.
+3. Build the mock application.
+
+The owner prefers converting an existing mock project over merely importing it.
+This follows the earlier entries "The design file is the source of truth" and "Mocks made by the Design team".
+
+### The open question: languages other than React
+
+The owner expects a problem when a repository does not use React.
+The conversion from a design file to a mock application, and the build of that application, differ for each language and user-interface toolkit.
+
+### What the owner hopes for
+
+The first agent that prepares a repository checks four things.
+See the entry "A repository agent that works in the main checkout and prepares a repository for projects".
+
+- Which language and toolkit does the repository use?
+- Does it already have a testing framework?
+- Does it already have a design framework?
+- Does it already have a mocks framework?
+
+Where LGTM Studio lacks support for what the agent finds, the agent opens a pull request against LGTM Studio that adds support for that language or tool.
+This matches the earlier entry about per-language test tools arriving by pull request.
+
+### Undecided
+
+- What "support for a language" consists of: most likely a small adapter that states how to install, test, build and serve the mock application, and how design components map to code.
+- Whether an existing mock application is used as it is, with LGTM Studio only told how to build and serve it, before any conversion from the design file is attempted.
+- Who reviews a pull request that an agent opens against LGTM Studio from another repository's work, and where it is opened when the installation is not a checkout of LGTM Studio.
+- How a mock application that needs a device or a simulator is shown in the Mocks tab.
