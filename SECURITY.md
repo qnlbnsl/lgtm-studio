@@ -436,7 +436,12 @@ The fetch updates no local branch and writes no main-checkout files.
 Only a confirmed GitHub delivery against that same remote branch may start from the fetched commit.
 Local delivery starts from the local base.
 The creation intent stores the selected immutable starting commit before the worktree write.
-The completed project retains that commit so a later change to local delivery cannot attribute imported upstream history to the project.
+The starting remote is selected from repository configuration.
+Local review hides the commit history that this remote base held when the project was created.
+The comparison treats that configured remote's starting history as inherited work.
+A later change to local delivery preserves this commit-history boundary.
+File comparisons use one merge-base query without merging trees or writing objects.
+Divergent inherited histories may add visible changes while preserving the project's own edits.
 
 The fetch still honours repository `core.sshCommand`, credential helpers, SSH configuration, and the owner's proxy configuration.
 Repository configuration can therefore run code as the service user or redirect traffic during creation as well as delivery.

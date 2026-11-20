@@ -12,6 +12,7 @@ import { afterEach, beforeEach, expect, vi } from "vitest"
 import { checkoutBaseReason } from "../../src/project/baseBranch.ts"
 const checkoutMainReason = checkoutBaseReason("main")
 import * as Lifecycle from "../../src/project/lifecycle.ts"
+import { CommandHandler } from "../../src/commands/CommandHandler.ts"
 import { EventLog, LogWriteFailed } from "../../src/log/EventLog.ts"
 import { RunnerRejected } from "../../src/runner/Runner.ts"
 import { projectView } from "../../src/project/view.ts"
@@ -624,4 +625,25 @@ live("refuses an unavailable requested lead before allocating a project instead 
     expect(success(yield* call(owner, "project.creations", {})).items).toEqual([])
     expect(git(rig.work, "worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1)
   }))
+}))
+
+live("round 4: a second starting decision cannot overwrite the stored creation start", () => Effect.gen(function* () {
+  const runner = yield* makeFakeRunner(), secrets = makeFakeSecrets()
+  const head = git(rig.work, "rev-parse", "HEAD")
+  const request = yield* provideRig(rig, { runner, secrets, wrapLog: failCreated() }, Effect.gen(function* () {
+    const request = payload(yield* setup())
+    expect(failureOf(yield* call(owner, "project.create", request))?._tag).toBe("LogWriteFailed")
+    return request
+  }))
+  yield* provideRestart(rig, runner.layer, Effect.gen(function* () {
+    yield* registerRebuildCheck(); yield* recover
+    const handler = yield* CommandHandler, input = yield* handler.input({ _tag: "owner" })
+    const original = projectView(yield* snapshot).creations[request.requestId]!.start
+    const before = (yield* readLog).length
+    yield* Lifecycle.recordCreationStart(input.runtime, request.requestId, { head: "f".repeat(40), detail: "A later stale decision" })
+    expect(projectView(yield* snapshot).creations[request.requestId]!.start).toEqual(original)
+    expect((yield* readLog).length).toBe(before)
+    const created = success(yield* call(owner, "project.create", request))
+    expect(projectView(yield* snapshot).projects[created.projectId as string]?.startingHead).toBe(head)
+  }), { secrets })
 }))

@@ -173,10 +173,10 @@ Local delivery starts from the local base.
 The creation intent records its immutable starting commit before creating the worktree.
 The project retains that commit after creation and across service restarts.
 Review files use the later merge base of the starting commit and the current review target with the project head.
-Divergent inherited merge bases use a combined tree without a checkout or reference write.
-An inherited conflict or a configured external merge driver refuses that comparison.
+One `git merge-base <head> <target> <start>` call selects the comparison base without merging trees or writing objects.
+When the inherited histories diverge, the review may show additional inherited changes while retaining the project's own edits.
 Review commits and pending counts exclude history already reachable from that starting commit.
-A later loss of hosted delivery therefore cannot list imported upstream work as the project's own.
+A later loss of hosted delivery still excludes the starting history from the project's commit list.
 A missing remote, a failed fetch, or a local base that is ahead or diverged uses the local base instead.
 Remote discovery, fetching, and the GitHub authentication probe share a 20-second limit and fall back to the local base on failure.
 The authentication probe stays inside the Git gate to keep the fetch and delivery selection in one uninterrupted engine operation.

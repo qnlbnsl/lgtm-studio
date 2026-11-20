@@ -21,7 +21,7 @@ const admissionRefusals = new Set([
   "set the workspace folder before using Git", "workspace settings changed; refresh and retry",
   "only the local machine can register a checkout before machine pairing", "a path cannot contain a registered secret",
   "an existing local Git checkout root with a named branch is required", "repository is already registered",
-  "origin/HEAD has no valid local base branch; registration requires a local main or master branch, or an unborn current branch",
+  "without a usable local remote default, registration requires main or master to be the current branch, or the current branch to be unborn",
   "the repository base branch name must contain at most 128 characters",
   "repository not found", "checkout belongs to a different repository", "name is invalid after redaction",
   "Git: invalid_path", "Git: not_repository",

@@ -20911,3 +20911,63 @@ It now guards both `main` and `master` for integration, review destinations, and
 The base setting also trusted a checkout observation from preparation.
 A bounded metadata read in the final transaction now determines whether its workspace binding may change.
 A regression switches branches between preparation and commit.
+
+## 1495. Review comparison constructs a tree with unsafe repository configuration
+
+Found in review round 3 of unit s30 on 2026-11-20.
+State: fixed in round 4 of unit s30.
+
+The combined-tree step could run a configured clean filter and write objects while opening a review.
+Its separate driver check did not prevent that execution.
+An inherited conflict also refused the comparison.
+One merge-base query now selects the comparison base without constructing a tree.
+Divergent history may show extra inherited changes while retaining all project edits.
+The regressions cover a configured clean filter and a resolved inherited conflict.
+
+## 1496. A stale creation decision can overwrite a recorded starting commit
+
+Found in review round 3 of unit s30 on 2026-11-20.
+State: fixed in round 4 of unit s30.
+
+The start decision was checked before the transaction that stored it.
+The write now re-reads the current intent inside the transaction.
+An existing start prevents a second append.
+The recovery regression verifies that a later decision leaves the stored start and event log unchanged.
+
+## 1497. A registration refusal names a remote that may not exist
+
+Found in review round 3 of unit s30 on 2026-11-20.
+State: fixed in round 4 of unit s30.
+
+The refusal always mentioned `origin/HEAD`.
+It also omitted that the conventional branch must be current.
+The text now states the current-branch requirement without naming a possibly absent remote.
+
+## 1498. The Files regressions do not distinguish the legacy two-branch guard
+
+Found in review round 3 of unit s30 on 2026-11-20.
+State: fixed in round 4 of unit s30.
+
+Each Files fixture now has both `main` and `master` while the main checkout has a feature branch checked out.
+The master read therefore distinguishes guarding both branches from selecting only the conventional fallback.
+
+## 1499. The security description omits the trust boundary of the stored start
+
+Found in review round 3 of unit s30 on 2026-11-20.
+State: documented in round 4 of unit s30.
+
+The security document now states that local review hides history held by the remote base at project creation.
+It identifies repository configuration as the source of that remote selection.
+The active comparison documentation describes the single merge-base query.
+
+## 1500. Seven whole-suite timing failures do not reproduce in isolation
+
+Found during round 4 of unit s30 on 2026-11-20.
+State: open because the underlying cause is unconfirmed.
+
+Three command-line help cases exceeded their process-exit deadline.
+Two foreground shutdown cases exceeded 30 seconds.
+A paused blocking-wait case exceeded 60 seconds.
+The independent-writer review case did not observe its controlled Git start within five seconds.
+The shared host's load average exceeded 78 during the run.
+All seven cases passed in a single-worker rerun without implementation changes.

@@ -64,7 +64,7 @@ export const projectRefusalReasons = new Set([
   "main repository checkout is required",
   "main repository checkout needs a named branch",
   "check out main or master in the main repository checkout before creating a project",
-  "origin/HEAD has no valid local base branch; registration requires a local main or master branch, or an unborn current branch",
+  "without a usable local remote default, registration requires main or master to be the current branch, or the current branch to be unborn",
   "the repository base branch name must contain at most 128 characters",
   "project creation intent is unavailable",
   "project creation is unfinished; inspect project.creations and retry the original request",

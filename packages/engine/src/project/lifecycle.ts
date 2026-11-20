@@ -124,6 +124,15 @@ const creation = (runtime: Runtime, requestId: string) => runtime.views.snapshot
   return row === undefined ? Effect.fail(refused("project creation intent is unavailable")) : Effect.succeed(row)
 }))
 
+// The decision is observed outside the writer, but only its first value may
+// enter the intent. Re-read under the writer before appending the full intent.
+export const recordCreationStart = (runtime: Runtime, requestId: string, start: NonNullable<ProjectCreation["start"]>) =>
+  runtime.log.transact((append) => Effect.gen(function* () {
+    const current = yield* creation(runtime, requestId)
+    if (current.start !== undefined) return
+    yield* append({ _tag: "owner" }, freshRequest(), randomUUID(), [{ _tag: "project.CreationPlanned", creation: { ...current, start } }], {}, false)
+  }))
+
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 const dedicatedCreation = (plan: ProjectCreation) => plan.workspace.checkout === "worktree" && plan.workspace.path !== plan.repository.path
   ? Effect.void : Effect.fail(refused("projects require a dedicated worktree"))
@@ -232,7 +241,7 @@ export const prepareProjectLifecycle = (input: Input, name: string, payload: Rec
           detail: "Reused the project worktree from the recorded creation intent." }
         return yield* gitCall(git.projectStart(plan.repository.path, plan.repository.baseBranch ?? (yield* gitCall(git.repositoryBase(plan.repository.path)))))
       }))
-      yield* internalWrite(runtime, [{ _tag: "project.CreationPlanned", creation: { ...plan, start } }])
+      yield* recordCreationStart(runtime, p.requestId, start)
       plan = yield* creation(runtime, p.requestId)
     }
     const creationDetail = yield* withGit(input, (git) => ensureWorktree(plan, git))

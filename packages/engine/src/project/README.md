@@ -627,11 +627,12 @@ Project creation fetches the configured remote base through the hardened explici
 It uses the fetched commit only when the local base is an ancestor and confirmed GitHub delivery uses that same remote branch.
 Local delivery starts from the local base.
 A second `project.CreationPlanned` event records the selected `start` before the worktree write.
+That write checks the current intent inside the transaction and retains an existing `start`.
 Recovery reuses that decision instead of fetching a different start.
 `project.Created.startingHead` retains the commit for subsequent comparisons.
 Review patches use the later merge base with the current target or starting commit.
-Divergent inherited merge bases use a combined tree without a checkout or reference write.
-An inherited conflict or a configured external merge driver refuses that comparison.
+One `git merge-base <head> <target> <start>` call selects the comparison base without merging trees or writing objects.
+When the inherited histories diverge, the review may show additional inherited changes while retaining the project's own edits.
 Commit lists and pending counts exclude the starting commit's history, including after hosted delivery becomes unavailable.
 The actual target head still supplies the approval identity and destination checks.
 Optional remote discovery and fetching share a 20-second deadline.

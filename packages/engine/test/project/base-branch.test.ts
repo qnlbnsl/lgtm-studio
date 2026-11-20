@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
@@ -21,7 +21,7 @@ let rig: Rig
 const git = (folder: string, ...args: string[]) => execFileSync("/usr/bin/git", ["-C", folder, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()
 const snapshot = Effect.gen(function* () { return yield* (yield* Views).snapshot })
 const service = () => makeGitService({ workspaceFolder: rig.root })
-const conventional = "origin/HEAD has no valid local base branch; registration requires a local main or master branch, or an unborn current branch"
+const conventional = "without a usable local remote default, registration requires main or master to be the current branch, or the current branch to be unborn"
 beforeEach(() => {
   rig = makeRig(); vi.stubEnv("HOME", rig.home); vi.stubEnv("LGTM_HOME", rig.stateFolder)
   git(rig.work, "init", "-b", "main")
@@ -252,9 +252,10 @@ it.live("round 3: both conventional branches retain legacy integration and revie
 for (const name of ["main", "master"]) it.live(`round 3: Files remains read-only on unrecorded ${name} with the main checkout on a feature branch`, () => provideBoard(rig, Effect.gen(function* () {
   yield* registerRebuildCheck()
   yield* configure(); yield* legacy()
+  git(rig.work, "branch", "master")
   git(rig.work, "checkout", "-b", "feature-x")
   const path = join(rig.root, name)
-  git(rig.work, "worktree", "add", ...(name === "master" ? ["-b", "master", path] : [path, "main"]))
+  git(rig.work, "worktree", "add", path, name)
   writeFileSync(join(path, "file.txt"), "Conventional base\n")
   const worker = yield* seedAgent({ id: "legacy-files-worker", folder: path })
   yield* appendSetup([
@@ -266,30 +267,68 @@ for (const name of ["main", "master"]) it.live(`round 3: Files remains read-only
   expect(projectView(yield* snapshot).repositories.legacy?.baseBranch).toBeUndefined()
 })).pipe(Effect.orDie))
 
-it.live("round 3: a fetched project that merges a divergent parent update excludes both inherited file sets", () => provideBoard(rig, Effect.gen(function* () {
+for (const divergent of [false, true]) it.live(`round 4: one merge-base process keeps all project work visible with ${divergent ? "divergent inherited history" : "a later fetched start"}`, () => provideBoard(rig, Effect.gen(function* () {
   yield* registerRebuildCheck()
-  const source = join(rig.root, "project")
-  git(rig.work, "worktree", "add", "-b", "project", source)
   const commit = (folder: string, title: string) => {
     git(folder, "add", "--all")
     git(folder, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", title)
     return git(folder, "rev-parse", "HEAD")
   }
+  writeFileSync(join(rig.work, "conflict.txt"), "Original base\n")
+  const original = commit(rig.work, "Original base")
+  const source = join(rig.root, "project")
+  git(rig.work, "worktree", "add", "-b", "project", source)
   writeFileSync(join(source, "upstream.txt"), "Fetched upstream\n")
+  writeFileSync(join(source, "conflict.txt"), "Fetched side\n")
   const start = commit(source, "Fetched upstream")
-  writeFileSync(join(source, "feature.txt"), "Project work\n")
+  writeFileSync(join(source, "feature.txt"), "Own new file\n")
+  writeFileSync(join(source, "upstream.txt"), "Fetched upstream\nOwn edit\n")
   commit(source, "Project work")
-  writeFileSync(join(rig.work, "parent.txt"), "Later local parent update\n")
-  commit(rig.work, "Parent update")
-  git(source, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "merge", "--no-edit", "main")
+  if (divergent) {
+    writeFileSync(join(rig.work, "parent.txt"), "Later local parent update\n")
+    writeFileSync(join(rig.work, "conflict.txt"), "Local parent side\n")
+    commit(rig.work, "Parent update")
+    expect(() => git(source, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "merge", "--no-edit", "main")).toThrow()
+    writeFileSync(join(source, "conflict.txt"), "Own conflict resolution\n")
+    commit(source, "Resolve inherited conflict")
+  }
+  const current = git(source, "rev-parse", "HEAD"), target = git(rig.work, "rev-parse", "main")
+  // A clean filter must not run when the owner merely opens a comparison.
+  const marker = join(rig.root, "filter-ran"), filter = join(rig.root, "clean-filter")
+  writeFileSync(filter, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran')\n`, { mode: 0o700 })
+  git(source, "config", "filter.probe.clean", filter)
+  git(source, "config", "merge.renormalize", "true")
+  writeFileSync(join(source, ".gitattributes"), "*.txt filter=probe\n")
+  const objects = git(rig.work, "count-objects", "-v")
+  const observed = vi.spyOn(Processes, "gitProcess")
   const gitService = makeGitService({ workspaceFolder: rig.root, startingHeads: () => ({ [source]: start }) })
   const comparison = yield* gitService.reviewMain(source, rig.work)
-  expect(comparison.files.items.map((row) => row.path)).toEqual(["feature.txt"])
+  const calls = observed.mock.calls.map(([, args]) => args)
+  expect(calls.filter((args) => args[0] === "merge-base")).toEqual([["merge-base", current, target, start]])
+  expect(calls.some((args) => args.includes("merge-tree") || args.includes("--get-regexp"))).toBe(false)
+  const baseline = calls.find((args) => args[0] === "diff")![1]!
+  expect(divergent ? [target, start] : [start]).toContain(baseline)
+  if (!divergent) {
+    // --octopus would choose the old local base and expose fetched changes.
+    expect(git(source, "merge-base", "--octopus", current, target, start)).toBe(original)
+    expect(comparison.files.items.map((row) => row.path)).toEqual(["feature.txt", "upstream.txt"])
+  }
+  expect(comparison.diff.patch).toContain("Own new file")
+  expect(comparison.diff.patch).toContain("Own edit")
+  if (divergent) expect(comparison.diff.patch).toContain("Own conflict resolution")
+  expect(existsSync(marker)).toBe(false)
+  expect(git(rig.work, "count-objects", "-v")).toBe(objects)
   expect(comparison.commits.items.map((row) => row.title)).not.toContain("Fetched upstream")
   expect(comparison.commits.items.map((row) => row.title)).not.toContain("Parent update")
-  expect(yield* gitService.state(source, "main")).toMatchObject({ pending: 2, behindParent: 0 })
-  git(source, "config", "merge.custom.driver", "false")
-  const observed = vi.spyOn(Processes, "gitProcess")
-  expect(yield* gitService.reviewMain(source, rig.work).pipe(Effect.result)).toMatchObject({ _tag: "Failure", failure: { reason: "unsupported_review" } })
-  expect(observed.mock.calls.some(([, args]) => args.includes("merge-tree"))).toBe(false)
+  expect(yield* gitService.state(source, "main")).toMatchObject({ pending: divergent ? 2 : 1, behindParent: 0 })
+})).pipe(Effect.orDie))
+
+it.live("round 4: registration without origin explains that a conventional branch must be current", () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  yield* configure()
+  git(rig.work, "checkout", "-b", "feature-x")
+  expect(git(rig.work, "remote")).toBe("")
+  const reply = yield* call(owner, "project.repository.add", { name: "Product", path: rig.work, machineId: "local" })
+  expect(failureOf(reply)?.reason).toBe(conventional)
+  expect(failureOf(reply)?.reason).not.toContain("origin")
 })).pipe(Effect.orDie))

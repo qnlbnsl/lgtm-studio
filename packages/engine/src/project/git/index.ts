@@ -143,29 +143,11 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     const start = configuration.startingHeads?.()[folder];
     return start === undefined ? undefined : ref(folder, start, signal);
   };
-  const comparisonBase = async (folder: string, current: string, target: string, start: string | undefined, signal: AbortSignal) => {
-    const base = (await git(folder, ["merge-base", current, target], signal)).trim();
-    if (start === undefined) return base;
-    const initial = (await git(folder, ["merge-base", current, start], signal)).trim();
-    const ancestor = await run(folder, ["merge-base", "--is-ancestor", base, initial], signal);
-    if (ancestor.code !== 0 && ancestor.code !== 1) throw processFailure(ancestor);
-    if (ancestor.code === 0) return initial;
-    const reverse = await run(folder, ["merge-base", "--is-ancestor", initial, base], signal);
-    if (reverse.code === 0) return base;
-    if (reverse.code !== 1) throw processFailure(reverse);
-    // A project may have merged a divergent local-base update after its
-    // fetched start. Combine those two inherited trees without a checkout or
-    // reference write, so neither side's upstream files become project work.
-    const drivers = await run(folder, ["config", "--get-regexp", "^merge\\..*\\.driver$"], signal);
-    if (drivers.code === 0) return fail("unsupported_review");
-    if (drivers.code !== 1) throw processFailure(drivers);
-    const inherited = await run(folder, ["merge-tree", "--write-tree", "--no-messages", base, initial], signal);
-    if (inherited.code === 1) return fail("unsupported_review");
-    if (inherited.code !== 0) throw processFailure(inherited);
-    const tree = inherited.stdout.trim();
-    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(tree)) return fail("invalid_ref");
-    return tree;
-  };
+  // With three arguments Git compares head with a hypothetical merge of
+  // target and start. This chooses the later base when they are comparable;
+  // divergent bases may show extra inherited work without hiding project work.
+  const comparisonBase = async (folder: string, current: string, target: string, start: string | undefined, signal: AbortSignal) =>
+    (await git(folder, ["merge-base", current, target, ...(start === undefined ? [] : [start])], signal)).trim();
   const readable = (row: { path: string; originalPath: string | null }) => !isRepositoryCredentialPath(row.path)
     && (row.originalPath === null || !isRepositoryCredentialPath(row.originalPath));
   const filesBetween = async (folder: string, args: string[], signal: AbortSignal, agentRead = false) => {

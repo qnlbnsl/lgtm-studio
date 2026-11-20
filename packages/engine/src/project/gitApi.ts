@@ -39,7 +39,7 @@ export const withGit = <A, E, R>(input: Input, body: (git: GitService) => Effect
   })), () => Effect.sync(() => { state.queued-- }))
 })
 export const gitCall = <A>(effect: GitOperation<A>, githubDelivery = false) => effect.pipe(Effect.mapError((error) => error.uncertain ? new CommandUncertain({ reason: "Git outcome is uncertain; refresh Git state" }) : refused(
-  error.reason === "base_branch_required" ? "origin/HEAD has no valid local base branch; registration requires a local main or master branch, or an unborn current branch"
+  error.reason === "base_branch_required" ? "without a usable local remote default, registration requires main or master to be the current branch, or the current branch to be unborn"
   : error.reason === "base_branch_too_long" ? "the repository base branch name must contain at most 128 characters"
   : githubPublicReason(error.reason) ?? ((githubDelivery || error.githubDelivery) && ["timeout", "network_failed"].includes(error.reason) ? githubRequestFailureReason : `Git: ${error.reason}`))))
 export const localMachine = (id: string) => id === "local" ? Effect.void : Effect.fail(refused("only the local machine can register a checkout before machine pairing"))
