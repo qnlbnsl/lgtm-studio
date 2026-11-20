@@ -70,7 +70,7 @@ export const EngineCommandsRpcGroup = RpcGroup.make(
       groups: Schema.optionalKey(Schema.Array(Schema.String)),
       prompt: Schema.optionalKey(Schema.String)
     },
-    success: Schema.Struct({ ...request, agentId: AgentId }), error: Refused
+    success: Schema.Struct({ ...request, agentId: AgentId, detail: Schema.optionalKey(Schema.String) }), error: Refused
   }),
   Rpc.make("configure", {
     payload: { ...target, model: Schema.optionalKey(ChoiceId), effort: Schema.optionalKey(ChoiceId) },

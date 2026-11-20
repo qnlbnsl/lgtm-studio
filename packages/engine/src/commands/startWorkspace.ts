@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { ProjectId, WorkspaceId, parseRole, defaultChildPermission, type PermissionLevel, type Workspace } from "@lgtm/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import { prepareWorktree } from "../project/preparation.ts";
 import { start } from "./start.ts";
 import { checkAllocationDirectory } from "../identity/ceiling.ts";
 import { projectFolderScope } from "../project/folderScope.ts";
@@ -106,6 +107,7 @@ export const prepareStartWorkspace = (input: Input, raw: Record<string, unknown>
   let workspace: Workspace | undefined = selection.selected;
   let created: Workspace | undefined;
   let reused: Workspace | undefined;
+  let preparationDetail = "";
   yield* withGit(input, (git) => Effect.gen(function* () {
     if (workspace !== undefined) {
       yield* localMachine(workspace.machineId);
@@ -158,12 +160,15 @@ export const prepareStartWorkspace = (input: Input, raw: Record<string, unknown>
       );
     }));
     yield* safePath(input, tree.path); yield* safePath(input, tree.branch!);
+    const repository = own(view.repositories, base!.repoId);
+    if (repository !== undefined) preparationDetail = yield* prepareWorktree(repository.path, tree.path, repository.preparation);
   }));
   const checked = workspace, newWorkspace = created, retryWorkspace = reused;
   return ((current, payload) => Effect.gen(function* () {
     const normalized = yield* normalize(current, payload);
     const now = yield* context(current, normalized);
     if (projectView(current.snapshot).settings?.workspaceFolder !== projectView(input.snapshot).settings?.workspaceFolder
+      || !same(own(projectView(current.snapshot).repositories, selection.project.repoId), own(projectView(input.snapshot).repositories, selection.project.repoId))
       || now === undefined || now.project.projectId !== projectId || !same(now.base, base) || !same(now.selected, selection.selected)
       || retryWorkspace !== undefined && (!same(own(projectView(current.snapshot).workspaces, retryWorkspace.worktreeId), retryWorkspace)
         || !same(attempts(current, retryWorkspace.path), attempts(input, retryWorkspace.path))))
@@ -174,6 +179,6 @@ export const prepareStartWorkspace = (input: Input, raw: Record<string, unknown>
     const agent = plan.events.find((event) => event._tag === "AgentStarted");
     // Reusing a failed allocation keeps its id and source, and refreshes its
     // owner in the same append. Snapshot discovery must name the new agent.
-    return { ...plan, events: [{ _tag: "project.WorktreeCreated" as const, ...registration, owner: agent!.agentId }, ...plan.events] };
+    return { ...plan, ...(preparationDetail === "" ? {} : { reply: () => ({ requestId: normalized.requestId, agentId: agent!.agentId, detail: preparationDetail }) }), events: [{ _tag: "project.WorktreeCreated" as const, ...registration, owner: agent!.agentId }, ...plan.events] };
   })) satisfies Planner;
 });

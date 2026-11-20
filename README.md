@@ -184,6 +184,55 @@ This bounded serialization can delay another Git operation by up to 20 seconds d
 The completed creation event records the selected source or the fallback reason.
 This operation never moves the local base branch or changes the main checkout's files.
 
+## Preparation for new worktrees
+
+The owner can save preparation settings on each registered repository through the client application programming interface (API) or the command line:
+
+```sh
+./bin/lgtm project.repository.preparation.set --input '{"repoId":"<repository-id>","preparation":{"copyPaths":["env/*.env"],"submodules":true,"instructions":"Run pnpm install before building."}}'
+```
+
+The command replaces all three optional settings.
+An empty `preparation` object clears them.
+Repository reads include the saved settings.
+The engine stores them in its own state.
+It never loads them from a repository file.
+The website does not yet have controls for these settings.
+
+Each new project or worker worktree receives the selected regular files from the repository's main checkout.
+A pattern is a relative path with at most one `*`, within one path segment.
+The engine accepts at most 16 patterns.
+It copies at most 128 files, with at most one mebibyte per file and eight mebibytes in total.
+Each wildcard directory scan visits at most 512 entries.
+Missing files and nonfiles are skipped.
+Existing destination files are kept.
+Symbolic links and Git metadata paths are refused.
+Copies preserve only the source file's owner permission bits.
+Copying currently requires Linux directory descriptors through `/proc/self/fd`.
+A host without that facility refuses configured copying.
+An unsafe path or an exceeded limit refuses preparation.
+Project creation retains its worktree for inspection and retry.
+Worker allocations keep their existing rollback policy.
+
+When `submodules` is true, the engine runs a bounded `git submodule update --init --checkout` after creating the worktree.
+It does not recurse into nested submodules or follow remote branch tips.
+A failure leaves creation successful and appears in the creation event or worker start reply detail.
+Only Hypertext Transfer Protocol Secure (HTTPS) and Secure Shell (SSH) transports are enabled for this operation.
+Local file transports are refused in production.
+The saved instructions accept at most 8,192 bytes of plain text.
+Every new agent in that repository receives them under "Owner's repository settings" in its role instructions.
+Recovery and instruction restoration use the same composition.
+The engine runs no setup command from that text or from a repository file.
+
+Git views treat a submodule pointer as one changed entry.
+Status and review entries include the old and new commit identifiers.
+Diffs show the pointer change without reading the submodule as a file.
+Staging changes the parent repository's pointer.
+Discard restores an initialized, clean submodule to its indexed commit without fetching.
+Dirty or uninitialized submodules cannot be discarded through that action.
+A checkout that would overwrite an ignored local file is refused.
+The Files tab continues to hide submodule content.
+
 ## Worker worktrees
 
 A worker started inside a project receives its own registered Git worktree.
@@ -231,6 +280,8 @@ A missing folder is reported as unavailable instead of being recreated.
 Stopping a worker preserves its folder and branch.
 Deleting a team preserves its registered worktrees and branches.
 The engine does not automatically remove even a clean, merged worker checkout.
+The default lead and worker instructions forbid removing, pruning or moving LGTM Studio worktrees under `.worktrees/`.
+An agent reports conflicting repository instructions to its lead or the owner.
 Registered worker worktrees appear in the existing Git, Files, and Terminal choices.
 
 

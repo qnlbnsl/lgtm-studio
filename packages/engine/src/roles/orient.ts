@@ -15,7 +15,7 @@ export const orient = (input: Input, payload: Record<string, unknown>) => {
   if (self === undefined) return Effect.fail(refused());
   const role = parseRole(self.role);
   return Effect.gen(function* () {
-    const advice = yield* composeInstructions(input.runtime, input.snapshot, self.role).pipe(Effect.catchTag("CommandRefused", () => Effect.succeed(unavailableAdvice)));
+    const advice = yield* composeInstructions(input.runtime, input.snapshot, self.role, undefined, self.folder).pipe(Effect.catchTag("CommandRefused", () => Effect.succeed(unavailableAdvice)));
     const makeReply = (advice: string) => agentReadReply(payload.requestId, {
       agentId: self.agentId, name: self.name, kind: role.kind,
       ...(role.name === undefined ? {} : { roleName: role.name }), parent: self.parent,

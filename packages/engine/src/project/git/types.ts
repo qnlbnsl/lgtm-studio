@@ -18,7 +18,9 @@ export interface Bounded<A> { readonly items: ReadonlyArray<A>; readonly truncat
 export interface Repository { readonly path: string; readonly name: string; readonly commonDirectory: string }
 export interface Branch { readonly name: string; readonly head: string; readonly current: boolean; readonly upstream: string | null }
 export interface Worktree { readonly path: string; readonly head: string | null; readonly branch: string | null; readonly locked: boolean; readonly available: boolean }
+export interface SubmoduleChange { readonly oldHead: string | null; readonly newHead: string | null; readonly indexHead?: string | null }
 export interface Change {
+  readonly submodule?: SubmoduleChange;
   readonly path: string; readonly originalPath: string | null; readonly index: string; readonly worktree: string;
   readonly staged: boolean; readonly unstaged: boolean; readonly conflict: boolean; readonly untracked: boolean;
 }
@@ -27,7 +29,7 @@ export interface Diff {
   readonly binary: boolean; readonly truncated: boolean;
 }
 export interface Commit { readonly head: string; readonly parents: ReadonlyArray<string>; readonly author: string; readonly at: string; readonly title: string }
-export interface CommitFile { readonly path: string; readonly originalPath: string | null; readonly status: string }
+export interface CommitFile { readonly submodule?: SubmoduleChange; readonly path: string; readonly originalPath: string | null; readonly status: string }
 export interface GitState {
   readonly head: string | null; readonly branch: string | null; readonly upstream: string | null;
   readonly mergeHead: string | null;

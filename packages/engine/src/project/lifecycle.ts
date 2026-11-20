@@ -6,6 +6,7 @@ import { ProjectCreation, ProjectId, RepositoryId, WorkspaceId, type Event } fro
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { freshRequest, refused, type Input, type Payload, type Planner, type Runtime } from "../commands/internal.ts"
+import { prepareWorktree } from "./preparation.ts"
 import { start } from "../commands/start.ts"
 import { stop } from "../commands/stop.ts"
 import { preempt, withLane } from "../routing/lanes.ts"
@@ -244,7 +245,12 @@ export const prepareProjectLifecycle = (input: Input, name: string, payload: Rec
       yield* recordCreationStart(runtime, p.requestId, start)
       plan = yield* creation(runtime, p.requestId)
     }
-    const creationDetail = yield* withGit(input, (git) => ensureWorktree(plan, git))
+    const creationDetail = yield* withGit(input, (git) => Effect.gen(function* () {
+      const worktreeDetail = yield* ensureWorktree(plan, git)
+      yield* verifyCreation(plan, git)
+      const preparationDetail = yield* prepareWorktree(plan.repository.path, plan.workspace.path, plan.repository.preparation)
+      return [worktreeDetail, preparationDetail].filter(Boolean).join(" ")
+    }))
     const observed = { ...input, snapshot: yield* runtime.views.snapshot }
     const mainState = yield* withGit(observed, (git) => Effect.gen(function* () {
       yield* verifyCreation(plan, git)

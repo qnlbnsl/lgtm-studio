@@ -639,3 +639,27 @@ Optional remote discovery and fetching share a 20-second deadline.
 It otherwise uses the local commit and records why in `project.CreationFinished.detail`.
 A resumed creation that finds its existing worktree records that it reused that worktree.
 The fetch never updates a local branch or the main checkout's files.
+
+## Owner preparation settings for new worktrees
+
+The command `project.repository.preparation.set` replaces the optional `copyPaths`, `submodules` and `instructions` settings on a repository record.
+Only the owner can call it.
+Repository reads include the settings.
+A project creation pins its file and submodule settings in the existing creation intent.
+A worker allocation reads the repository record and checks that it has not changed before final registration.
+Both paths call `preparation.ts` after Git creates the worktree.
+Submodule failure appears as a fixed creation or start detail and does not refuse creation.
+Copied files never overwrite existing files.
+See the root security document for the copy bounds and descriptor requirements.
+
+Role composition selects the nearest registered repository or workspace containing the actual start folder.
+It appends the owner's instructions before redaction and slash escaping.
+Normal starts, recovery, restoration and orientation use the same composition.
+The engine never treats the text as a setup command.
+
+Git views admit a tracked gitlink directory through a separate path check.
+Status includes its old, indexed and current commit identifiers.
+Review files include the old and new identifiers.
+Diffs force the short submodule patch format.
+Discard fingerprints the index and nested head and refuses nested dirt before a checkout without fetching.
+The Files interface retains its regular-file policy.

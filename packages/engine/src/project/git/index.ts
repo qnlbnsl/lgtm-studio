@@ -107,8 +107,84 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     return { path, name: basename(path), commonDirectory };
   };
   const list = <A>(items: ReadonlyArray<A>, maximum = entries): Bounded<A> => ({ items: items.slice(0, maximum), truncated: items.length > maximum });
+  // Gitlinks name commits, never file contents. Read index/tree metadata
+  // with literal pathspecs and keep the nested checkout out of Files APIs.
+  const linkEntry = async (folder: string, path: string, signal: AbortSignal, tree?: string): Promise<string | undefined> => {
+    const text = tree === undefined ? await git(folder, ["ls-files", "--stage", "-z", "--", path], signal)
+      : await git(folder, ["ls-tree", "-z", tree, "--", path], signal);
+    for (const row of text.split("\0")) {
+      const match = /^160000 (?:commit )?([a-f0-9]{40,64})(?: 0)?\t([\s\S]*)$/.exec(row);
+      if (match?.[2] === path) return match[1];
+    }
+    return undefined;
+  };
+  const gitlink = async (folder: string, path: string, signal: AbortSignal, trees: string[] = []) => {
+    let pointer = await linkEntry(folder, path, signal);
+    for (const tree of trees) pointer ??= await linkEntry(folder, path, signal, tree);
+    return pointer;
+  };
+  const linkPath = async (folder: string, path: string) => {
+    await filePath(folder, path, true);
+    const full = join(folder, path), info = await lstat(full).catch(error => { if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined; throw error; });
+    if (info !== undefined && (!info.isDirectory() || info.isSymbolicLink())) return fail("invalid_path");
+    return full;
+  };
+  const changePath = async (folder: string, path: string, signal: AbortSignal, trees: string[] = []) => {
+    try { return await filePath(folder, path); }
+    catch (error) {
+      // Reject lexical escapes and symbolic links before asking Git about a path.
+      try { await filePath(folder, path, true); } catch { throw error; }
+      const current = await head(folder, signal);
+      if (!await gitlink(folder, path, signal, [...trees, ...(current === null ? [] : [current])])) throw error;
+      return linkPath(folder, path);
+    }
+  };
+  const linkState = async (folder: string, path: string, signal: AbortSignal) => {
+    const full = await linkPath(folder, path);
+    if (!await exists(join(full, ".git"))) return { head: null, dirty: false };
+    // Bound the nested metadata to this repository's modules directory.
+    const dot = join(full, ".git");
+    const marker = /^gitdir: ([^\r\n]+)\r?\n?$/.exec((await smallFile(dot, 4096)).toString("utf8"));
+    if (marker === null) return fail("invalid_path");
+    const metadata = resolve(full, marker[1]!);
+    const common = await checkedMetadata(await root(), folder);
+    const ownDirectory = (await git(folder, ["rev-parse", "--absolute-git-dir"], signal)).trim();
+    if ((!inside(join(common, "modules"), metadata) && !inside(join(ownDirectory, "modules"), metadata))
+      || await realpath(metadata) !== metadata) return fail("invalid_path");
+    const current = (await git(folder, ["-C", full, "rev-parse", "--verify", "HEAD"], signal)).trim();
+    const dirty = (await git(folder, ["-C", full, "status", "--porcelain=v1", "--untracked-files=all", "--ignore-submodules=none"], signal)) !== "";
+    return { head: current, dirty };
+  };
+  const describeChanges = async (folder: string, changes: Change[], signal: AbortSignal) => {
+    const current = await head(folder, signal);
+    for (let i = 0; i < changes.length; i++) {
+      const row = changes[i]!;
+      const info = await lstat(join(folder, row.path)).catch(() => undefined);
+      if (info !== undefined && !info.isDirectory()) continue;
+      const index = await linkEntry(folder, row.path, signal), old = current === null ? undefined : await linkEntry(folder, row.path, signal, current);
+      if (index === undefined && old === undefined) continue;
+      const nested = await linkState(folder, row.path, signal);
+      changes[i] = { ...row, submodule: { oldHead: old ?? null, indexHead: index ?? null, newHead: row.index === "D" ? null : nested.head ?? index ?? null } };
+    }
+    return changes;
+  };
+  const observedChanges = async (folder: string, signal: AbortSignal): Promise<Change[]> => {
+    const rows = parseChanges(await git(folder, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none"], signal));
+    const changes: Change[] = [];
+    const deleted = new Set(rows.filter(row => row.index === "D").map(row => row.path));
+    for (const row of rows) {
+      // A staged gitlink deletion can leave its initialized directory behind.
+      // Git also reports that directory as untracked. Keep one pointer entry.
+      if (row.untracked && row.path.endsWith("/") && deleted.has(row.path.slice(0, -1))) {
+        const current = await head(folder, signal);
+        if (current !== null && await linkEntry(folder, row.path.slice(0, -1), signal, current) !== undefined) continue;
+      }
+      changes.push(row);
+    }
+    return changes;
+  };
   const completeChanges = async (folder: string, signal: AbortSignal): Promise<Change[]> => {
-    const changes = parseChanges(await git(folder, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none"], signal));
+    const changes = await observedChanges(folder, signal);
     if (changes.length > entries) return fail("output_limit");
     return changes;
   };
@@ -155,7 +231,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     return list(agentRead ? files.filter(readable) : files);
   };
   const patch = async (folder: string, args: string[], signal: AbortSignal, paths: string[] = []): Promise<Diff> => {
-    const reply = await run(folder, [...args, "--no-ext-diff", "--no-textconv", "--no-color", "--patch", "--", ...paths], signal, true, diffBytes);
+    const reply = await run(folder, [...args, "--no-ext-diff", "--no-textconv", "--submodule=short", "--ignore-submodules=none", "--no-color", "--patch", "--", ...paths], signal, true, diffBytes);
     if (reply.code !== 0 && !reply.truncated && !(args.includes("--no-index") && reply.code === 1)) throw processFailure(reply);
     const stats = await run(folder, [...args, "--no-ext-diff", "--no-textconv", "--numstat", "-z", "--", ...paths], signal);
     if (stats.code !== 0 && !(args.includes("--no-index") && stats.code === 1)) throw processFailure(stats);
@@ -163,6 +239,8 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
   };
   const diff = async (folder: string, options: { path?: string; staged?: boolean; commit?: string; agentRead?: boolean }, signal: AbortSignal): Promise<Diff> => {
     const path = options.path;
+    const commitTrees = options.commit === undefined ? [] : (await git(folder,
+      ["rev-list", "--parents", "-n", "1", await ref(folder, options.commit, signal)], signal)).trim().split(" ").slice(0, 2);
     // One complete status snapshot serves path admission and both aggregates.
     const workingChanges = options.commit === undefined ? await completeChanges(folder, signal) : undefined;
     let aggregatePaths: string[] | undefined;
@@ -174,18 +252,18 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
         aggregatePaths = changes.filter(readable).flatMap((row) => row.originalPath === null ? [row.path] : [row.originalPath, row.path]);
         // Never pass an empty path list to Git: that would mean all files.
         if (aggregatePaths.length === 0) return { patch: "", additions: 0, deletions: 0, binary: false, truncated: false };
-        for (const name of aggregatePaths) await filePath(folder, name);
+        for (const name of aggregatePaths) await changePath(folder, name, signal, commitTrees);
       }
     }
-    if (path !== undefined) await filePath(folder, path);
+    if (path !== undefined) await changePath(folder, path, signal, commitTrees);
     else if (aggregatePaths !== undefined) { /* The selected paths were checked above. */ }
     else if (options.commit !== undefined) {
       const names = await git(folder, ["show", "--format=", "--first-parent", "--name-only", "-z", await ref(folder, options.commit, signal), "--"], signal);
-      for (const name of names.split("\0").filter(Boolean)) await filePath(folder, name);
+      for (const name of names.split("\0").filter(Boolean)) await changePath(folder, name, signal, commitTrees);
     } else {
       for (const change of workingChanges!) {
-        await filePath(folder, change.path);
-        if (change.originalPath !== null) await filePath(folder, change.originalPath);
+        await changePath(folder, change.path, signal);
+        if (change.originalPath !== null) await changePath(folder, change.originalPath, signal);
       }
     }
     if (options.commit !== undefined) {
@@ -196,8 +274,11 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     const diffArgs = ["diff", ...(options.staged === true ? ["--cached"] : currentHead === null ? [] : [currentHead])];
     if (path !== undefined) {
       const change = workingChanges!.find((item) => item.path === path);
-      if ((change?.untracked || options.staged === undefined && currentHead === null && change?.index === "A") && options.staged !== true) return patch(folder, ["diff", "--no-index"], signal, ["/dev/null", await filePath(folder, path)]);
-      if (change?.originalPath !== null && change?.originalPath !== undefined) await filePath(folder, change.originalPath);
+      if ((change?.untracked || options.staged === undefined && currentHead === null && change?.index === "A") && options.staged !== true) {
+        if (change.index === "A" && await linkEntry(folder, path, signal) !== undefined) return patch(folder, ["diff", "--cached"], signal, [path]);
+        return patch(folder, ["diff", "--no-index"], signal, ["/dev/null", await filePath(folder, path)]);
+      }
+      if (change?.originalPath !== null && change?.originalPath !== undefined) await changePath(folder, change.originalPath, signal);
       return patch(folder, diffArgs, signal, change?.originalPath ? [change.originalPath, path] : [path]);
     }
     const tracked = options.staged === undefined && currentHead === null
@@ -210,7 +291,9 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       if ((!change.untracked && !(options.staged === undefined && currentHead === null && change.index === "A")) || result.truncated) continue;
       // Issue 588: the aggregate already resolved HEAD and status. Use the
       // original Git author's bounded direct patch, after agent filtering.
-      const next = await patch(folder, ["diff", "--no-index"], signal, ["/dev/null", await filePath(folder, change.path)]);
+      const addedLink = change.index === "A" && await linkEntry(folder, change.path, signal) !== undefined;
+      const next = addedLink ? await patch(folder, ["diff", "--cached"], signal, [change.path])
+        : await patch(folder, ["diff", "--no-index"], signal, ["/dev/null", await filePath(folder, change.path)]);
       const joined = Buffer.from(result.patch + next.patch);
       result = { patch: boundedUtf8(joined, diffBytes), additions: result.additions + next.additions,
         deletions: result.deletions + next.deletions, binary: result.binary || next.binary,
@@ -257,7 +340,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
   };
   const resetPaths = async (folder: string, paths: string[], signal: AbortSignal) => {
     if (paths.length === 0) return;
-    for (const path of paths) await filePath(folder, path);
+    for (const path of paths) await changePath(folder, path, signal);
     if (await head(folder, signal) === null) await mutateGit(folder, ["rm", "--cached", "-f", "--", ...paths], signal);
     else await mutateGit(folder, ["reset", "--quiet", "HEAD", "--", ...paths], signal);
   };
@@ -272,6 +355,12 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     const parts: (string | Buffer)[] = [folder, await head(folder, signal) ?? "", JSON.stringify(changes),
       await git(folder, ["diff", "--cached", "--no-ext-diff", "--no-textconv", "--raw", "--no-abbrev", "-z", "--"], signal)];
     for (const path of paths) {
+      const index = await linkEntry(folder, path, signal);
+      if (index !== undefined) {
+        const state = await linkState(folder, path, signal);
+        if (state.dirty || state.head === null) return fail("dirty_source");
+        parts.push(path, index, state.head); continue;
+      }
       const file = await filePath(folder, path);
       parts.push(path, await exists(file) ? await smallFile(file, outputBytes) : "<deleted>");
     }
@@ -336,12 +425,20 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     const start = await startingHead(folder, signal);
     const baseline = await comparisonBase(folder, currentHead, baseHead, start, signal);
     const files = await filesBetween(folder, ["diff", baseline, currentHead], signal, agentRead);
+    const raw = await git(folder, ["diff", "--raw", "--no-renames", "--no-ext-diff", "--no-textconv", "--no-abbrev", "-z", baseline, currentHead, "--"], signal);
+    const links = new Map<string, { oldHead: string | null; newHead: string | null }>();
+    const fields = raw.split("\0");
+    for (let i = 0; i < fields.length; i++) {
+      const match = /^:(\d{6}) (\d{6}) ([a-f0-9]+) ([a-f0-9]+) ([A-Z])$/.exec(fields[i]!);
+      if (match && (match[1] === "160000" || match[2] === "160000")) links.set(fields[++i]!, { oldHead: /^0+$/.test(match[3]!) ? null : match[3]!, newHead: /^0+$/.test(match[4]!) ? null : match[4]! });
+    }
+    const describedFiles = { ...files, items: files.items.map(row => links.has(row.path) ? { ...row, submodule: links.get(row.path)! } : row) };
     const paths = files.items.flatMap((row) => row.originalPath === null ? [row.path] : [row.originalPath, row.path]);
-    if (agentRead) for (const path of paths) await filePath(folder, path);
+    if (agentRead) for (const path of paths) await changePath(folder, path, signal, [baseline, currentHead]);
     const diff = agentRead && paths.length === 0 ? { patch: "", additions: 0, deletions: 0, binary: false, truncated: false }
       : await patch(folder, ["diff", baseline, currentHead], signal, agentRead ? paths : []);
     return { head: currentHead, baseHead, branch: currentBranch, base,
-      commits: await history(folder, `${baseHead}..${currentHead}`, signal, entries, start === undefined ? [] : [`^${start}`]), files,
+      commits: await history(folder, `${baseHead}..${currentHead}`, signal, entries, start === undefined ? [] : [`^${start}`]), files: describedFiles,
       diff: { ...diff, truncated: diff.truncated || agentRead && files.truncated } };
   };
   const remote = async (folder: string, signal: AbortSignal) => {
@@ -788,8 +885,9 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     // Never force removal: external edits or commits keep their recovery evidence.
     rollbackWorktree: (folder, worktree) => withRepo(folder, (path, signal) => rollbackAllocation(path, worktree, signal)),
     changes: (folder, agentRead = false) => withRepo(folder, async (path, signal) => {
-      const changes = parseChanges(await git(path, ["status", "--porcelain=v1", "-z", "--untracked-files=all", "--ignore-submodules=none"], signal));
-      return list(agentRead ? changes.filter(readable) : changes);
+      const changes = await observedChanges(path, signal);
+      const bounded = list(agentRead ? changes.filter(readable) : changes);
+      return { ...bounded, items: await describeChanges(path, [...bounded.items], signal) };
     }),
     diff: (folder, options = {}) => withRepo(folder, (path, signal) => diff(path, options, signal)),
     history: (folder, limit) => withRepo(folder, async (path, signal) => await head(path, signal) === null ? list([]) : history(path, "HEAD", signal, bound(limit, entries, entries))),
@@ -822,7 +920,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       if (change === undefined) return fail("invalid_path");
       if (change.conflict) return fail("conflicts");
       const paths = stagePaths(change);
-      for (const file of paths) await filePath(path, file);
+      for (const file of paths) await changePath(path, file, signal);
       await mutateGit(path, ["add", "--", ...paths], signal);
     }),
     unstage: (folder, requested) => withRepo(folder, async (path, signal) => {
@@ -832,7 +930,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     }),
     stageAll: (folder) => withRepo(folder, async (path, signal) => {
       const paths = (await completeChanges(path, signal)).filter((change) => !change.conflict).flatMap(stagePaths);
-      for (const file of paths) await filePath(path, file);
+      for (const file of paths) await changePath(path, file, signal);
       if (paths.length > 0) await mutateGit(path, ["add", "--", ...new Set(paths)], signal);
     }),
     unstageAll: (folder) => withRepo(folder, async (path, signal) => resetPaths(path, (await completeChanges(path, signal)).filter((change) => change.staged && !change.conflict).flatMap(changePaths), signal)),
@@ -844,6 +942,17 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       const changes = await completeChanges(path, signal);
       for (const file of actual.paths) {
         const change = changes.find((change) => change.path === file)!;
+        const pointer = await linkEntry(path, file, signal);
+        if (pointer !== undefined) {
+          const state = await linkState(path, file, signal);
+          if (state.dirty || state.head === null) return fail("dirty_source");
+          // A normal checkout can overwrite ignored local files. Explicitly
+          // protect them while restoring only the already-local index commit.
+          const full = await linkPath(path, file);
+          await mutateGit(path, ["-c", "protocol.allow=never", "-c", "submodule.recurse=false", "-C", full,
+            "checkout", "--detach", "--no-overwrite-ignore", pointer, "--"], signal);
+          continue;
+        }
         const full = await filePath(path, file);
         if (change.untracked) { mutations.add(signal); await rm(full); }
         else await mutateGit(path, ["restore", "--worktree", "--", file], signal);
@@ -860,7 +969,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
         if (change === undefined || isRepositoryCredentialPath(change.path)) return fail("nothing_staged");
         if (await mergeHead(path, signal) !== null) return fail("conflicts");
         const paths = changePaths(change);
-        for (const name of paths) await filePath(path, name);
+        for (const name of paths) await changePath(path, name, signal);
         await mutateGit(path, ["add", "--all", "--", ...paths], signal);
         await mutateGit(path, ["commit", "-m", message, "--only", "--", ...paths], signal);
         return (await head(path, signal))!;

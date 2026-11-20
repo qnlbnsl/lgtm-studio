@@ -1,7 +1,7 @@
 import { QuestionId, RequestId } from "../ids.ts"
 import * as Schema from "effect/Schema"
 import { GitAttempt, GitEvidence, GitMainReview } from "./git.ts"
-import { CreationFolderIdentity, FileSaveNotice, LeadPermission, LeadPermissionSetting, OwnerTaskNotification, Project, ProjectCreation, ProjectDeletion, ProjectId, ProjectName, ProjectSettings, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskId, TaskState, Team, Workspace } from "./schema.ts"
+import { CreationFolderIdentity, FileSaveNotice, LeadPermission, LeadPermissionSetting, OwnerTaskNotification, Project, ProjectCreation, ProjectDeletion, ProjectId, ProjectName, ProjectSettings, WorktreePreparation, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskId, TaskState, Team, Workspace } from "./schema.ts"
 
 import { ProjectMockEvent } from "./mocks.ts"
 import { ProjectDesignEvent } from "./design.ts"
@@ -18,6 +18,7 @@ export const ProjectEvent = Schema.Union([
   ProjectDesignEvent,
   Schema.TaggedStruct("project.SettingsChanged", { settings: ProjectSettings }),
   Schema.TaggedStruct("project.RepositoryAdded", Repository.fields),
+  Schema.TaggedStruct("project.RepositoryPreparationChanged", { repoId: Repository.fields.repoId, preparation: WorktreePreparation }),
   Schema.TaggedStruct("project.RepositoryBaseChanged", { repoId: Repository.fields.repoId, baseBranch: ProjectName }),
   Schema.TaggedStruct("project.RepositoryLocated", RepositoryLocation.fields),
   Schema.TaggedStruct("project.WorktreeCreated", Workspace.fields),

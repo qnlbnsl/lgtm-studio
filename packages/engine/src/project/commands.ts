@@ -30,6 +30,12 @@ import { validChoiceId } from "../runner/choices.ts"
 import { searchContext } from "./context.ts"
 
 const fresh = <S extends Schema.Top & { readonly Type: string }>(schema: S): S["Type"] => Schema.decodeUnknownSync(schema as never)(randomUUID()) as S["Type"]
+const preparationSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  if (input.actor._tag !== "owner") return yield* refused()
+  const p = raw as Payload<"project.repository.preparation.set">
+  if (own(projectView(input.snapshot).repositories, p.repoId) === undefined) return yield* refused("repository is unavailable")
+  return ack(p.requestId, [{ _tag: "project.RepositoryPreparationChanged", repoId: p.repoId, preparation: p.preparation }])
+})
 const ack = (requestId: unknown, events: ReadonlyArray<Event>) => ({ events, reply: () => ({ requestId }) })
 const requireProject = (input: Input, id: string, lead = true) => {
   const row = own(projectView(input.snapshot).projects, id)
@@ -494,7 +500,7 @@ const taskHistory: ReadHandler = (input, raw) => Effect.gen(function* () {
 export const projectPlanners = {
   "project.permission.set": permissionSet,
   "project.approval.grant": approvalChange(true), "project.approval.withdraw": approvalChange(false),
-  "project.settings.set": settingsSet, "project.repository.base.set": unpreparedBase, "project.repository.add": repositoryAdd(), "project.repository.locate": repositoryLocate(),
+  "project.settings.set": settingsSet, "project.repository.preparation.set": preparationSet, "project.repository.base.set": unpreparedBase, "project.repository.add": repositoryAdd(), "project.repository.locate": repositoryLocate(),
   "project.review.decline": declineMainReview,
   "project.workspace.register": workspaceRegister(), "project.rename": rename, "project.place": place,
   "project.delete": deleteProject, "project.goal.set": goalSet, "project.restore": restore, "project.preferences.set": preferencesSet, "project.stage.set": stageSet, "project.team.create": teamCreate,

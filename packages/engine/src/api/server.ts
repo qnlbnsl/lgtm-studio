@@ -50,6 +50,7 @@ const reasons = new Set([
   "Confirm that running agents are stopped and terminals close. Pages stay signed in.",
   "This service cannot restart itself on this platform.", "The service launch files are unavailable. Restart was refused before stopping agents.", "service restarting",
   "The workflow folder must be absolute, existing, owned by you, outside the service state folder, and have no symbolic links.",
+  "Worktree preparation refused an unsafe path or exceeded a copy limit.",
   "Role instructions exceed 48 KiB.", "Role instructions could not be read.", "Role orientation exceeds 256 KiB.",
   "command refused", "cannot reload", "no usable account", "invalid credential",
   "notification changed; refresh before retrying",

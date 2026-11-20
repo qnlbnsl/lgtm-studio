@@ -20666,7 +20666,11 @@ No `git submodule update` runs anywhere, so a submodule folder stays empty in ev
 Ignored files that the build needs, such as environment files, are not copied.
 A repository cannot declare a setup command; its `.lgtm` folder is read only for workflows.
 Agents in such a repository start without dependencies, environment files or submodule content.
-State: Open.
+State: fixed in unit s31 on 2026-11-20.
+
+The owner can now save copied path patterns, fixed submodule initialization and agent instructions on the repository record.
+The engine never runs repository setup scripts.
+Website controls remain tracked in the feature list.
 
 ## 1470. A changed submodule pointer fails the whole diff of a checkout
 
@@ -20674,7 +20678,11 @@ Found on 2026-11-20 by reading the code.
 Status lists a changed submodule as a change.
 The diff, stage and discard actions pass every changed path to `filePath` (`project/git/paths.ts`), which refuses anything that is not a regular file.
 The whole diff then fails with "invalid_path".
-State: Open.
+State: fixed in unit s31 on 2026-11-20.
+
+Git views now treat gitlinks as commit pointers.
+Status, diff, stage, discard and review no longer read a gitlink directory as a file.
+Discard refuses nested dirt and fetching.
 
 ## 1471. A repository's own rules can tell agents to remove LGTM Studio's worktrees
 
@@ -20683,7 +20691,10 @@ The role prompts tell agents that the repository's instruction file binds them.
 That repository's file says every session must end with only the main checkout in `git worktree list`.
 An agent that obeys it could remove the project and worker worktrees.
 The repository's own session hooks would also run inside every agent, as issue 946 records.
-State: Open.
+State: fixed in unit s31 on 2026-11-20.
+
+The default lead and worker prompts now forbid removing, pruning or moving managed worktrees under `.worktrees/`.
+An agent must report conflicting repository instructions to its lead or the owner.
 
 ## 1472. Review and listing limits are close for a large monorepo
 
@@ -20971,3 +20982,75 @@ A paused blocking-wait case exceeded 60 seconds.
 The independent-writer review case did not observe its controlled Git start within five seconds.
 The shared host's load average exceeded 78 during the run.
 All seven cases passed in a single-worker rerun without implementation changes.
+
+## 1501. A preparation detail initially replaced the worker start identifiers
+
+Found while building unit s31 on 2026-11-20.
+State: fixed in unit s31.
+
+The first implementation supplied a custom worker reply containing only its preparation detail.
+The stored start receipt then lacked its request and agent identifiers.
+The final reply includes both identifiers and the detail.
+The integration regression starts a worker and reads its preparation result.
+
+## 1502. Safe preparation copying currently requires Linux directory descriptors
+
+Found while building unit s31 on 2026-11-20.
+State: open for support on other operating systems.
+
+Node.js has no directory-relative file-open interface with the required symbolic-link protection.
+The implementation uses Linux `/proc/self/fd` paths anchored to open directory descriptors.
+A host without that facility refuses configured copying.
+Submodule initialization and agent instructions do not require that copying facility.
+A portable implementation needs an equally safe directory-relative file interface.
+
+## 1503. Gitlink path admission initially changed an unsafe path refusal
+
+Found by the existing path-safety regression during unit s31 on 2026-11-20.
+State: fixed in unit s31.
+
+The first gitlink fallback queried Git before preserving the path validator's refusal.
+A parent traversal then produced a Git process failure instead of `invalid_path`.
+The fallback now checks the same path rules before querying pointer metadata.
+The existing regression verifies traversal, symbolic links, nested repositories and Git metadata refusals.
+
+## 1504. Staging a submodule deletion also exposes its directory as untracked
+
+Found by the new gitlink edge-case test during unit s31 on 2026-11-20.
+State: fixed in unit s31.
+
+Git reports the staged pointer deletion and the retained nested checkout separately.
+The aggregate diff initially tried to validate the extra directory as an ordinary file.
+Status normalization now combines those reports into the tracked pointer deletion.
+The regression covers the staged deletion, its committed diff and its review entry.
+
+## 1505. A gitlink added before the first commit uses the regular-file diff fallback
+
+Found while checking the remaining gitlink paths during unit s31 on 2026-11-20.
+State: fixed in unit s31.
+
+The initial-commit diff fallback reads each staged addition as an ordinary file.
+A staged submodule addition is a directory containing a commit pointer.
+The fallback now uses the cached Git patch for an added gitlink.
+The regression checks aggregate and individual diffs before the parent's first commit.
+
+## 1506. A pointer discard can overwrite ignored local files in a submodule
+
+Found while checking discard safety during unit s31 on 2026-11-20.
+State: fixed in unit s31.
+
+A normal Git submodule checkout can overwrite an ignored local file that becomes tracked at the target commit.
+The clean-status check does not report ignored files.
+Pointer discard now uses a detached checkout of the indexed local commit with `--no-overwrite-ignore`.
+The regression keeps the ignored file and the old nested head when the checkout refuses.
+
+## 1507. The Git application programming interface test omitted the new preparation event
+
+Found by the single full Vitest run during unit s31 on 2026-11-20.
+State: fixed in unit s31.
+
+The exact durable event inventory expected the old repository event list.
+The implementation correctly added `project.RepositoryPreparationChanged`.
+The test now expects the new event in its schema order.
+The subscription-visibility fixture also includes the new event.
+Focused reruns verify both event inventories.
