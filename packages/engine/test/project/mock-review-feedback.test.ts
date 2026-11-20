@@ -107,6 +107,7 @@ it.live("review item 10: a member of a second real project is refused every Mock
   const f = yield* seedScreens(rig), other = join(rig.root, "other-product")
   mkdirSync(other)
   execFileSync("git", ["-C", other, "init", "-b", "main"], { stdio: "ignore" })
+  execFileSync("git", ["-C", other, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Initial"], { stdio: "ignore" })
   const repoId = success(yield* call(owner, "project.repository.add", { name: "Other product", path: other, machineId: "local" })).repoId
   yield* appendSetup([
     eventOf({ _tag: "project.WorktreeCreated", worktreeId: "other-workspace", repoId, machineId: "local", branch: "main", path: other, checkout: "main" }),

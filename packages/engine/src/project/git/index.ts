@@ -126,13 +126,13 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
   const ref = async (folder: string, value: string, signal: AbortSignal): Promise<string> => {
     // Deliberately accepts branch names and object IDs, not revision syntax,
     // reflog selectors, option prefixes or paths.
-    if (!cleanText(value, 256) || value.startsWith("-") || /[~^:@{}\s\\]/.test(value)) return fail("invalid_ref");
+    if (!cleanText(value, 1024) || value === "@" || value.startsWith("-") || /[~^:{}\s\\]/.test(value)) return fail("invalid_ref");
     const reply = await run(folder, ["rev-parse", "--verify", "--end-of-options", `${value}^{commit}`], signal);
     if (reply.code !== 0) return fail("invalid_ref");
     return reply.stdout.trim();
   };
   const localBranch = async (folder: string, name: string, signal: AbortSignal) => {
-    if (!cleanText(name, 256) || name.startsWith("-")) return fail("invalid_ref");
+    if (!cleanText(name, 1024) || name.startsWith("-")) return fail("invalid_ref");
     if ((await run(folder, ["check-ref-format", "--branch", name], signal)).code !== 0) return fail("invalid_ref");
     return ref(folder, `refs/heads/${name}`, signal);
   };
@@ -417,10 +417,20 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       if (!value.startsWith("refs/remotes/origin/")) return fail("invalid_ref");
       const name = value.slice("refs/remotes/origin/".length);
       if ((await run(main, ["check-ref-format", `refs/heads/${name}`], signal)).code !== 0) return fail("invalid_ref");
-      return name;
+      const local = await run(main, ["show-ref", "--verify", "--quiet", `refs/heads/${name}`], signal);
+      if (local.code === 0) {
+        if ([...name].length > 128) return fail("base_branch_too_long");
+        return name;
+      }
+      if (local.code !== 1) throw processFailure(local);
     }
-    if (symbolic.code !== 1) throw processFailure(symbolic);
-    return (await branch(main, signal)) ?? fail("invalid_ref");
+    else if (symbolic.code !== 1) throw processFailure(symbolic);
+    const current = await branch(main, signal);
+    if (current !== "main" && current !== "master") return fail("base_branch_required");
+    const existing = await run(main, ["show-ref", "--verify", "--quiet", `refs/heads/${current}`], signal);
+    if (existing.code === 1) return fail("base_branch_required");
+    if (existing.code !== 0) throw processFailure(existing);
+    return current;
   };
   const repositoryBase = async (folder: string, signal: AbortSignal) => {
     const repo = await repository(folder, signal);
@@ -430,7 +440,13 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       try { if ((await repository(path, signal)).commonDirectory === repo.commonDirectory) return base; }
       catch { /* An unavailable unrelated repository cannot block this checkout. */ }
     }
-    return detectBase(folder, signal);
+    // Legacy reads never consult agent-writable origin/HEAD. Only the owner
+    // inference path may pin an arbitrary base. Keep conventional guards here.
+    const main = dirname(repo.commonDirectory), current = await branch(main, signal);
+    if (current === "main" || current === "master") return current;
+    const master = await run(main, ["show-ref", "--verify", "--quiet", "refs/heads/master"], signal);
+    const primary = await run(main, ["show-ref", "--verify", "--quiet", "refs/heads/main"], signal);
+    return primary.code !== 0 && master.code === 0 ? "master" : "main";
   };
   const mainComparison = async (source: string, destination: string, signal: AbortSignal, caller?: Caller) => {
     const from = await repository(source, signal), to = await repository(destination, signal);
@@ -529,6 +545,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     detectBaseBranch: (folder) => operation((signal) => detectBase(folder, signal)),
     repositoryBase: (folder) => operation((signal) => repositoryBase(folder, signal)),
     validateBranch: (folder, name) => withRepo(folder, async (path, signal) => {
+      if ([...name].length > 128) return fail("base_branch_too_long");
       if ((await run(path, ["check-ref-format", `refs/heads/${name}`], signal)).code !== 0) return fail("invalid_ref");
       await ref(path, `refs/heads/${name}`, signal);
     }),
@@ -537,19 +554,32 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       const local = await head(path, signal);
       if (await branch(path, signal) !== base) return fail("stale_state");
       if (local === null) return { head: null, detail: `Started from the empty local base ${base}; there is no commit to fetch from.` };
-      const configured = await run(path, ["config", "--get", `branch.${base}.remote`], signal);
-      const remote = configured.code === 0 ? configured.stdout.trim() : "origin";
-      const remotes = (await git(path, ["remote"], signal)).trim().split("\n");
-      if (remote === "." || !remotes.includes(remote)) return { head: local, detail: `Started from local base ${base}; no remote is configured for it.` };
-      const merge = await run(path, ["config", "--get", `branch.${base}.merge`], signal);
-      const remoteBranch = merge.code === 0 && merge.stdout.trim().startsWith("refs/heads/") ? merge.stdout.trim().slice(11) : base;
-      let fetched: string;
-      try { fetched = await fetchDeliveryBase(path, remote, remoteBranch, signal); }
-      catch { return { head: local, detail: `Started from local base ${base}; fetching its remote base failed.` }; }
-      const ancestor = await run(path, ["merge-base", "--is-ancestor", local, fetched], signal);
-      if (ancestor.code === 0) return { head: fetched, detail: `Started from the fetched remote base for ${base}. The local base checkout was preserved.` };
-      if (ancestor.code !== 1) throw processFailure(ancestor);
-      return { head: local, detail: `Started from local base ${base}; it is not an ancestor of the fetched remote base.` };
+      // Optional discovery and network work share a short budget. Its failure
+      // never invalidates the already observed local starting commit.
+      const decisionSignal = AbortSignal.any([signal, AbortSignal.timeout(20_000)]);
+      try {
+        const configured = await run(path, ["config", "--get", `branch.${base}.remote`], decisionSignal);
+        if (configured.code !== 0 && configured.code !== 1) throw processFailure(configured);
+        const remote = configured.code === 0 ? configured.stdout.trim() : "origin";
+        const remotes = (await git(path, ["remote"], decisionSignal)).trim().split("\n");
+        if (remote === "." || !remotes.includes(remote)) return { head: local, detail: `Started from local base ${base}; no remote is configured for it.` };
+        const merge = await run(path, ["config", "--get", `branch.${base}.merge`], decisionSignal);
+        if (merge.code !== 0 && merge.code !== 1) throw processFailure(merge);
+        const remoteBranch = merge.code === 0 && merge.stdout.trim().startsWith("refs/heads/") ? merge.stdout.trim().slice(11) : base;
+        let fetched: string;
+        try { fetched = await fetchDeliveryBase(path, remote, remoteBranch, decisionSignal); }
+        catch { return { head: local, detail: `Started from local base ${base}; fetching its remote base failed.` }; }
+        const ancestor = await run(path, ["merge-base", "--is-ancestor", local, fetched], decisionSignal);
+        if (ancestor.code === 1) return { head: local, detail: `Started from local base ${base}; it is not an ancestor of the fetched remote base.` };
+        if (ancestor.code !== 0) throw processFailure(ancestor);
+        const gh = githubCommands(path, decisionSignal, 20_000);
+        const mode = await deliveryMode((args) => run(path, args, decisionSignal), (args) => gh.run(args));
+        // Hosted review fetches this same branch and uses the live remote base.
+        // Local review and its pending counts still compare with the local base.
+        if (mode.mode !== "github" || mode.remote !== remote || remoteBranch !== base) return { head: local,
+          detail: `Started from local base ${base}; local delivery compares against the local base.` };
+        return { head: fetched, detail: `Started from the fetched remote base for ${base}. The local base checkout was preserved.` };
+      } catch { return { head: local, detail: `Started from local base ${base}; remote start discovery failed or timed out.` }; }
     }, true),
     mutationIdentity: (folder) => withRepo(folder, async (path, signal) => {
       const tree = await run(path, ["write-tree"], signal);

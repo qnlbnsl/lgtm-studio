@@ -68,6 +68,10 @@ afterEach(() => { vi.unstubAllEnvs(); removeRig(rig) })
 const setup = (base = "main", beforeRegistration?: () => void) => Effect.gen(function* () {
   yield* registerRebuildCheck()
   if (base !== "main") git(rig.work, "branch", "-m", base)
+  if (base !== "main" && base !== "master") {
+    git(rig.work, "update-ref", `refs/remotes/origin/${base}`, git(rig.work, "rev-parse", "HEAD"))
+    git(rig.work, "symbolic-ref", "refs/remotes/origin/HEAD", `refs/remotes/origin/${base}`)
+  }
   yield* seedAccount("launch", "cursor")
   success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("cursor", { adapterPath: process.execPath, reportedModes: [{ id: "default", level: "ask" }, { id: "acceptEdits", level: "edit" }] }) }))
   success(yield* call(owner, "accounts set-secret", { accountId: "launch", name: "CURSOR_API_KEY", nonce: "review-fixture", value: Redacted.make("synthetic-review-fixture-key") }))
@@ -519,6 +523,7 @@ it.live("issue 579: an independent real writer completes while an approval Git s
 it.live("issue 579/583: queued registration and creation do not block a positive independent writer while real Git is held", () => provideBoard(rig, Effect.gen(function* () {
   const f = yield* setup(), { review } = (yield* prepare(f)).result
   git(rig.outside, "init", "-b", "main")
+  git(rig.outside, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Initial")
   const bin = join(rig.root, "registration-git"), hold = join(rig.root, "registration-hold"), started = join(rig.root, "registration-started")
   mkdirSync(bin); writeFileSync(hold, "owned hold")
   writeFileSync(join(bin, "git"), `#!${process.execPath}\nimport { existsSync, writeFileSync } from 'node:fs';\nimport { spawnSync } from 'node:child_process';\nconst args=process.argv.slice(2);\nif(args.includes('merge')) { writeFileSync(${JSON.stringify(started)},'started'); while(existsSync(${JSON.stringify(hold)})) await new Promise(r=>setTimeout(r,10)); }\nconst result=spawnSync('/usr/bin/git',args,{stdio:'inherit'}); process.exit(result.status ?? 1);\n`, { mode: 0o700 })
@@ -1301,12 +1306,12 @@ it.live("s27 R3 m-3: Prepare reconciles a same-head squash merged by the owner e
   expect(git(rig.work, "rev-list", "--parents", "-n", "1", "HEAD").split(" ")).toHaveLength(2)
 })).pipe(Effect.orDie))
 
-it.live("s27 R3 m-3: the live reference endpoint encodes a slash in the base name", () => provideBoard(rig, Effect.gen(function* () {
+it.live("s27 R3 m-3: the live reference endpoint preserves a slash in the base name", () => provideBoard(rig, Effect.gen(function* () {
   const f = yield* setup(), gh = fakeGithub(rig.root, rig.work)
   vi.stubEnv("PATH", `${gh.bin}:${process.env.PATH}`)
   git(gh.bare, "update-ref", "refs/heads/release/next", f.baseHead)
   expect(yield* Effect.promise(() => githubCommands(f.source, new AbortController().signal, 5000).baseHead("fixture/product", "release/next"))).toBe(f.baseHead)
-  expect(readFileSync(gh.calls, "utf8")).toContain("git/ref/heads/release%2Fnext")
+  expect(readFileSync(gh.calls, "utf8")).toContain("git/ref/heads/release/next")
 })).pipe(Effect.orDie))
 
 it.live("s27 R3 m-4: reusing a pull request refreshes its redacted description through stdin", () => provideBoard(rig, Effect.gen(function* () {
@@ -1452,8 +1457,11 @@ it.live("the owner changes the stored base to an existing branch without switchi
   yield* run(f.api, "project.repository.base.set", { repoId: f.repoId, baseBranch: "release/next" })
   expect(projectView(yield* snapshot).repositories[f.repoId]?.baseBranch).toBe("release/next")
   expect(git(rig.work, "branch", "--show-current")).toBe("dev")
+  expect(projectView(yield* snapshot).workspaces[f.destinationId]?.branch).toBe("dev")
   expect(yield* refusal(run(f.api, "project.create", { name: "Second", goal: "Check base", machineId: "local", repository: { _tag: "existing", repoId: f.repoId } }))).toBe('check out "release/next" in the main repository checkout before creating a project')
   git(rig.work, "checkout", "release/next")
+  yield* run(f.api, "project.repository.base.set", { repoId: f.repoId, baseBranch: "release/next" })
+  expect(projectView(yield* snapshot).workspaces[f.destinationId]?.branch).toBe("release/next")
   const { review } = (yield* prepare(f)).result
   expect(review.base).toBe("release/next")
   expect(yield* refusal(run(f.api, "project.repository.base.set", { repoId: f.repoId, baseBranch: "dev" }))).toBe("finish the repository's open review, Git operation, or project creation before changing its base branch")
@@ -1478,6 +1486,33 @@ it.live("a dev project starts at the fetched remote base and leaves a dirty loca
   const fetches = readFileSync(transport!.gitCalls, "utf8").trim().split("\n").map((line) => JSON.parse(line)).filter((args: string[]) => args.includes("fetch"))
   expect(fetches).toHaveLength(1)
   expect(fetches[0]).toEqual(expect.arrayContaining(["--no-tags", "--no-prune", "--no-recurse-submodules", "--refmap=", "+refs/heads/dev:refs/remotes/origin/dev"]))
+  const opened = (yield* prepare(f)).result
+  expect(opened.review.delivery.mode).toBe("github")
+  expect(opened.comparison.baseHead).toBe(remoteHead)
+  expect(opened.comparison.commits.items).toHaveLength(1)
+  expect(opened.comparison.commits.items[0].head).toBe(f.head)
+})).pipe(Effect.orDie))
+
+it.live("round 2: local delivery after fetching reviews only the project's work and keeps its pending counts local", () => provideBoard(rig, Effect.gen(function* () {
+  let localHead = "", remoteHead = ""
+  const f = yield* setup("dev", () => {
+    const hosted = fakeGithub(rig.root, rig.work)
+    hosted.set({ signedOut: true })
+    vi.stubEnv("PATH", `${hosted.bin}:${process.env.PATH}`)
+    localHead = remoteHead = git(rig.work, "rev-parse", "HEAD")
+    const tree = git(rig.work, "rev-parse", "HEAD^{tree}")
+    for (let i = 0; i < 170; i++) remoteHead = git(hosted.bare, "-c", "user.name=Remote", "-c", "user.email=remote@example.invalid", "commit-tree", tree, "-p", remoteHead, "-m", `Upstream ${i}`)
+    git(hosted.bare, "update-ref", "refs/heads/dev", remoteHead)
+  })
+  expect(git(f.source, "rev-parse", "HEAD^")).toBe(localHead)
+  expect(git(rig.work, "rev-parse", "refs/remotes/origin/dev")).toBe(remoteHead)
+  expect((yield* readLog).find((row) => row.event._tag === "project.CreationFinished")?.event).toMatchObject({ detail: expect.stringContaining("local delivery compares against the local base") })
+  const opened = (yield* prepare(f)).result
+  expect(opened.review.delivery.mode).toBe("local")
+  expect(opened.comparison.baseHead).toBe(localHead)
+  expect(opened.comparison.commits.items).toHaveLength(1)
+  expect(opened.comparison.commits.items[0].head).toBe(f.head)
+  expect(yield* makeGitService({ workspaceFolder: rig.root }).state(f.source, "dev")).toMatchObject({ pending: 1, behindParent: 0 })
 })).pipe(Effect.orDie))
 
 for (const mode of ["missing remote", "fetch failure", "diverged base"] as const) it.live(`dev creation records its local fallback for ${mode}`, () => provideBoard(rig, Effect.gen(function* () {

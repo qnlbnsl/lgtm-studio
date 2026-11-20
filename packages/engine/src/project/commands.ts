@@ -38,14 +38,14 @@ const requireProject = (input: Input, id: string, lead = true) => {
 const member = (input: Input, projectId: string, agentId: string) =>
   own(input.snapshot.agents, agentId) !== undefined && own(projectView(input.snapshot).agentProjects, agentId) === projectId
 // Registration uses the same trusted service and queue as public Git calls.
-const inspectCheckout = (input: Input, path: string) => withGit(input, (git) => Effect.gen(function* () {
+const inspectCheckout = (input: Input, path: string, inferBase = false) => withGit(input, (git) => Effect.gen(function* () {
   const repository = yield* gitCall(git.register(path))
   const state = yield* gitCall(git.state(repository.path))
   const checkouts = yield* gitCall(git.worktrees(repository.path))
   const main = checkouts.items.find((row) => row.path === repository.path)
   if (state.branch === null || main === undefined) return yield* refused("an existing local Git checkout root with a named branch is required")
   return { path: repository.path, common: repository.commonDirectory, branch: state.branch,
-    baseBranch: yield* gitCall(git.detectBaseBranch(repository.path)),
+    ...(inferBase ? { baseBranch: yield* gitCall(git.detectBaseBranch(repository.path)) } : {}),
     checkout: repository.commonDirectory === `${repository.path}/.git` ? "main" as const : "worktree" as const }
 }))
 const settingsSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
@@ -81,6 +81,7 @@ const repositoryAdd = (inspect: CheckoutReader = unobservedCheckout): PiecePlann
   const p = raw as Payload<"project.repository.add">
   yield* localMachine(p.machineId); yield* safePath(input, p.path)
   const checkout = yield* inspect(input, p.path)
+  if (checkout.baseBranch === undefined) return yield* refused("project state changed; refresh and retry")
   if (Object.values(projectView(input.snapshot).repositories).some((repo) => repo.path === checkout.path)) return yield* refused("repository is already registered")
   yield* safePath(input, checkout.baseBranch)
   const repoId = fresh(RepositoryId)
@@ -136,17 +137,18 @@ export const prepareRegistration = (input: Input, name: keyof typeof registratio
     })
     yield* checkIdle(input)
     yield* safePath(input, repo.path)
-    yield* withGit(input, (git) => Effect.gen(function* () {
+    const checkoutBranch = yield* withGit(input, (git) => Effect.gen(function* () {
       yield* gitCall(git.validateBranch(repo.path, baseBranch))
       const trees = yield* gitCall(git.worktrees(repo.path))
       if (trees.truncated) return yield* refused("Git: output_limit")
       for (const tree of trees.items) if ((yield* gitCall(git.state(tree.path))).mergeHead !== null) return yield* refused("finish the repository's open review, Git operation, or project creation before changing its base branch")
+      return (yield* gitCall(git.state(repo.path))).branch
     }))
     const finalize: PiecePlanner = (current, payload) => Effect.gen(function* () {
       if (current.actor._tag !== "owner" || JSON.stringify(own(projectView(current.snapshot).repositories, repo.repoId)) !== JSON.stringify(repo)) return yield* refused("project state changed; refresh and retry")
       yield* checkIdle(current)
       return ack(payload.requestId, [{ _tag: "project.RepositoryBaseChanged", repoId: repo.repoId, baseBranch },
-        ...Object.values(projectView(current.snapshot).workspaces).filter((row) => row.repoId === repo.repoId && row.checkout === "main" && row.path === repo.path)
+        ...Object.values(projectView(current.snapshot).workspaces).filter((row) => checkoutBranch === baseBranch && row.repoId === repo.repoId && row.checkout === "main" && row.path === repo.path)
           .map((row) => ({ _tag: "project.WorktreeCreated" as const, ...row, branch: baseBranch }))])
     })
     return finalize
@@ -159,7 +161,7 @@ export const prepareRegistration = (input: Input, name: keyof typeof registratio
   const relatedPath = name === "project.repository.locate" ? repository?.path : name === "project.workspace.register" ? location?.path : undefined
   if (name !== "project.repository.add" && relatedPath === undefined) return yield* refused("repository location not found")
   const related = relatedPath === undefined ? undefined : yield* inspectCheckout(input, relatedPath)
-  const checkout = yield* inspectCheckout(input, path)
+  const checkout = yield* inspectCheckout(input, path, name === "project.repository.add")
   const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
   const inspect: CheckoutReader = (current, requestedPath) => Effect.gen(function* () {
     const view = projectView(current.snapshot)

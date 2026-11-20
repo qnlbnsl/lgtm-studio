@@ -57,6 +57,10 @@ const historicProject = (fields: Record<string, unknown>) => Effect.gen(function
 // The project works on a feature worktree. The main checkout is the base.
 const setup = (working = false, base = "main") => Effect.gen(function* () {
   if (base !== "main") git(rig.work, "branch", "-m", base)
+  if (base !== "main" && base !== "master") {
+    git(rig.work, "update-ref", `refs/remotes/origin/${base}`, git(rig.work, "rev-parse", "HEAD"))
+    git(rig.work, "symbolic-ref", "refs/remotes/origin/HEAD", `refs/remotes/origin/${base}`)
+  }
   yield* registerRebuildCheck(); yield* seedAccount(); yield* seedHarness()
   const feature = join(rig.root, "feature")
   git(rig.work, "worktree", "add", "-b", "feature", feature)

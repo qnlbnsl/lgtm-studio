@@ -168,8 +168,8 @@ both reviewed heads and branch identities, and exact common repository metadata.
 The local fallback also requires clean source and destination checkouts with no active merge.
 A GitHub approval checks the pinned pull request and remote base before requesting a merge commit with the reviewed head condition.
 Closed pull requests, conflicts, and merge states that are not ready refuse with a sentence reason.
-The remote base must still match both Prepare and the reviewed local base.
-If it was already ahead at Prepare, the owner must update the local base and prepare again.
+The remote base must still match the fetched base recorded at Prepare.
+The local base may remain behind that fetched base during hosted delivery.
 It fetches and fast-forwards a clean local base checkout on its registered branch after the remote merge succeeds.
 It preserves a dirty checkout or a checkout on another branch.
 The optional `localSync` reply explains whether that update completed.
@@ -607,12 +607,20 @@ The branch must exist locally.
 An open review, an unfinished Git operation, an active merge, or an unfinished project creation refuses the change.
 The main checkout must be switched to the recorded branch before project creation or local approval.
 The setting does not move a branch or switch a checkout.
-Registration records the branch named by `refs/remotes/origin/HEAD`, or the main checkout's current branch when it is absent.
-Old rows acquire the same inferred value through a new `project.RepositoryBaseChanged` event on first need.
+The main workspace binding changes only if its checkout already has the selected branch checked out.
+An owner who switches afterwards can repeat the setting command to refresh that binding.
+Registration records the branch named by `refs/remotes/origin/HEAD` only when it exists locally.
+Otherwise, only an existing current `main` or `master` branch supplies the default.
+A repository with no commit needs an initial commit before registration.
+Old rows acquire a validated inferred value through a new owner-authored `project.RepositoryBaseChanged` event.
+Agent reads never infer or record a base and retain conventional branch protection for old rows.
+Failed inference leaves old reads available and is cached for collection reads until an explicit repository operation retries it or the registration changes.
 New repositories use `main`.
 
 Project creation fetches the configured remote base through the hardened explicit tracking-reference fetch.
-It uses the fetched commit when the local base is an ancestor.
+It uses the fetched commit only when the local base is an ancestor and confirmed GitHub delivery uses that same remote branch.
+Local delivery starts from the local base so review and pending counts do not include upstream commits.
+Optional remote discovery and fetching share a 20-second deadline.
 It otherwise uses the local commit and records why in `project.CreationFinished.detail`.
 A resumed creation that finds its existing worktree records that it reused that worktree.
 The fetch never updates a local branch or the main checkout's files.

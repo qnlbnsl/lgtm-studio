@@ -20728,3 +20728,111 @@ Inferring a legacy repository's base during that load appended an event between 
 The form therefore rejected its own first load as changed state.
 The owner's opening sequence and snapshot reads now pin available legacy repositories before reporting their sequence.
 The existing mounted creation journeys cover the initial load and its later owner sessions.
+
+## 1477. A fetched project start includes upstream work in a local review
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+A project started at a fetched commit while local delivery still compared it with the stale local base.
+The review and pending counts therefore included upstream commits as project work.
+Creation now uses a fetched start only for confirmed GitHub delivery against the same remote branch.
+Local delivery starts at the local base and records that decision.
+The regression checks a remote that is 170 commits ahead.
+
+## 1478. An agent read can infer and record a legacy repository base
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+Legacy inference ran on agent calls and trusted the main checkout's arbitrary branch or the shared remote head.
+Only owner calls now record an inferred base.
+An unrecorded row keeps conventional branch protection on agent reads.
+Registration and inference require a local branch named by `origin/HEAD`, or an existing current `main` or `master` branch.
+
+## 1479. A raw repository identifier can redirect inference outside a project
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+Inference preferred a raw repository identifier over the project's repository.
+Conflicting identifiers now prevent inference.
+A project-scoped snapshot resolves only that project's repository.
+
+## 1480. Unresolved legacy inference repeatedly launches Git and can fail snapshots
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+A detached legacy checkout could fail inference on every snapshot.
+Path, redaction, and transaction refusals could also escape the optional inference path.
+Failed inference now preserves ordinary reads and is cached for collection reads.
+An explicit repository operation retries inference.
+The owner can always repair the setting explicitly.
+
+## 1481. Base validation accepts missing local branches and rejects valid at-sign names
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+Detection did not verify that the selected base existed locally or fit the event's name limit.
+Reference resolution also rejected valid names containing `@`.
+Detection now verifies existence and explains the 128-character limit before recording an event.
+Reference resolution accepts embedded at signs while refusing reflog syntax.
+
+## 1482. The GitHub base endpoint encodes branch path separators
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+The GitHub reference endpoint percent-encoded the slash in `release/next`.
+It now encodes each branch path segment separately and preserves the separator.
+
+## 1483. A failed creation fetch can hide the usable local starting commit
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+Only fetch failures used the local fallback.
+Other remote discovery failures became a repository-unavailable refusal.
+The fetch could also hold the Git gate for 90 seconds.
+Optional remote discovery and fetching now share a 20-second deadline.
+Their failures record the local fallback instead of discarding the observed local commit.
+
+## 1484. Changing the base setting rewrites a workspace's checked-out branch binding
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+The setting command rewrote the main workspace's branch even when its checkout stayed on another branch.
+It now refreshes that binding only when the selected branch is already checked out.
+An owner who switches afterwards can repeat the setting command.
+
+## 1485. Workspace registration unnecessarily infers the repository base again
+
+Found during round 2 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+The shared checkout inspector inferred a base for location and workspace registration too.
+It could therefore refuse a valid checkout whose unconventional base the owner had already selected explicitly.
+Only new repository registration now requests base detection from that inspector.
+Location and workspace registration keep their existing physical checkout checks.
+
+## 1486. The retired registration controller freezes new base admission refusals
+
+Found during round 2 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+The retired page's controller treated the new missing-base and overlong-base refusals as uncertain registrations.
+Its existing admission list now recognizes both determinate refusals.
+The regression fixes a refused feature checkout and registers it on a new request without losing the draft.
+No screen was changed.
+
+## 1487. The new base-branch regression file omits the required rebuild hook
+
+Found during round 2 of unit s30's full regression run on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+The new engine test file did not register the comparison between live views and a rebuild from its event log.
+Every case now registers that check before using its fixture.
+The discovery guard and the dedicated regressions are rerun together.

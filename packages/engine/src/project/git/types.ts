@@ -3,6 +3,7 @@ import * as Data from "effect/Data";
 import type { Caller, GitMutationIdentity, GitReviewDelivery } from "@lgtm/contracts";
 
 export type GitFailureReason =
+  | "base_branch_required" | "base_branch_too_long"
   | "gh_unavailable" | "github_refused" | "github_remote_changed" | "github_create_refused" | "github_base_moved" | "forbidden_remote" | "invalid_path" | "not_repository" | "invalid_ref" | "output_limit" | "timeout" | "cancelled"
   | "git_unavailable" | "git_failed" | "busy" | "collision" | "dirty_destination" | "dirty_source"
   | "conflicts" | "confirmation_required" | "stale_state" | "nothing_staged" | "invalid_message"

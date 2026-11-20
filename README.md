@@ -141,9 +141,12 @@ An installer, startup at login, and loading project configuration from
 ## Repository base branches
 
 Each registered repository records its own base branch.
-Registration uses the branch named by `refs/remotes/origin/HEAD` when it exists.
-Otherwise, registration uses the main checkout's current branch.
-Older repository records gain this setting on first use without changing old events.
+Registration uses the branch named by `refs/remotes/origin/HEAD` when that branch exists locally.
+Otherwise, registration uses the main checkout's current branch only when it is `main` or `master` and exists locally.
+Other checkouts require the owner to restore the local base branch before registration.
+A repository with no commit needs its initial commit before registration.
+Older repository records gain this setting on an owner call without changing old events.
+Agent calls preserve the conventional `main` or `master` guards until the owner records a base.
 New repositories created by LGTM Studio use `main`.
 The main checkout must have the recorded base checked out before creating a project.
 
@@ -155,12 +158,16 @@ The owner can change the base to an existing local branch through the client API
 
 The command refuses an open review, an unfinished Git operation, an active merge, or an unfinished project creation in that repository.
 Changing the setting does not switch the owner's checkout.
+The registered workspace binding changes only when that checkout already has the selected branch checked out.
+Switch the checkout before changing the setting, or repeat the setting command after switching it.
 The website displays the recorded base in its existing repository details.
 It does not yet have a control to change that setting.
 
 Before creating a project worktree, the engine fetches the base branch from its configured remote.
-It uses the fetched commit when the local base is its ancestor.
+It uses the fetched commit when the local base is its ancestor and delivery is confirmed to use a GitHub pull request against that same remote branch.
+Local delivery starts from the local base so its review and pending counts include only the project's work.
 A missing remote, a failed fetch, or a local base that is ahead or diverged uses the local base instead.
+Remote discovery and fetching share a 20-second limit and fall back to the local base on failure.
 The completed creation event records the selected source or the fallback reason.
 This operation never moves the local base branch or changes the main checkout's files.
 
