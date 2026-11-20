@@ -1503,12 +1503,15 @@ Running agent-written code inside the engine is a new security surface and needs
 
 ## Choosing the lead when a project is created
 
-State: Idea. Requested by the owner on 2026-11-18, after his first real project. The owner will build it through LGTM Studio.
+State: Implemented on 2026-11-19, following the owner's request on 2026-11-18 and his subscription-selection clarification on 2026-11-19.
 
-The new-project dialog shows the lead that the settings selected and offers no other choice.
-The owner wants to choose the lead's harness, and its model and effort, in that dialog, for that one project.
-His example is starting a project and saying that this one launches with Codex.
-The saved default stays as the value the dialog opens with.
+The New project dialog starts with the saved lead and lets the owner choose the harness, subscription, model and effort for that project.
+Model and effort choices come from the selected harness account.
+Changing the account clears the previous model and effort.
+Changing the model reads that model's effort choices.
+The saved defaults do not change.
+The client application programming interface (API) accepts the same optional lead selection for placement preview and project creation.
+The engine validates the selection before allocating a project, and a retried creation keeps its recorded lead.
 
 ## Custom harnesses
 

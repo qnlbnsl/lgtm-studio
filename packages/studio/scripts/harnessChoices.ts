@@ -75,7 +75,7 @@ export function harnessChoicesSource(path: string, source: string): string {
     replace('<select id="setup-git" class="select" onChange=${refuse}><option value=""></option></select>', '${data.harnessChoices?.some((h) => h.models.options.length) ? html`<select id="setup-git" class="select" onChange=${refuse}><option value=""></option>${data.harnessChoices.map((h) => html`<optgroup label=${h.harnessId}>${h.models.options.map((m) => html`<option value=${m.id}>${m.label || m.id}</option>`)}</optgroup>`)}</select>` : html`<p class="muted">${data.leadChoices?.reason || "This harness did not report model choices."}</p>`}')
   }
   if (path === 'js/dialogs.js') {
-    replace("The service chooses the lead from its configured defaults.'}</p>", "The service chooses the lead from its configured defaults.'}</p>${s.setupData?.leadChoices?.reason && html`<p class=\"muted\">${s.setupData.leadChoices.reason}</p>`}")
+    replace("import { useProjectLead } from './project-lead.js';", "import { useProjectLead } from './project-lead.js';\n// Project lead choices use the authenticated engine connection.")
   }
   const replaceAll = (from: string, to: string) => {
     if (!source.includes(from)) throw new Error(`Harness choices integration no longer matches ${path}`)

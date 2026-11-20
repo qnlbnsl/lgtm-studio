@@ -777,6 +777,18 @@ test("design mock: still opens on its sample data with no console error", async 
       await page.goto(`${origin}/mock/#${route}`)
       await expect(page.locator(".main")).toBeVisible()
     }
+    // The same New project controls remain usable without an engine connection.
+    await page.getByRole("button", { name: "New project", exact: true }).first().click()
+    const newProject = page.getByRole("dialog", { name: "New project", exact: true })
+    await newProject.getByRole("button", { name: "Harness", exact: true }).click()
+    await newProject.getByRole("menuitemradio", { name: "Codex", exact: true }).click()
+    await expect(newProject.getByRole("button", { name: "Subscription", exact: true })).toBeEnabled()
+    await newProject.getByRole("button", { name: "Model", exact: true }).click()
+    await newProject.getByRole("menuitemradio").nth(1).click()
+    await newProject.getByRole("button", { name: "Effort", exact: true }).click()
+    await newProject.getByRole("menuitemradio", { name: "Low", exact: true }).click()
+    await expect(newProject.getByRole("button", { name: "Effort", exact: true })).toHaveText("Low")
+    await newProject.getByRole("button", { name: "Cancel", exact: true }).click()
     // The mock's own login still accepts any password but "wrong".
     await page.getByRole("button", { name: "Log out" }).click()
     await page.locator("#login-password").fill("wrong")

@@ -970,6 +970,9 @@ New project.
 
 ### New project
 
+- **The project lead controls share one row,** decided by the owner on 2026-11-19. Harness, subscription, model and effort use the same dropdown component and compact pick buttons as the chat composer.
+- **The dialog is at most 520 pixels wide.** Machine and repository have compact placement rows. The lead choices do not become four separate form rows or two paired columns.
+
 - **The fields are Run on, Repository, Project name, Goal, and Lead subscription.** The
   first run hides Goal, because the first project's goal comes from the onboarding
   conversation.

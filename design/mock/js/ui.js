@@ -119,7 +119,7 @@ export function Rich({ text, pid }) {
 
 // ---- menus --------------------------------------------------------------------
 // items: { label, icon, onSelect, checked, danger, disabled, why, sub, hint } | { sep: true } | { heading }
-export function Menu({ trigger, items, align = 'start', side = 'bottom', class: cls, label, width, header }) {
+export function Menu({ trigger, items, align = 'start', side = 'bottom', class: cls, label, width, header, disabled = false }) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState(null);
   const [active, setActive] = useState(-1);
@@ -149,7 +149,7 @@ export function Menu({ trigger, items, align = 'start', side = 'bottom', class: 
     return () => { removeEventListener('pointerdown', away, true); removeEventListener('keydown', key, true); removeEventListener('resize', place); };
   }, [open, active, list.length]);
   return html`
-    <button ref=${btn} type="button" class=${cls} aria-haspopup="menu" aria-expanded=${open} aria-label=${label} onClick=${(e) => { e.stopPropagation(); setOpen(!open); }}>${trigger}</button>
+    <button ref=${btn} type="button" class=${cls} aria-haspopup="menu" aria-expanded=${open} aria-label=${label} disabled=${disabled} onClick=${(e) => { e.stopPropagation(); setOpen(!open); }}>${trigger}</button>
     ${open && html`<div ref=${menu} class="menu" role="menu" style=${{ left: (pos?.left ?? -9999) + 'px', top: (pos?.top ?? -9999) + 'px', width: width ? width + 'px' : null }} onClick=${(e) => e.stopPropagation()}>
       ${header}
       ${list.map((it, i) => it.sep ? html`<div class="menu-sep" key=${i}></div>`

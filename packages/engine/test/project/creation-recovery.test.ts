@@ -568,3 +568,43 @@ live("issue 591: an existing master checkout remains a usable owner review desti
     expect(runner.callsOf("start")).toHaveLength(1)
   }))
 }))
+
+
+live("launches the requested project lead without changing the saved lead defaults", () => Effect.gen(function* () {
+  const runner = yield* makeFakeRunner()
+  yield* provideRig(rig, { runner, secrets: makeFakeSecrets() }, Effect.gen(function* () {
+    const repoId = yield* setup()
+    const defaults = { harness: "cursor", account: { _tag: "named", accountId: "primary" }, model: "test-model", effort: "high", permission: "ask" }
+    success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "zsh", lead: defaults } }))
+    yield* seedAccount("custom", "claude")
+    success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("claude", {
+      models: ["selected-model"], efforts: ["low"], reportedModes: [{ id: "default", level: "ask" }]
+    }) }))
+    success(yield* call(owner, "accounts set-secret", { accountId: "custom", name: "ANTHROPIC_API_KEY", nonce: "custom-lead", value: Redacted.make("synthetic-custom-credential-012345") }))
+    const lead = { harness: "claude", account: { _tag: "named", accountId: "custom" }, model: "selected-model", effort: "low", permission: "ask" }
+    const request = { ...payload(repoId), lead }
+    success(yield* call(owner, "project.placement.preview", request))
+    expect(runner.callsOf("start")).toHaveLength(0)
+    const created = success(yield* call(owner, "project.create", request))
+    expect(runner.callsOf("start")).toHaveLength(1)
+    expect(runner.callsOf("start")[0]?.input).toMatchObject({ harness: { id: "claude" }, account: { id: "custom" }, model: "selected-model", effort: "low", permission: "ask" })
+    expect(success(yield* call(owner, "project.settings", {})).settings.lead).toEqual(defaults)
+    expect(success(yield* call(owner, "project.create", request))).toEqual(created)
+    expect(runner.callsOf("start")).toHaveLength(1)
+    expect(failureOf(yield* call(owner, "project.create", { ...request, lead: { ...lead, effort: "high" } }))?.reason).toBe("request id reused")
+  }))
+}))
+
+live("refuses an unavailable requested lead before allocating a project instead of falling back to defaults", () => Effect.gen(function* () {
+  const runner = yield* makeFakeRunner()
+  yield* provideRig(rig, { runner, secrets: makeFakeSecrets() }, Effect.gen(function* () {
+    const repoId = yield* setup()
+    const request = { ...payload(repoId), lead: { harness: "claude", account: { _tag: "named", accountId: "missing" }, permission: "ask" } }
+    expect(failureOf(yield* call(owner, "project.placement.preview", request))?.reason).toBe("no ready signed-in lead account is available")
+    expect(failureOf(yield* call(owner, "project.create", request))?.reason).toBe("no ready signed-in lead account is available")
+    expect(runner.callsOf("start")).toHaveLength(0)
+    expect(Object.values(projectView(yield* snapshot).projects)).toHaveLength(0)
+    expect(success(yield* call(owner, "project.creations", {})).items).toEqual([])
+    expect(git(rig.work, "worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1)
+  }))
+}))

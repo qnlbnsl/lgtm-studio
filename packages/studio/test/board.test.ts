@@ -42,6 +42,8 @@ describe("the real project board", () => {
   it("sends the derived project name and the real repository union on the local machine", () => {
     expect(board.projectPayload({ repo: "rp-orchard", goal: "Count apples" }, "Apples")).toEqual({ name: "Apples", goal: "Count apples", machineId: "local", repository: { _tag: "existing", repoId: "rp-orchard" } })
     expect(board.projectPayload({ newRepo: "new-repo", goal: "Count apples" }, "Apples").repository).toEqual({ _tag: "new", name: "new-repo" })
+    const lead = { harness: "codex", account: { _tag: "named", accountId: "custom" }, model: "selected", effort: "low", permission: "ask" } as NonNullable<Parameters<typeof board.projectPayload>[0]["lead"]>
+    expect(board.projectPayload({ repo: "rp-orchard", goal: "Count apples", lead }, "Apples").lead).toEqual(lead)
   })
 })
 describe("messages", () => {

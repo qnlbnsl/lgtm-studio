@@ -90,8 +90,8 @@ export function mapSetup(setup: SetupState, discovery: typeof Discovery.Type, se
     workspace: settings?.workspaceFolder ?? "", shell: settings?.shell ?? "", ownerName: settings?.displayName ?? discovery.ownerNameSuggestion ?? "",
     available: discovery.state === "available", reason: discovery.reason ?? "" }
 }
-export function projectPayload(input: { repo?: string; newRepo?: string; goal: string }, name: string) {
-  return { name, goal: input.goal, machineId: "local", repository: input.newRepo ? { _tag: "new", name: input.newRepo } : { _tag: "existing", repoId: input.repo } }
+export function projectPayload(input: { repo?: string; newRepo?: string; goal: string; lead?: NonNullable<ProjectSettings["lead"]> }, name: string) {
+  return { name, goal: input.goal, machineId: "local", ...(input.lead ? { lead: input.lead } : {}), repository: input.newRepo ? { _tag: "new", name: input.newRepo } : { _tag: "existing", repoId: input.repo } }
 }
 export function postPayload(input: { channel: string; text: string; action: string; to: string[]; replyTo?: string }, members: ReadonlyArray<string>) {
   const to = input.to.length ? input.to : input.action === "needs-reply" ? members.filter((id) => id !== "owner" && !id.startsWith("service:")) : []

@@ -227,8 +227,8 @@ export function nameFromGoal(goal) {
   const name = w.slice(0, 4).join(' ');
   return name ? name[0].toUpperCase() + name.slice(1) : 'New project';
 }
-export function createProject({ repo, goal, machine, subscription, newRepo }) {
-  if (live.on) return board.createProject({ repo, goal, machine, subscription, newRepo });
+export function createProject({ repo, goal, machine, subscription, newRepo, lead }) {
+  if (live.on) return board.createProject({ repo, goal, machine, subscription, newRepo, lead });
   const s = S();
   let repoId = repo;
   if (newRepo) {
@@ -242,7 +242,7 @@ export function createProject({ repo, goal, machine, subscription, newRepo }) {
   engine.call('create', { repositoryId: repoId, goal, machineId: machine, subscriptionId: sub.id, ...(newRepo ? { newRepository: newRepo } : {}) });
   update((st) => {
     st.projects.push({ id, repo: repoId, name: 'Naming…', naming: true, prefix: 'PJ', goal, stage: 'Define', phase: 'define', branch: '', folder: '', machine, lead: leadId, shell: 'zsh', createdAt: Date.now(), hasMocks: false, tests: 'on', agentReview: 'on', fresh: true });
-    st.agents.push({ id: leadId, project: id, team: null, role: 'project-lead', name: 'Project lead', harness: sub.harness, subscription: sub.id, model: HARNESSES[sub.harness].models[1] || HARNESSES[sub.harness].models[0], effort: 'High', permission: st.settings.defaultPermission || 'Automatic review', state: 'working', activity: 'Reading the goal', task: null, context: 2, turns: 1, tokens: 0, workState: 'working', startedAt: Date.now() });
+    st.agents.push({ id: leadId, project: id, team: null, role: 'project-lead', name: 'Project lead', harness: sub.harness, subscription: sub.id, model: lead?.model || HARNESSES[sub.harness].models[0], effort: lead?.effort || '', permission: st.settings.defaultPermission || 'Automatic review', state: 'working', activity: 'Reading the goal', task: null, context: 2, turns: 1, tokens: 0, workState: 'working', startedAt: Date.now() });
     st.threads[leadId] = [{ id: uid('m'), type: 'user', ts: Date.now(), text: goal }];
     st.pending[leadId] = true;
     st.expanded['repo:' + repoId] = true; st.expanded['project:' + id] = true;
