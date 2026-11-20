@@ -1757,3 +1757,27 @@ This joins the earlier entries about a testing skill with fixed rules and per-la
 - Native applications: a web build where the toolkit has one (such as React Native for Web), a simulator stream, or screenshots; each weakens the "what you see is what you get" promise in a different way.
 - How a mockup is isolated from LGTM Studio's own page, since it runs a repository's code inside the website.
 - How the existing conversion from the design file fits: the design file stays the source of truth, and mockups come from real code.
+
+## Linking a hosting account to add a repository directly from GitHub, GitLab or Bitbucket
+
+State: Idea. Requested by the owner on 2026-11-20.
+
+The owner wants to link an account at a repository hosting service to LGTM Studio.
+With a linked account, the owner adds a repository directly from that service, without first cloning it by hand.
+The owner named the largest services: GitHub, GitLab and Bitbucket.
+
+Today a repository is added only by the path of a folder that already exists on the machine.
+The pull request flow uses the `gh` command with whatever account it is signed in to, and supports GitHub only.
+
+What this would add:
+
+- A linked account per hosting service, shown in the settings beside the harness accounts.
+- A list of the repositories that the account can reach, to choose from when adding a repository.
+- A clone into the workspace folder, followed by the same registration as today, including the recorded base branch.
+- The same linked account then serves pull request delivery for that repository.
+
+Undecided: how each account is linked, for example a sign-in in the browser, a stored token, or the service's own command-line tool.
+Undecided: where the credential is kept; the entry "A built-in vault in the server process" is the likely place.
+Undecided: pull request delivery for GitLab and Bitbucket, which the present GitHub flow does not cover.
+Undecided: self-hosted instances of these services.
+`SECURITY.md` governs this, because a hosting credential can push code; accounts and secrets stay with the owner.
