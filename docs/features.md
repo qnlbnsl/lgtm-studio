@@ -1828,3 +1828,25 @@ The entry "A repository agent that works in the main checkout and prepares a rep
 - Which repository receives the issues, and under whose account.
 - How long reports are kept, and what "cleaned up" means: deleted, or condensed into findings.
 - How this relates to the existing lists `docs/issues.md` and `docs/features.md` in this repository.
+
+## A usage page for every connected harness and account
+
+State: Idea. The owner will design it; stated on 2026-11-20.
+
+The owner wants a usage monitor in LGTM Studio.
+It covers every connected harness and every account.
+Where it sits in the website is not decided.
+
+The model is the status line the owner already has in the terminal.
+For each account the page shows the model, the weekly limit and how much of it is left, and when it resets.
+For each running agent it shows how full the context is.
+It shows the cost in dollars of the tokens used.
+The page breaks these numbers down, for example by harness, account, project and agent.
+
+What exists today: the engine reports context use for an agent, and an account can be marked available again after a limit.
+The engine does not read any provider's usage or limit report.
+
+Undecided: where each number comes from, since every harness reports limits and cost differently, and some report none.
+Undecided: whether cost is taken from the harness's own figure or computed from token counts and a price table that must be kept current.
+Undecided: whether the page only shows usage, or also warns before a limit and moves work to another account.
+Reading a provider's usage may need the account's own credentials; accounts and secrets stay with the owner under `SECURITY.md`.
