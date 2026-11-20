@@ -177,6 +177,19 @@ live("does not claim an archive after failed stop, preserves setup, and retries 
   }))
 }))
 
+// Issue 1465: the saved lead default held "ask", copied from the old harness default.
+live("a saved lead default of ask that the owner did not choose starts the lead at the harness default", () => Effect.gen(function* () {
+  const runner = yield* makeFakeRunner(), secrets = makeFakeSecrets()
+  yield* provideRig(rig, { runner, secrets }, Effect.gen(function* () {
+    const repoId = yield* setup(), request = payload(repoId)
+    const saved = { harness: "cursor", account: { _tag: "named", accountId: "primary" }, model: "test-model", effort: "high", permission: "ask" }
+    success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "bash", lead: saved } }))
+    expect(success(yield* call(owner, "project.settings", {})).settings.lead.permission).toBe("auto")
+    success(yield* call(owner, "project.create", request))
+    expect(runner.callsOf("start")[0]?.input).toMatchObject({ model: "test-model", permission: "auto" })
+  }))
+}))
+
 live("refuses unknown machines and unavailable defaults before mutations, and chooses ready defaults without assuming Claude", () => Effect.gen(function* () {
   const runner = yield* makeFakeRunner(), secrets = makeFakeSecrets()
   yield* provideRig(rig, { runner, secrets }, Effect.gen(function* () {
@@ -581,7 +594,7 @@ live("launches the requested project lead without changing the saved lead defaul
       models: ["selected-model"], efforts: ["low"], reportedModes: [{ id: "default", level: "ask" }]
     }) }))
     success(yield* call(owner, "accounts set-secret", { accountId: "custom", name: "ANTHROPIC_API_KEY", nonce: "custom-lead", value: Redacted.make("synthetic-custom-credential-012345") }))
-    const lead = { harness: "claude", account: { _tag: "named", accountId: "custom" }, model: "selected-model", effort: "low", permission: "ask", permissionChosen: true }
+    const lead = { harness: "claude", account: { _tag: "named", accountId: "custom" }, model: "selected-model", effort: "low", permission: "ask" }
     const request = { ...payload(repoId), lead }
     success(yield* call(owner, "project.placement.preview", request))
     expect(runner.callsOf("start")).toHaveLength(0)

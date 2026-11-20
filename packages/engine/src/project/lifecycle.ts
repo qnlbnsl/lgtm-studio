@@ -57,7 +57,8 @@ const planCreation = (input: Input, payload: Payload<"project.create">, bodyHash
   if (settings === undefined) return yield* refused("configure the workspace folder before creating a project")
   const name = yield* cleanName(input, payload.name)
   const goal = yield* input.runtime.log.redactText(payload.goal)
-  const lead = yield* leadDefaults(input, payload.lead ?? settings.lead)
+  // A lead named in the request is the owner's explicit choice, so its level is final.
+  const lead = yield* leadDefaults(input, payload.lead === undefined ? settings.lead : { ...payload.lead, permissionChosen: true })
   const root = yield* creationIo(() => directory(settings.workspaceFolder, settings.workspaceFolder))
   let repository: ProjectCreation["repository"], repositoryIdentity: FolderIdentity | undefined
   if (payload.repository._tag === "existing") {
@@ -176,7 +177,7 @@ export const prepareProjectLifecycle = (input: Input, name: string, payload: Rec
           if (current.actor._tag !== "owner" || own(now.creations, p.requestId) !== undefined
             || !same(before.settings, now.settings) || !same(related(before), related(now))) return yield* refused("project state changed; refresh and retry")
           yield* cleanName(current, p.name)
-          yield* leadDefaults(current, p.lead ?? now.settings?.lead)
+          yield* leadDefaults(current, p.lead === undefined ? now.settings?.lead : { ...p.lead, permissionChosen: true })
           return yield* refused(checkoutMainReason)
         })
         return initialRefusal

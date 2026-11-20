@@ -58,6 +58,7 @@ export function useProjectLead(s, machine) {
   const why = !initialized ? 'Reading the project lead settings…' : !accountValid ? 'Choose a signed-in subscription for the project lead.' : pending ? 'Reading the project lead choices…' : null;
   const lead = accountValid ? { harness: selected.harness, account: { _tag: 'named', accountId: selected.accountId },
     ...(model ? { model } : {}), ...(effort ? { effort } : {}), permission: defaults?.permission || 'auto' } : undefined;
+  // The engine treats the permission of a requested lead as final. It comes from the saved default as the engine reports it.
   const changeHarness = (id) => {
     const account = accounts.find((a) => a.harness === id);
     setSelected({ harness: id, accountId: account?.id || '', model: '', effort: '' });

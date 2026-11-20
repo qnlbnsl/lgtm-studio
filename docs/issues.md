@@ -20623,3 +20623,63 @@ The `project.settings` reply reports that effective level, so the page shows wha
 A saved "ask" with the marker, and every other saved level, is kept.
 Existing agents keep their levels.
 A project creation that was frozen with "ask" before this fix resolves to the harness default if it is retried afterwards.
+
+## 1466. A repository outside the one workspace folder cannot be registered
+
+Found on 2026-11-20 by reading the code, while preparing to bring a second repository into LGTM Studio.
+Every Git call checks that the folder lies inside the single saved workspace folder (`packages/engine/src/project/git/paths.ts`, `project/gitApi.ts`).
+The owner's workspace folder is one folder of personal projects, and the second repository lives in a sibling folder.
+Registration is refused with "Git: invalid_path".
+Widening the saved workspace folder to the common parent is the workaround.
+State: Open.
+
+## 1467. A repository whose base branch is not "main" or "master" cannot hold a project
+
+Found on 2026-11-20 by reading the code. This extends issues 858 and 877.
+Project creation requires "main" or "master" to be checked out (`requireMainBranch` in `project/lifecycle.ts`).
+The pull request flow refuses any other destination (`project/gitReview.ts`, `mainComparison` in `project/git/index.ts`).
+The guard against merging into the base and the Files tab's read-only rule also match those two names only.
+A repository whose base branch is "dev" can be registered, and then nothing can be created or delivered in it.
+State: Open.
+
+## 1468. A new worktree starts from the local base branch without fetching
+
+Found on 2026-11-20 by reading the code. This extends issue 355.
+The project worktree is created from the main checkout's local commit (`project/creationGit.ts`).
+A main checkout that is far behind its remote gives every agent an old tree.
+"Update from parent" merges the same stale local branch.
+State: Open.
+
+## 1469. Nothing prepares a new worktree: no submodules, no ignored environment files, no setup command
+
+Found on 2026-11-20 by reading the code.
+No `git submodule update` runs anywhere, so a submodule folder stays empty in every worktree.
+Ignored files that the build needs, such as environment files, are not copied.
+A repository cannot declare a setup command; its `.lgtm` folder is read only for workflows.
+Agents in such a repository start without dependencies, environment files or submodule content.
+State: Open.
+
+## 1470. A changed submodule pointer fails the whole diff of a checkout
+
+Found on 2026-11-20 by reading the code.
+Status lists a changed submodule as a change.
+The diff, stage and discard actions pass every changed path to `filePath` (`project/git/paths.ts`), which refuses anything that is not a regular file.
+The whole diff then fails with "invalid_path".
+State: Open.
+
+## 1471. A repository's own rules can tell agents to remove LGTM Studio's worktrees
+
+Found on 2026-11-20 by reading the code and a second repository's instruction file.
+The role prompts tell agents that the repository's instruction file binds them.
+That repository's file says every session must end with only the main checkout in `git worktree list`.
+An agent that obeys it could remove the project and worker worktrees.
+The repository's own session hooks would also run inside every agent, as issue 946 records.
+State: Open.
+
+## 1472. Review and listing limits are close for a large monorepo
+
+Found on 2026-11-20 by reading the code and measuring a second repository.
+A review is refused above 200 commits or files, above 128 KiB of diff, or with any binary file (`project/git/index.ts`).
+The file listing has a 1 MiB output budget, and the measured repository's tracked file list is already about 0.97 MiB.
+Past the budget, listings and file search drop entries without a message.
+State: Open.
