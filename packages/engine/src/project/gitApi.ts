@@ -13,7 +13,7 @@ import { makeGitService, type GitService, type GitOperation, type Conflict, type
 
 // One queue owner per command runtime. The gate survives settings replacement,
 // including overlapping roots. It never releases an active child operation early.
-const owners = new WeakMap<Runtime, { gate: Semaphore.Semaphore; queued: number; root?: string; service?: GitService; bases?: Readonly<Record<string, string>> }>()
+const owners = new WeakMap<Runtime, { gate: Semaphore.Semaphore; queued: number; root?: string; service?: GitService; bases?: Readonly<Record<string, string>>; starts?: Readonly<Record<string, string>> }>()
 export const withGit = <A, E, R>(input: Input, body: (git: GitService) => Effect.Effect<A, E, R>) => Effect.suspend(() => {
   let owner = owners.get(input.runtime)
   if (owner === undefined) { owner = { gate: Semaphore.makeUnsafe(1), queued: 0 }; owners.set(input.runtime, owner) }
@@ -27,14 +27,19 @@ export const withGit = <A, E, R>(input: Input, body: (git: GitService) => Effect
     if (root === undefined) return yield* refused("set the workspace folder before using Git")
     if (root !== projectView(input.snapshot).settings?.workspaceFolder) return yield* refused("workspace settings changed; refresh and retry")
     state.bases = Object.fromEntries(Object.values(projectView(input.snapshot).repositories).flatMap((repo) => repo.baseBranch === undefined ? [] : [[repo.path, repo.baseBranch]]))
-    if (state.root !== root) { state.service = makeGitService({ workspaceFolder: root, baseBranches: () => state.bases ?? {} }); state.root = root }
+    const view = projectView(input.snapshot)
+    state.starts = Object.fromEntries(Object.values(view.projects).flatMap((project) => {
+      const workspace = own(view.workspaces, project.worktreeId)
+      return project.startingHead === undefined || workspace === undefined ? [] : [[workspace.path, project.startingHead]]
+    }))
+    if (state.root !== root) { state.service = makeGitService({ workspaceFolder: root, baseBranches: () => state.bases ?? {}, startingHeads: () => state.starts ?? {} }); state.root = root }
     // Service operations have a finite timeout. Waiting remains interruptible;
     // an active operation finishes before its gate is released, even on disconnect.
     return yield* Effect.uninterruptible(body(state.service!))
   })), () => Effect.sync(() => { state.queued-- }))
 })
 export const gitCall = <A>(effect: GitOperation<A>, githubDelivery = false) => effect.pipe(Effect.mapError((error) => error.uncertain ? new CommandUncertain({ reason: "Git outcome is uncertain; refresh Git state" }) : refused(
-  error.reason === "base_branch_required" ? "check out the repository's base branch and ensure it exists locally before registering the repository"
+  error.reason === "base_branch_required" ? "origin/HEAD has no valid local base branch; registration requires a local main or master branch, or an unborn current branch"
   : error.reason === "base_branch_too_long" ? "the repository base branch name must contain at most 128 characters"
   : githubPublicReason(error.reason) ?? ((githubDelivery || error.githubDelivery) && ["timeout", "network_failed"].includes(error.reason) ? githubRequestFailureReason : `Git: ${error.reason}`))))
 export const localMachine = (id: string) => id === "local" ? Effect.void : Effect.fail(refused("only the local machine can register a checkout before machine pairing"))

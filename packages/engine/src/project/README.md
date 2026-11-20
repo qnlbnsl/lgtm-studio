@@ -607,19 +607,33 @@ The branch must exist locally.
 An open review, an unfinished Git operation, an active merge, or an unfinished project creation refuses the change.
 The main checkout must be switched to the recorded branch before project creation or local approval.
 The setting does not move a branch or switch a checkout.
-The main workspace binding changes only if its checkout already has the selected branch checked out.
+The main workspace binding changes only if a bounded `HEAD` read in the setting transaction confirms that branch is checked out.
+That read uses checked metadata paths and never acquires the Git gate inside the writer.
 An owner who switches afterwards can repeat the setting command to refresh that binding.
 Registration records the branch named by `refs/remotes/origin/HEAD` only when it exists locally.
-Otherwise, only an existing current `main` or `master` branch supplies the default.
-A repository with no commit needs an initial commit before registration.
-Old rows acquire a validated inferred value through a new owner-authored `project.RepositoryBaseChanged` event.
-Agent reads never infer or record a base and retain conventional branch protection for old rows.
-Failed inference leaves old reads available and is cached for collection reads until an explicit repository operation retries it or the registration changes.
+A malformed remote default is treated as absent.
+Otherwise, an existing current `main` or `master`, or the current unborn branch, supplies the registration default.
+The registration reply includes that recorded base.
+Old rows acquire only an existing current `main` or `master` through a new owner-authored `project.RepositoryBaseChanged` event.
+Their inference never reads `origin/HEAD`.
+Agent reads never infer or record a base.
+Both conventional branches stay guarded while a row has no stored base.
+Failed inference leaves old reads available.
+Collection reads reuse a miss only while the checked main-checkout `HEAD` is unchanged.
+Every owner command scoped to that repository retries the inference.
 New repositories use `main`.
 
 Project creation fetches the configured remote base through the hardened explicit tracking-reference fetch.
 It uses the fetched commit only when the local base is an ancestor and confirmed GitHub delivery uses that same remote branch.
-Local delivery starts from the local base so review and pending counts do not include upstream commits.
+Local delivery starts from the local base.
+A second `project.CreationPlanned` event records the selected `start` before the worktree write.
+Recovery reuses that decision instead of fetching a different start.
+`project.Created.startingHead` retains the commit for subsequent comparisons.
+Review patches use the later merge base with the current target or starting commit.
+Divergent inherited merge bases use a combined tree without a checkout or reference write.
+An inherited conflict or a configured external merge driver refuses that comparison.
+Commit lists and pending counts exclude the starting commit's history, including after hosted delivery becomes unavailable.
+The actual target head still supplies the approval identity and destination checks.
 Optional remote discovery and fetching share a 20-second deadline.
 It otherwise uses the local commit and records why in `project.CreationFinished.detail`.
 A resumed creation that finds its existing worktree records that it reused that worktree.

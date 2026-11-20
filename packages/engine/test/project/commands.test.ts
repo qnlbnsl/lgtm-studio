@@ -213,7 +213,6 @@ it.live("refuses duplicate project names and invalid repository, workspace, spri
   expect(failureOf(yield* call(f.lead, "project.task.create", { ...f.taskPayload, owner: "unlabelled" }))).toBeDefined()
   expect(failureOf(yield* call(f.lead, "project.task.create", { ...f.taskPayload, sprintId: "missing" }))).toBeDefined()
   const otherPath = join(rig.root, "other"); mkdirSync(otherPath); git(otherPath, "init", "-b", "main")
-  git(otherPath, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Initial")
   const otherRepo = success(yield* call(owner, "project.repository.add", { name: "Other", path: otherPath, machineId: "local" })).repoId
   const otherWorkspace = success(yield* call(owner, "project.workspace.register", { repoId: otherRepo, machineId: "local", path: otherPath, branch: "main", checkout: "main" })).worktreeId
   expect(failureOf(yield* call(owner, "project.repository.locate", { repoId: f.repoId, machineId: "local", path: otherPath }))).toBeDefined()

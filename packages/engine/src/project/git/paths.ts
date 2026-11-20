@@ -83,3 +83,12 @@ export const filePath = async (folder: string, path: string): Promise<string> =>
   }
   return current;
 };
+
+// A bounded main-checkout HEAD observation needs no Git process or Git gate.
+// It is also used at the final base-setting transaction boundary.
+export const checkoutHead = async (root: string, folder: string): Promise<string> => {
+  const path = await directory(root, folder);
+  const metadata = await checkedMetadata(root, path);
+  if (metadata !== join(path, ".git")) return refuse();
+  return (await smallFile(join(metadata, "HEAD"), 4096)).toString("utf8").trimEnd();
+};

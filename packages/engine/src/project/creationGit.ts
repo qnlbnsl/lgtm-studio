@@ -93,8 +93,8 @@ export const ensureWorktree = (plan: ProjectCreation, service: GitService) => Ef
   const repository = yield* service.register(plan.repository.path).pipe(Effect.mapError(() => refused("repository is unavailable")))
   if (dirname(repository.commonDirectory) !== plan.repository.path) return yield* refused("main repository checkout is required")
   if (plan.workspace.checkout === "main") return
-  const start = (yield* creationIo(() => exists(join(plan.workspace.path, ".git")))) ? undefined
-    : yield* service.projectStart(plan.repository.path, plan.repository.baseBranch ?? (yield* gitCall(service.repositoryBase(plan.repository.path)))).pipe(Effect.mapError(() => refused("repository is unavailable")))
+  const start = plan.start
+  if (start === undefined) return yield* refused("project creation intent is unavailable")
   let detail: string | undefined = start?.detail
   yield* creationIo(async (signal) => {
     if (plan.folderIdentity === undefined || !same(plan.folderIdentity, await folderIdentity(plan.workspace.path))) throw new Error()

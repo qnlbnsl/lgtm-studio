@@ -64,7 +64,8 @@ export interface GitService {
   discover(): GitOperation<Bounded<Repository>>;
   createRepository(name: string): GitOperation<Repository>;
   register(folder: string): GitOperation<Repository>;
-  detectBaseBranch(folder: string): GitOperation<string>;
+  detectBaseBranch(folder: string, registration?: boolean): GitOperation<string>;
+  isBaseBranch(folder: string, branch: string): GitOperation<boolean>;
   repositoryBase(folder: string): GitOperation<string>;
   projectStart(folder: string, base: string): GitOperation<{ head: string | null; detail: string }>;
   validateBranch(folder: string, name: string): GitOperation<void>;

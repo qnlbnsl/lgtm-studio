@@ -18,7 +18,6 @@ beforeEach(() => {
   rig = makeRig()
   vi.stubEnv("HOME", rig.home); vi.stubEnv("LGTM_HOME", rig.stateFolder)
   execFileSync("git", ["-C", rig.work, "init", "-b", "main"], { stdio: "ignore" })
-  execFileSync("git", ["-C", rig.work, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Initial"], { stdio: "ignore" })
 })
 afterEach(() => { vi.unstubAllEnvs(); removeRig(rig) })
 const plant = (path: string, document: unknown) => {

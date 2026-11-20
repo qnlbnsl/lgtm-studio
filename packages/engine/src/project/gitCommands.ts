@@ -87,8 +87,7 @@ export const gitPlanners = {
     // This unscoped destination lookup is safe only while integration is owner-only.
     const destination = yield* workspacePath(input, { worktreeId: raw.destinationId }, git)
     const source = own(projectView(input.snapshot).workspaces, raw.worktreeId as string)!
-    const base = yield* gitCall(git.repositoryBase(path))
-    if (destination.branch === base) return yield* refused(integrationBaseReason(base))
+    if (yield* gitCall(git.isBaseBranch(path, destination.branch))) return yield* refused(integrationBaseReason(destination.branch))
     // Integrations use the recorded team-to-project relationship, never a
     // caller-selected branch target or an unrelated checkout in the repository.
     const view = projectView(input.snapshot)

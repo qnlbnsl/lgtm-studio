@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { join } from "node:path"
 import { it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import { afterEach, beforeEach, expect, vi } from "vitest"
@@ -20,7 +21,7 @@ let rig: Rig
 const git = (folder: string, ...args: string[]) => execFileSync("/usr/bin/git", ["-C", folder, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()
 const snapshot = Effect.gen(function* () { return yield* (yield* Views).snapshot })
 const service = () => makeGitService({ workspaceFolder: rig.root })
-const conventional = "check out the repository's base branch and ensure it exists locally before registering the repository"
+const conventional = "origin/HEAD has no valid local base branch; registration requires a local main or master branch, or an unborn current branch"
 beforeEach(() => {
   rig = makeRig(); vi.stubEnv("HOME", rig.home); vi.stubEnv("LGTM_HOME", rig.stateFolder)
   git(rig.work, "init", "-b", "main")
@@ -83,6 +84,9 @@ it.live("round 2: an agent read cannot pin a legacy base or trust a rewritten or
   expect(projectView(yield* snapshot).repositories.legacy?.baseBranch).toBeUndefined()
   expect((yield* readLog).filter((row) => row.event._tag === "project.RepositoryBaseChanged")).toEqual([])
   expect(yield* service().repositoryBase(rig.work)).toBe("main")
+  success(yield* call(owner, "client.snapshot", {}))
+  expect(projectView(yield* snapshot).repositories.legacy?.baseBranch).toBe("main")
+  expect((yield* readLog).filter((row) => row.event._tag === "project.RepositoryBaseChanged")).toMatchObject([{ caller: { _tag: "owner" }, event: { baseBranch: "main" } }])
 })).pipe(Effect.orDie))
 
 it.live("round 2: a conflicting raw repoId cannot infer a different repository through a project call", () => provideBoard(rig, Effect.gen(function* () {
@@ -184,4 +188,108 @@ it.live("round 2: the creation fetch deadline releases the Git operation with a 
   expect(deadlines).toHaveBeenCalledWith(20_000)
   expect(start.head).toBe(git(rig.work, "rev-parse", "HEAD"))
   expect(start.detail).toContain("fetching its remote base failed")
+})).pipe(Effect.orDie))
+
+for (const branch of ["main", "dev"]) it.live(`round 3: registration accepts unborn ${branch} and returns its recorded base`, () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  yield* configure()
+  const folder = join(rig.root, "unborn")
+  mkdirSync(folder); git(folder, "init", "-b", branch)
+  const reply = success(yield* call(owner, "project.repository.add", { name: "Unborn", path: folder, machineId: "local" }))
+  expect(reply.baseBranch).toBe(branch)
+  expect(projectView(yield* snapshot).repositories[reply.repoId as string]?.baseBranch).toBe(branch)
+  expect((yield* service().state(folder)).head).toBeNull()
+})).pipe(Effect.orDie))
+
+for (const value of ["ref: refs/heads/feature-x\n", "ref: refs/remotes/origin/bad..name\n", "malformed\n"]) it.live(`round 3: malformed origin HEAD ${JSON.stringify(value)} falls back at registration`, () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  yield* configure()
+  mkdirSync(join(rig.work, ".git/refs/remotes/origin"), { recursive: true })
+  writeFileSync(join(rig.work, ".git/refs/remotes/origin/HEAD"), value)
+  const reply = success(yield* call(owner, "project.repository.add", { name: "Product", path: rig.work, machineId: "local" }))
+  expect(reply.baseBranch).toBe("main")
+  expect(projectView(yield* snapshot).repositories[reply.repoId as string]?.baseBranch).toBe("main")
+})).pipe(Effect.orDie))
+
+it.live("round 3: a changed checkout invalidates an inference miss on the next collection read", () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  yield* configure(); yield* legacy()
+  git(rig.work, "checkout", "--detach")
+  success(yield* call(owner, "client.snapshot", {}))
+  expect(projectView(yield* snapshot).repositories.legacy?.baseBranch).toBeUndefined()
+  git(rig.work, "checkout", "main")
+  success(yield* call(owner, "client.snapshot", {}))
+  expect(projectView(yield* snapshot).repositories.legacy?.baseBranch).toBe("main")
+})).pipe(Effect.orDie))
+
+it.live("round 3: any owner command scoped to a repository retries a cached inference miss", () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  yield* configure(); yield* legacy()
+  git(rig.work, "checkout", "--detach")
+  const observed = vi.spyOn(Processes, "gitProcess")
+  success(yield* call(owner, "client.snapshot", {}))
+  const first = observed.mock.calls.length
+  success(yield* call(owner, "project.workspaces", { repoId: "legacy" }))
+  expect(observed.mock.calls.length).toBeGreaterThan(first)
+})).pipe(Effect.orDie))
+
+it.live("round 3: both conventional branches retain legacy integration and review guards", () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  git(rig.work, "branch", "master")
+  const source = join(rig.root, "feature"), master = join(rig.root, "master")
+  git(rig.work, "worktree", "add", "-b", "feature", source)
+  git(rig.work, "worktree", "add", master, "master")
+  const gitService = service(), head = git(source, "rev-parse", "HEAD")
+  for (const path of [rig.work, master]) {
+    const name = git(path, "branch", "--show-current")
+    expect(yield* gitService.isBaseBranch(path, name)).toBe(true)
+    const integrated = yield* gitService.mergeTeam(source, path, head).pipe(Effect.result)
+    expect(integrated).toMatchObject({ _tag: "Failure", failure: { reason: "base_requires_review" } })
+    expect((yield* gitService.reviewMain(source, path)).base).toBe(name)
+  }
+})).pipe(Effect.orDie))
+
+for (const name of ["main", "master"]) it.live(`round 3: Files remains read-only on unrecorded ${name} with the main checkout on a feature branch`, () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  yield* configure(); yield* legacy()
+  git(rig.work, "checkout", "-b", "feature-x")
+  const path = join(rig.root, name)
+  git(rig.work, "worktree", "add", ...(name === "master" ? ["-b", "master", path] : [path, "main"]))
+  writeFileSync(join(path, "file.txt"), "Conventional base\n")
+  const worker = yield* seedAgent({ id: "legacy-files-worker", folder: path })
+  yield* appendSetup([
+    eventOf({ _tag: "project.WorktreeCreated", worktreeId: "legacy-work", repoId: "legacy", path, branch: name, machineId: "local", checkout: "worktree" }),
+    eventOf({ _tag: "project.Created", projectId: "legacy-project", repoId: "legacy", worktreeId: "legacy-work", name: "Legacy", goal: "Read", leadAgentId: worker.agentId, machineId: "local" })
+  ])
+  const reply = success(yield* call(owner, "project.files.read", { projectId: "legacy-project", worktreeId: "legacy-work", path: "file.txt" }))
+  expect(reply.result).toMatchObject({ kind: "text", editable: false })
+  expect(projectView(yield* snapshot).repositories.legacy?.baseBranch).toBeUndefined()
+})).pipe(Effect.orDie))
+
+it.live("round 3: a fetched project that merges a divergent parent update excludes both inherited file sets", () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  const source = join(rig.root, "project")
+  git(rig.work, "worktree", "add", "-b", "project", source)
+  const commit = (folder: string, title: string) => {
+    git(folder, "add", "--all")
+    git(folder, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-m", title)
+    return git(folder, "rev-parse", "HEAD")
+  }
+  writeFileSync(join(source, "upstream.txt"), "Fetched upstream\n")
+  const start = commit(source, "Fetched upstream")
+  writeFileSync(join(source, "feature.txt"), "Project work\n")
+  commit(source, "Project work")
+  writeFileSync(join(rig.work, "parent.txt"), "Later local parent update\n")
+  commit(rig.work, "Parent update")
+  git(source, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "merge", "--no-edit", "main")
+  const gitService = makeGitService({ workspaceFolder: rig.root, startingHeads: () => ({ [source]: start }) })
+  const comparison = yield* gitService.reviewMain(source, rig.work)
+  expect(comparison.files.items.map((row) => row.path)).toEqual(["feature.txt"])
+  expect(comparison.commits.items.map((row) => row.title)).not.toContain("Fetched upstream")
+  expect(comparison.commits.items.map((row) => row.title)).not.toContain("Parent update")
+  expect(yield* gitService.state(source, "main")).toMatchObject({ pending: 2, behindParent: 0 })
+  git(source, "config", "merge.custom.driver", "false")
+  const observed = vi.spyOn(Processes, "gitProcess")
+  expect(yield* gitService.reviewMain(source, rig.work).pipe(Effect.result)).toMatchObject({ _tag: "Failure", failure: { reason: "unsupported_review" } })
+  expect(observed.mock.calls.some(([, args]) => args.includes("merge-tree"))).toBe(false)
 })).pipe(Effect.orDie))

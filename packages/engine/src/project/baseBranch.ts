@@ -1,3 +1,4 @@
+import { checkoutHead } from "./git/paths.ts"
 import { randomUUID } from "node:crypto"
 import * as Effect from "effect/Effect"
 import { freshRequest, refused, type Input, type Runtime } from "../commands/internal.ts"
@@ -13,7 +14,7 @@ export const isBaseRefusal = (reason: string) => isCheckoutBaseReason(reason)
 
 // Unresolved legacy rows do not make every owner snapshot launch Git again.
 // An explicit repository operation retries; an owner base.set always repairs.
-const unresolved = new WeakMap<Runtime, Set<string>>()
+const unresolved = new WeakMap<Runtime, Map<string, string>>()
 
 // Called after typed authentication, outside the event writer. Resolve only
 // repositories available to this caller. Append a new event; never rewrite history.
@@ -22,13 +23,7 @@ export const prepareRepositoryBases = (input: Input, name: string, raw: Record<s
   // Pin legacy rows before the opening sequence of a coherent client read.
   // Otherwise the later repository read would invalidate that same read.
   const collection = ["client.sequence", "client.snapshot", "project.repositories", "project.snapshot"].includes(name)
-  if ((!name.startsWith("project.") && !collection) || name === "project.repository.base.set") return input
-  const relevant = collection || name === "project.create"
-    || name === "project.placement.preview" || name.startsWith("project.repository.") || name.startsWith("project.files.")
-    || name.startsWith("project.review") || name.startsWith("project.git.") || ["project.branches", "project.checkouts",
-      "project.integrate", "project.update", "project.stage", "project.unstage", "project.stage.all", "project.unstage.all",
-      "project.commit", "project.fetch", "project.pull", "project.push", "project.changes", "project.diff", "project.history"].includes(name)
-  if (!relevant) return input
+  if (!name.startsWith("project.") && !collection) return input
   const view = projectView(input.snapshot)
   const project = own(view.projects, raw.projectId as string)
   const workspace = own(view.workspaces, raw.worktreeId as string)
@@ -39,11 +34,14 @@ export const prepareRepositoryBases = (input: Input, name: string, raw: Record<s
   const candidates = Object.values(view.repositories).filter((repo) => repo.baseBranch === undefined
     && (repo.repoId === repoId || collection && repoId === undefined))
   let misses = unresolved.get(input.runtime)
-  if (misses === undefined) { misses = new Set(); unresolved.set(input.runtime, misses) }
+  if (misses === undefined) { misses = new Map(); unresolved.set(input.runtime, misses) }
   for (const repo of candidates) {
     if (collection && (view.settings === undefined || !Object.values(view.locations).some((row) => row.repoId === repo.repoId && row.machineId === "local"))) continue
     const key = JSON.stringify([repo.repoId, repo.path, view.settings?.workspaceFolder])
-    if (collection && misses.has(key)) continue
+    const head = yield* Effect.tryPromise({ try: () => checkoutHead(view.settings!.workspaceFolder, repo.path), catch: () => undefined }).pipe(Effect.catch(() => Effect.succeed("")))
+    if (collection && misses.get(key) === head) continue
+    misses.delete(key)
+    if (name === "project.repository.base.set") continue
     const inferred = yield* Effect.gen(function* () {
       yield* safePath(input, repo.path)
       const baseBranch = yield* withGit(input, (git) => gitCall(git.detectBaseBranch(repo.path)))
@@ -56,7 +54,7 @@ export const prepareRepositoryBases = (input: Input, name: string, raw: Record<s
       }))
     }).pipe(Effect.result)
     if (inferred._tag === "Failure") {
-      misses.add(key)
+      misses.set(key, head)
     } else misses.delete(key)
   }
   return candidates.length === 0 ? input : { ...input, snapshot: yield* input.runtime.views.snapshot }

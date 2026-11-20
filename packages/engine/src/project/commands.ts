@@ -4,6 +4,7 @@ import { completionOwed, boardView } from "../board/wake.ts"
 import { requireEndResult, requireBuilding, permissionSetting, permissionOffReason } from "./approvals.ts"
 import { validateWorkflowFolder, workflowFolderReason } from "../workflows/folder.ts"
 import { declineMainReview } from "./gitReview.ts"
+import { checkoutHead } from "./git/paths.ts"
 import { randomUUID } from "node:crypto"
 import { realpath, stat } from "node:fs/promises"
 import { isAbsolute } from "node:path"
@@ -45,7 +46,7 @@ const inspectCheckout = (input: Input, path: string, inferBase = false) => withG
   const main = checkouts.items.find((row) => row.path === repository.path)
   if (state.branch === null || main === undefined) return yield* refused("an existing local Git checkout root with a named branch is required")
   return { path: repository.path, common: repository.commonDirectory, branch: state.branch,
-    ...(inferBase ? { baseBranch: yield* gitCall(git.detectBaseBranch(repository.path)) } : {}),
+    ...(inferBase ? { baseBranch: yield* gitCall(git.detectBaseBranch(repository.path, true)) } : {}),
     checkout: repository.commonDirectory === `${repository.path}/.git` ? "main" as const : "worktree" as const }
 }))
 const settingsSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
@@ -86,7 +87,7 @@ const repositoryAdd = (inspect: CheckoutReader = unobservedCheckout): PiecePlann
   yield* safePath(input, checkout.baseBranch)
   const repoId = fresh(RepositoryId)
   return { events: [{ _tag: "project.RepositoryAdded", repoId, name: yield* cleanName(input, p.name), path: checkout.path, baseBranch: checkout.baseBranch },
-    { _tag: "project.RepositoryLocated", repoId, machineId: p.machineId, path: checkout.path }], reply: () => ({ requestId: p.requestId, repoId }) }
+    { _tag: "project.RepositoryLocated", repoId, machineId: p.machineId, path: checkout.path }], reply: () => ({ requestId: p.requestId, repoId, baseBranch: checkout.baseBranch! }) }
 })
 const repositoryLocate = (inspect: CheckoutReader = unobservedCheckout): PiecePlanner => (input, raw) => Effect.gen(function* () {
   const p = raw as Payload<"project.repository.locate">
@@ -137,7 +138,7 @@ export const prepareRegistration = (input: Input, name: keyof typeof registratio
     })
     yield* checkIdle(input)
     yield* safePath(input, repo.path)
-    const checkoutBranch = yield* withGit(input, (git) => Effect.gen(function* () {
+    yield* withGit(input, (git) => Effect.gen(function* () {
       yield* gitCall(git.validateBranch(repo.path, baseBranch))
       const trees = yield* gitCall(git.worktrees(repo.path))
       if (trees.truncated) return yield* refused("Git: output_limit")
@@ -147,6 +148,9 @@ export const prepareRegistration = (input: Input, name: keyof typeof registratio
     const finalize: PiecePlanner = (current, payload) => Effect.gen(function* () {
       if (current.actor._tag !== "owner" || JSON.stringify(own(projectView(current.snapshot).repositories, repo.repoId)) !== JSON.stringify(repo)) return yield* refused("project state changed; refresh and retry")
       yield* checkIdle(current)
+      const head = yield* Effect.tryPromise({ try: () => checkoutHead(projectView(current.snapshot).settings!.workspaceFolder, repo.path),
+        catch: () => refused("project state changed; refresh and retry") })
+      const checkoutBranch = head.startsWith("ref: refs/heads/") ? head.slice("ref: refs/heads/".length) : null
       return ack(payload.requestId, [{ _tag: "project.RepositoryBaseChanged", repoId: repo.repoId, baseBranch },
         ...Object.values(projectView(current.snapshot).workspaces).filter((row) => checkoutBranch === baseBranch && row.repoId === repo.repoId && row.checkout === "main" && row.path === repo.path)
           .map((row) => ({ _tag: "project.WorktreeCreated" as const, ...row, branch: baseBranch }))])

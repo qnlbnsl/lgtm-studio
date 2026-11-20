@@ -523,7 +523,6 @@ it.live("issue 579: an independent real writer completes while an approval Git s
 it.live("issue 579/583: queued registration and creation do not block a positive independent writer while real Git is held", () => provideBoard(rig, Effect.gen(function* () {
   const f = yield* setup(), { review } = (yield* prepare(f)).result
   git(rig.outside, "init", "-b", "main")
-  git(rig.outside, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Initial")
   const bin = join(rig.root, "registration-git"), hold = join(rig.root, "registration-hold"), started = join(rig.root, "registration-started")
   mkdirSync(bin); writeFileSync(hold, "owned hold")
   writeFileSync(join(bin, "git"), `#!${process.execPath}\nimport { existsSync, writeFileSync } from 'node:fs';\nimport { spawnSync } from 'node:child_process';\nconst args=process.argv.slice(2);\nif(args.includes('merge')) { writeFileSync(${JSON.stringify(started)},'started'); while(existsSync(${JSON.stringify(hold)})) await new Promise(r=>setTimeout(r,10)); }\nconst result=spawnSync('/usr/bin/git',args,{stdio:'inherit'}); process.exit(result.status ?? 1);\n`, { mode: 0o700 })
@@ -1427,7 +1426,7 @@ it.live('s29 1453: Prepare refuses a symbolic base tracking ref before fetch can
   expect(Object.values(projectView(yield* snapshot).gitAttempts)).toHaveLength(0);
 })).pipe(Effect.orDie));
 
-it.live("records origin HEAD, preserves an old repository row, and pins its inferred base on first need", () => provideBoard(rig, Effect.gen(function* () {
+it.live("ignores origin HEAD for an old repository row and pins a conventional base on first need", () => provideBoard(rig, Effect.gen(function* () {
   yield* registerRebuildCheck()
   git(rig.work, "branch", "dev")
   git(rig.work, "update-ref", "refs/remotes/origin/dev", git(rig.work, "rev-parse", "HEAD"))
@@ -1440,10 +1439,10 @@ it.live("records origin HEAD, preserves an old repository row, and pins its infe
   expect(projectView(yield* snapshot).repositories["old-repository"]?.baseBranch).toBeUndefined()
   const opening = success(yield* call(owner, "client.sequence", {}))
   const reply = success(yield* call(owner, "project.repositories", {}))
-  expect(reply.items).toMatchObject([{ repoId: "old-repository", baseBranch: "dev" }])
+  expect(reply.items).toMatchObject([{ repoId: "old-repository", baseBranch: "main" }])
   expect(success(yield* call(owner, "client.sequence", {})).sequence).toBe(opening.sequence)
   git(rig.work, "symbolic-ref", "refs/remotes/origin/HEAD", "refs/remotes/origin/main")
-  expect(success(yield* call(owner, "project.repositories", {})).items).toMatchObject([{ baseBranch: "dev" }])
+  expect(success(yield* call(owner, "project.repositories", {})).items).toMatchObject([{ baseBranch: "main" }])
   expect((yield* readLog).find((row) => row.sequence === original!.sequence)?.event).toEqual(original!.event)
   expect((yield* readLog).filter((row) => row.event._tag === "project.RepositoryBaseChanged")).toHaveLength(1)
 })).pipe(Effect.orDie))
@@ -1489,6 +1488,7 @@ it.live("a dev project starts at the fetched remote base and leaves a dirty loca
   const opened = (yield* prepare(f)).result
   expect(opened.review.delivery.mode).toBe("github")
   expect(opened.comparison.baseHead).toBe(remoteHead)
+  expect((yield* run(f.api, "project.git.state", { worktreeId: f.worktreeId, target: "dev" })).result).toMatchObject({ pending: 1, behindParent: 0 })
   expect(opened.comparison.commits.items).toHaveLength(1)
   expect(opened.comparison.commits.items[0].head).toBe(f.head)
 })).pipe(Effect.orDie))
@@ -1558,4 +1558,30 @@ it.live("the owner can set an old repository's base from an existing branch whil
   success(yield* call(owner, "project.repository.base.set", { repoId: "old-detached", baseBranch: "dev" }))
   expect(projectView(yield* snapshot).repositories["old-detached"]?.baseBranch).toBe("dev")
   expect(git(rig.work, "branch", "--show-current")).toBe("")
+})).pipe(Effect.orDie))
+
+it.live("round 3: a fetched start survives loss of hosted delivery without listing upstream work", () => provideBoard(rig, Effect.gen(function* () {
+  let hosted: ReturnType<typeof fakeGithub>, start = ""
+  const f = yield* setup("dev", () => {
+    hosted = fakeGithub(rig.root, rig.work)
+    vi.stubEnv("PATH", `${hosted.bin}:${process.env.PATH}`)
+    start = git(rig.work, "rev-parse", "HEAD")
+    // Include a changed upstream file as well as enough history to exceed the review bound.
+    // A separate checkout adds a real upstream file before remote history advances.
+    const upstream = join(rig.root, "upstream")
+    git(rig.work, "worktree", "add", "--detach", upstream, start)
+    save(upstream, "upstream.txt", "Upstream work\n"); start = commit(upstream, "Upstream file")
+    git(rig.work, "-c", "protocol.file.allow=always", "push", hosted.bare, `${start}:refs/heads/dev`)
+    const upstreamTree = git(hosted.bare, "rev-parse", `${start}^{tree}`)
+    for (let i = 0; i < 170; i++) start = git(hosted.bare, "-c", "user.name=Remote", "-c", "user.email=remote@example.invalid", "commit-tree", upstreamTree, "-p", start, "-m", `Upstream ${i}`)
+    git(hosted.bare, "update-ref", "refs/heads/dev", start)
+  })
+  expect(projectView(yield* snapshot).projects[f.projectId]?.startingHead).toBe(start)
+  hosted!.set({ signedOut: true })
+  const opened = (yield* prepare(f)).result
+  expect(opened.review.delivery.mode).toBe("local")
+  expect(opened.comparison.commits.items.map((row: { head: string }) => row.head)).toEqual([f.head])
+  expect(opened.comparison.files.items.map((row: { path: string }) => row.path)).toEqual(["feature.txt"])
+  expect(opened.comparison.diff.patch).not.toContain("upstream.txt")
+  expect((yield* run(f.api, "project.git.state", { worktreeId: f.worktreeId, target: "dev" })).result).toMatchObject({ pending: 1, behindParent: 0 })
 })).pipe(Effect.orDie))

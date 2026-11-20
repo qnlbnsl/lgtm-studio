@@ -18,6 +18,7 @@ export interface GitConfiguration {
   /** Trusted engine setting, never an agent-supplied root. */
   readonly workspaceFolder: string;
   readonly baseBranches?: () => Readonly<Record<string, string>>;
+  readonly startingHeads?: () => Readonly<Record<string, string>>;
   readonly maxOutputBytes?: number;
   readonly maxDiffBytes?: number;
   readonly maxEntries?: number;
@@ -136,8 +137,35 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     if ((await run(folder, ["check-ref-format", "--branch", name], signal)).code !== 0) return fail("invalid_ref");
     return ref(folder, `refs/heads/${name}`, signal);
   };
-  const history = async (folder: string, revision: string, signal: AbortSignal, maximum = entries) =>
-    list(parseHistory(await git(folder, ["log", `--max-count=${maximum + 1}`, "-z", "--format=%H%x00%P%x00%an%x00%cI%x00%s", revision, "--"], signal)), maximum);
+  const history = async (folder: string, revision: string, signal: AbortSignal, maximum = entries, exclusions: string[] = []) =>
+    list(parseHistory(await git(folder, ["log", `--max-count=${maximum + 1}`, "-z", "--format=%H%x00%P%x00%an%x00%cI%x00%s", revision, ...exclusions, "--"], signal)), maximum);
+  const startingHead = async (folder: string, signal: AbortSignal) => {
+    const start = configuration.startingHeads?.()[folder];
+    return start === undefined ? undefined : ref(folder, start, signal);
+  };
+  const comparisonBase = async (folder: string, current: string, target: string, start: string | undefined, signal: AbortSignal) => {
+    const base = (await git(folder, ["merge-base", current, target], signal)).trim();
+    if (start === undefined) return base;
+    const initial = (await git(folder, ["merge-base", current, start], signal)).trim();
+    const ancestor = await run(folder, ["merge-base", "--is-ancestor", base, initial], signal);
+    if (ancestor.code !== 0 && ancestor.code !== 1) throw processFailure(ancestor);
+    if (ancestor.code === 0) return initial;
+    const reverse = await run(folder, ["merge-base", "--is-ancestor", initial, base], signal);
+    if (reverse.code === 0) return base;
+    if (reverse.code !== 1) throw processFailure(reverse);
+    // A project may have merged a divergent local-base update after its
+    // fetched start. Combine those two inherited trees without a checkout or
+    // reference write, so neither side's upstream files become project work.
+    const drivers = await run(folder, ["config", "--get-regexp", "^merge\\..*\\.driver$"], signal);
+    if (drivers.code === 0) return fail("unsupported_review");
+    if (drivers.code !== 1) throw processFailure(drivers);
+    const inherited = await run(folder, ["merge-tree", "--write-tree", "--no-messages", base, initial], signal);
+    if (inherited.code === 1) return fail("unsupported_review");
+    if (inherited.code !== 0) throw processFailure(inherited);
+    const tree = inherited.stdout.trim();
+    if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(tree)) return fail("invalid_ref");
+    return tree;
+  };
   const readable = (row: { path: string; originalPath: string | null }) => !isRepositoryCredentialPath(row.path)
     && (row.originalPath === null || !isRepositoryCredentialPath(row.originalPath));
   const filesBetween = async (folder: string, args: string[], signal: AbortSignal, agentRead = false) => {
@@ -323,13 +351,15 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     const currentBranch = await branch(folder, signal), currentHead = await head(folder, signal);
     if (currentBranch === null || currentHead === null) return fail("invalid_ref");
     const baseHead = pinnedBase ?? await localBranch(folder, base, signal);
-    const files = await filesBetween(folder, ["diff", `${baseHead}...${currentHead}`], signal, agentRead);
+    const start = await startingHead(folder, signal);
+    const baseline = await comparisonBase(folder, currentHead, baseHead, start, signal);
+    const files = await filesBetween(folder, ["diff", baseline, currentHead], signal, agentRead);
     const paths = files.items.flatMap((row) => row.originalPath === null ? [row.path] : [row.originalPath, row.path]);
     if (agentRead) for (const path of paths) await filePath(folder, path);
     const diff = agentRead && paths.length === 0 ? { patch: "", additions: 0, deletions: 0, binary: false, truncated: false }
-      : await patch(folder, ["diff", `${baseHead}...${currentHead}`], signal, agentRead ? paths : []);
+      : await patch(folder, ["diff", baseline, currentHead], signal, agentRead ? paths : []);
     return { head: currentHead, baseHead, branch: currentBranch, base,
-      commits: await history(folder, `${baseHead}..${currentHead}`, signal), files,
+      commits: await history(folder, `${baseHead}..${currentHead}`, signal, entries, start === undefined ? [] : [`^${start}`]), files,
       diff: { ...diff, truncated: diff.truncated || agentRead && files.truncated } };
   };
   const remote = async (folder: string, signal: AbortSignal) => {
@@ -409,30 +439,36 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       return { ...result, localSync: "The local base checkout was fast-forwarded." };
     } catch { return { ...result, localSync: "GitHub merged the pull request. The local base checkout could not be updated; refresh it before continuing." }; }
   };
-  const detectBase = async (folder: string, signal: AbortSignal) => {
+  const detectBase = async (folder: string, signal: AbortSignal, registration: boolean) => {
     const repo = await repository(folder, signal), main = dirname(repo.commonDirectory);
-    const symbolic = await run(main, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], signal);
-    if (symbolic.code === 0) {
+    const symbolic = registration ? await run(main, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], signal) : undefined;
+    if (symbolic?.code === 0) {
       const value = symbolic.stdout.trim();
-      if (!value.startsWith("refs/remotes/origin/")) return fail("invalid_ref");
-      const name = value.slice("refs/remotes/origin/".length);
-      if ((await run(main, ["check-ref-format", `refs/heads/${name}`], signal)).code !== 0) return fail("invalid_ref");
-      const local = await run(main, ["show-ref", "--verify", "--quiet", `refs/heads/${name}`], signal);
-      if (local.code === 0) {
-        if ([...name].length > 128) return fail("base_branch_too_long");
-        return name;
+      if (value.startsWith("refs/remotes/origin/")) {
+        const name = value.slice("refs/remotes/origin/".length);
+        if ((await run(main, ["check-ref-format", `refs/heads/${name}`], signal)).code === 0) {
+          const local = await run(main, ["show-ref", "--verify", "--quiet", `refs/heads/${name}`], signal);
+          if (local.code === 0) {
+            if ([...name].length > 128) return fail("base_branch_too_long");
+            return name;
+          }
+          if (local.code !== 1) throw processFailure(local);
+        }
       }
-      if (local.code !== 1) throw processFailure(local);
     }
-    else if (symbolic.code !== 1) throw processFailure(symbolic);
+    else if (symbolic !== undefined && symbolic.code !== 1 && symbolic.code !== 128) throw processFailure(symbolic);
     const current = await branch(main, signal);
+    if (registration && current !== null && await head(main, signal) === null) {
+      if ([...current].length > 128) return fail("base_branch_too_long");
+      return current;
+    }
     if (current !== "main" && current !== "master") return fail("base_branch_required");
     const existing = await run(main, ["show-ref", "--verify", "--quiet", `refs/heads/${current}`], signal);
     if (existing.code === 1) return fail("base_branch_required");
     if (existing.code !== 0) throw processFailure(existing);
     return current;
   };
-  const repositoryBase = async (folder: string, signal: AbortSignal) => {
+  const recordedBase = async (folder: string, signal: AbortSignal) => {
     const repo = await repository(folder, signal);
     const bases = configuration.baseBranches?.() ?? {}, recorded = bases[dirname(repo.commonDirectory)];
     if (recorded !== undefined) return recorded;
@@ -440,8 +476,17 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       try { if ((await repository(path, signal)).commonDirectory === repo.commonDirectory) return base; }
       catch { /* An unavailable unrelated repository cannot block this checkout. */ }
     }
-    // Legacy reads never consult agent-writable origin/HEAD. Only the owner
-    // inference path may pin an arbitrary base. Keep conventional guards here.
+    return undefined;
+  };
+  const isBaseBranch = async (folder: string, name: string, signal: AbortSignal) => {
+    const recorded = await recordedBase(folder, signal);
+    return recorded === undefined ? name === "main" || name === "master" : name === recorded;
+  };
+  const repositoryBase = async (folder: string, signal: AbortSignal) => {
+    const recorded = await recordedBase(folder, signal);
+    if (recorded !== undefined) return recorded;
+    const repo = await repository(folder, signal);
+    // Legacy reads never consult agent-writable origin/HEAD.
     const main = dirname(repo.commonDirectory), current = await branch(main, signal);
     if (current === "main" || current === "master") return current;
     const master = await run(main, ["show-ref", "--verify", "--quiet", "refs/heads/master"], signal);
@@ -452,7 +497,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     const from = await repository(source, signal), to = await repository(destination, signal);
     if (from.commonDirectory !== to.commonDirectory || from.path === to.path) return fail("invalid_path");
     const base = await branch(to.path, signal), sourceBranch = await branch(from.path, signal);
-    if (base === null || base !== await repositoryBase(to.path, signal) || sourceBranch === null || sourceBranch === base) return fail("invalid_ref");
+    if (base === null || !await isBaseBranch(to.path, base, signal) || sourceBranch === null || sourceBranch === base) return fail("invalid_ref");
     let liveBase: string | undefined;
     if (caller !== undefined) {
       if (caller._tag !== "owner") return fail("owner_required");
@@ -529,7 +574,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       if (from.commonDirectory !== to.commonDirectory || from.path === to.path) return fail("invalid_path");
       const destinationBranch = await branch(to.path, signal);
       if (destinationBranch === null) return fail("invalid_ref");
-      if (destinationBranch === await repositoryBase(to.path, signal)) return fail("base_requires_review");
+      if (await isBaseBranch(to.path, destinationBranch, signal)) return fail("base_requires_review");
       if ((await completeChanges(to.path, signal)).length > 0 || await mergeHead(to.path, signal) !== null) return fail("dirty_destination");
       if (requireCleanSource && ((await completeChanges(from.path, signal)).length > 0 || await mergeHead(from.path, signal) !== null)) return fail("dirty_source");
       const sourceHead = await head(from.path, signal);
@@ -542,7 +587,8 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       return (await head(to.path, signal))!;
     });
   return {
-    detectBaseBranch: (folder) => operation((signal) => detectBase(folder, signal)),
+    detectBaseBranch: (folder, registration = false) => operation((signal) => detectBase(folder, signal, registration)),
+    isBaseBranch: (folder, name) => operation((signal) => isBaseBranch(folder, name, signal)),
     repositoryBase: (folder) => operation((signal) => repositoryBase(folder, signal)),
     validateBranch: (folder, name) => withRepo(folder, async (path, signal) => {
       if ([...name].length > 128) return fail("base_branch_too_long");
@@ -778,11 +824,12 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       }
       if (currentHead !== null && target !== undefined) {
         const targetHead = await ref(path, target, signal);
-        behindParent = Number((await git(path, ["rev-list", "--count", `${currentHead}..${targetHead}`, "--"], signal)).trim());
+        const start = await startingHead(path, signal), exclusions = start === undefined ? [] : [`^${start}`];
+        behindParent = Number((await git(path, ["rev-list", "--count", `${currentHead}..${targetHead}`, ...exclusions, "--"], signal)).trim());
         const range = `${targetHead}..${currentHead}`;
-        pending = Number((await git(path, ["rev-list", "--count", range, "--"], signal)).trim());
+        pending = Number((await git(path, ["rev-list", "--count", range, ...exclusions, "--"], signal)).trim());
         if (pending > 0) {
-          const dates = (await git(path, ["log", "--format=%cI", range, "--"], signal)).trim().split("\n");
+          const dates = (await git(path, ["log", "--format=%cI", range, ...exclusions, "--"], signal)).trim().split("\n");
           pendingSince = dates.reduce((oldest, date) => Date.parse(date) < Date.parse(oldest) ? date : oldest);
         }
       }
@@ -951,7 +998,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       if (confirmed !== true) return fail("confirmation_required");
       const from = await repository(source, signal), to = await repository(destination, signal);
       if (from.commonDirectory !== to.commonDirectory || from.path === to.path) return fail("invalid_path");
-      if (await branch(to.path, signal) !== reviewed.base || reviewed.base !== await repositoryBase(to.path, signal)
+      if (await branch(to.path, signal) !== reviewed.base || !await isBaseBranch(to.path, reviewed.base, signal)
         || await branch(from.path, signal) !== reviewed.branch) return fail("stale_state");
       const actual = await head(to.path, signal);
       if (actual !== null) {

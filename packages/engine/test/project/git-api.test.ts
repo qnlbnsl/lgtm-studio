@@ -115,12 +115,10 @@ it.live("uses the real authenticated client to register, enumerate, stage, unsta
   expect(resultOf(yield* run(api, "project.branches", { repoId: f.repoId })).items[0].name).toBe("main")
   expect(resultOf(yield* run(api, "project.checkouts", { repoId: f.repoId })).items[0].path).toBe(rig.work)
   const other = join(rig.root, "registered-over-wire"); mkdirSync(other); git(other, "init", "-b", "main")
-  expect(yield* refusal(run(api, "project.repository.add", { name: "Unborn", path: other, machineId: "local" }))).toBe("check out the repository's base branch and ensure it exists locally before registering the repository")
-  git(other, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Initial")
   const registered = yield* run(api, "project.repository.add", { name: "Registered", path: other, machineId: "local" })
   yield* run(api, "project.repository.locate", { repoId: registered.repoId, machineId: "local", path: other })
   const registeredWorkspace = yield* run(api, "project.workspace.register", { repoId: registered.repoId, path: other, machineId: "local", branch: "main", checkout: "main" })
-  expect(resultOf(yield* run(api, "project.git.state", { worktreeId: registeredWorkspace.worktreeId })).head).toBe(git(other, "rev-parse", "HEAD"))
+  expect(resultOf(yield* run(api, "project.git.state", { worktreeId: registeredWorkspace.worktreeId })).head).toBe(null)
   const p = { worktreeId: f.worktreeId }
   renameSync(join(rig.work, "file.txt"), join(rig.work, "renamed\tfile.txt")); git(rig.work, "add", "--all")
   save(rig.work, "renamed\tfile.txt", "base\nmore\n")

@@ -225,6 +225,16 @@ export const prepareProjectLifecycle = (input: Input, name: string, payload: Rec
       }
       yield* clearFolderClaim(plan.workspaceFolder, plan.workspace.path, witness, plan.folderIdentity!)
     }
+    if (plan.start === undefined) {
+      const start = yield* withGit(input, (git) => Effect.gen(function* () {
+        if (yield* creationIo(() => exists(join(plan.workspace.path, ".git")))) return {
+          head: (yield* gitCall(git.state(plan.workspace.path))).head,
+          detail: "Reused the project worktree from the recorded creation intent." }
+        return yield* gitCall(git.projectStart(plan.repository.path, plan.repository.baseBranch ?? (yield* gitCall(git.repositoryBase(plan.repository.path)))))
+      }))
+      yield* internalWrite(runtime, [{ _tag: "project.CreationPlanned", creation: { ...plan, start } }])
+      plan = yield* creation(runtime, p.requestId)
+    }
     const creationDetail = yield* withGit(input, (git) => ensureWorktree(plan, git))
     const observed = { ...input, snapshot: yield* runtime.views.snapshot }
     const mainState = yield* withGit(observed, (git) => Effect.gen(function* () {
@@ -287,6 +297,7 @@ const finishCreation = (observed: Input, observedPlan: ProjectCreation, mainBran
     ...(plan.workspace.worktreeId !== mainWorkspace.worktreeId && own(projectView(input.snapshot).workspaces, plan.workspace.worktreeId) === undefined ? [{ _tag: "project.WorktreeCreated" as const, ...plan.workspace }] : []),
     ...launch.events,
     { _tag: "project.Created", projectId: plan.projectId, repoId: plan.repository.repoId, name: plan.name, goal: plan.goal,
+      ...(plan.start?.head == null ? {} : { startingHead: plan.start.head }),
       leadAgentId: started.agentId, worktreeId: plan.workspace.worktreeId, machineId: plan.workspace.machineId, shell: plan.shell, stage: "define" },
     ...openDefaultProjectChannels({ projectId: plan.projectId, leadAgentId: started.agentId }),
     { _tag: "project.CreationFinished", creationRequestId: p.requestId, ...(detail === undefined ? {} : { detail }) }

@@ -20836,3 +20836,78 @@ State: fixed in round 2 of unit s30.
 The new engine test file did not register the comparison between live views and a rebuild from its event log.
 Every case now registers that check before using its fixture.
 The discovery guard and the dedicated regressions are rerun together.
+
+## 1488. An owner's later read can record an agent's rewritten remote default
+
+Found in review round 2 of unit s30 on 2026-11-20.
+State: fixed in round 3 of unit s30.
+
+Legacy inference still trusted the shared `origin/HEAD` reference.
+A worker could rewrite it before the owner's next website read.
+Implicit inference now records only an existing current `main` or `master`.
+Only explicit registration consults the remote default.
+Its reply returns the recorded base to the owner.
+
+## 1489. Base detection prevents registration of an unborn repository
+
+Found in review round 2 of unit s30 on 2026-11-20.
+State: fixed in round 3 of unit s30.
+
+The local-branch existence check rejected a repository without a commit.
+Registration now accepts its unborn current branch.
+The registration fixtures again cover repositories without bootstrap commits.
+The transport regression again asserts that their head is null.
+A default-selection refusal now describes the missing usable local branch.
+
+## 1490. Losing hosted delivery can expose imported upstream commits as project work
+
+Found in review round 2 of unit s30 on 2026-11-20.
+State: fixed in round 3 of unit s30.
+
+Creation's delivery choice was temporary.
+A later local review compared a fetched project against the older local base.
+The creation intent now records its starting commit before creating the worktree.
+The project retains that commit after completion.
+Review patches exclude imported changes through the starting commit's merge base.
+Commit lists, pending counts, and behind-parent counts exclude its history.
+The regression switches a fetched project to local delivery after 171 upstream commits and a file change.
+
+## 1491. Cached legacy inference failures survive checkout changes
+
+Found in review round 2 of unit s30 on 2026-11-20.
+State: fixed in round 3 of unit s30.
+
+An unresolved collection read could remain stale until service restart.
+Its cache now includes a checked, bounded observation of the main checkout's `HEAD`.
+A changed checkout retries inference on the next collection read.
+Any owner command scoped to the repository also retries it.
+
+## 1492. Creation's GitHub authentication probe holds the Git gate
+
+Found in review round 2 of unit s30 on 2026-11-20.
+State: documented bounded tradeoff in round 3 of unit s30.
+
+The GitHub command-line authentication probe remains in the uninterrupted creation start decision.
+The README now explains this serialization and its effect on other Git operations.
+The probe shares the existing 20-second discovery and fetch deadline.
+Failure retains the local starting commit.
+
+## 1493. A malformed remote default refuses registration
+
+Found in review round 2 of unit s30 on 2026-11-20.
+State: fixed in round 3 of unit s30.
+
+Malformed `origin/HEAD` metadata produced an invalid-reference refusal.
+Registration now treats it as absent and applies the local fallback.
+Regressions cover another reference namespace, invalid branch syntax, and malformed file contents.
+
+## 1494. Legacy guards and setting-time checkout observations are incomplete
+
+Found in review round 2 of unit s30 on 2026-11-20.
+State: fixed in round 3 of unit s30.
+
+An unrecorded row guarded only its selected conventional branch.
+It now guards both `main` and `master` for integration, review destinations, and Files editing.
+The base setting also trusted a checkout observation from preparation.
+A bounded metadata read in the final transaction now determines whether its workspace binding may change.
+A regression switches branches between preparation and commit.

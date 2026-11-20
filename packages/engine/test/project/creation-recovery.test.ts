@@ -53,13 +53,14 @@ const failCreated = (): NonNullable<Fakes["wrapLog"]> => {
 
 live("retains owned unrecorded worktree success and retries the same intent after a full restart without a second checkout or lead", () => Effect.gen(function* () {
   const runner = yield* makeFakeRunner(), secrets = makeFakeSecrets()
+  const startingHead = git(rig.work, "rev-parse", "HEAD")
   const request = yield* provideRig(rig, { runner, secrets, wrapLog: failCreated() }, Effect.gen(function* () {
     const repoId = yield* setup(), request = payload(repoId)
     success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "bash", lead: { harness: "cursor", account: { _tag: "named", accountId: "primary" }, model: "test-model", effort: "high", permission: "ask", permissionChosen: true } } }))
     expect(failureOf(yield* call(owner, "project.create", request))?._tag).toBe("LogWriteFailed")
     const pending = success(yield* call(owner, "project.creations", {})).items
     expect(pending).toHaveLength(1)
-    expect(pending[0]).toMatchObject({ requestId: request.requestId, name: "Console", folderIdentity: expect.any(Object) })
+    expect(pending[0]).toMatchObject({ requestId: request.requestId, name: "Console", folderIdentity: expect.any(Object), start: { head: startingHead } })
     expect(git(pending[0].workspace.path, "branch", "--show-current")).toBe("console")
     expect(runner.callsOf("start")).toHaveLength(0)
     expect(Object.values(projectView(yield* snapshot).projects)).toHaveLength(0)
@@ -70,6 +71,7 @@ live("retains owned unrecorded worktree success and retries the same intent afte
     expect(failureOf(yield* call(owner, "project.create", { ...request, goal: "Changed" }))?.reason).toBe("request id reused")
     const created = success(yield* call(owner, "project.create", request))
     expect(success(yield* call(owner, "project.create", request))).toEqual(created)
+    expect(projectView(yield* snapshot).projects[created.projectId as string]?.startingHead).toBe(startingHead)
     expect(runner.callsOf("start")).toHaveLength(1)
     expect(runner.callsOf("start")[0]?.input).toMatchObject({ model: "test-model", effort: "high", permission: "ask", account: { id: "primary" } })
     expect(success(yield* call(owner, "project.settings", {})).settings.lead).toMatchObject({ harness: "cursor", model: "test-model", effort: "high" })

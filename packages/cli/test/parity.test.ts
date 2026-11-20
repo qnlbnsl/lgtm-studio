@@ -304,7 +304,7 @@ for (const { command, words, form } of invocations) {
         "project.mocks.read": { ...base, items: [] },
         "project.mocks.artifact": { ...base, result: { _tag: "unavailable", reason: "artifact unavailable" } },
         "project.settings": { ...base, settings: { workspaceFolder: root.work, shell: "zsh" } },
-        "project.repository.add": { ...base, repoId: "repo" },
+        "project.repository.add": { ...base, repoId: "repo", baseBranch: "main" },
         "project.creations": { ...base, items: [] },
         "project.context.search": { ...base, result: { items: [], truncated: false } },
         "project.repositories": { ...base, items: [], next: "repo" },

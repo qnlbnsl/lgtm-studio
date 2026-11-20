@@ -141,7 +141,6 @@ it.live("refuses cross-project tasks and repositories, missing entities, unrelat
   expect(yield* refuseUnchanged(send([{ ...f.task, taskId: "context-secret-value" }]))).not.toContain("context-secret-value")
   expect(yield* refuseUnchanged(run(f.outsider, "prompt", { agentId: f.worker.agentId, text: "", context: [f.task] }))).toBeTypeOf("string")
   git(rig.outside, "init", "-b", "main")
-  git(rig.outside, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Initial")
   const repoId = (yield* run(f.api, "project.repository.add", { name: "Other", path: rig.outside, machineId: "local" })).repoId
   const worktreeId = (yield* run(f.api, "project.workspace.register", { repoId, machineId: "local", path: rig.outside, branch: "main", checkout: "main" })).worktreeId
   expect(yield* refuseUnchanged(send([{ ...f.file, repoId, worktreeId, path: "private.txt" }]))).toBeTypeOf("string")

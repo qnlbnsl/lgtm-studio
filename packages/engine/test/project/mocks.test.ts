@@ -21,7 +21,6 @@ let rig: Rig
 beforeEach(() => {
   rig = makeRig(); vi.stubEnv("HOME", rig.home); vi.stubEnv("LGTM_HOME", rig.stateFolder)
   execFileSync("git", ["-C", rig.work, "init", "-b", "main"], { stdio: "ignore" })
-  execFileSync("git", ["-C", rig.work, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Initial"], { stdio: "ignore" })
 })
 afterEach(() => { vi.unstubAllEnvs(); removeRig(rig) })
 const hash = (text: string) => createHash("sha256").update(text).digest("hex")
@@ -398,7 +397,6 @@ it.live("refuses redirected, oversized, unregistered and mismatched-common-direc
 it.live("rejects a real registered Design revision from another repository", () => provideBoard(rig, Effect.gen(function* () {
   const f = yield* setup()
   execFileSync("git", ["-C", rig.outside, "init", "-b", "main"], { stdio: "ignore" })
-  execFileSync("git", ["-C", rig.outside, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Initial"], { stdio: "ignore" })
   const otherRepo = success(yield* call(owner, "project.repository.add", { name: "Other", path: rig.outside, machineId: "local" })).repoId
   const otherWorkspace = success(yield* call(owner, "project.workspace.register", { repoId: otherRepo, machineId: "local", branch: "main", path: rig.outside, checkout: "main" })).worktreeId
   yield* appendSetup([eventOf({ _tag: "project.Created", projectId: "other-project", name: "Other", goal: "", repoId: otherRepo, worktreeId: otherWorkspace, machineId: "local", leadAgentId: f.stranger.agentId })])

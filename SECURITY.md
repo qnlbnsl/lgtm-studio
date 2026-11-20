@@ -410,14 +410,21 @@ Rule 6 remains unchanged for every other path.
 
 Only an owner call may infer and record an old repository's base branch.
 Agent reads never append a base-setting event and never use the shared `refs/remotes/origin/HEAD` to change the effective base.
-An unrecorded repository retains its conventional `main` or `master` protection.
-Inference and registration accept the branch named by `origin/HEAD` only when it exists locally.
-Their fallback accepts only an existing current `main` or `master` branch.
-A feature checkout alone cannot become the recorded base.
+An unrecorded repository protects both `main` and `master` from ordinary integration and Files editing.
+Either conventional branch remains eligible as the review destination in the repository's main checkout.
+Implicit inference records only an existing current `main` or `master` branch.
+It never consults the agent-writable `origin/HEAD`, including on the owner's next read after an agent changes that reference.
+Only explicit owner registration may use the branch named by `origin/HEAD` when it exists locally.
+Registration treats a malformed remote default as absent.
+Its fallback accepts an existing current `main` or `master`, or an unborn current branch.
+The registration reply reports the recorded branch.
+A feature checkout alone cannot become an old row's recorded base.
 The owner may explicitly select another existing local branch through `project.repository.base.set`.
 That command refuses open reviews, unfinished Git operations, active merges, and unfinished project creations.
 It never moves a branch or changes a checkout.
-It refreshes the main workspace binding only when the checkout already has the selected branch checked out.
+It re-reads the bounded main-checkout `HEAD` within the setting transaction.
+It refreshes the main workspace binding only when that observation finds the selected branch checked out.
+That read validates the metadata path and refuses symbolic links at the file.
 
 Project creation fetches only the configured base branch into its explicit remote-tracking reference.
 Remote discovery and the fetch share a 20-second deadline.
@@ -428,6 +435,8 @@ A symbolic destination tracking reference is refused before fetching.
 The fetch updates no local branch and writes no main-checkout files.
 Only a confirmed GitHub delivery against that same remote branch may start from the fetched commit.
 Local delivery starts from the local base.
+The creation intent stores the selected immutable starting commit before the worktree write.
+The completed project retains that commit so a later change to local delivery cannot attribute imported upstream history to the project.
 
 The fetch still honours repository `core.sshCommand`, credential helpers, SSH configuration, and the owner's proxy configuration.
 Repository configuration can therefore run code as the service user or redirect traffic during creation as well as delivery.
