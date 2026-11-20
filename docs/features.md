@@ -1597,3 +1597,67 @@ The standalone mock uses Maya Okafor's sample path.
 
 Issue 1466 records the fault that led to the request: a repository in a sibling folder could not be registered.
 On 2026-11-20 the owner's own workspace folder was widened by command from one folder of projects to its parent.
+
+## Environment variables that LGTM Studio gives to agents
+
+State: Idea. Requested by the owner on 2026-11-20.
+
+The owner wants to store environment variables in LGTM Studio for a repository.
+LGTM Studio would provide them in the shell of every agent that works in that repository.
+Any script that an agent runs would then see those variables, as it would in the owner's own shell.
+
+This would remove the need to copy ignored environment files into each worktree for values that are plain variables.
+The request came while preparing a repository whose builds need ignored environment files; issue 1469 records that fault.
+
+Undecided: whether variables are set per repository, per project, or both.
+Undecided: how secret values are stored and shown, and whether they follow the existing rules for account secrets.
+Undecided: which agents receive them, and whether the terminal tab receives them too.
+`SECURITY.md` governs this; a stored secret must never reach a log, an event or a trace.
+
+### A built-in vault in the server process
+
+State: Idea. Stated by the owner on 2026-11-20, a little after the entry above.
+
+The owner is thinking of a vault that is built into LGTM Studio.
+The server process holds the vault, and the vault is encrypted where it is stored.
+The vault holds the environment variables of each repository and similar values.
+When a project is launched, it is given access to the vault.
+
+The owner also said that LGTM Studio will move from a single program to a server with a client website.
+How the vault and the other parts are split between server and client is not decided; the owner will discuss it.
+
+Undecided: what unlocks the vault when the server starts, and where its key lives.
+Undecided: whether a project receives the whole repository scope or named values only.
+Undecided: how this relates to the existing stored account secrets.
+
+## A repository agent that works in the main checkout and prepares a repository for projects
+
+State: Idea. Requested by the owner on 2026-11-20.
+
+The owner wants one agent per repository, at the repository level and above its projects.
+It always works in the main checkout only.
+The owner talks to it about one-off matters of that repository.
+
+Its first job starts by itself when a repository is added.
+Its automatic first prompt is, in the owner's words: "Verify that this repository is ready to work. Here are relevant docs for LGTM Studio. First, go through the repository and figure out what it is."
+The agent then fills in what LGTM Studio needs as configuration for that repository.
+Examples are the base branch, the files to copy into new worktrees, submodules, setup instructions, environment variables and the test commands.
+If the repository has tests, running them is part of that first run.
+The result is saved to the main checkout.
+After that, the repository is ready: the owner starts a new project, states the goal, and the work gets done.
+
+This extends the earlier entry "A project setup agent", which would produce a `.lgtm` folder.
+It depends on worktree preparation (issue 1469) and on the environment variables entry above.
+
+Undecided: the agent's permission level in the main checkout, since agents never edit the base branch today.
+Undecided: whether the saved configuration lives in the repository's `.lgtm` folder, in engine state, or both.
+Undecided: how the agent appears in the navigation, and whether it stays running or starts on demand.
+
+## A better Define phase
+
+State: In design by the owner from 2026-11-20, with a separate design agent.
+
+The owner finds the present Define phase poor and wants a much better user experience for it.
+When a project starts with a goal, the Define agent must read the repository, run scripts where needed, ask questions, and then produce the end-result document.
+The entry "A Define workspace with a conversation and an evolving end-result document" and issue 1464 record earlier observations.
+The design is worked out in the mock first; nothing here is decided yet.
