@@ -1,4 +1,4 @@
-import { permissionModeFor } from "@lgtm/contracts";
+import { effectiveLeadPermission, permissionModeFor } from "@lgtm/contracts";
 import { recordSignInCheck } from "../accounts/signInEvidence.ts"
 import { constants } from "node:fs"
 import { access, stat } from "node:fs/promises"
@@ -61,12 +61,21 @@ export const accountReadiness = (input: Input, harness: HarnessSettings, account
   return fileCredential || (login.keyVariable !== undefined && Boolean(effective[login.keyVariable]?.trim())) ? "local-credential" as const : "signed-out" as const
 }).pipe(Effect.catch(() => Effect.succeed("unavailable" as const)), Effect.tap(state => Effect.sync(() => recordSignInCheck(account, state))))
 
+// A saved "ask" that the owner did not choose follows the harness default, but
+// only when the harness reports a mode for that default. Otherwise the saved
+// level stays, so a harness without an automatic mode can still start a lead.
+export const leadPermissionFor = (harness: HarnessSettings, saved: typeof ProjectLeadDefaults.Type) => {
+  const level = effectiveLeadPermission(saved, harness.defaultPermission)
+  return level === saved.permission || harness.reportedModes.length === 0
+    || harness.reportedModes.some((row) => row.id === permissionModeFor(harness, level)) ? level : saved.permission
+}
+
 export const leadDefaults = (input: Input, saved?: typeof ProjectLeadDefaults.Type) => Effect.gen(function* () {
   const harnesses = (yield* readHarnesses(input.runtime)).filter((row) => saved === undefined || row.id === saved.harness)
     .sort((a, b) => a.id.localeCompare(b.id))
   for (const harness of harnesses) {
     const model = saved?.model ?? harness.defaultModel, effort = saved?.effort ?? harness.defaultEffort
-    const permission = saved?.permission ?? harness.defaultPermission
+    const permission = saved === undefined ? harness.defaultPermission : leadPermissionFor(harness, saved)
     // Check effective choices before persisting an intent or touching its Git
     // paths. Keep historical settings decodable, but never freeze a choice
     // that cannot be stored in the intent or admitted by normal start.
@@ -89,7 +98,9 @@ export const leadDefaults = (input: Input, saved?: typeof ProjectLeadDefaults.Ty
       remaining = Object.fromEntries(Object.entries(remaining).filter(([id]) => id !== candidate.id))
     }
     if (account === undefined) continue
+    // A resolved "ask" is final: mark it so that a frozen creation resolves to the same level when it is retried.
     return { harness: harness.id, account: { _tag: "named" as const, accountId: account.id }, permission,
+      ...(permission === "ask" ? { permissionChosen: true } : {}),
       ...(model === undefined ? {} : { model }), ...(effort === undefined ? {} : { effort }) }
   }
   return yield* refused("no ready signed-in lead account is available")

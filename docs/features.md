@@ -1549,3 +1549,41 @@ LGTM Studio would ship test tools with scripts for some languages, starting with
 Other people extend it by opening a pull request that adds a test tool for another language, such as Rust.
 The testing skill tells an agent adding a tool to read how the existing tools work and what the overall rules are, before it writes the new scripts.
 The same extension point covers simulator testing and testing on a physical phone.
+
+## A Define workspace with a conversation and an evolving end-result document
+
+State: Idea. Requested by the owner on 2026-11-19, after using both issue 940 projects.
+The layout and the interaction rules still need the owner's agreement.
+
+The owner wants precise control while agreeing what a project will build.
+The current question card contains the lead's whole proposal and can bundle several decisions into one answer.
+The owner suggested a chat-centric Define view, with suggestions beside the conversation.
+The end-result document should be a persistent draft that the lead's harness edits as the conversation develops.
+The owner should be able to see the current proposed result without reconstructing it from older messages or cards.
+
+The proposed direction is a main conversation beside the current end-result draft and its unresolved questions.
+Each question would have its own answer, so accepting one suggestion would not accept unrelated choices.
+Suggestions would identify the statement they change.
+The draft would distinguish proposed wording from agreed wording and show subsequent changes.
+Agreement on the end result would be separate from permission to plan or start work.
+Small projects should be able to finish Define without inventing a sprint structure.
+
+Whether this is a new tab or a different opening view of the existing project is undecided.
+Direct owner editing, the treatment of conflicting edits, and the exact approval controls are also undecided.
+The existing website remains the only website.
+Any implementation must expose the same document and decision actions through the client application programming interface (API).
+Issue 1464 records the observed question-card defect separately from this broader idea.
+
+## A repository board with project prefixes on its tickets
+
+State: Idea. Requested by the owner on 2026-11-19, to be changed later.
+
+The owner wants the work board at the repository level.
+Each ticket would show a prefix identifying its project.
+The reason is that a separate board is mostly wasted space for a small project.
+The repository board would make work across those projects visible together.
+
+The ticket unit, the relationship to existing sprint and task records, and the prefix format are undecided.
+Filtering the shared board to one project and any separate treatment for very large projects still need design.
+This request concerns the work board shown on the website.
+It does not decide changes to the agents' message-board channels, delivery rules or access boundaries.

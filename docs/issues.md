@@ -20489,3 +20489,212 @@ The lead section has a single hairline divider.
 The ordinary confirmation caption is removed, and the loading caption still appears when choices are being read.
 The footer can wrap a longer refusal sentence above its actions.
 The existing live launch journey and standalone sample journey verify that the same controls remain usable.
+
+## 843. The mock connection hooks do not match the complete engine contract
+
+Found: 2026-11-12, while evaluating the mock's conversion to a typed website.
+State: open for the production conversion.
+
+The mock's connection interface is an observation hook for simulated actions.
+It is not a working engine adapter.
+The default functions in `design/mock/js/engine.js` do nothing.
+The mount function always seeds local data and starts the simulation.
+It does not consume a returned snapshot or apply an incoming engine subscription.
+
+Several hook names differ from the current service contract.
+The mock calls `create`, `team.create`, and `snapshot`.
+The corresponding declarations are `project.create`, `project.team.create`, and `client.snapshot`.
+Even matching names have different payloads.
+The mock's `prompt` call lacks the required request identifier and sends a different context representation.
+The mock applies simulated success without waiting for an engine reply.
+
+This is a prototype limitation rather than a regression in the engine.
+The production conversion must use the actual contract and replace simulated state changes.
+
+## 844. This checkout cannot establish the production website build baseline
+
+Found: 2026-11-12, while measuring the current website before a framework decision.
+State: open in the investigated checkout.
+
+With Node.js 26.13.0 selected, `pnpm --filter @lgtm/web build` exited with code 1.
+The preliminary dependency check could not acquire its store lock on a read-only filesystem.
+Vite also failed to resolve `@lgtm/contracts` from the web source.
+Running `node ../../node_modules/vite/bin/vite.js build` from `packages/web` reproduced the workspace-resolution failure without the preliminary dependency check.
+The web package's local `node_modules/@lgtm` directory was absent when inspected.
+
+This observation does not establish a source-code defect or a failure in another checkout.
+Restore and verify the workspace installation in a writable dependency environment before collecting a production bundle baseline.
+Do not treat the chunk sizes printed before the failed build as a successful benchmark.
+
+## 1459. The roadmap and mock introduction lag behind the connected website
+
+Found: 2026-11-19, while evaluating the current project status at `2d5a4568`.
+State: Open as documentation drift.
+
+The roadmap still describes the build-loop plan as awaiting approval and the website replacement as future work.
+The mock README still says that live actions are not connected, before describing several connected actions later in the same file.
+The current Studio entry point installs live Git, chat, project settings, Files, and Terminal mappings.
+The website build passes in this checkout after the package manager restores its workspace dependency links.
+These older status statements must not be treated as a current inventory of missing functionality.
+Reconcile the documents against the implementation and the remaining disabled controls.
+
+## 1460. The active service uses a source worktree behind the latest merged code fixes
+
+Found: 2026-11-19, while preparing LAN HTTPS access and evaluating the current project status.
+State: Fixed on 2026-11-19 after the owner requested a restart on the latest code.
+
+The service listening on `127.0.0.1:8787` was launched from `.worktrees/build-loop/packages/engine/src/service.ts`.
+That worktree is clean at detached commit `9c706267`, the merge of pull request 82.
+The main checkout is at `2d5a4568`, which also includes the fixes merged through pull request 83.
+Those later fixes cover harness defaults, adapter discovery, session handling, and pull request handling.
+The process launch path and the worktree head do not prove the exact revision already loaded into the long-running process.
+Align the service checkout and its website build with the chosen merged revision before the next controlled restart.
+The HTTPS setup did not restart the engine or move that worktree.
+
+The follow-up fast-forwarded the main checkout to GitHub's merged `master` at `5e63ccab` and rebuilt the website.
+The old process stopped gracefully.
+The replacement process runs from the main checkout and reports `5e63ccab` through `client.service.version`.
+An independent remote-reference query returned the same commit.
+The password was loaded privately from the owner's updated password file.
+Sign-in and the authenticated session check both returned HTTP 204 through the LAN HTTPS proxy.
+
+## 1461. Build lead 1 remained interrupted after the latest-code service restart
+
+Found: 2026-11-19, while verifying the owner-requested service restart at `5e63ccab`.
+State: Open as an observed recovery gap. The cause has not been established.
+
+The service completed its recovery gate and accepted authenticated data requests.
+The snapshot retained three projects and all 15 roster records.
+One agent was working, one was idle, 12 were stopped, and Build lead 1 remained interrupted with previous state idle.
+That Codex agent has a session and reports that it is reloadable.
+The client snapshot reports no start-failure code for it and no failed sections.
+The session did not retry the agent or start a fresh conversation.
+Inspect its recovery attempt before deciding how to resume it.
+
+## 1464. Define question cards contain whole proposals and bundle separate decisions
+
+Found: 2026-11-19, by the owner in the two issue 940 projects, with the saved events and website source inspected in the same session.
+State: Open. The owner wants a clearer Define interaction before implementation.
+
+The Codex lead in "We're trying issue 940" put a numbered proposal and its requested execution path in one question.
+Its question events are 71234 and 71364 in the inspected service log.
+The Claude lead in "Issue 940 new project" put its proposal and two separate naming questions in event 1926.
+The owner answered that bundle with "Accepted as written" and later clarified individual statements through chat.
+The resulting confirmation card and the separate agent-choice card remained independent questions.
+A chat correction did not itself answer either card.
+
+The opening instruction in `packages/engine/src/project/lifecycle.ts` tells the lead to put the full proposal under Details.
+`packages/studio/src/chat.ts` maps that proposal to the card body and supplies no separate summary.
+`design/mock/js/ui.js` displays the full body immediately when no summary exists.
+The built website contains the same fallback.
+The promised Details treatment therefore does not hold for these live question records.
+
+The live mapping also creates one proposed answer per question.
+Several decisions written in its body do not become independently answerable controls.
+The saved owner replies were delivered in the inspected examples.
+The observed problem is the presentation and granularity of the decisions.
+The proposed Define workspace is recorded in `docs/features.md`, with its layout still undecided.
+
+## 1465. The saved project-lead default overrides the harness's Auto default with Ask
+
+Found: 2026-11-19, while investigating the owner's report that project agents still launch in Ask mode.
+State: Fixed on 2026-11-20. No running agent or setting was changed during the investigation.
+
+The running engine's `harnesses` list reports Auto as the default for Claude, Codex and Cursor.
+It reports a distinct Auto mapping for Claude and Codex.
+The running engine's `project.settings` reply nevertheless contains `lead.permission: "ask"`.
+Both issue 940 creation records also contain an Ask permission for their project leads.
+
+`effectiveHarnessSettings` in `packages/engine/src/runner/harnesses.ts` upgrades the historical harness default.
+`leadDefaults` in `packages/engine/src/project/leadDefaults.ts` instead prefers a separately saved lead permission when one exists.
+The saved Ask value therefore overrides the upgraded harness default for new project leads.
+This is a missed path in applying the owner's Auto-default decision, rather than evidence that Auto support is absent.
+It does not establish that every installed adapter currently accepts its configured mode; no new agent was launched to test that.
+
+An existing Ask lead also cannot start a worker above Ask because the caller's permission ceiling applies.
+The newer Codex lead explains that limit in question event 71708 and asks the owner to choose a workaround.
+The future correction must address the saved project-lead default and decide how the owner can update existing leads.
+It must retain the permission ceiling and must not silently elevate an existing agent.
+
+The fix adds an optional marker, `permissionChosen`, to the saved lead defaults.
+The website sets the marker only when the owner uses the permission control of "Defaults for new project leads".
+A saved "ask" without the marker follows the harness default, which is "auto" under the owner's decision of 2026-11-17.
+The `project.settings` reply reports that effective level, so the page shows what a new project would receive.
+A saved "ask" with the marker, and every other saved level, is kept.
+Existing agents keep their levels.
+A project creation that was frozen with "ask" before this fix resolves to the harness default if it is retried afterwards.
+
+## 1466. A repository outside the one workspace folder cannot be registered
+
+Found on 2026-11-20 by reading the code, while preparing to bring a second repository into LGTM Studio.
+Every Git call checks that the folder lies inside the single saved workspace folder (`packages/engine/src/project/git/paths.ts`, `project/gitApi.ts`).
+The owner's workspace folder is one folder of personal projects, and the second repository lives in a sibling folder.
+Registration is refused with "Git: invalid_path".
+Widening the saved workspace folder to the common parent is the workaround.
+State: Open.
+
+## 1467. A repository whose base branch is not "main" or "master" cannot hold a project
+
+Found on 2026-11-20 by reading the code. This extends issues 858 and 877.
+Project creation requires "main" or "master" to be checked out (`requireMainBranch` in `project/lifecycle.ts`).
+The pull request flow refuses any other destination (`project/gitReview.ts`, `mainComparison` in `project/git/index.ts`).
+The guard against merging into the base and the Files tab's read-only rule also match those two names only.
+A repository whose base branch is "dev" can be registered, and then nothing can be created or delivered in it.
+State: Open.
+
+## 1468. A new worktree starts from the local base branch without fetching
+
+Found on 2026-11-20 by reading the code. This extends issue 355.
+The project worktree is created from the main checkout's local commit (`project/creationGit.ts`).
+A main checkout that is far behind its remote gives every agent an old tree.
+"Update from parent" merges the same stale local branch.
+State: Open.
+
+## 1469. Nothing prepares a new worktree: no submodules, no ignored environment files, no setup command
+
+Found on 2026-11-20 by reading the code.
+No `git submodule update` runs anywhere, so a submodule folder stays empty in every worktree.
+Ignored files that the build needs, such as environment files, are not copied.
+A repository cannot declare a setup command; its `.lgtm` folder is read only for workflows.
+Agents in such a repository start without dependencies, environment files or submodule content.
+State: Open.
+
+## 1470. A changed submodule pointer fails the whole diff of a checkout
+
+Found on 2026-11-20 by reading the code.
+Status lists a changed submodule as a change.
+The diff, stage and discard actions pass every changed path to `filePath` (`project/git/paths.ts`), which refuses anything that is not a regular file.
+The whole diff then fails with "invalid_path".
+State: Open.
+
+## 1471. A repository's own rules can tell agents to remove LGTM Studio's worktrees
+
+Found on 2026-11-20 by reading the code and a second repository's instruction file.
+The role prompts tell agents that the repository's instruction file binds them.
+That repository's file says every session must end with only the main checkout in `git worktree list`.
+An agent that obeys it could remove the project and worker worktrees.
+The repository's own session hooks would also run inside every agent, as issue 946 records.
+State: Open.
+
+## 1472. Review and listing limits are close for a large monorepo
+
+Found on 2026-11-20 by reading the code and measuring a second repository.
+A review is refused above 200 commits or files, above 128 KiB of diff, or with any binary file (`project/git/index.ts`).
+The file listing has a 1 MiB output budget, and the measured repository's tracked file list is already about 0.97 MiB.
+Past the budget, listings and file search drop entries without a message.
+State: Open.
+
+## 1473. The new-project dialog preselected a lead account that the engine refuses
+
+Found on 2026-11-20 by the journey "live projects and board", which failed on `master` after pull request 85.
+With no saved lead default, the dialog chose the first listed account and sent it as the requested lead.
+The engine refused with "no ready signed-in lead account is available", although another harness was ready.
+Before pull request 85 the engine chose the ready lead itself.
+State: Fixed on 2026-11-20. The dialog now asks the engine for its ready lead default when no lead default is saved.
+
+## 1474. Pull request 85 was merged without a code review or a whole test run
+
+Recorded on 2026-11-20. The owner asked for all open pull requests to be merged.
+The pull request's own description says that no full code review ran and that the whole suite was not rerun.
+Issue 1473 is one fault that the whole suite then showed.
+State: Open until an independent review of that change has run.

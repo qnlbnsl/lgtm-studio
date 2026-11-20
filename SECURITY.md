@@ -111,6 +111,10 @@ This upgrade includes a factory-identical row that the owner previously kept at 
 Saving an `ask` default that would read as `auto` is refused with the owner's decision of 2026-11-17.
 The website never offered a control for that harness field.
 A stored default other than `ask` is kept.
+The saved project-lead default follows the same decision.
+A saved lead level of `ask` reads as the harness default when the harness reports a mode for that default, unless the owner chose `ask` in the "Defaults for new project leads" permission control.
+A lead level named in a project creation request is the owner's explicit choice and is kept.
+Only the owner can save lead defaults or create a project.
 Factory adapter discovery runs on the first load of an empty harness list and on every `harnesses reset`.
 A reset finds adapters installed since the service started.
 Ordinary starts and recovery read current stored settings without repeating discovery.

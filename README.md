@@ -114,6 +114,19 @@ The attached service also stops if its launcher dies.
 The foreground command refuses to start if a service already uses the same state folder.
 The terminal thread viewer is available through `./bin/lgtm view`.
 
+### Run a development service beside the stable one
+
+The stable service runs from the main checkout on port 8787.
+A change to LGTM Studio itself is tried in a second service, started from the worktree that holds the change.
+Run `LGTM_WEB_PASSWORD=<password> ./bin/lgtm-dev <port>` in that worktree.
+The command builds the website from that worktree and serves it on `127.0.0.1:<port>`.
+It refuses port 8787.
+The development service keeps its own state folder, `~/.local/state/lgtm-dev/<name>`, where the name defaults to the worktree folder's name.
+It therefore shares no projects, accounts, sessions or web settings with the stable service.
+A harness must be signed in again inside a development service before it can run agents there.
+Stop it with `./bin/lgtm-dev stop`.
+Restarting a development service never interrupts the stable service or its agents.
+
 The website is built from the mock in `design/mock/` by the package `packages/studio`.
 An old address under `/studio/` is sent to the root.
 See [design/mock/README.md](design/mock/README.md) for what the website does and does not do.
@@ -232,6 +245,7 @@ A custom harness that reports neither mapping keeps `ask`.
 Saving an `ask` default that would read as `auto` is refused with the owner's decision of 2026-11-17.
 The website never offered a control for that harness field.
 A stored default other than `ask` is kept.
+A saved project-lead default of `ask` follows the harness default too, unless the owner chose it in the "Defaults for new project leads" permission control.
 Custom mappings, custom reported modes and unrelated owner edits are kept.
 Existing agents keep their levels.
 The stored event log is not rewritten.
