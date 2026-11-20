@@ -1611,6 +1611,22 @@ Undecided: how secret values are stored and shown, and whether they follow the e
 Undecided: which agents receive them, and whether the terminal tab receives them too.
 `SECURITY.md` governs this; a stored secret must never reach a log, an event or a trace.
 
+### A built-in vault in the server process
+
+State: Idea. Stated by the owner on 2026-11-20, a little after the entry above.
+
+The owner is thinking of a vault that is built into LGTM Studio.
+The server process holds the vault, and the vault is encrypted where it is stored.
+The vault holds the environment variables of each repository and similar values.
+When a project is launched, it is given access to the vault.
+
+The owner also said that LGTM Studio will move from a single program to a server with a client website.
+How the vault and the other parts are split between server and client is not decided; the owner will discuss it.
+
+Undecided: what unlocks the vault when the server starts, and where its key lives.
+Undecided: whether a project receives the whole repository scope or named values only.
+Undecided: how this relates to the existing stored account secrets.
+
 ## A repository agent that works in the main checkout and prepares a repository for projects
 
 State: Idea. Requested by the owner on 2026-11-20.
