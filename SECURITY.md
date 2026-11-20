@@ -406,6 +406,49 @@ A secret printed in the terminal appears on the owner's screen and in any scroll
 The shell runs as the owner and can change files with that user's permissions.
 Rule 6 remains unchanged for every other path.
 
+## Repository bases and creation-time fetching
+
+Only an owner call may infer and record an old repository's base branch.
+Agent reads never append a base-setting event and never use the shared `refs/remotes/origin/HEAD` to change the effective base.
+An unrecorded repository protects both `main` and `master` from ordinary integration and Files editing.
+Either conventional branch remains eligible as the review destination in the repository's main checkout.
+Implicit inference records only an existing current `main` or `master` branch.
+It never consults the agent-writable `origin/HEAD`, including on the owner's next read after an agent changes that reference.
+Only explicit owner registration may use the branch named by `origin/HEAD` when it exists locally.
+Registration treats a malformed remote default as absent.
+Its fallback accepts an existing current `main` or `master`, or an unborn current branch.
+The registration reply reports the recorded branch.
+A feature checkout alone cannot become an old row's recorded base.
+The owner may explicitly select another existing local branch through `project.repository.base.set`.
+That command refuses open reviews, unfinished Git operations, active merges, and unfinished project creations.
+It never moves a branch or changes a checkout.
+It re-reads the bounded main-checkout `HEAD` within the setting transaction.
+It refreshes the main workspace binding only when that observation finds the selected branch checked out.
+That read validates the metadata path and refuses symbolic links at the file.
+
+Project creation fetches only the configured base branch into its explicit remote-tracking reference.
+Remote discovery and the fetch share a 20-second deadline.
+Failures fall back to the observed local commit and record a bounded explanation.
+The fetch disables interactive prompts, external transport protocols, tag following, pruning, submodule recursion, automatic HTTP redirects, configured destination ref mappings, and custom remote upload programs.
+Only Hypertext Transfer Protocol Secure (HTTPS) and Secure Shell (SSH) transports are enabled for that command.
+A symbolic destination tracking reference is refused before fetching.
+The fetch updates no local branch and writes no main-checkout files.
+Only a confirmed GitHub delivery against that same remote branch may start from the fetched commit.
+Local delivery starts from the local base.
+The creation intent stores the selected immutable starting commit before the worktree write.
+The starting remote is selected from repository configuration.
+Local review hides the commit history that this remote base held when the project was created.
+The comparison treats that configured remote's starting history as inherited work.
+A later change to local delivery preserves this commit-history boundary.
+File comparisons use one merge-base query without merging trees or writing objects.
+Divergent inherited histories may add visible changes while preserving the project's own edits.
+
+The fetch still honours repository `core.sshCommand`, credential helpers, SSH configuration, and the owner's proxy configuration.
+Repository configuration can therefore run code as the service user or redirect traffic during creation as well as delivery.
+These options bound the command and its reference writes; they do not isolate hostile shared Git metadata.
+The owner must trust that configuration until agents run in the planned external sandbox.
+No existing permission or redaction rule is relaxed by this fetch.
+
 ## The owner's GitHub pull requests
 
 The owner authorized GitHub pushes and pull requests on 2026-11-17.

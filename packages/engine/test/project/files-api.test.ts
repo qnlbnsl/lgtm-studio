@@ -55,14 +55,19 @@ const historicProject = (fields: Record<string, unknown>) => Effect.gen(function
   return projectId
 })
 // The project works on a feature worktree. The main checkout is the base.
-const setup = (working = false) => Effect.gen(function* () {
+const setup = (working = false, base = "main") => Effect.gen(function* () {
+  if (base !== "main") git(rig.work, "branch", "-m", base)
+  if (base !== "main" && base !== "master") {
+    git(rig.work, "update-ref", `refs/remotes/origin/${base}`, git(rig.work, "rev-parse", "HEAD"))
+    git(rig.work, "symbolic-ref", "refs/remotes/origin/HEAD", `refs/remotes/origin/${base}`)
+  }
   yield* registerRebuildCheck(); yield* seedAccount(); yield* seedHarness()
   const feature = join(rig.root, "feature")
   git(rig.work, "worktree", "add", "-b", "feature", feature)
   const lead = yield* seedAgent({ id: "lead", folder: feature, ...(working ? { state: "working" as const } : {}) })
   success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "zsh" } }))
   const repoId = success(yield* call(owner, "project.repository.add", { name: "Product", path: rig.work, machineId: "local" })).repoId
-  const baseId = success(yield* call(owner, "project.workspace.register", { repoId, machineId: "local", branch: "main", path: rig.work, checkout: "main" })).worktreeId
+  const baseId = success(yield* call(owner, "project.workspace.register", { repoId, machineId: "local", branch: base, path: rig.work, checkout: "main" })).worktreeId
   const worktreeId = success(yield* call(owner, "project.workspace.register", { repoId, machineId: "local", branch: "feature", path: feature, checkout: "worktree" })).worktreeId
   const projectId = yield* historicProject({ name: "Files", goal: "Edit files", leadAgentId: lead.agentId, repoId, worktreeId, machineId: "local" })
   return { feature, baseId, worktreeId, projectId, lead }
@@ -121,7 +126,7 @@ it.live("saves a file against the opened version, refuses a stale version and th
   expect(yield* refusal(run(api, "project.files.write", { ...p, worktreeId: f.baseId, path: "README.md", version: sha("# Product\n"), text: "base\n" }))).toBe("project is unavailable to this caller")
   expect(readFileSync(join(rig.work, "README.md"), "utf8")).toBe("# Product\n")
   const baseProject = yield* historicProject({ name: "On main", goal: "Base", leadAgentId: f.lead.agentId, repoId: projectView(yield* snapshot).workspaces[f.baseId]!.repoId, worktreeId: f.baseId, machineId: "local" })
-  expect(yield* refusal(run(api, "project.files.write", { worktreeId: f.baseId, projectId: baseProject, path: "README.md", version: sha("# Product\n"), text: "base\n" }))).toBe("the base branch is read-only; agents never edit it directly")
+  expect(yield* refusal(run(api, "project.files.write", { worktreeId: f.baseId, projectId: baseProject, path: "README.md", version: sha("# Product\n"), text: "base\n" }))).toBe('the base branch "main" is read-only; agents never edit it directly')
   expect(readFileSync(join(rig.work, "README.md"), "utf8")).toBe("# Product\n")
   expect(yield* refusal(run(api, "project.files.write", { ...p, path: ".git/config", version: "a", text: "x" }))).toBe("Git: invalid_path")
   // Another staged file stays staged and out of the one-file commit.
@@ -142,4 +147,19 @@ it.live("tells an agent working in the worktree which file the owner saved", () 
   const delivery = Object.values(state.deliveries).find((row) => row.source?._tag === "piece" && row.source.id === `file-save:${notices[0]!.noticeId}`)
   expect(delivery?.target).toBe(f.lead.agentId)
   expect(delivery?.content._tag === "prompt" && delivery.content.text).toContain('The owner saved "src/app.ts" in your worktree')
+})).pipe(Effect.orDie))
+
+it.live("the recorded dev base is read-only while a project branch named main remains editable", () => provideBoard(rig, Effect.gen(function* () {
+  const f = yield* setup(false, "dev"), api = yield* wire()
+  expect((yield* result(run(api, "project.files.read", { worktreeId: f.baseId, path: "README.md" }))).editable).toBe(false)
+  const repoId = projectView(yield* snapshot).workspaces[f.baseId]!.repoId
+  const baseProject = yield* historicProject({ name: "On dev", goal: "Base", leadAgentId: f.lead.agentId, repoId, worktreeId: f.baseId, machineId: "local" })
+  expect(yield* refusal(run(api, "project.files.write", { worktreeId: f.baseId, projectId: baseProject, path: "README.md", version: sha("# Product\n"), text: "no" }))).toBe('the base branch "dev" is read-only; agents never edit it directly')
+  git(f.feature, "branch", "-m", "main")
+  const workspace = projectView(yield* snapshot).workspaces[f.worktreeId]!
+  yield* (yield* EventLog).append({ _tag: "owner" }, freshRequest(), "c".repeat(64), [{ _tag: "project.WorktreeCreated", ...workspace, branch: "main" }], {}, () => ({}))
+  const opened = yield* result(run(api, "project.files.read", { worktreeId: f.worktreeId, path: "README.md" }))
+  expect(opened.editable).toBe(true)
+  yield* run(api, "project.files.write", { worktreeId: f.worktreeId, projectId: f.projectId, path: "README.md", version: opened.version, text: "Editable main\n" })
+  expect(readFileSync(join(f.feature, "README.md"), "utf8")).toBe("Editable main\n")
 })).pipe(Effect.orDie))

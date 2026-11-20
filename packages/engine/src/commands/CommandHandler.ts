@@ -55,7 +55,8 @@ import { prepareContextFiles } from "../project/context.ts";
 import { promptPlanner } from "./planners.ts";
 import { postPlanner } from "../board/commands.ts";
 import { own, projectKey, projectView } from "../project/view.ts";
-import { checkoutMainReason, prepareProjectLifecycle, projectLifecycleCommand } from "../project/lifecycle.ts";
+import { isCheckoutBaseReason, prepareRepositoryBases } from "../project/baseBranch.ts";
+import { prepareProjectLifecycle, projectLifecycleCommand } from "../project/lifecycle.ts";
 import { CommandRefused, CommandUncertain, type Plan, type Planner, freshRequest, readHarnesses, refused, type Input, type Runtime, type Snapshot } from "./internal.ts";
 
 export { CommandRefused } from "./internal.ts";
@@ -263,7 +264,7 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
         catch: () => refused(),
       });
       const snapshot = yield* views.snapshot;
-      const input = { runtime, actor, snapshot };
+      const input = yield* prepareRepositoryBases({ runtime, actor, snapshot }, name, payload);
       const invoke = (current: Input) => lists.reads[name]!(current, payload);
       const read = name === "project.git.state" ? refreshGitState(input, payload, (current) =>
         invoke(current) as Effect.Effect<import("../api/reads.ts").ReadReply, unknown, EventLog | Views | SqlClient.SqlClient>) : invoke(input);
@@ -337,6 +338,8 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
               return { actor, payload, bodyHash, snapshot: yield* views.snapshot };
             }));
             if (admitted === undefined) return undefined;
+            const resolved = yield* prepareRepositoryBases({ runtime, actor: admitted.actor, snapshot: admitted.snapshot }, name, admitted.payload);
+            admitted.snapshot = resolved.snapshot;
             if (name === "start") return { finalize: yield* prepareStartWorkspace(
               { runtime, actor: admitted.actor, snapshot: admitted.snapshot }, admitted.payload,
               (release) => { releaseStartWorkspace = release; }) };
@@ -378,7 +381,7 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
             if (receipts[0].body_hash !== bodyHash) return yield* refused("request id reused");
             return;
           }
-          return yield* prepareProjectLifecycle({ runtime, actor, snapshot: yield* views.snapshot }, name, payload, bodyHash);
+          return yield* prepareProjectLifecycle(yield* prepareRepositoryBases({ runtime, actor, snapshot: yield* views.snapshot }, name, payload), name, payload, bodyHash);
         }));
         return yield* step(log.transact((append) => Effect.gen(function* () {
           if (serviceRestartPending() && !["stop", "client.service.restart"].includes(name)) return yield* refused("service restarting");
@@ -464,7 +467,7 @@ export const layer = (configuration: Pick<Runtime, "home" | "stateFolder" | "plu
             if (planned.failure._tag === "LogWriteFailed") return yield* planned.failure;
             const failure = planned.failure;
             if (external?.plan !== undefined || failure instanceof CommandUncertain) return yield* new CommandUncertain({ reason: name === "project.mocks.editor.save" ? mockEditorUncertainReason : "Git outcome is uncertain; refresh Git state" });
-            const initialMainRefusal = name === "project.create" && failure.reason === checkoutMainReason
+            const initialMainRefusal = name === "project.create" && isCheckoutBaseReason(failure.reason)
               && own(projectView(snapshot).creations, requestId) === undefined;
             yield* append(actor, requestId, bodyHash, [...(external?.finished === undefined ? [] : [external.finished]), { _tag: "CommandRefused", command: name, reason: failure.reason }], {},
               failure.reason === "no usable account" || projectLifecycleCommand(name) && !initialMainRefusal ? false : undefined);

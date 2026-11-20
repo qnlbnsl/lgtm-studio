@@ -243,3 +243,18 @@ it.live("issue 579/583: a newly added channel recipient must have current source
   expect(failureOf(yield* Fiber.join(pending))?.reason).toBe("context is unavailable to this conversation")
   yield* noSuccess(request.requestId, ["board.PostWritten", "DeliveryQueued"])
 })).pipe(Effect.orDie))
+
+it.live("round 3: base setting rechecks the physical checkout when committing its binding", () => provideBoard(rig, Effect.gen(function* () {
+  yield* registerRebuildCheck()
+  git(rig.work, "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "Existing branches")
+  const f = yield* setup(), gate = yield* barrier(), actual = Registrations.prepareRegistration
+  git(rig.work, "checkout", "-b", "release")
+  vi.spyOn(Registrations, "prepareRegistration").mockImplementation((...args) => gate.pause(actual(...args)))
+  const pending = yield* call(owner, "project.repository.base.set", { repoId: f.repoId, baseBranch: "release" }).pipe(Effect.forkChild)
+  yield* gate.ready
+  git(rig.work, "checkout", "main")
+  yield* gate.release
+  success(yield* Fiber.join(pending))
+  expect(projectView(yield* snapshot).repositories[f.repoId as string]?.baseBranch).toBe("release")
+  expect(projectView(yield* snapshot).workspaces[f.worktreeId as string]?.branch).toBe("main")
+})).pipe(Effect.orDie))

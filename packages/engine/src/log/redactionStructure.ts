@@ -27,7 +27,7 @@ const delivery: RedactionStructure = { fields: {
 // sprint and task owners are AgentIds. Keep all new identities at their exact
 // event positions, including array elements in sprint dependencies.
 const workspace = { worktreeId: identity, repoId: identity, projectId: identity, teamId: identity, parentId: identity };
-const project = { planningPermission: identity, workPermission: identity, skipPlanningApproval: identity, endResultApproval: identity, buildApproval: identity, projectId: identity, repoId: identity, leadAgentId: identity, worktreeId: identity };
+const project = { startingHead: identity, planningPermission: identity, workPermission: identity, skipPlanningApproval: identity, endResultApproval: identity, buildApproval: identity, projectId: identity, repoId: identity, leadAgentId: identity, worktreeId: identity };
 const sprint = { projectId: identity, sprintId: identity, owner: identity, needs: { elements: identity } };
 const requestLinks = { projectId: identity, taskId: identity, sprintId: identity };
 const task = { story: { fields: { activity: { elements: { fields: { question: identity } } } } }, projectId: identity, taskId: identity, owner: identity, teamId: identity, sprintId: identity, worktreeId: identity };
@@ -70,7 +70,7 @@ export const eventStructure: RedactionStructure = { taggedFields: {
   "project.MainReviewDecided": { review: gitReview },
   "project.SettingsChanged": { settings: { fields: { lead: { fields: { harness: identity, account: { fields: { accountId: identity } } } } } } },
   "project.CreationPlanned": { creation: { fields: { requestId: identity, projectId: identity,
-    bodyHash: identity, repository: { fields: { repoId: identity } }, workspace: { fields: workspace },
+    bodyHash: identity, start: { fields: { head: identity } }, repository: { fields: { repoId: identity } }, workspace: { fields: workspace },
     lead: { fields: { harness: identity, account: { fields: { accountId: identity } } } },
     repositoryIdentity: { fields: { device: identity, inode: identity } }, folderIdentity: { fields: { device: identity, inode: identity } } } } },
   "project.CreationClaimed": { creationRequestId: identity, identity: { fields: { device: identity, inode: identity } } },
@@ -91,6 +91,7 @@ export const eventStructure: RedactionStructure = { taggedFields: {
     alertIds: { elements: identity }, postIds: { elements: identity }, worktreeIds: { elements: identity } },
   "project.Restored": { projectId: identity },
   "project.RepositoryAdded": { repoId: identity },
+  "project.RepositoryBaseChanged": { repoId: identity },
   "project.RepositoryLocated": { repoId: identity },
   "project.WorktreeCreated": workspace,
   "project.Created": project,

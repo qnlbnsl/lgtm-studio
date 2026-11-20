@@ -138,6 +138,52 @@ See [remote access](docs/remote-access.md) before using a proxy or a phone.
 An installer, startup at login, and loading project configuration from
 `.lgtm` are the next piece of work.
 
+## Repository base branches
+
+Each registered repository records its own base branch.
+Registration uses the branch named by `refs/remotes/origin/HEAD` when that branch exists locally.
+A malformed remote default is treated as absent.
+Otherwise, registration uses an existing current `main` or `master`, or the current unborn branch in a repository without a commit.
+The registration reply includes the recorded base branch.
+A refusal explains when no usable local default exists.
+Older repository records gain only an existing current `main` or `master` on an owner call without changing old events.
+This implicit inference never reads `origin/HEAD`.
+Selecting another base for an old row requires the explicit setting command.
+Both `main` and `master` remain guarded until a base is recorded.
+A failed inference is retried after the checkout branch changes or the owner calls a command for that repository.
+New repositories created by LGTM Studio use `main`.
+The main checkout must have the recorded base checked out before creating a project.
+
+The owner can change the base to an existing local branch through the client API or the command line:
+
+```sh
+./bin/lgtm project.repository.base.set --input '{"repoId":"<repository-id>","baseBranch":"dev"}'
+```
+
+The command refuses an open review, an unfinished Git operation, an active merge, or an unfinished project creation in that repository.
+Changing the setting does not switch the owner's checkout.
+The registered workspace binding changes only when a fresh checkout observation in the setting transaction finds the selected branch checked out.
+Switch the checkout before changing the setting, or repeat the setting command after switching it.
+The website displays the recorded base in its existing repository details.
+It does not yet have a control to change that setting.
+
+Before creating a project worktree, the engine fetches the base branch from its configured remote.
+It uses the fetched commit when the local base is its ancestor and delivery is confirmed to use a GitHub pull request against that same remote branch.
+Local delivery starts from the local base.
+The creation intent records its immutable starting commit before creating the worktree.
+The project retains that commit after creation and across service restarts.
+Review files use the later merge base of the starting commit and the current review target with the project head.
+One `git merge-base <head> <target> <start>` call selects the comparison base without merging trees or writing objects.
+When the inherited histories diverge, the review may show additional inherited changes while retaining the project's own edits.
+Review commits and pending counts exclude history already reachable from that starting commit.
+A later loss of hosted delivery still excludes the starting history from the project's commit list.
+A missing remote, a failed fetch, or a local base that is ahead or diverged uses the local base instead.
+Remote discovery, fetching, and the GitHub authentication probe share a 20-second limit and fall back to the local base on failure.
+The authentication probe stays inside the Git gate to keep the fetch and delivery selection in one uninterrupted engine operation.
+This bounded serialization can delay another Git operation by up to 20 seconds during the optional start decision.
+The completed creation event records the selected source or the fallback reason.
+This operation never moves the local base branch or changes the main checkout's files.
+
 ## Worker worktrees
 
 A worker started inside a project receives its own registered Git worktree.

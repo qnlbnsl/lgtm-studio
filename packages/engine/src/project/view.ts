@@ -92,6 +92,10 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
     case "project.CreationClaimed": return { ...view, creations: change(view.creations, event.creationRequestId, (row) => ({ ...row,
       [event.kind === "repository" ? "repositoryIdentity" : "folderIdentity"]: event.identity })) }
     case "project.CreationFinished": { const creations = { ...view.creations }; delete creations[event.creationRequestId]; return { ...view, creations } }
+    case "project.RepositoryBaseChanged": {
+      const repository = own(view.repositories, event.repoId)
+      return repository === undefined ? view : { ...view, repositories: { ...view.repositories, [event.repoId]: { ...repository, baseBranch: event.baseBranch } } }
+    }
     case "project.RepositoryAdded": { const { _tag, ...row } = event; return { ...view, repositories: { ...view.repositories, [row.repoId]: row } } }
     case "project.RepositoryLocated": { const { _tag, ...row } = event; return { ...view, locations: { ...view.locations, [projectKey(row.repoId, row.machineId)]: row } } }
     case "project.WorktreeCreated": { const { _tag, ...row } = event; return { ...view, workspaces: { ...view.workspaces, [row.worktreeId]: row } } }

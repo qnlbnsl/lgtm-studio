@@ -161,7 +161,7 @@ export function mapRepository(repo: EngineRepository, workspaces: ReadonlyArray<
   // The engine registers a repository on its own machine, so that machine always has it.
   folders[LOCAL_MACHINE] ??= repo.path
   return {
-    id: repo.repoId, name: repo.name, main: main?.branch ?? "", remote: null, folders, design: false,
+    id: repo.repoId, name: repo.name, main: repo.baseBranch ?? main?.branch ?? "", remote: null, folders, design: false,
     description: "", describedAt: null, describedBy: null
   }
 }

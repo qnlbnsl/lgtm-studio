@@ -3,6 +3,7 @@ import { lstat, mkdir, open, readdir, realpath, unlink } from "node:fs/promises"
 import { dirname, join } from "node:path"
 import type { CreationFolderIdentity, ProjectCreation } from "@lgtm/contracts"
 import * as Effect from "effect/Effect"
+import { gitCall } from "./gitApi.ts"
 import { refused } from "../commands/internal.ts"
 import type { GitService } from "./git/index.ts"
 import { directory, smallFile } from "./git/paths.ts"
@@ -92,9 +93,12 @@ export const ensureWorktree = (plan: ProjectCreation, service: GitService) => Ef
   const repository = yield* service.register(plan.repository.path).pipe(Effect.mapError(() => refused("repository is unavailable")))
   if (dirname(repository.commonDirectory) !== plan.repository.path) return yield* refused("main repository checkout is required")
   if (plan.workspace.checkout === "main") return
+  const start = plan.start
+  if (start === undefined) return yield* refused("project creation intent is unavailable")
+  let detail: string | undefined = start?.detail
   yield* creationIo(async (signal) => {
     if (plan.folderIdentity === undefined || !same(plan.folderIdentity, await folderIdentity(plan.workspace.path))) throw new Error()
-    if (await exists(join(plan.workspace.path, ".git"))) return
+    if (await exists(join(plan.workspace.path, ".git"))) { detail = "Reused the project worktree from the recorded creation intent."; return }
     if ((await readdir(plan.workspace.path)).length !== 0) throw new Error()
     const head = await gitProcess(plan.repository.path, ["rev-parse", "--verify", "--quiet", "HEAD"], { bytes: 4096, timeoutMs: 5000 }, signal)
     if (head.code !== 0 && head.code !== 1) throw processFailure(head)
@@ -113,8 +117,9 @@ export const ensureWorktree = (plan: ProjectCreation, service: GitService) => Ef
       } finally { await file.close() }
     }
     await creationGit(plan.repository.path, ["worktree", "add", ...(head.code === 1 ? ["--orphan"] : []), "-b", plan.workspace.branch,
-      "--", plan.workspace.path, ...(head.code === 1 ? [] : [head.stdout.trim()])], signal)
+      "--", plan.workspace.path, ...(head.code === 1 ? [] : [start?.head ?? head.stdout.trim()])], signal)
   })
+  return detail
 })
 export const verifyCreation = (plan: ProjectCreation, service: GitService) => Effect.gen(function* () {
   if (plan.repositoryIdentity === undefined) return yield* refused("repository is unavailable")

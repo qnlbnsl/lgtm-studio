@@ -290,6 +290,24 @@ it.live("keeps the draft through actual local repository registration and refuse
   }))
 }))
 
+it.live("round 2: the registration controller releases a refused base admission and permits a corrected checkout", () => Effect.gen(function* () {
+  const runner = yield* makeFakeRunner()
+  yield* provideRig(rig, { runner, secrets: makeFakeSecrets() }, Effect.gen(function* () {
+    yield* configured(); const api = yield* connected()
+    git(rig.work, "checkout", "-b", "feature-x")
+    const registration = new RepositoryRegistration(() => {}, runFor(api))
+    registration.open(); registration.update({ name: "Product", path: rig.work })
+    yield* promise(() => registration.submit())
+    expect(registration.getSnapshot()).toMatchObject({ phase: "refused", attempt: undefined })
+    expect(Object.keys(projectView(yield* snapshot).repositories)).toHaveLength(0)
+    git(rig.work, "checkout", "main")
+    yield* promise(() => registration.submit())
+    expect(registration.getSnapshot().phase).toBe("registered")
+    expect(registration.getSnapshot().result?.baseBranch).toBe("main")
+    registration.dispose()
+  }))
+}))
+
 it.live("the joined registration controller returns a real repository to the original project draft and creates its dedicated worktree and single lead", () => Effect.gen(function* () {
   const runner = yield* makeFakeRunner()
   yield* provideRig(rig, { runner, secrets: makeFakeSecrets() }, Effect.gen(function* () {
@@ -379,7 +397,7 @@ it.live("the joined controller releases an effect-free main-branch refusal and p
     const replay = yield* Effect.result(api["project.create"](frozen))
     expect(replay._tag).toBe("Failure")
     if (replay._tag === "Failure") expect(replay.failure).toMatchObject({ _tag: "CommandError",
-      reason: "check out main or master in the main repository checkout before creating a project" })
+      reason: 'check out "main" in the main repository checkout before creating a project' })
     expect(Object.keys(projectView(yield* snapshot).projects)).toHaveLength(0)
     session.correctRefusal(); yield* promise(() => flush(session)); yield* promise(() => session.start())
     expect(session.getSnapshot().phase).toBe("created")

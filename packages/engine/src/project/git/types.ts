@@ -3,6 +3,7 @@ import * as Data from "effect/Data";
 import type { Caller, GitMutationIdentity, GitReviewDelivery } from "@lgtm/contracts";
 
 export type GitFailureReason =
+  | "base_branch_required" | "base_branch_too_long"
   | "gh_unavailable" | "github_refused" | "github_remote_changed" | "github_create_refused" | "github_base_moved" | "forbidden_remote" | "invalid_path" | "not_repository" | "invalid_ref" | "output_limit" | "timeout" | "cancelled"
   | "git_unavailable" | "git_failed" | "busy" | "collision" | "dirty_destination" | "dirty_source"
   | "conflicts" | "confirmation_required" | "stale_state" | "nothing_staged" | "invalid_message"
@@ -63,6 +64,11 @@ export interface GitService {
   discover(): GitOperation<Bounded<Repository>>;
   createRepository(name: string): GitOperation<Repository>;
   register(folder: string): GitOperation<Repository>;
+  detectBaseBranch(folder: string, registration?: boolean): GitOperation<string>;
+  isBaseBranch(folder: string, branch: string): GitOperation<boolean>;
+  repositoryBase(folder: string): GitOperation<string>;
+  projectStart(folder: string, base: string): GitOperation<{ head: string | null; detail: string }>;
+  validateBranch(folder: string, name: string): GitOperation<void>;
   branches(folder: string): GitOperation<Bounded<Branch>>;
   worktrees(folder: string): GitOperation<Bounded<Worktree>>;
   createWorktree(folder: string, name: string, from?: string, branchPrefix?: string): GitOperation<Worktree>;

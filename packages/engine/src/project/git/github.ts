@@ -28,7 +28,7 @@ export const githubCommands = (folder: string, signal: AbortSignal, timeoutMs: n
   };
   const fields = "number,url,state,title,body,headRefName,baseRefName,headRefOid,baseRefOid,isCrossRepository,mergeable,mergeStateStatus,mergeCommit";
   const baseHead = async (repo: string, base: string): Promise<string> => {
-    const value = await json(["api", `repos/${repo}/git/ref/heads/${encodeURIComponent(base)}`]);
+    const value = await json(["api", `repos/${repo}/git/ref/heads/${base.split("/").map(encodeURIComponent).join("/")}`]);
     if (value?.ref !== `refs/heads/${base}` || value?.object?.type !== "commit" || !/^[a-f0-9]{40,64}$/.test(value?.object?.sha)) return fail("github_refused");
     return value.object.sha;
   };

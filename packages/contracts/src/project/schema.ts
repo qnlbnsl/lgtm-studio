@@ -43,7 +43,7 @@ export const effectiveLeadPermission = (lead: { readonly permission: typeof Perm
   lead.permission === "ask" && lead.permissionChosen !== true ? harnessDefault : lead.permission
 export const ProjectSettings = Schema.Struct({ workspaceFolder: ProjectPath, shell: ProjectName, workflowFolder: Schema.optionalKey(ProjectPath), reviewDefaults: Schema.optionalKey(Schema.Struct({ reviewers: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(9)), differentVendor: Schema.Boolean })), lead: Schema.optionalKey(ProjectLeadDefaults), displayName: Schema.optionalKey(ProjectName) })
 export type ProjectSettings = typeof ProjectSettings.Type
-export const Repository = Schema.Struct({ repoId: RepositoryId, name: ProjectName, path: ProjectPath })
+export const Repository = Schema.Struct({ repoId: RepositoryId, name: ProjectName, path: ProjectPath, baseBranch: Schema.optionalKey(ProjectName) })
 export type Repository = typeof Repository.Type
 export const RepositoryLocation = Schema.Struct({ repoId: RepositoryId, machineId: ProjectName, path: ProjectPath })
 export const Workspace = Schema.Struct({
@@ -61,6 +61,7 @@ export type LeadPermissionSetting = typeof LeadPermissionSetting.Type
 export const Project = Schema.Struct({
   projectId: ProjectId, repoId: RepositoryId, name: ProjectName, goal: ProjectText,
   leadAgentId: AgentId, worktreeId: WorkspaceId, machineId: ProjectName,
+  startingHead: Schema.optionalKey(Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/))),
   planningPermission: Schema.optionalKey(LeadPermissionSetting), workPermission: Schema.optionalKey(LeadPermissionSetting),
   planningPermissionChangedAt: Schema.optionalKey(EventSequence), workPermissionChangedAt: Schema.optionalKey(EventSequence),
   endResultApproval: Schema.optionalKey(Schema.NonEmptyString), skipPlanningApproval: Schema.optionalKey(Schema.NonEmptyString), buildApproval: Schema.optionalKey(Schema.NonEmptyString),
@@ -86,6 +87,7 @@ export const ProjectCreation = Schema.Struct({
   repository: Repository, workspace: Workspace, workspaceFolder: ProjectPath,
   newRepository: Schema.Boolean, name: ProjectName, goal: ProjectText, shell: ProjectName,
   leadName: ProjectName, lead: ProjectLeadDefaults,
+  start: Schema.optionalKey(Schema.Struct({ head: Schema.NullOr(Schema.String.check(Schema.isPattern(/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/))), detail: ProjectText })),
   repositoryIdentity: Schema.optionalKey(CreationFolderIdentity), folderIdentity: Schema.optionalKey(CreationFolderIdentity)
 })
 export type ProjectCreation = typeof ProjectCreation.Type

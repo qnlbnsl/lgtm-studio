@@ -9,6 +9,7 @@ import { own, projectKey, projectView } from "./view.ts"
 import { reviewPlanners, reviewReads } from "./gitReview.ts"
 import { saveMockEditor } from "./mockEditor.ts"
 import { fileReads, writeFile } from "./files.ts"
+import { integrationBaseReason } from "./baseBranch.ts"
 import { safePath } from "./gitApi.ts"
 
 type Raw = Record<string, unknown>
@@ -86,6 +87,7 @@ export const gitPlanners = {
     // This unscoped destination lookup is safe only while integration is owner-only.
     const destination = yield* workspacePath(input, { worktreeId: raw.destinationId }, git)
     const source = own(projectView(input.snapshot).workspaces, raw.worktreeId as string)!
+    if (yield* gitCall(git.isBaseBranch(path, destination.branch))) return yield* refused(integrationBaseReason(destination.branch))
     // Integrations use the recorded team-to-project relationship, never a
     // caller-selected branch target or an unrelated checkout in the repository.
     const view = projectView(input.snapshot)
@@ -113,6 +115,7 @@ export const gitPlanners = {
     const builderTeam = Object.values(view.teams).find((row) => row.worktreeId === child.parentId)
     const projectParent = project !== undefined && parent.checkout === "main"
       && parent.path === own(view.repositories, child.repoId)?.path
+      && parent.branch === (yield* gitCall(git.repositoryBase(parent.path)))
     const teamParent = team !== undefined && own(view.projects, team.projectId)?.worktreeId === parent.worktreeId
     const workerProject = child.projectId === undefined ? undefined : own(view.projects, child.projectId)
     const workerParent = child.owner !== undefined && workerProject !== undefined && child.parentId === parent.worktreeId

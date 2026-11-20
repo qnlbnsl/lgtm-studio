@@ -9,8 +9,10 @@ import * as Fiber from "effect/Fiber"
 import * as Redacted from "effect/Redacted"
 import * as SqlClient from "effect/sql/SqlClient"
 import { afterEach, beforeEach, expect, vi } from "vitest"
-import { checkoutMainReason } from "../../src/project/lifecycle.ts"
+import { checkoutBaseReason } from "../../src/project/baseBranch.ts"
+const checkoutMainReason = checkoutBaseReason("main")
 import * as Lifecycle from "../../src/project/lifecycle.ts"
+import { CommandHandler } from "../../src/commands/CommandHandler.ts"
 import { EventLog, LogWriteFailed } from "../../src/log/EventLog.ts"
 import { RunnerRejected } from "../../src/runner/Runner.ts"
 import { projectView } from "../../src/project/view.ts"
@@ -52,13 +54,14 @@ const failCreated = (): NonNullable<Fakes["wrapLog"]> => {
 
 live("retains owned unrecorded worktree success and retries the same intent after a full restart without a second checkout or lead", () => Effect.gen(function* () {
   const runner = yield* makeFakeRunner(), secrets = makeFakeSecrets()
+  const startingHead = git(rig.work, "rev-parse", "HEAD")
   const request = yield* provideRig(rig, { runner, secrets, wrapLog: failCreated() }, Effect.gen(function* () {
     const repoId = yield* setup(), request = payload(repoId)
     success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "bash", lead: { harness: "cursor", account: { _tag: "named", accountId: "primary" }, model: "test-model", effort: "high", permission: "ask", permissionChosen: true } } }))
     expect(failureOf(yield* call(owner, "project.create", request))?._tag).toBe("LogWriteFailed")
     const pending = success(yield* call(owner, "project.creations", {})).items
     expect(pending).toHaveLength(1)
-    expect(pending[0]).toMatchObject({ requestId: request.requestId, name: "Console", folderIdentity: expect.any(Object) })
+    expect(pending[0]).toMatchObject({ requestId: request.requestId, name: "Console", folderIdentity: expect.any(Object), start: { head: startingHead } })
     expect(git(pending[0].workspace.path, "branch", "--show-current")).toBe("console")
     expect(runner.callsOf("start")).toHaveLength(0)
     expect(Object.values(projectView(yield* snapshot).projects)).toHaveLength(0)
@@ -69,6 +72,7 @@ live("retains owned unrecorded worktree success and retries the same intent afte
     expect(failureOf(yield* call(owner, "project.create", { ...request, goal: "Changed" }))?.reason).toBe("request id reused")
     const created = success(yield* call(owner, "project.create", request))
     expect(success(yield* call(owner, "project.create", request))).toEqual(created)
+    expect(projectView(yield* snapshot).projects[created.projectId as string]?.startingHead).toBe(startingHead)
     expect(runner.callsOf("start")).toHaveLength(1)
     expect(runner.callsOf("start")[0]?.input).toMatchObject({ model: "test-model", effort: "high", permission: "ask", account: { id: "primary" } })
     expect(success(yield* call(owner, "project.settings", {})).settings.lead).toMatchObject({ harness: "cursor", model: "test-model", effort: "high" })
@@ -569,6 +573,7 @@ live("issue 591: an existing master checkout remains a usable owner review desti
   yield* provideRig(rig, { runner, secrets }, Effect.gen(function* () {
     const repoId = yield* setup()
     git(rig.work, "branch", "-m", "master")
+    success(yield* call(owner, "project.repository.base.set", { repoId, baseBranch: "master" }))
     const request = payload(repoId), preview = success(yield* call(owner, "project.placement.preview", request)).result
     const created = success(yield* call(owner, "project.create", request))
     expect(success(yield* call(owner, "project.create", request))).toEqual(created)
@@ -620,4 +625,25 @@ live("refuses an unavailable requested lead before allocating a project instead 
     expect(success(yield* call(owner, "project.creations", {})).items).toEqual([])
     expect(git(rig.work, "worktree", "list", "--porcelain").match(/^worktree /gm)).toHaveLength(1)
   }))
+}))
+
+live("round 4: a second starting decision cannot overwrite the stored creation start", () => Effect.gen(function* () {
+  const runner = yield* makeFakeRunner(), secrets = makeFakeSecrets()
+  const head = git(rig.work, "rev-parse", "HEAD")
+  const request = yield* provideRig(rig, { runner, secrets, wrapLog: failCreated() }, Effect.gen(function* () {
+    const request = payload(yield* setup())
+    expect(failureOf(yield* call(owner, "project.create", request))?._tag).toBe("LogWriteFailed")
+    return request
+  }))
+  yield* provideRestart(rig, runner.layer, Effect.gen(function* () {
+    yield* registerRebuildCheck(); yield* recover
+    const handler = yield* CommandHandler, input = yield* handler.input({ _tag: "owner" })
+    const original = projectView(yield* snapshot).creations[request.requestId]!.start
+    const before = (yield* readLog).length
+    yield* Lifecycle.recordCreationStart(input.runtime, request.requestId, { head: "f".repeat(40), detail: "A later stale decision" })
+    expect(projectView(yield* snapshot).creations[request.requestId]!.start).toEqual(original)
+    expect((yield* readLog).length).toBe(before)
+    const created = success(yield* call(owner, "project.create", request))
+    expect(projectView(yield* snapshot).projects[created.projectId as string]?.startingHead).toBe(head)
+  }), { secrets })
 }))

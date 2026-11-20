@@ -14017,7 +14017,7 @@ The fix is to check the decoded text of a Scalable Vector Graphics file and to r
 ## 858. The "Files" tab decides the read-only base branch by name
 
 Found: 2026-11-14, in the review of pull request 47.
-State: open.
+State: fixed in unit s30 on 2026-11-20.
 
 `baseBranch` in `packages/engine/src/project/files.ts` treats only branches named `main` or `master` as the base branch.
 A repository whose base branch has another name can be edited from the "Files" tab.
@@ -14224,10 +14224,14 @@ The standalone sample keeps its existing behaviour.
 
 ## 877. A project has no configurable base branch.
 
-State: open. Checked against the code on 2026-11-15. grep of packages/contracts/src finds no project base branch setting or command. Kind: visible to the owner.
+State: fixed in unit s30 on 2026-11-20.
 
 The engine does not expose a project base branch setting or a command to change it.
 The live base branch picker is disabled.
+
+The setting belongs to the repository.
+The owner can change it through `project.repository.base.set`.
+The website control remains listed in `docs/features.md`.
 
 ## 878. A project lead cannot change its subscription.
 
@@ -20640,7 +20644,7 @@ Project creation requires "main" or "master" to be checked out (`requireMainBran
 The pull request flow refuses any other destination (`project/gitReview.ts`, `mainComparison` in `project/git/index.ts`).
 The guard against merging into the base and the Files tab's read-only rule also match those two names only.
 A repository whose base branch is "dev" can be registered, and then nothing can be created or delivered in it.
-State: Open.
+State: fixed in unit s30 on 2026-11-20.
 
 ## 1468. A new worktree starts from the local base branch without fetching
 
@@ -20648,7 +20652,12 @@ Found on 2026-11-20 by reading the code. This extends issue 355.
 The project worktree is created from the main checkout's local commit (`project/creationGit.ts`).
 A main checkout that is far behind its remote gives every agent an old tree.
 "Update from parent" merges the same stale local branch.
-State: Open.
+State: fixed in unit s30 on 2026-11-20.
+
+Creation fetches one remote base with the existing hardened Git options.
+It uses that commit only when the local base is an ancestor.
+The creation records a local fallback for a missing remote, a failed fetch, or a base that is ahead or diverged.
+The local base branch and checkout are preserved.
 
 ## 1469. Nothing prepares a new worktree: no submodules, no ignored environment files, no setup command
 
@@ -20698,3 +20707,267 @@ Recorded on 2026-11-20. The owner asked for all open pull requests to be merged.
 The pull request's own description says that no full code review ran and that the whole suite was not rerun.
 Issue 1473 is one fault that the whole suite then showed.
 State: Open until an independent review of that change has run.
+
+## 1475. The website blanks the repository base after mapping it
+
+Found on 2026-11-20 during unit s30's browser journey.
+State: fixed in unit s30 on 2026-11-20.
+
+`mapBoardRecords` replaced every repository's mapped base branch with an empty string.
+The existing repository details therefore showed a blank base even when the engine held it.
+The board mapping now preserves the repository mapping, including its recorded base branch.
+The browser journey checks the value before an owner change and after a reload.
+
+## 1476. Legacy base inference invalidates the opening creation read
+
+Found on 2026-11-20 during unit s30's full regression run.
+State: fixed in unit s30 on 2026-11-20.
+
+The creation form reads the event sequence before and after loading repository details.
+Inferring a legacy repository's base during that load appended an event between those reads.
+The form therefore rejected its own first load as changed state.
+The owner's opening sequence and snapshot reads now pin available legacy repositories before reporting their sequence.
+The existing mounted creation journeys cover the initial load and its later owner sessions.
+
+## 1477. A fetched project start includes upstream work in a local review
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+A project started at a fetched commit while local delivery still compared it with the stale local base.
+The review and pending counts therefore included upstream commits as project work.
+Creation now uses a fetched start only for confirmed GitHub delivery against the same remote branch.
+Local delivery starts at the local base and records that decision.
+The regression checks a remote that is 170 commits ahead.
+
+## 1478. An agent read can infer and record a legacy repository base
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+Legacy inference ran on agent calls and trusted the main checkout's arbitrary branch or the shared remote head.
+Only owner calls now record an inferred base.
+An unrecorded row keeps conventional branch protection on agent reads.
+Registration and inference require a local branch named by `origin/HEAD`, or an existing current `main` or `master` branch.
+
+## 1479. A raw repository identifier can redirect inference outside a project
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+Inference preferred a raw repository identifier over the project's repository.
+Conflicting identifiers now prevent inference.
+A project-scoped snapshot resolves only that project's repository.
+
+## 1480. Unresolved legacy inference repeatedly launches Git and can fail snapshots
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+A detached legacy checkout could fail inference on every snapshot.
+Path, redaction, and transaction refusals could also escape the optional inference path.
+Failed inference now preserves ordinary reads and is cached for collection reads.
+An explicit repository operation retries inference.
+The owner can always repair the setting explicitly.
+
+## 1481. Base validation accepts missing local branches and rejects valid at-sign names
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+Detection did not verify that the selected base existed locally or fit the event's name limit.
+Reference resolution also rejected valid names containing `@`.
+Detection now verifies existence and explains the 128-character limit before recording an event.
+Reference resolution accepts embedded at signs while refusing reflog syntax.
+
+## 1482. The GitHub base endpoint encodes branch path separators
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+The GitHub reference endpoint percent-encoded the slash in `release/next`.
+It now encodes each branch path segment separately and preserves the separator.
+
+## 1483. A failed creation fetch can hide the usable local starting commit
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+Only fetch failures used the local fallback.
+Other remote discovery failures became a repository-unavailable refusal.
+The fetch could also hold the Git gate for 90 seconds.
+Optional remote discovery and fetching now share a 20-second deadline.
+Their failures record the local fallback instead of discarding the observed local commit.
+
+## 1484. Changing the base setting rewrites a workspace's checked-out branch binding
+
+Found in review round 1 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+The setting command rewrote the main workspace's branch even when its checkout stayed on another branch.
+It now refreshes that binding only when the selected branch is already checked out.
+An owner who switches afterwards can repeat the setting command.
+
+## 1485. Workspace registration unnecessarily infers the repository base again
+
+Found during round 2 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+The shared checkout inspector inferred a base for location and workspace registration too.
+It could therefore refuse a valid checkout whose unconventional base the owner had already selected explicitly.
+Only new repository registration now requests base detection from that inspector.
+Location and workspace registration keep their existing physical checkout checks.
+
+## 1486. The retired registration controller freezes new base admission refusals
+
+Found during round 2 of unit s30 on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+The retired page's controller treated the new missing-base and overlong-base refusals as uncertain registrations.
+Its existing admission list now recognizes both determinate refusals.
+The regression fixes a refused feature checkout and registers it on a new request without losing the draft.
+No screen was changed.
+
+## 1487. The new base-branch regression file omits the required rebuild hook
+
+Found during round 2 of unit s30's full regression run on 2026-11-20.
+State: fixed in round 2 of unit s30.
+
+The new engine test file did not register the comparison between live views and a rebuild from its event log.
+Every case now registers that check before using its fixture.
+The discovery guard and the dedicated regressions are rerun together.
+
+## 1488. An owner's later read can record an agent's rewritten remote default
+
+Found in review round 2 of unit s30 on 2026-11-20.
+State: fixed in round 3 of unit s30.
+
+Legacy inference still trusted the shared `origin/HEAD` reference.
+A worker could rewrite it before the owner's next website read.
+Implicit inference now records only an existing current `main` or `master`.
+Only explicit registration consults the remote default.
+Its reply returns the recorded base to the owner.
+
+## 1489. Base detection prevents registration of an unborn repository
+
+Found in review round 2 of unit s30 on 2026-11-20.
+State: fixed in round 3 of unit s30.
+
+The local-branch existence check rejected a repository without a commit.
+Registration now accepts its unborn current branch.
+The registration fixtures again cover repositories without bootstrap commits.
+The transport regression again asserts that their head is null.
+A default-selection refusal now describes the missing usable local branch.
+
+## 1490. Losing hosted delivery can expose imported upstream commits as project work
+
+Found in review round 2 of unit s30 on 2026-11-20.
+State: fixed in round 3 of unit s30.
+
+Creation's delivery choice was temporary.
+A later local review compared a fetched project against the older local base.
+The creation intent now records its starting commit before creating the worktree.
+The project retains that commit after completion.
+Review patches exclude imported changes through the starting commit's merge base.
+Commit lists, pending counts, and behind-parent counts exclude its history.
+The regression switches a fetched project to local delivery after 171 upstream commits and a file change.
+
+## 1491. Cached legacy inference failures survive checkout changes
+
+Found in review round 2 of unit s30 on 2026-11-20.
+State: fixed in round 3 of unit s30.
+
+An unresolved collection read could remain stale until service restart.
+Its cache now includes a checked, bounded observation of the main checkout's `HEAD`.
+A changed checkout retries inference on the next collection read.
+Any owner command scoped to the repository also retries it.
+
+## 1492. Creation's GitHub authentication probe holds the Git gate
+
+Found in review round 2 of unit s30 on 2026-11-20.
+State: documented bounded tradeoff in round 3 of unit s30.
+
+The GitHub command-line authentication probe remains in the uninterrupted creation start decision.
+The README now explains this serialization and its effect on other Git operations.
+The probe shares the existing 20-second discovery and fetch deadline.
+Failure retains the local starting commit.
+
+## 1493. A malformed remote default refuses registration
+
+Found in review round 2 of unit s30 on 2026-11-20.
+State: fixed in round 3 of unit s30.
+
+Malformed `origin/HEAD` metadata produced an invalid-reference refusal.
+Registration now treats it as absent and applies the local fallback.
+Regressions cover another reference namespace, invalid branch syntax, and malformed file contents.
+
+## 1494. Legacy guards and setting-time checkout observations are incomplete
+
+Found in review round 2 of unit s30 on 2026-11-20.
+State: fixed in round 3 of unit s30.
+
+An unrecorded row guarded only its selected conventional branch.
+It now guards both `main` and `master` for integration, review destinations, and Files editing.
+The base setting also trusted a checkout observation from preparation.
+A bounded metadata read in the final transaction now determines whether its workspace binding may change.
+A regression switches branches between preparation and commit.
+
+## 1495. Review comparison constructs a tree with unsafe repository configuration
+
+Found in review round 3 of unit s30 on 2026-11-20.
+State: fixed in round 4 of unit s30.
+
+The combined-tree step could run a configured clean filter and write objects while opening a review.
+Its separate driver check did not prevent that execution.
+An inherited conflict also refused the comparison.
+One merge-base query now selects the comparison base without constructing a tree.
+Divergent history may show extra inherited changes while retaining all project edits.
+The regressions cover a configured clean filter and a resolved inherited conflict.
+
+## 1496. A stale creation decision can overwrite a recorded starting commit
+
+Found in review round 3 of unit s30 on 2026-11-20.
+State: fixed in round 4 of unit s30.
+
+The start decision was checked before the transaction that stored it.
+The write now re-reads the current intent inside the transaction.
+An existing start prevents a second append.
+The recovery regression verifies that a later decision leaves the stored start and event log unchanged.
+
+## 1497. A registration refusal names a remote that may not exist
+
+Found in review round 3 of unit s30 on 2026-11-20.
+State: fixed in round 4 of unit s30.
+
+The refusal always mentioned `origin/HEAD`.
+It also omitted that the conventional branch must be current.
+The text now states the current-branch requirement without naming a possibly absent remote.
+
+## 1498. The Files regressions do not distinguish the legacy two-branch guard
+
+Found in review round 3 of unit s30 on 2026-11-20.
+State: fixed in round 4 of unit s30.
+
+Each Files fixture now has both `main` and `master` while the main checkout has a feature branch checked out.
+The master read therefore distinguishes guarding both branches from selecting only the conventional fallback.
+
+## 1499. The security description omits the trust boundary of the stored start
+
+Found in review round 3 of unit s30 on 2026-11-20.
+State: documented in round 4 of unit s30.
+
+The security document now states that local review hides history held by the remote base at project creation.
+It identifies repository configuration as the source of that remote selection.
+The active comparison documentation describes the single merge-base query.
+
+## 1500. Seven whole-suite timing failures do not reproduce in isolation
+
+Found during round 4 of unit s30 on 2026-11-20.
+State: open because the underlying cause is unconfirmed.
+
+Three command-line help cases exceeded their process-exit deadline.
+Two foreground shutdown cases exceeded 30 seconds.
+A paused blocking-wait case exceeded 60 seconds.
+The independent-writer review case did not observe its controlled Git start within five seconds.
+The shared host's load average exceeded 78 during the run.
+All seven cases passed in a single-worker rerun without implementation changes.

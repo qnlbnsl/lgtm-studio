@@ -100,14 +100,14 @@ addresses are never attached to public failures.
 
 Integration requires a registered team source and its project destination.
 The service refuses a dirty source or destination and direct integration into
-`main` or `master`. Conflict choices carry a fingerprint and choices, without
+the repository's recorded base branch. Conflict choices carry a fingerprint and choices, without
 client-supplied write content. The service reconstructs current canonical hunks.
 The visible owner review dialog uses bounded local comparison data and shows the prepared delivery mode.
 The hosted title and description come from the project name, goal, and reported evidence.
 Manual editing and replacement generation remain unavailable.
 The unused external compare-link route has been removed.
 
-## Explicit owner review and merge to main or master
+## Explicit owner review and merge to the recorded base
 
 `project.review.prepare` takes `projectId`, its assigned `worktreeId`, and the
 registered repository base's `destinationId`. It reads complete bounded Git
@@ -168,13 +168,13 @@ both reviewed heads and branch identities, and exact common repository metadata.
 The local fallback also requires clean source and destination checkouts with no active merge.
 A GitHub approval checks the pinned pull request and remote base before requesting a merge commit with the reviewed head condition.
 Closed pull requests, conflicts, and merge states that are not ready refuse with a sentence reason.
-The remote base must still match both Prepare and the reviewed local base.
-If it was already ahead at Prepare, the owner must update the local base and prepare again.
+The remote base must still match the fetched base recorded at Prepare.
+The local base may remain behind that fetched base during hosted delivery.
 It fetches and fast-forwards a clean local base checkout on its registered branch after the remote merge succeeds.
 It preserves a dirty checkout or a checkout on another branch.
 The optional `localSync` reply explains whether that update completed.
 A failed local update still records the confirmed remote merge.
-The original `project.integrate` and `mergeTeam` main/master refusal remains.
+The `project.integrate` and `mergeTeam` refusal protects the repository's recorded base branch.
 
 The approval reply has an explicit `outcome` of `merged` or `refused`, with a
 fixed safe `reason` on refusal. A refusal is not a successful merge. The log and
@@ -429,7 +429,7 @@ Abandonment takes the lifecycle lane and records only `project.CreationFinished`
 It leaves the repository, checkout, branches, exclusions, witnesses, files, and modes untouched.
 
 
-The fixed correctable creation refusal for a main checkout outside main or master is “check out main or master in the main repository checkout before creating a project”.
+A main checkout outside the recorded base receives a correctable refusal that names that base.
 Creation checks this before effects, including saved intent retries, and never records a feature branch as its main review destination.
 Only a current-admitted initial branch refusal with no creation intent receives a terminal refusal receipt; unavailable accounts and unfinished intents retain their existing retry behavior.
 The later New project consumer joins this fixed reason directly; unknown creation errors retain their frozen request handling.
@@ -599,3 +599,43 @@ The command-line interface exposes the same operation:
 
 An archived project remains reachable through All projects and its repository's project list.
 Open its Settings tab to restore or delete it.
+
+### Changing a repository base branch
+
+`project.repository.base.set` takes `repoId` and `baseBranch` from the owner.
+The branch must exist locally.
+An open review, an unfinished Git operation, an active merge, or an unfinished project creation refuses the change.
+The main checkout must be switched to the recorded branch before project creation or local approval.
+The setting does not move a branch or switch a checkout.
+The main workspace binding changes only if a bounded `HEAD` read in the setting transaction confirms that branch is checked out.
+That read uses checked metadata paths and never acquires the Git gate inside the writer.
+An owner who switches afterwards can repeat the setting command to refresh that binding.
+Registration records the branch named by `refs/remotes/origin/HEAD` only when it exists locally.
+A malformed remote default is treated as absent.
+Otherwise, an existing current `main` or `master`, or the current unborn branch, supplies the registration default.
+The registration reply includes that recorded base.
+Old rows acquire only an existing current `main` or `master` through a new owner-authored `project.RepositoryBaseChanged` event.
+Their inference never reads `origin/HEAD`.
+Agent reads never infer or record a base.
+Both conventional branches stay guarded while a row has no stored base.
+Failed inference leaves old reads available.
+Collection reads reuse a miss only while the checked main-checkout `HEAD` is unchanged.
+Every owner command scoped to that repository retries the inference.
+New repositories use `main`.
+
+Project creation fetches the configured remote base through the hardened explicit tracking-reference fetch.
+It uses the fetched commit only when the local base is an ancestor and confirmed GitHub delivery uses that same remote branch.
+Local delivery starts from the local base.
+A second `project.CreationPlanned` event records the selected `start` before the worktree write.
+That write checks the current intent inside the transaction and retains an existing `start`.
+Recovery reuses that decision instead of fetching a different start.
+`project.Created.startingHead` retains the commit for subsequent comparisons.
+Review patches use the later merge base with the current target or starting commit.
+One `git merge-base <head> <target> <start>` call selects the comparison base without merging trees or writing objects.
+When the inherited histories diverge, the review may show additional inherited changes while retaining the project's own edits.
+Commit lists and pending counts exclude the starting commit's history, including after hosted delivery becomes unavailable.
+The actual target head still supplies the approval identity and destination checks.
+Optional remote discovery and fetching share a 20-second deadline.
+It otherwise uses the local commit and records why in `project.CreationFinished.detail`.
+A resumed creation that finds its existing worktree records that it reused that worktree.
+The fetch never updates a local branch or the main checkout's files.
