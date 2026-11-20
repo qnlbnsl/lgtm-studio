@@ -89,7 +89,9 @@ export const leadDefaults = (input: Input, saved?: typeof ProjectLeadDefaults.Ty
       remaining = Object.fromEntries(Object.entries(remaining).filter(([id]) => id !== candidate.id))
     }
     if (account === undefined) continue
+    // A resolved "ask" is final: mark it so that a frozen creation resolves to the same level when it is retried.
     return { harness: harness.id, account: { _tag: "named" as const, accountId: account.id }, permission,
+      ...(permission === "ask" ? { permissionChosen: true } : {}),
       ...(model === undefined ? {} : { model }), ...(effort === undefined ? {} : { effort }) }
   }
   return yield* refused("no ready signed-in lead account is available")

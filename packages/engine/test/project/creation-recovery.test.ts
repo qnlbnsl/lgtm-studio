@@ -54,7 +54,7 @@ live("retains owned unrecorded worktree success and retries the same intent afte
   const runner = yield* makeFakeRunner(), secrets = makeFakeSecrets()
   const request = yield* provideRig(rig, { runner, secrets, wrapLog: failCreated() }, Effect.gen(function* () {
     const repoId = yield* setup(), request = payload(repoId)
-    success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "bash", lead: { harness: "cursor", account: { _tag: "named", accountId: "primary" }, model: "test-model", effort: "high", permission: "ask" } } }))
+    success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "bash", lead: { harness: "cursor", account: { _tag: "named", accountId: "primary" }, model: "test-model", effort: "high", permission: "ask", permissionChosen: true } } }))
     expect(failureOf(yield* call(owner, "project.create", request))?._tag).toBe("LogWriteFailed")
     const pending = success(yield* call(owner, "project.creations", {})).items
     expect(pending).toHaveLength(1)
@@ -182,7 +182,7 @@ live("refuses unknown machines and unavailable defaults before mutations, and ch
   yield* provideRig(rig, { runner, secrets }, Effect.gen(function* () {
     const repoId = yield* setup(), request = payload(repoId)
     expect(failureOf(yield* call(owner, "project.create", { ...request, machineId: "offline" }))?.reason).toContain("confirmed local")
-    const defaults = { harness: "cursor", account: { _tag: "named", accountId: "primary" }, model: "test-model", effort: "high", permission: "ask" }
+    const defaults = { harness: "cursor", account: { _tag: "named", accountId: "primary" }, model: "test-model", effort: "high", permission: "ask", permissionChosen: true }
     success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "bash", lead: defaults } }))
     success(yield* call(owner, "accounts", { operation: "disable", accountId: "primary" }))
     expect(failureOf(yield* call(owner, "project.create", request))?.reason).toBe("no ready signed-in lead account is available")
@@ -574,14 +574,14 @@ live("launches the requested project lead without changing the saved lead defaul
   const runner = yield* makeFakeRunner()
   yield* provideRig(rig, { runner, secrets: makeFakeSecrets() }, Effect.gen(function* () {
     const repoId = yield* setup()
-    const defaults = { harness: "cursor", account: { _tag: "named", accountId: "primary" }, model: "test-model", effort: "high", permission: "ask" }
+    const defaults = { harness: "cursor", account: { _tag: "named", accountId: "primary" }, model: "test-model", effort: "high", permission: "ask", permissionChosen: true }
     success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "zsh", lead: defaults } }))
     yield* seedAccount("custom", "claude")
     success(yield* call(owner, "harnesses", { operation: "set", harness: harnessSettings("claude", {
       models: ["selected-model"], efforts: ["low"], reportedModes: [{ id: "default", level: "ask" }]
     }) }))
     success(yield* call(owner, "accounts set-secret", { accountId: "custom", name: "ANTHROPIC_API_KEY", nonce: "custom-lead", value: Redacted.make("synthetic-custom-credential-012345") }))
-    const lead = { harness: "claude", account: { _tag: "named", accountId: "custom" }, model: "selected-model", effort: "low", permission: "ask" }
+    const lead = { harness: "claude", account: { _tag: "named", accountId: "custom" }, model: "selected-model", effort: "low", permission: "ask", permissionChosen: true }
     const request = { ...payload(repoId), lead }
     success(yield* call(owner, "project.placement.preview", request))
     expect(runner.callsOf("start")).toHaveLength(0)
@@ -599,7 +599,7 @@ live("refuses an unavailable requested lead before allocating a project instead 
   const runner = yield* makeFakeRunner()
   yield* provideRig(rig, { runner, secrets: makeFakeSecrets() }, Effect.gen(function* () {
     const repoId = yield* setup()
-    const request = { ...payload(repoId), lead: { harness: "claude", account: { _tag: "named", accountId: "missing" }, permission: "ask" } }
+    const request = { ...payload(repoId), lead: { harness: "claude", account: { _tag: "named", accountId: "missing" }, permission: "ask", permissionChosen: true } }
     expect(failureOf(yield* call(owner, "project.placement.preview", request))?.reason).toBe("no ready signed-in lead account is available")
     expect(failureOf(yield* call(owner, "project.create", request))?.reason).toBe("no ready signed-in lead account is available")
     expect(runner.callsOf("start")).toHaveLength(0)
