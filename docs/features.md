@@ -1781,3 +1781,11 @@ Undecided: where the credential is kept; the entry "A built-in vault in the serv
 Undecided: pull request delivery for GitLab and Bitbucket, which the present GitHub flow does not cover.
 Undecided: self-hosted instances of these services.
 `SECURITY.md` governs this, because a hosting credential can push code; accounts and secrets stay with the owner.
+
+## A server, a client and a website as three separate pieces
+
+State: Direction stated by the owner on 2026-11-20. Not designed.
+
+The owner wants LGTM Studio split into a server, a client process on each working machine, and a website that can also be hosted by itself.
+Several server nodes behind a load balancer, a replicated database, and one clone per agent on any machine are part of the idea.
+The full record, with the open questions, is in [the direction document](specs/2026-11-20-server-client-website-direction.md).
