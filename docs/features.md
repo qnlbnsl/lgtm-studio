@@ -1789,3 +1789,42 @@ State: Direction stated by the owner on 2026-11-20. Not designed.
 The owner wants LGTM Studio split into a server, a client process on each working machine, and a website that can also be hosted by itself.
 Several server nodes behind a load balancer, a replicated database, and one clone per agent on any machine are part of the idea.
 The full record, with the open questions, is in [the direction document](specs/2026-11-20-server-client-website-direction.md).
+
+## Session reports kept by the server, and an agent that learns from them and cleans them up
+
+State: Idea. Stated by the owner on 2026-11-20.
+
+### The problem
+
+Session reports are stored in the repository today.
+The owner finds that they litter it.
+Whether to keep session reports at all is each user's choice; LGTM Studio must not require them.
+
+### The idea
+
+Session reports go to a central place.
+The owner named two ways to think about it: skills that manage them, or a central area in the data store that the server holds.
+The owner's direction for a server with its own data store is in [the direction document](specs/2026-11-20-server-client-website-direction.md).
+
+A separate agent reads the stored reports.
+It is launched only after the user approves.
+It looks for what can be improved in the software, what went well and what went badly.
+Cleaning the reports up afterwards is part of the evaluation phase.
+
+Where a finding is an improvement or a fault of LGTM Studio itself, the agent opens an issue on GitHub.
+The data in that issue is sanitised first.
+The agent cleans up the session reports as it goes.
+
+### Related entries
+
+The model evaluation records read the same reports to grade models.
+The entry "A repository agent that works in the main checkout and prepares a repository for projects" could set this choice up for a repository.
+
+### Undecided
+
+- Whether reports leave the repository entirely, or a short summary stays in it.
+- What "sanitised" requires before anything is sent to a public issue tracker: no names, no paths, no repository content, no secrets. A report from a private repository must never leak into a public issue.
+- Whether the user sees and approves each issue before it is opened, in addition to approving the agent's launch.
+- Which repository receives the issues, and under whose account.
+- How long reports are kept, and what "cleaned up" means: deleted, or condensed into findings.
+- How this relates to the existing lists `docs/issues.md` and `docs/features.md` in this repository.
