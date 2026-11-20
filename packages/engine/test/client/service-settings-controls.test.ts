@@ -29,9 +29,9 @@ for (const [label, patch] of [
   }), registerRebuildCheck()))
 }
 for (const [label, lead] of [
-  ['Harness', { harness: 'first', account: { _tag: 'any' }, permission: 'ask' }],
-  ['Model', { harness: 'first', account: { _tag: 'any' }, permission: 'ask', model: 'test-model' }],
-  ['Effort', { harness: 'first', account: { _tag: 'any' }, permission: 'ask', effort: 'high' }],
+  ['Harness', { harness: 'first', account: { _tag: 'any' }, permission: 'edit' }],
+  ['Model', { harness: 'first', account: { _tag: 'any' }, permission: 'edit', model: 'test-model' }],
+  ['Effort', { harness: 'first', account: { _tag: 'any' }, permission: 'edit', effort: 'high' }],
   ['Permission', { harness: 'first', account: { _tag: 'any' }, permission: 'read-only' }],
 ] as const) {
   it(`Service settings: ${label} changes engine state through project.settings.set`, async () => run(Effect.gen(function* () {
