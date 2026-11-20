@@ -36,7 +36,7 @@ export async function exerciseStudioProjectSettings(page: Page, deleteJourney = 
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, Layer.succeed(Redactor, { redact: (event) => Effect.succeed(event), redactText: (text) => Effect.succeed(text) }))
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck()
-        const project = yield* decisionSetup(); yield* completedSetup(project.projectId)
+        const project = yield* decisionSetup(rig.work); yield* completedSetup(project.projectId)
         success(yield* call(ownerCredential, 'project.settings.set', { settings: { workspaceFolder: rig.work, shell: '/bin/sh' } }))
         runner.script('choices', () => Effect.promise(async () => {
           return { models: { source: 'negotiated' as const, options: [{ id: 'test-model', label: 'Engine model' }, { id: 'other-model', label: 'Other engine model' }] },

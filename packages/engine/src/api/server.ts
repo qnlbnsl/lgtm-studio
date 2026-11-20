@@ -1,6 +1,6 @@
 import { terminalReasons } from '../harnesses/terminalReasons.ts'
 import { isBaseRefusal } from "../project/baseBranch.ts";
-import { projectRefusalReasons } from "../project/errors.ts";
+import { projectRefusalReasons, isWorkspaceRepositoryRefusal } from "../project/errors.ts";
 // Connection assembly pattern: T3 Code apps/server/src/ws.ts, lines
 // 3293-3330, 3360-3367 and 3374-3385 (MIT licence). No source code is copied.
 import { signInReasons } from "../harnesses/signinReasons.ts";
@@ -61,6 +61,7 @@ const commandError = (requestId: unknown, reason = "command refused", command?: 
   // Preserve that owner's validation error without exposing other failures.
   _tag: "CommandError" as const, requestId, reason: reasons.has(reason)
     || (command?.startsWith("project.") === true && (projectRefusalReasons.has(reason) || isBaseRefusal(reason)))
+    || (command === "project.settings.set" && isWorkspaceRepositoryRefusal(reason))
     || (command === "roles.role-file.set" && reason.startsWith("role file error: "))
     || (command === "roles.settings.set" && reason.startsWith("roles settings error: ")) ? reason : "command refused",
 });

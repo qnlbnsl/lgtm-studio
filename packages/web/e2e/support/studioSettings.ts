@@ -31,7 +31,7 @@ export async function exerciseStudioSettings(page: Page) {
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, Layer.succeed(Redactor, { redact: (event) => Effect.succeed(event), redactText: (text) => Effect.succeed(text) }))
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck()
-        const project = yield* decisionSetup(); yield* completedSetup(project.projectId)
+        const project = yield* decisionSetup(rig.work); yield* completedSetup(project.projectId)
         success(yield* call(ownerCredential, 'project.settings.set', { settings: { workspaceFolder: rig.work, shell: '/bin/sh' } }))
         yield* serve({ password: Redacted.make(password), staticRoot: studioRoot, lists: engineLists, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })
         yield* Effect.promise(async () => {

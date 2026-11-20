@@ -20635,7 +20635,9 @@ Every Git call checks that the folder lies inside the single saved workspace fol
 The owner's workspace folder is one folder of personal projects, and the second repository lives in a sibling folder.
 Registration is refused with "Git: invalid_path".
 Widening the saved workspace folder to the common parent is the workaround.
-State: Open.
+State: Addressed by the Service settings control in unit s32-workspacesetting on 2026-11-20.
+The single workspace boundary remains in place.
+The owner can now widen the folder in Service settings without using a command.
 
 ## 1467. A repository whose base branch is not "main" or "master" cannot hold a project
 
@@ -20971,3 +20973,96 @@ A paused blocking-wait case exceeded 60 seconds.
 The independent-writer review case did not observe its controlled Git start within five seconds.
 The shared host's load average exceeded 78 during the run.
 All seven cases passed in a single-worker rerun without implementation changes.
+
+## 1530. Changing the workspace folder could exclude a registered repository
+
+Found while building unit s32-workspacesetting on 2026-11-20.
+State: Fixed in this unit.
+
+The settings command validated the new directory without checking the repository registry.
+A narrower folder could make an already registered repository unavailable to Git commands.
+The command now refuses before saving when a registered repository lies outside the canonical new folder.
+The refusal names the first excluded repository and its path.
+Focused engine tests cover unchanged folders, wider folders, directory aliases and exclusion refusals.
+
+## 1531. The Service settings journey registered a repository outside its test workspace
+
+Found while building unit s32-workspacesetting on 2026-11-20.
+State: Fixed in this unit.
+
+The journey's historical repository used the default `/tmp` path.
+Its saved workspace was a private child of `/tmp`.
+The new workspace validation correctly refuses that inconsistent fixture.
+The fixture now registers its historical repository at its private test checkout.
+
+## 1532. Chromium cannot launch inside this command sandbox
+
+Found while running the focused workspace settings journeys on 2026-11-20.
+State: An environment restriction, with a test execution workaround.
+
+Chromium exits before opening a page with `sandbox_host_linux.cc:41` and `Operation not permitted`.
+The focused browser command needs to run outside the command sandbox on this host.
+The test engine still uses temporary state and an ephemeral loopback port.
+
+## 1533. The client API hid workspace validation refusals
+
+Found by the real-engine browser journey in unit s32-workspacesetting on 2026-11-20.
+State: Fixed in this unit.
+
+The remote procedure call error filter replaced the repository-specific workspace refusal with `command refused`.
+The filter now admits that structured refusal only for `project.settings.set`.
+The planner redacts the repository description before returning the refusal.
+The existing absolute-directory refusal is now public too.
+The browser journey verifies both messages and the restored saved folder.
+
+## 1534. A settings refresh could replace the workspace path while it was being typed
+
+Found by the workspace settings browser journey on 2026-11-20.
+State: Fixed in unit s32-workspacesetting.
+
+The first workspace input read its value directly from refreshed settings.
+A background read could restore the saved path between typing and leaving the field.
+The input now keeps its focused draft until the change is submitted.
+A focused renderer regression verifies that a refresh preserves the draft and that an unfocused field returns to the saved value.
+
+## 1535. The first workspace setting change missed historical fixtures and legacy saves
+
+Found in review round 1 of unit s32-workspacesetting on 2026-11-20.
+State: Fixed in round 2.
+
+Several decision fixtures registered `/tmp` before saving a narrower private workspace.
+Those fixtures now name a private repository path explicitly.
+The deletion fixtures keep the repository root distinct from the project workspace, preserving their original deletion cases.
+The old invalid-workspace Git regression now seeds historical settings through the fixture writer.
+Containment validation now runs only when the canonical workspace folder changes.
+A regression verifies that a legacy installation can save its other settings with an unchanged folder.
+
+## 1536. Workspace containment missed secondary registrations and linked Git metadata
+
+Found in review round 1 of unit s32-workspacesetting on 2026-11-20.
+State: Fixed in round 2.
+
+The initial check covered only each repository's primary path.
+It now checks registered locations and workspaces too.
+It checks the common Git directory reached through validated linked-worktree metadata.
+Tests cover each excluded reference, redaction with the production redactor and preservation of the effective lead permission.
+
+## 1537. A repository has no removal command
+
+Found in review round 1 of unit s32-workspacesetting on 2026-11-20.
+State: Open.
+
+Deleting the last project leaves its repository in the registry.
+That repository and its retained registrations still constrain a changed workspace folder.
+No command currently removes the repository registration.
+The README now states this limit.
+
+## 1538. Workspace journeys rewrote tracked captures and retained refused focused drafts
+
+Found in review round 1 of unit s32-workspacesetting on 2026-11-20.
+State: Fixed in round 2.
+
+Captures now go into the browser test output folder unless `LGTM_CAPTURE_WORKSPACE_SETTINGS=1` is set.
+The input trims the submitted path.
+It releases the submitted draft so a refusal restores the saved value while focus remains in the field.
+The renderer and browser regressions cover that behavior.

@@ -7,6 +7,12 @@ export const githubPublicReason = (reason: string): string | undefined => reason
   : reason === "github_remote_changed" ? githubRemoteChangedReason : reason === "github_create_refused" ? githubCreateRefusedReason
   : reason === "github_base_moved" ? githubBaseMovedReason : undefined
 
+// Only the settings command exposes this redacted registry description.
+export const workspaceRepositoryRefusal = (name: string, path: string) =>
+  `The workspace folder must contain the registered repository ${JSON.stringify(name)} (${path}).`
+export const isWorkspaceRepositoryRefusal = (reason: string) =>
+  /^The workspace folder must contain the registered repository "(?:[^"\\\r\n]|\\.)+" \([^\r\n]+\)\.$/.test(reason)
+
 // Fixed public reasons contain no caller-controlled text or host error output.
 export const projectRefusalReasons = new Set([
   "Archive the project before deleting it.",
@@ -51,6 +57,7 @@ export const projectRefusalReasons = new Set([
   "update requires the registered parent workspace",
   "set the workspace folder before using Git",
   "workspace settings changed; refresh and retry",
+  "workspace folder must be an existing absolute directory",
   "registered workspace not found",
   "The registered workspace branch has changed. Restore the registered branch before retrying.",
   "integration requires a registered team source and its project workspace",
