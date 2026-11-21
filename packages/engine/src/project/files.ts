@@ -36,7 +36,7 @@ export const fileSaveReach = ({ snapshot, source, target, deliveryId }: ReachInp
 const listFolder: ReadHandler = (input, raw) => withGit(input, (git) => Effect.gen(function* () {
   const workspace = yield* workspacePath(input, raw, git)
   if (raw.folder !== undefined) yield* safePath(input, raw.folder as string)
-  const listing = yield* gitCall(git.listFolder(workspace.path, raw.folder as string | undefined))
+  const listing = yield* gitCall(git.listFolder(workspace.path, raw.folder as string | undefined, input.actor._tag !== "owner"))
   // A name that the redactor would change cannot be opened again by its
   // redacted form, so it is left out instead of shown with a placeholder.
   const items = []
@@ -48,7 +48,7 @@ const readFile: ReadHandler = (input, raw) => withGit(input, (git) => Effect.gen
   const workspace = yield* workspacePath(input, raw, git)
   const path = raw.path as string
   yield* safePath(input, path)
-  const file: FileRead = yield* gitCall(git.readFile(workspace.path, path))
+  const file: FileRead = yield* gitCall(git.readFile(workspace.path, path, input.actor._tag !== "owner"))
   let result: unknown = file
   if (file.kind === "text") {
     // Text holding a registered secret is shown redacted and cannot be saved,

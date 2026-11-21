@@ -651,10 +651,18 @@ Both paths call `preparation.ts` after Git creates the worktree.
 Submodule failure appears as a fixed creation or start detail and does not refuse creation.
 Copied files never overwrite existing files.
 The setting command adds each pattern to the shared Git exclusion file.
-Agent-facing diffs and file reads treat matching paths as credential paths.
+Agent-facing diffs and file reads hide untracked matching paths.
+Tracked matches remain visible to agents and reviewers.
+Copy patterns do not restrict owner reads.
+The shared exclusions persist after settings are cleared and have no removal command.
 Harnesses can still read the copied files, and their values are not registered secrets.
-Submodule initialization checks each path and URL against `.gitmodules` committed on the recorded base branch.
-Unapproved and duplicate paths are skipped with a fixed detail sentence.
+Submodule initialization checks each name, path and URL against `.gitmodules` at the project's recorded starting commit.
+Workers use that same commit rather than the current project branch head.
+A missing starting commit falls back to the base branch with an explicit detail sentence.
+Approved paths must be exact gitlink entries in the new index.
+Unapproved, duplicate and overlapping paths are skipped with a fixed detail sentence.
+Names containing `=` or a newline are refused.
+Relative URLs are skipped.
 See the root security document for the copy bounds and descriptor requirements.
 
 Role composition selects the nearest registered repository or workspace containing the actual start folder.

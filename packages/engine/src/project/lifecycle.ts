@@ -249,7 +249,7 @@ export const prepareProjectLifecycle = (input: Input, name: string, payload: Rec
       yield* gitCall(git.excludePreparationFiles(plan.repository.path, plan.repository.preparation?.copyPaths ?? []))
       const worktreeDetail = yield* ensureWorktree(plan, git)
       yield* verifyCreation(plan, git)
-      const preparationDetail = yield* prepareWorktree(plan.repository.path, plan.workspace.path, plan.repository.preparation, plan.repository.baseBranch)
+      const preparationDetail = yield* prepareWorktree(plan.repository.path, plan.workspace.path, plan.repository.preparation, plan.repository.baseBranch, plan.start?.head)
       return [worktreeDetail, preparationDetail].filter(Boolean).join(" ")
     }))
     const observed = { ...input, snapshot: yield* runtime.views.snapshot }

@@ -62,8 +62,8 @@ export interface PreparedDelivery { readonly delivery: GitReviewDelivery; readon
 export interface GitService {
   excludePreparationFiles(folder: string, patterns: ReadonlyArray<string>): GitOperation<void>;
   mutationIdentity(folder: string): GitOperation<GitMutationIdentity>;
-  readonly contextFiles: (folder: string, query: string) => GitOperation<Bounded<string>>;
-  readonly contextFile: (folder: string, path: string) => GitOperation<void>;
+  readonly contextFiles: (folder: string, query: string, agentRead?: boolean) => GitOperation<Bounded<string>>;
+  readonly contextFile: (folder: string, path: string, agentRead?: boolean) => GitOperation<void>;
   discover(): GitOperation<Bounded<Repository>>;
   createRepository(name: string): GitOperation<Repository>;
   register(folder: string): GitOperation<Repository>;
@@ -91,8 +91,8 @@ export interface GitService {
   commit(folder: string, message: string, path?: string): GitOperation<string>;
   // The Files tab: one folder, one file, or one replaced file at a time. Only
   // tracked and nonignored untracked regular files are listed, read or written.
-  listFolder(folder: string, path?: string): GitOperation<FileListing>;
-  readFile(folder: string, path: string): GitOperation<FileRead>;
+  listFolder(folder: string, path?: string, agentRead?: boolean): GitOperation<FileListing>;
+  readFile(folder: string, path: string, agentRead?: boolean): GitOperation<FileRead>;
   writeFile(folder: string, path: string, version: string, bytes: Uint8Array): GitOperation<string>;
   fetch(folder: string): GitOperation<void>;
   pull(folder: string): GitOperation<void>;

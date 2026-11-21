@@ -124,11 +124,11 @@ export const copyPreparationFiles = async (source: string, destination: string, 
   } catch { throw new CopyRefusal(pattern); }
 };
 
-// Read only path/URL pairs from the committed base and the new checkout.
+// Read name/path/URL tuples from the recorded starting commit and new checkout.
 // Git parses its own config syntax; includes are explicitly disabled.
-const initializeSubmodules = async (source: string, destination: string, baseBranch: string | undefined, signal: AbortSignal) => {
+const initializeSubmodules = async (source: string, destination: string, baseBranch: string | undefined, startingHead: string | null | undefined, signal: AbortSignal) => {
   const limits = { bytes: 65_536, timeoutMs: 20_000 };
-  const run = async (cwd: string, args: string[]) => gitProcess(cwd, args, limits, signal);
+  const run = async (cwd: string, args: string[]) => gitProcess(cwd, ["--no-replace-objects", ...args], limits, signal);
   const modules = async (cwd: string, location: string[]) => {
     const result = await run(cwd, ["config", "--no-includes", ...location, "--null", "--get-regexp", "^submodule\\..*\\.(path|url)$"]);
     if (result.code !== 0 && result.code !== 1) throw new Error();
@@ -150,40 +150,52 @@ const initializeSubmodules = async (source: string, destination: string, baseBra
   await smallFile(file, limits.bytes);
   const candidates = await modules(destination, ["--file", ".gitmodules"]);
   if (candidates.length === 0) return { skipped: false };
-  if (baseBranch === undefined || baseBranch.startsWith("-") || (await run(source, ["check-ref-format", "--branch", baseBranch])).code !== 0) return { skipped: true };
-  const base = await run(source, ["rev-parse", "--verify", "--end-of-options", `refs/heads/${baseBranch}^{commit}`]);
+  if (startingHead == null && (baseBranch === undefined || baseBranch.startsWith("-") || (await run(source, ["check-ref-format", "--branch", baseBranch])).code !== 0)) return { skipped: true };
+  const base = startingHead == null ? await run(source, ["rev-parse", "--verify", "--end-of-options", `refs/heads/${baseBranch}^{commit}`]) : { code: 0, stdout: startingHead };
   if (base.code !== 0 || !/^[a-f0-9]{40,64}\n?$/.test(base.stdout)) return { skipped: true };
   const tree = await run(source, ["ls-tree", "-z", base.stdout.trim(), "--", ".gitmodules"]);
   if (tree.code !== 0) throw new Error();
   if (!/^100(?:644|755) blob [a-f0-9]{40,64}\t\.gitmodules\0$/.test(tree.stdout)) return { skipped: true };
   const trusted = await modules(source, ["--blob", `${base.stdout.trim()}:.gitmodules`]);
+  const paths = candidates.flatMap(entry => entry.path === undefined ? [] : [entry.path]);
+  if (paths.length === 0) return { skipped: true };
+  const index = await run(destination, ["ls-files", "--stage", "-z", "--", ...paths]);
+  if (index.code !== 0) throw new Error();
+  const gitlinks = new Set(index.stdout.split("\0").flatMap(row => /^160000 [a-f0-9]{40,64} 0\t([\s\S]+)$/.exec(row)?.slice(1) ?? []));
   const approved = candidates.filter(entry => entry.path !== undefined && entry.url !== undefined
+    && !/[=\r\n]/.test(entry.name)
+    && (isAbsolute(entry.url) || /^[a-z][a-z0-9+.-]*:/i.test(entry.url) || /^[^/\\:\s]+:/.test(entry.url))
+    && gitlinks.has(entry.path)
     && candidates.filter(other => other.path === entry.path).length === 1
-    && trusted.some(base => base.path === entry.path && base.url === entry.url));
+    && !paths.some(path => path !== entry.path && (path.startsWith(`${entry.path}/`) || entry.path!.startsWith(`${path}/`)))
+    && trusted.some(base => base.name === entry.name && base.path === entry.path && base.url === entry.url));
   for (const entry of approved) await filePath(destination, entry.path!, true);
   if (approved.length > 0) {
     const result = await run(destination,
-      ["-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always",
+      ["--no-literal-pathspecs", "-c", "protocol.allow=never", "-c", "protocol.https.allow=always", "-c", "protocol.ssh.allow=always",
         "-c", "protocol.file.allow=never", "-c", "protocol.ext.allow=never",
         "-c", "core.askPass=", "-c", "http.followRedirects=false", "-c", "submodule.recurse=false",
         "-c", "fetch.recurseSubmodules=false", "-c", "remote.origin.uploadpack=git-upload-pack",
         ...approved.flatMap(entry => ["-c", `submodule.${entry.name}.url=${entry.url}`]),
-        "submodule", "update", "--init", "--checkout", "--", ...approved.map(entry => entry.path!)]).catch(() => undefined);
+        // Literal magic protects names. The exact mode-160000 index check
+        // and rejected overlaps prevent these selectors expanding to children.
+        "submodule", "update", "--init", "--checkout", "--", ...approved.map(entry => `:(top,literal)${entry.path}`)]).catch(() => undefined);
     return { skipped: approved.length !== candidates.length, failed: result?.code !== 0 };
   }
   return { skipped: approved.length !== candidates.length };
 };
 
-export const prepareWorktree = (source: string, destination: string, settings?: WorktreePreparation, baseBranch?: string) => Effect.gen(function* () {
+export const prepareWorktree = (source: string, destination: string, settings?: WorktreePreparation, baseBranch?: string, startingHead?: string | null) => Effect.gen(function* () {
   if (settings === undefined) return "";
   const checked = Schema.decodeUnknownSync(WorktreePreparation)(settings);
   const copied = yield* Effect.tryPromise({ try: () => copyPreparationFiles(source, destination, checked.copyPaths ?? []),
     catch: (error) => refused(error instanceof CopyRefusal ? error.message : "Worktree preparation refused an unsafe path or exceeded a copy limit.") });
   let detail = `Worktree preparation copied ${copied.copied} files and kept ${copied.skipped} existing files.`;
   if (checked.submodules) {
-    const result = yield* Effect.tryPromise({ try: (signal) => initializeSubmodules(source, destination, baseBranch, AbortSignal.any([signal, AbortSignal.timeout(20_000)])), catch: () => "failed" as const }).pipe(Effect.result);
+    const result = yield* Effect.tryPromise({ try: (signal) => initializeSubmodules(source, destination, baseBranch, startingHead, AbortSignal.any([signal, AbortSignal.timeout(20_000)])), catch: () => "failed" as const }).pipe(Effect.result);
     detail += result._tag === "Success" && !result.success.failed ? " Submodules initialized." : " Submodule initialization failed; creation continued.";
     if (result._tag === "Success" && result.success.skipped) detail += " Unapproved submodules were skipped.";
+    if (startingHead == null) detail += " Submodule trust used the base branch because no starting commit was recorded.";
   }
   return detail;
 });

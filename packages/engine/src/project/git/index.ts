@@ -47,8 +47,9 @@ const bound = (requested: number | undefined, fallback: number, maximum: number)
  * every returned string through the production redactor before API delivery.
  * This service neither registers commands nor writes project events. */
 export const makeGitService = (configuration: GitConfiguration): GitService => {
-  const protectedPath = (folder: string, path: string) => isRepositoryCredentialPath(path)
-    || (configuration.copyPaths?.()[folder] ?? []).some(pattern => matchesCopyPattern(pattern, path));
+  const copyPath = (folder: string, path: string) => (configuration.copyPaths?.()[folder] ?? []).some(pattern => matchesCopyPattern(pattern, path));
+  const untrackedCopyPath = async (folder: string, path: string, signal: AbortSignal) => copyPath(folder, path)
+    && !(await git(folder, ["ls-files", "--cached", "-z", "--", path], signal)).split("\0").includes(path);
   const outputBytes = bound(configuration.maxOutputBytes, 1024 * 1024, 2 * 1024 * 1024);
   const diffBytes = bound(configuration.maxDiffBytes, 128 * 1024, 256 * 1024);
   const entries = bound(configuration.maxEntries, 200, 500);
@@ -265,8 +266,9 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
   // divergent bases may show extra inherited work without hiding project work.
   const comparisonBase = async (folder: string, current: string, target: string, start: string | undefined, signal: AbortSignal) =>
     (await git(folder, ["merge-base", current, target, ...(start === undefined ? [] : [start])], signal)).trim();
-  const readable = (folder: string, row: { path: string; originalPath: string | null }) => !protectedPath(folder, row.path)
-    && (row.originalPath === null || !protectedPath(folder, row.originalPath));
+  const readable = (folder: string, row: { path: string; originalPath: string | null; untracked?: boolean }) => !isRepositoryCredentialPath(row.path)
+    && (row.originalPath === null || !isRepositoryCredentialPath(row.originalPath))
+    && !(row.untracked === true && copyPath(folder, row.path));
   const filesBetween = async (folder: string, args: string[], signal: AbortSignal, agentRead = false) => {
     const files = parseFiles(await git(folder, [...args, "--no-ext-diff", "--no-textconv", "--name-status", "-z", "--find-renames", "--"], signal));
     return list(agentRead ? files.filter(row => readable(folder, row)) : files);
@@ -286,9 +288,11 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
     const workingChanges = options.commit === undefined ? await completeChanges(folder, signal) : undefined;
     let aggregatePaths: string[] | undefined;
     if (options.agentRead) {
-      if (path !== undefined && protectedPath(folder, path)) return fail("invalid_path");
+      if (path !== undefined && isRepositoryCredentialPath(path)) return fail("invalid_path");
       const changes = workingChanges ?? parseFiles(await git(folder, ["diff-tree", "--root", "--no-commit-id", "-r", "-m", "--first-parent", await ref(folder, options.commit!, signal), "--name-status", "-z", "--find-renames", "--"], signal));
       if (path !== undefined && changes.some((row) => row.path === path && !readable(folder, row))) return fail("invalid_path");
+      if (path !== undefined && !changes.some(row => row.path === path && !("untracked" in row && row.untracked))
+        && await untrackedCopyPath(folder, path, signal)) return fail("invalid_path");
       if (path === undefined) {
         aggregatePaths = changes.filter(row => readable(folder, row)).flatMap((row) => row.originalPath === null ? [row.path] : [row.originalPath, row.path]);
         // Never pass an empty path list to Git: that would mean all files.
@@ -647,23 +651,26 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
   // Tracked and nonignored untracked names, as Git lists them. The Files tab
   // never shows, reads or writes an ignored file, a credential path, or a
   // file reached through a symbolic link.
-  const listedFiles = async (folder: string, signal: AbortSignal, only?: string) => {
+  const listedFiles = async (folder: string, signal: AbortSignal, only?: string, agentRead = false) => {
     const reply = await run(folder, ["ls-files", "--cached", "--others", "--exclude-standard", "-z", ...(only === undefined ? [] : ["--", only])], signal, true);
     if (reply.code !== 0 && !reply.truncated) throw processFailure(reply);
     const names = reply.stdout.split("\0"); names.pop();
-    return { names: [...new Set(names)].filter((name) => !protectedPath(folder, name)), truncated: reply.truncated };
+    const candidates = agentRead ? [...new Set(names)].filter(name => copyPath(folder, name)) : [];
+    const tracked = new Set(candidates.length === 0 ? [] : (await git(folder, ["ls-files", "--cached", "-z", "--", ...candidates], signal)).split("\0"));
+    return { names: [...new Set(names)].filter((name) => !isRepositoryCredentialPath(name)
+      && (!agentRead || !copyPath(folder, name) || tracked.has(name))), truncated: reply.truncated };
   };
-  const listedFile = async (folder: string, requested: string, signal: AbortSignal) => {
-    if (!cleanText(requested) || protectedPath(folder, requested)) return fail("invalid_path");
+  const listedFile = async (folder: string, requested: string, signal: AbortSignal, agentRead = false) => {
+    if (!cleanText(requested) || isRepositoryCredentialPath(requested)) return fail("invalid_path");
     const full = await filePath(folder, requested);
-    if (!(await listedFiles(folder, signal, requested)).names.includes(requested)) return fail("invalid_path");
+    if (!(await listedFiles(folder, signal, requested, agentRead)).names.includes(requested)) return fail("invalid_path");
     const info = await lstat(full);
     if (!info.isFile() || await realpath(full) !== full) return fail("invalid_path");
     return { full, size: info.size };
   };
   const folderPath = async (folder: string, requested: string | undefined) => {
     if (requested === undefined) return "";
-    if (!cleanText(requested) || requested.startsWith("/") || requested.includes("\\") || protectedPath(folder, requested)) return fail("invalid_path");
+    if (!cleanText(requested) || requested.startsWith("/") || requested.includes("\\") || isRepositoryCredentialPath(requested)) return fail("invalid_path");
     const parts = requested.split("/");
     if (parts.some((part) => part === "" || part === "." || part === ".." || part.toLowerCase() === ".git")) return fail("invalid_path");
     let current = folder;
@@ -788,9 +795,9 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       const repo = await repository(folder, signal);
       await excludePaths(repo.commonDirectory, patterns.map(pattern => `/${pattern.replace(/ /g, "\\ ")}`));
     }),
-    listFolder: (folder, requested) => withRepo(folder, async (path, signal) => {
+    listFolder: (folder, requested, agentRead = false) => withRepo(folder, async (path, signal) => {
       const at = await folderPath(path, requested), prefix = at === "" ? "" : `${at}/`;
-      const listed = await listedFiles(path, signal);
+      const listed = await listedFiles(path, signal, undefined, agentRead);
       const changes = new Map((await observedChanges(path, signal)).map((change) => [change.path, changeOf(change)] as const));
       const folders = new Map<string, FileEntry>(), files: FileEntry[] = [];
       for (const name of listed.names) {
@@ -818,8 +825,8 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       const items = [...kept, ...files.sort((a, b) => a.name.localeCompare(b.name))];
       return { folder: at, items: items.slice(0, 500), truncated: listed.truncated || items.length > 500 };
     }),
-    readFile: (folder, requested) => withRepo(folder, async (path, signal) => {
-      const { full, size } = await listedFile(path, requested, signal);
+    readFile: (folder, requested, agentRead = false) => withRepo(folder, async (path, signal) => {
+      const { full, size } = await listedFile(path, requested, signal, agentRead);
       if (size > fileTextLimit) return { kind: "large", path: requested, size };
       let bytes: Buffer;
       try { bytes = await smallFile(full, fileTextLimit); }
@@ -842,21 +849,18 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       }
       return sha256(bytes);
     }),
-    contextFile: (folder, requested) => withRepo(folder, async (path) => {
-      if (protectedPath(path, requested)) return fail("invalid_path");
+    contextFile: (folder, requested, agentRead = false) => withRepo(folder, async (path, signal) => {
+      if (isRepositoryCredentialPath(requested) || agentRead && await untrackedCopyPath(path, requested, signal)) return fail("invalid_path");
       const full = await filePath(path, requested);
       if (!(await lstat(full)).isFile() || await realpath(full) !== full) return fail("invalid_path");
     }),
-    contextFiles: (folder, query) => withRepo(folder, async (path, signal) => {
+    contextFiles: (folder, query, agentRead = false) => withRepo(folder, async (path, signal) => {
       // Git supplies tracked and nonignored untracked names, never contents.
       // Discard an incomplete final name when the subprocess budget is hit.
-      const reply = await run(path, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], signal, true);
-      if (reply.code !== 0 && !reply.truncated) throw processFailure(reply);
-      const names = reply.stdout.split("\0"); names.pop();
+      const listed = await listedFiles(path, signal, undefined, agentRead), names = listed.names;
       const items: string[] = [];
-      let truncated = reply.truncated;
+      let truncated = listed.truncated;
       for (const name of new Set(names)) {
-        if (protectedPath(path, name)) continue;
         if (!name.toLowerCase().includes(query.toLowerCase())) continue;
         if (signal.aborted) return fail("cancelled");
         try {
@@ -1019,7 +1023,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
         // One file only. Its change is added, then committed with --only, so
         // other staged files stay staged and out of this commit.
         const change = changes.find((row) => row.path === file);
-        if (change === undefined || protectedPath(path, change.path)) return fail("nothing_staged");
+        if (change === undefined || isRepositoryCredentialPath(change.path)) return fail("nothing_staged");
         if (await mergeHead(path, signal) !== null) return fail("conflicts");
         const paths = changePaths(change);
         for (const name of paths) await changePath(path, name, signal);
@@ -1209,7 +1213,7 @@ export const makeGitService = (configuration: GitConfiguration): GitService => {
       await conflict(path, requested, signal);
     }),
     conflict: (folder, path, agentRead = false) => withRepo(folder, (base, signal) => {
-      if (agentRead && protectedPath(base, path)) return fail("invalid_path");
+      if (agentRead && isRepositoryCredentialPath(path)) return fail("invalid_path");
       return conflict(base, path, signal);
     }),
     choose: (folder, selection, hunk, choice) => withRepo(folder, async (path, signal) => {

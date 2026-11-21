@@ -21071,10 +21071,11 @@ Found in review round 1 of unit s31 on 2026-11-20.
 State: fixed in round 2.
 
 A worker branch can contain agent changes to `.gitmodules`.
-Preparation now compares each path and URL with the file committed on the repository's recorded local base branch.
+Round 2 compared each path and URL with the file committed on the repository's recorded local base branch.
+Round 3 compares names too and uses the recorded starting commit when available.
 The update receives only matching paths.
 The creation detail records skipped entries with a fixed sentence.
-Shared Git configuration remains trusted as documented in the security policy.
+Shared Git refs and configuration remain trusted as documented in the security policy.
 Duplicate candidate paths are refused because Git could select an unapproved name for an approved path.
 Production explicitly disables file transport even when shared configuration enables it.
 
@@ -21085,7 +21086,8 @@ State: fixed in round 2.
 
 The first implementation copied selected files without adding shared exclusion rules.
 Preparation settings now add each pattern to `info/exclude` for every checkout.
-Agent-facing diff and file reads apply the credential-path restrictions to matching paths, including tracked files.
+Agent-facing diff and file reads hide untracked matching paths.
+Round 3 corrected an overly broad restriction that also hid tracked matches and affected owner reads.
 The documentation explains that every agent can still read these files through its harness.
 Their contents are not registered secrets and are unknown to log redaction.
 
@@ -21148,3 +21150,54 @@ A filesystem name can contain a literal asterisk.
 The first expansion passed that name back to the wildcard parser.
 Wildcard enumeration now skips such names as invalid matches.
 The regression also covers unsafe source and destination links beneath an intermediate wildcard.
+
+## 1517. A submodule path selector could include an unapproved nested gitlink
+
+Found in review round 2 of unit s31 on 2026-11-20.
+State: fixed in round 3.
+
+A literal Git path selector still includes descendants of its directory.
+An agent could replace an approved gitlink with a directory containing another gitlink.
+Preparation now requires an exact mode-160000 index entry at each approved path.
+It rejects overlapping submodule paths before running the update with literal selectors.
+A regression runs real Git with production options and an isolated local SSH transport fixture.
+
+## 1518. Submodule trust used a mutable shared base ref
+
+Found in review round 2 of unit s31 on 2026-11-20.
+State: fixed in round 3, with residual shared-directory trust documented.
+
+An agent could move the base ref before preparation resolved it.
+Project creation now uses its recorded starting commit.
+Worker preparation uses the project's recorded starting commit rather than the project branch head.
+Historical projects without that commit still use the base ref and explicitly report the fallback.
+Refs and configuration in the shared Git directory remain a trust boundary.
+
+## 1519. Copy patterns hid tracked files and affected owner reads
+
+Found in review round 2 of unit s31 on 2026-11-20.
+State: fixed in round 3.
+
+Copy-pattern filtering initially applied to owner reads and tracked files.
+The protection now applies only to agent reads of untracked paths.
+Tracked matches remain visible in file reads, context search, diffs and reviews.
+Owner reads retain their existing behavior.
+
+## 1520. Unsafe submodule names could alter a configuration override
+
+Found in review round 2 of unit s31 on 2026-11-20.
+State: fixed in round 3.
+
+A name containing an equals sign could change the key passed to Git's configuration override.
+Preparation refuses names containing an equals sign or a newline.
+It compares names as well as paths and URLs with the recorded commit.
+
+## 1521. Copy-pattern exclusions are permanent and shared by every checkout
+
+Found in review round 2 of unit s31 on 2026-11-20.
+State: open, documented limitation.
+
+Saving copy patterns adds exclusions to the shared Git directory's `info/exclude` file.
+The exclusions affect the main checkout and every linked worktree.
+Clearing or replacing preparation settings does not remove old exclusions.
+There is no engine command to remove them.

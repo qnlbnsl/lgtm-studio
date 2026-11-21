@@ -215,7 +215,10 @@ Copies preserve only the source file's owner permission bits.
 The engine adds the copy patterns to Git's shared `info/exclude` file.
 These exclusions apply to the main checkout and every linked worktree.
 Clearing a setting leaves its existing exclusions in place.
-Agent-facing file reads and diffs hide paths matching the current copy patterns, including tracked paths.
+There is no command to remove these exclusions.
+Agent-facing file reads and diffs hide untracked paths matching the current copy patterns.
+Tracked matches remain visible to agents and reviewers.
+Copy patterns do not restrict owner reads.
 Every agent in the repository can read copied files through its harness, including leads and workers.
 Their values are not registered secrets, so log redaction does not know them.
 The owner chooses this access separately for each repository.
@@ -226,7 +229,12 @@ Project creation retains its worktree for inspection and retry.
 Worker allocations keep their existing rollback policy.
 
 When `submodules` is true, the engine runs a bounded `git submodule update --init --checkout` after creating the worktree.
-It initializes only paths whose path and URL match an entry committed on the recorded base branch in the main checkout.
+It compares each submodule's name, path and URL with the project's recorded starting commit.
+Worker worktrees use that same starting commit, even after the project branch advances.
+If no starting commit was recorded, it uses the base branch and reports that fallback in the detail.
+An approved path must be an exact gitlink entry in the new checkout's index.
+Overlapping submodule paths and names containing `=` or a newline are refused.
+Relative submodule URLs are skipped.
 Other submodules are skipped with a fixed sentence in the recorded detail.
 It does not recurse into nested submodules or follow remote branch tips.
 A failure leaves creation successful and appears in the creation event or worker start reply detail.
