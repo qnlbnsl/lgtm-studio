@@ -21296,3 +21296,25 @@ Captures now go into the browser test output folder unless `LGTM_CAPTURE_WORKSPA
 The input trims the submitted path.
 It releases the submitted draft so a refusal restores the saved value while focus remains in the field.
 The renderer and browser regressions cover that behavior.
+
+## 1539. The preparation detail names the base-branch fallback when it was not used
+
+Found on 2026-11-20 by the third review of unit s31-worktreeprep.
+The fallback sentence is appended whenever no starting commit is recorded and submodules are on (`packages/engine/src/project/preparation.ts`).
+That includes a repository with no `.gitmodules`, where no base-branch trust was used.
+State: Open. Minor.
+
+## 1540. The single-file commit no longer refuses a path that matches a copy pattern
+
+Found on 2026-11-20 by the third review of unit s31-worktreeprep.
+If a repository's committed `.gitignore` un-ignores a copied secret file, that file shows as untracked.
+`project.commit` with that path then commits it, and it appears in agent reviews.
+An agent can do the same with plain Git, so this is a lost second line of defence.
+State: Open. Minor.
+
+## 1541. Thousands of tracked files that match a copy pattern can fail agent file listings
+
+Found on 2026-11-20 by the third review of unit s31-worktreeprep.
+The agent listing passes every tracked name that matches a copy pattern to a second `git ls-files` call (`packages/engine/src/project/git/index.ts`).
+A very large match set could exceed the argument or output limit and fail the listing, file read and context search for agents.
+State: Open. Minor. Low likelihood.
