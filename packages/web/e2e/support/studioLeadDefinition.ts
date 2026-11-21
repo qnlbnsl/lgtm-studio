@@ -33,7 +33,7 @@ export async function exerciseStudioLeadDefinition(page: Page) {
         success(yield* call(ownerCredential, 'accounts', { operation: 'add', account: { id: 'ready', harness: 'cursor', enabled: true } }))
         success(yield* call(ownerCredential, 'accounts set-secret', { accountId: 'ready', name: 'CURSOR_API_KEY', nonce: freshRequest(), value: Redacted.make('synthetic-browser-readiness-key') }))
         success(yield* call(ownerCredential, 'project.settings.set', { settings: { workspaceFolder: rig.work, shell: '/bin/sh', displayName: 'Maya Okafor' } }))
-        yield* completedSetup()
+        yield* completedSetup(undefined, rig.work)
         const handler = yield* CommandHandler
         const execute = (credential: { _tag: 'agent', token: Redacted.Redacted<string> } | typeof ownerCredential, command: string, payload: Record<string, unknown>) => Effect.runPromise(handler.execute(credential, command, { requestId: freshRequest(), ...payload }).pipe(Effect.result))
         yield* serve({ password: Redacted.make(password), staticRoot, settings: { enabled: true, port, heartbeatSeconds: 25, proxyMode: false } })

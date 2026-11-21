@@ -131,6 +131,17 @@ The website is built from the mock in `design/mock/` by the package `packages/st
 An old address under `/studio/` is sent to the root.
 See [design/mock/README.md](design/mock/README.md) for what the website does and does not do.
 
+The workspace folder contains the repositories that LGTM Studio's Git commands may use.
+Choose it during the first run, or change "Where is your workspace?" under Service settings, in Defaults.
+The folder must be an existing absolute directory.
+A change that excludes a registered repository is refused with that repository's name and path.
+Its registered locations, workspaces and common Git directory must fit inside the new folder too.
+An unchanged workspace folder does not repeat this containment check.
+A repository still counts after its last project is deleted.
+There is currently no command to remove a repository from the registry.
+Choose a common parent folder to include repositories in sibling folders.
+The client API and command line expose the same setting through `project.settings.set`.
+
 The service command also works without a web password.
 In that case, the authenticated Unix socket is available and the web server
 stays off.

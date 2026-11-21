@@ -36,7 +36,7 @@ export async function exerciseStudioModels(page: Page) {
       const dependencies = Layer.mergeAll(runner.layer, makeFakeSecrets().layer, Layer.succeed(Redactor, { redact: (e) => Effect.succeed(e), redactText: (s) => Effect.succeed(s) }))
       yield* Effect.scoped(Effect.gen(function* () {
         yield* registerRebuildCheck()
-        yield* completedSetup()
+        yield* completedSetup(undefined, rig.work)
         for (const id of ['first', 'second', 'empty', 'no-account']) {
           yield* appendSetup([eventOf({ _tag: 'HarnessChanged', harness: harnessSettings(id, { adapterPath: process.execPath, models: id === 'empty' ? ['never-invent-this'] : [], efforts: [] }) })])
           if (id !== 'no-account') yield* appendSetup([eventOf({ _tag: 'AccountChanged', accountId: `${id}-account`, account: { id: `${id}-account`, harness: id, displayName: `${id}-account`, enabled: true } })])

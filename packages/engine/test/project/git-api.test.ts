@@ -28,7 +28,7 @@ import { ancestryHeaders, authorization, socketUrl, upgradeStatus } from "../sup
 import { provideBoard } from "../board/wakeFixtures.ts"
 import { registerRebuildCheck } from "../support/rebuildCheck.ts"
 import { eventually } from "../support/routingRig.ts"
-import { readLog, call, success, failureOf, seedAccount, seedHarness, seedAgent, agentCredential, ownerCredential as owner, freshRequest, makeRig, removeRig, type Rig } from "../support/handlerRig.ts"
+import { appendSetup, eventOf, readLog, call, success, failureOf, seedAccount, seedHarness, seedAgent, agentCredential, ownerCredential as owner, freshRequest, makeRig, removeRig, type Rig } from "../support/handlerRig.ts"
 
 let rig: Rig
 const git = (folder: string, ...args: string[]) => execFileSync("/usr/bin/git", ["-C", folder, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim()
@@ -180,7 +180,8 @@ it.live("enforces own-project reads, refuses all agent Git writes and paths outs
   expect(yield* refusal(run(api, "project.diff", { ...p, path: ".git/config" }))).toBe("Git: invalid_path")
   expect(yield* refusal(run(api, "project.changes", { worktreeId: "../outside", path: rig.outside }))).toBe("registered workspace not found")
   expect(yield* refusal(run(api, "project.repository.add", { name: "Remote", path: rig.work, machineId: "unknown" }))).toContain("only the local machine")
-  success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.outside, shell: "zsh" } }))
+  // Historical out-of-bound settings enter through the fixture writer; the owner command now refuses them.
+  yield* appendSetup([eventOf({ _tag: "project.SettingsChanged", settings: { workspaceFolder: rig.outside, shell: "zsh" } })])
   expect(yield* refusal(run(api, "project.changes", p))).toBe("Git: invalid_path")
   expect(projectView(yield* snapshot).repositories[f.repoId]?.path).toBe(rig.work)
   success(yield* call(owner, "project.settings.set", { settings: { workspaceFolder: rig.root, shell: "zsh" } }))

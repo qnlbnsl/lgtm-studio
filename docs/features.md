@@ -1579,18 +1579,23 @@ It does not decide changes to the agents' message-board channels, delivery rules
 
 ## A "Where is your workspace?" setting in the Service settings
 
-State: To build. Requested by the owner on 2026-11-20.
+State: Built on 2026-11-20 in unit s32-workspacesetting.
+The owner requested it on 2026-11-20.
 
 The workspace folder is the one folder that must contain every repository that LGTM Studio may work in.
-Today the owner can choose it only in the first-run steps.
-After that, only the command `project.settings.set` can change it.
-The owner wants it as a visible setting of LGTM Studio, asked as "Where is your workspace?".
+The owner can choose it in the first-run steps.
+The Service settings screen now asks "Where is your workspace?" in Defaults.
+The command `project.settings.set` remains available too.
 
-The setting belongs on the Service settings screen, beside the shell and the defaults for new project leads.
 It shows the current folder and lets the owner change it.
-The engine already validates the folder as an existing absolute directory.
-The control must say what the change means: Git commands of LGTM Studio work in every repository under that folder.
-A change that would leave a registered repository outside the new folder needs a clear refusal or a warning; this is undecided.
+The engine validates the folder as an existing absolute directory.
+The helper says, "LGTM Studio's Git commands work in every repository under this folder."
+A change that excludes a registered repository is refused with the first excluded repository's name and path.
+An unchanged folder skips containment validation so legacy installations can still save other settings.
+A changed folder must contain every registered repository, location, workspace and common Git directory.
+Repositories without projects still count.
+Saving the folder preserves the other settings, including the lead defaults and the explicit permission marker.
+The standalone mock uses Maya Okafor's sample path.
 
 Issue 1466 records the fault that led to the request: a repository in a sibling folder could not be registered.
 On 2026-11-20 the owner's own workspace folder was widened by command from one folder of projects to its parent.
@@ -1605,3 +1610,254 @@ Repository reads include those settings.
 The website needs controls to read and change them.
 The owner's approval of their appearance remains required.
 Unit s31 adds no website controls or screen changes.
+
+## Environment variables that LGTM Studio gives to agents
+
+State: Idea. Requested by the owner on 2026-11-20.
+
+The owner wants to store environment variables in LGTM Studio for a repository.
+LGTM Studio would provide them in the shell of every agent that works in that repository.
+Any script that an agent runs would then see those variables, as it would in the owner's own shell.
+
+This would remove the need to copy ignored environment files into each worktree for values that are plain variables.
+The request came while preparing a repository whose builds need ignored environment files; issue 1469 records that fault.
+
+Undecided: whether variables are set per repository, per project, or both.
+Undecided: how secret values are stored and shown, and whether they follow the existing rules for account secrets.
+Undecided: which agents receive them, and whether the terminal tab receives them too.
+`SECURITY.md` governs this; a stored secret must never reach a log, an event or a trace.
+
+### A built-in vault in the server process
+
+State: Idea. Stated by the owner on 2026-11-20, a little after the entry above.
+
+The owner is thinking of a vault that is built into LGTM Studio.
+The server process holds the vault, and the vault is encrypted where it is stored.
+The vault holds the environment variables of each repository and similar values.
+When a project is launched, it is given access to the vault.
+
+The owner also said that LGTM Studio will move from a single program to a server with a client website.
+How the vault and the other parts are split between server and client is not decided; the owner will discuss it.
+
+Undecided: what unlocks the vault when the server starts, and where its key lives.
+Undecided: whether a project receives the whole repository scope or named values only.
+Undecided: how this relates to the existing stored account secrets.
+
+## A repository agent that works in the main checkout and prepares a repository for projects
+
+State: Idea. Requested by the owner on 2026-11-20.
+
+The owner wants one agent per repository, at the repository level and above its projects.
+It always works in the main checkout only.
+The owner talks to it about one-off matters of that repository.
+
+Its first job starts by itself when a repository is added.
+Its automatic first prompt is, in the owner's words: "Verify that this repository is ready to work. Here are relevant docs for LGTM Studio. First, go through the repository and figure out what it is."
+The agent then fills in what LGTM Studio needs as configuration for that repository.
+Examples are the base branch, the files to copy into new worktrees, submodules, setup instructions, environment variables and the test commands.
+If the repository has tests, running them is part of that first run.
+The result is saved to the main checkout.
+After that, the repository is ready: the owner starts a new project, states the goal, and the work gets done.
+
+This extends the earlier entry "A project setup agent", which would produce a `.lgtm` folder.
+It depends on worktree preparation (issue 1469) and on the environment variables entry above.
+
+Undecided: the agent's permission level in the main checkout, since agents never edit the base branch today.
+Undecided: whether the saved configuration lives in the repository's `.lgtm` folder, in engine state, or both.
+Undecided: how the agent appears in the navigation, and whether it stays running or starts on demand.
+
+## A better Define phase
+
+State: In design by the owner from 2026-11-20, with a separate design agent.
+
+The owner finds the present Define phase poor and wants a much better user experience for it.
+When a project starts with a goal, the Define agent must read the repository, run scripts where needed, ask questions, and then produce the end-result document.
+The entry "A Define workspace with a conversation and an evolving end-result document" and issue 1464 record earlier observations.
+The design is worked out in the mock first; nothing here is decided yet.
+
+## Bringing a repository's existing mocks into LGTM Studio, and support for other languages and tools
+
+State: Idea. Stated by the owner on 2026-11-20, after registering a second repository.
+
+### The problem the owner saw
+
+The second repository is registered, but LGTM Studio shows no mocks for it.
+That repository already has its own mock application, a separate package that runs the product's real components on sample data.
+It also already has a design file in the Figma format.
+LGTM Studio has no way to take either of them in.
+
+### The process the owner described
+
+1. Produce the OpenPencil design file, in the Figma format, holding all design components and mock screens.
+2. Convert that file into the mock application.
+3. Build the mock application.
+
+The owner prefers converting an existing mock project over merely importing it.
+This follows the earlier entries "The design file is the source of truth" and "Mocks made by the Design team".
+
+### The open question: languages other than React
+
+The owner expects a problem when a repository does not use React.
+The conversion from a design file to a mock application, and the build of that application, differ for each language and user-interface toolkit.
+
+### What the owner hopes for
+
+The first agent that prepares a repository checks four things.
+See the entry "A repository agent that works in the main checkout and prepares a repository for projects".
+
+- Which language and toolkit does the repository use?
+- Does it already have a testing framework?
+- Does it already have a design framework?
+- Does it already have a mocks framework?
+
+Where LGTM Studio lacks support for what the agent finds, the agent opens a pull request against LGTM Studio that adds support for that language or tool.
+This matches the earlier entry about per-language test tools arriving by pull request.
+
+### Undecided
+
+- What "support for a language" consists of: most likely a small adapter that states how to install, test, build and serve the mock application, and how design components map to code.
+- Whether an existing mock application is used as it is, with LGTM Studio only told how to build and serve it, before any conversion from the design file is attempted.
+- Who reviews a pull request that an agent opens against LGTM Studio from another repository's work, and where it is opened when the installation is not a checkout of LGTM Studio.
+- How a mock application that needs a device or a simulator is shown in the Mocks tab.
+
+## An extensible mockups module with one framework per language and tool
+
+State: Idea. Decided in direction by the owner on 2026-11-20. This corrects the entry "Bringing a repository's existing mocks into LGTM Studio, and support for other languages and tools".
+
+### The decision
+
+The owner does not want LGTM Studio to use a repository's own mock application as it is.
+That application was built for one product.
+Instead, LGTM Studio gets its own mockups module, and it is extensible.
+The second repository's existing mocks are then converted to it.
+The earlier recommendation, to point LGTM Studio at an existing mock application first, is withdrawn.
+
+### What the module does
+
+The module takes what a repository is building and renders it so that it runs in LGTM Studio's website.
+Each mockup is rendered in the repository's own language and toolkit, and the result shown is HTML.
+A phone project is shown inside a phone image, at a stated screen size and pixel ratio.
+A website or another kind of project gets its own presentation, which is not designed yet.
+The owner does not yet know how this works for native applications.
+
+The owner recalled a tool that loaded Angular, Vue, Svelte and React from a content delivery network at run time and rendered components from each.
+That is the model for how one page can render several toolkits.
+
+### What you see is what you get
+
+The Mocks tab must show exactly what users will get.
+The condition is the same screen size, pixel ratio and similar settings.
+This is the main requirement, and it is why the mockups render the real code in its own toolkit and are not redrawn.
+
+### One framework per language and tool
+
+A framework guide says how to add a language or a tool.
+Every language and every tool then gets its own framework.
+For mockups, a framework says: here is a new language, and here is how to render it. The language then shows up in the Mocks tab.
+
+The same idea applies to testing.
+Each test tool, such as Vitest or the TypeScript compiler written in Go, gets its own framework for how it runs tests and scripts.
+Those frameworks carry the lessons from testing the owner's second repository, and improve over time.
+This joins the earlier entries about a testing skill with fixed rules and per-language test tools.
+
+### Undecided
+
+- What a framework is in code: its files, its interface, and where it lives (inside LGTM Studio, in `~/.lgtm`, or in a repository's `.lgtm`).
+- How the module builds a repository's components for the browser: bundling on the server, loading libraries at run time, or both.
+- How sample data, fonts, images and the repository's own styling reach a mockup.
+- Native applications: a web build where the toolkit has one (such as React Native for Web), a simulator stream, or screenshots; each weakens the "what you see is what you get" promise in a different way.
+- How a mockup is isolated from LGTM Studio's own page, since it runs a repository's code inside the website.
+- How the existing conversion from the design file fits: the design file stays the source of truth, and mockups come from real code.
+
+## Linking a hosting account to add a repository directly from GitHub, GitLab or Bitbucket
+
+State: Idea. Requested by the owner on 2026-11-20.
+
+The owner wants to link an account at a repository hosting service to LGTM Studio.
+With a linked account, the owner adds a repository directly from that service, without first cloning it by hand.
+The owner named the largest services: GitHub, GitLab and Bitbucket.
+
+Today a repository is added only by the path of a folder that already exists on the machine.
+The pull request flow uses the `gh` command with whatever account it is signed in to, and supports GitHub only.
+
+What this would add:
+
+- A linked account per hosting service, shown in the settings beside the harness accounts.
+- A list of the repositories that the account can reach, to choose from when adding a repository.
+- A clone into the workspace folder, followed by the same registration as today, including the recorded base branch.
+- The same linked account then serves pull request delivery for that repository.
+
+Undecided: how each account is linked, for example a sign-in in the browser, a stored token, or the service's own command-line tool.
+Undecided: where the credential is kept; the entry "A built-in vault in the server process" is the likely place.
+Undecided: pull request delivery for GitLab and Bitbucket, which the present GitHub flow does not cover.
+Undecided: self-hosted instances of these services.
+`SECURITY.md` governs this, because a hosting credential can push code; accounts and secrets stay with the owner.
+
+## A server, a client and a website as three separate pieces
+
+State: Direction stated by the owner on 2026-11-20. Not designed.
+
+The owner wants LGTM Studio split into a server, a client process on each working machine, and a website that can also be hosted by itself.
+Several server nodes behind a load balancer, a replicated database, and one clone per agent on any machine are part of the idea.
+The full record, with the open questions, is in [the direction document](specs/2026-11-20-server-client-website-direction.md).
+
+## Session reports kept by the server, and an agent that learns from them and cleans them up
+
+State: Idea. Stated by the owner on 2026-11-20.
+
+### The problem
+
+Session reports are stored in the repository today.
+The owner finds that they litter it.
+Whether to keep session reports at all is each user's choice; LGTM Studio must not require them.
+
+### The idea
+
+Session reports go to a central place.
+The owner named two ways to think about it: skills that manage them, or a central area in the data store that the server holds.
+The owner's direction for a server with its own data store is in [the direction document](specs/2026-11-20-server-client-website-direction.md).
+
+A separate agent reads the stored reports.
+It is launched only after the user approves.
+It looks for what can be improved in the software, what went well and what went badly.
+Cleaning the reports up afterwards is part of the evaluation phase.
+
+Where a finding is an improvement or a fault of LGTM Studio itself, the agent opens an issue on GitHub.
+The data in that issue is sanitised first.
+The agent cleans up the session reports as it goes.
+
+### Related entries
+
+The model evaluation records read the same reports to grade models.
+The entry "A repository agent that works in the main checkout and prepares a repository for projects" could set this choice up for a repository.
+
+### Undecided
+
+- Whether reports leave the repository entirely, or a short summary stays in it.
+- What "sanitised" requires before anything is sent to a public issue tracker: no names, no paths, no repository content, no secrets. A report from a private repository must never leak into a public issue.
+- Whether the user sees and approves each issue before it is opened, in addition to approving the agent's launch.
+- Which repository receives the issues, and under whose account.
+- How long reports are kept, and what "cleaned up" means: deleted, or condensed into findings.
+- How this relates to the existing lists `docs/issues.md` and `docs/features.md` in this repository.
+
+## A usage page for every connected harness and account
+
+State: Idea. The owner will design it; stated on 2026-11-20.
+
+The owner wants a usage monitor in LGTM Studio.
+It covers every connected harness and every account.
+Where it sits in the website is not decided.
+
+The model is the status line the owner already has in the terminal.
+For each account the page shows the model, the weekly limit and how much of it is left, and when it resets.
+For each running agent it shows how full the context is.
+It shows the cost in dollars of the tokens used.
+The page breaks these numbers down, for example by harness, account, project and agent.
+
+What exists today: the engine reports context use for an agent, and an account can be marked available again after a limit.
+The engine does not read any provider's usage or limit report.
+
+Undecided: where each number comes from, since every harness reports limits and cost differently, and some report none.
+Undecided: whether cost is taken from the harness's own figure or computed from token counts and a price table that must be kept current.
+Undecided: whether the page only shows usage, or also warns before a limit and moves work to another account.
+Reading a provider's usage may need the account's own credentials; accounts and secrets stay with the owner under `SECURITY.md`.
