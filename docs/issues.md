@@ -21318,3 +21318,12 @@ Found on 2026-11-20 by the third review of unit s31-worktreeprep.
 The agent listing passes every tracked name that matches a copy pattern to a second `git ls-files` call (`packages/engine/src/project/git/index.ts`).
 A very large match set could exceed the argument or output limit and fail the listing, file read and context search for agents.
 State: Open. Minor. Low likelihood.
+
+## 1542. The owner's first message to an agent is shown with the whole role text in front of it
+
+Found on 2026-11-20. Reported by the owner from use of the website.
+The engine sends an agent's role instructions as part of the first message of its session.
+The owner's first message in the chat then appears with the whole role text prepended, so it is very long.
+An echo filter exists for the agent's side (`packages/engine/src/roles/instructionEcho.ts`); the owner's own message is not covered by it.
+The cause has not been traced: the text may be stored in the message record, or added when the thread is shown.
+State: Open. The feature entry "How an agent receives its purpose, and which settings, hooks and memory it gets" covers the lasting answer.

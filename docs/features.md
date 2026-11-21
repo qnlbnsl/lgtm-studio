@@ -1861,3 +1861,30 @@ Undecided: where each number comes from, since every harness reports limits and 
 Undecided: whether cost is taken from the harness's own figure or computed from token counts and a price table that must be kept current.
 Undecided: whether the page only shows usage, or also warns before a limit and moves work to another account.
 Reading a provider's usage may need the account's own credentials; accounts and secrets stay with the owner under `SECURITY.md`.
+
+## How an agent receives its purpose, and which settings, hooks and memory it gets
+
+State: Idea. The owner will design it; agreed on 2026-11-20.
+
+### What happens today
+
+LGTM Studio composes an agent's purpose from the built-in role text, the owner's overrides and the per-repository note.
+It sends that text inside the first message of the agent's session.
+The owner's first message is therefore shown with the whole role text in front of it; issue 1542 records this.
+
+An agent in a project also runs with the owner's ordinary harness settings.
+It loads the repository's `CLAUDE.md` or `AGENTS.md`, the owner's memory notes and the owner's session-start hooks.
+Issue 946 records this and waits for the owner's decision.
+
+### What the owner wants decided
+
+- How the purpose reaches the agent without appearing in the chat as the owner's message. The owner asked whether a session-start hook can inject it.
+- Which settings, hooks and memory an agent in a project gets, and which of the owner's own it must not get.
+
+### Notes for the design
+
+- A session-start hook exists in Claude Code and can inject text. What other harnesses offer in the mode LGTM Studio drives them in has not been checked.
+- The board, the roster and the thread view must not depend on the harness, so a hook cannot be the only way.
+- Other ways to consider: a system prompt passed when the session is created, where the harness allows it; or keeping the first message and hiding the role text in the thread.
+- A general rule belongs in the built-in role text; a repository's own facts belong in its `AGENTS.md`, `CLAUDE.md` or `.lgtm` folder. The owner said this on 2026-11-20 about the submodule note set for one repository.
+- The entry "Environment variables that LGTM Studio gives to agents" is related: a hook can read such a variable and stay quiet inside a project.
