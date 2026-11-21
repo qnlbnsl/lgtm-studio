@@ -1,6 +1,7 @@
 import { terminalReasons } from '../harnesses/terminalReasons.ts'
 import { isBaseRefusal } from "../project/baseBranch.ts";
 import { projectRefusalReasons, isWorkspaceRepositoryRefusal } from "../project/errors.ts";
+import { isPreparationRefusal } from "../project/preparation.ts";
 // Connection assembly pattern: T3 Code apps/server/src/ws.ts, lines
 // 3293-3330, 3360-3367 and 3374-3385 (MIT licence). No source code is copied.
 import { signInReasons } from "../harnesses/signinReasons.ts";
@@ -50,6 +51,7 @@ const reasons = new Set([
   "Confirm that running agents are stopped and terminals close. Pages stay signed in.",
   "This service cannot restart itself on this platform.", "The service launch files are unavailable. Restart was refused before stopping agents.", "service restarting",
   "The workflow folder must be absolute, existing, owned by you, outside the service state folder, and have no symbolic links.",
+  "Worktree preparation refused an unsafe path or exceeded a copy limit.",
   "Role instructions exceed 48 KiB.", "Role instructions could not be read.", "Role orientation exceeds 256 KiB.",
   "command refused", "cannot reload", "no usable account", "invalid credential",
   "notification changed; refresh before retrying",
@@ -60,6 +62,7 @@ const commandError = (requestId: unknown, reason = "command refused", command?: 
   // The role-file planner redacts its schema path and uses fixed reason text.
   // Preserve that owner's validation error without exposing other failures.
   _tag: "CommandError" as const, requestId, reason: reasons.has(reason)
+    || ((command?.startsWith("project.") === true || command === "start") && isPreparationRefusal(reason))
     || (command?.startsWith("project.") === true && (projectRefusalReasons.has(reason) || isBaseRefusal(reason)))
     || (command === "project.settings.set" && isWorkspaceRepositoryRefusal(reason))
     || (command === "roles.role-file.set" && reason.startsWith("role file error: "))

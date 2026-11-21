@@ -92,6 +92,7 @@ export const projectAfter = (view: ProjectView, event: Event, sequence: number, 
     case "project.CreationClaimed": return { ...view, creations: change(view.creations, event.creationRequestId, (row) => ({ ...row,
       [event.kind === "repository" ? "repositoryIdentity" : "folderIdentity"]: event.identity })) }
     case "project.CreationFinished": { const creations = { ...view.creations }; delete creations[event.creationRequestId]; return { ...view, creations } }
+    case "project.RepositoryPreparationChanged": return { ...view, repositories: change(view.repositories, event.repoId, row => ({ ...row, preparation: event.preparation })) }
     case "project.RepositoryBaseChanged": {
       const repository = own(view.repositories, event.repoId)
       return repository === undefined ? view : { ...view, repositories: { ...view.repositories, [event.repoId]: { ...repository, baseBranch: event.baseBranch } } }

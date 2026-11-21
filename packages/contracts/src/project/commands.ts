@@ -4,7 +4,7 @@ import * as RpcGroup from "effect/rpc/RpcGroup"
 import { ClientRequest } from "../requests.ts"
 import type { CallerKind } from "../commands.ts"
 import { AgentId, EventSequence, RequestId } from "../ids.ts"
-import { LeadPermission, LeadPermissionSetting, ProjectLeadDefaults, Project, ProjectRecord, ProjectCreation, ProjectId, ProjectName, ProjectSettings, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskHistoryEntry, TaskId, Team, Workspace } from "./schema.ts"
+import { LeadPermission, LeadPermissionSetting, ProjectLeadDefaults, Project, ProjectRecord, ProjectCreation, ProjectId, ProjectName, ProjectSettings, WorktreePreparation, ProjectStage, ProjectText, Repository, RepositoryLocation, Sprint, SprintId, Task, TaskHistoryEntry, TaskId, Team, Workspace } from "./schema.ts"
 
 import { ProjectMockRpcGroup, projectMockAccess, SetupState } from "./mocks.ts"
 import { ProjectDesignRpcGroup, projectDesignAccess } from "./design.ts"
@@ -40,6 +40,7 @@ export const ProjectRpcGroup = RpcGroup.make(
   Rpc.make("settings", { payload: request, success: Schema.Struct({ ...request, settings: Schema.optionalKey(ProjectSettings), ownerNameSuggestion: Schema.optionalKey(ProjectName) }), error: Refused }),
   Rpc.make("settings.set", { payload: { ...request, settings: ProjectSettings, clearWorkflowFolder: Schema.optionalKey(Schema.Boolean) }, success: Ack, error: Refused }),
   Rpc.make("repository.add", { payload: { ...request, name: ProjectName, path: Repository.fields.path, machineId: ProjectName }, success: Schema.Struct({ ...request, repoId: Repository.fields.repoId, baseBranch: ProjectName }), error: Refused }),
+  Rpc.make("repository.preparation.set", { payload: { ...request, repoId: Repository.fields.repoId, preparation: WorktreePreparation }, success: Ack, error: Refused }),
   Rpc.make("repository.base.set", { payload: { ...request, repoId: Repository.fields.repoId, baseBranch: ProjectName }, success: Ack, error: Refused }),
   Rpc.make("repository.locate", { payload: { ...request, ...RepositoryLocation.fields }, success: Ack, error: Refused }),
   Rpc.make("repositories", { payload: { ...request, ...paging }, success: page(Repository), error: Refused }),
@@ -86,7 +87,7 @@ const member = ["owner", "agent"] as const
 export const projectAccess = {
   "project.context.search": member,
   ...projectGitAccess, ...projectMockAccess, ...projectDesignAccess, "project.placement.preview": owner,
-  "project.settings": owner, "project.settings.set": owner, "project.repository.add": owner, "project.repository.locate": owner, "project.repository.base.set": owner,
+  "project.settings": owner, "project.settings.set": owner, "project.repository.add": owner, "project.repository.locate": owner, "project.repository.base.set": owner, "project.repository.preparation.set": owner,
   "project.repositories": owner, "project.workspace.register": owner, "project.workspaces": owner, "project.create": owner,
   "project.permission.set": owner, "project.approval.grant": owner, "project.approval.withdraw": owner,
   "project.rename": member, "project.place": owner, "project.preferences.set": owner,

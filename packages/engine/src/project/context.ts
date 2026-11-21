@@ -26,7 +26,7 @@ export const prepareContextFiles = (observed: Input, refs: ReadonlyArray<Context
     const result = yield* withGit(observed, (git) => Effect.gen(function* () {
       const workspace = yield* workspacePath(observed, ref, git)
       if (workspace.repoId !== ref.repoId) return yield* refused("context repository does not match the project")
-      yield* gitCall(git.contextFile(workspace.path, ref.path))
+      yield* gitCall(git.contextFile(workspace.path, ref.path, observed.actor._tag !== "owner"))
       return workspace
     })).pipe(Effect.result)
     return { ref, result }
@@ -103,7 +103,7 @@ export const searchContext: ReadHandler = (input, raw) => Effect.gen(function* (
       }
     }
     if (p.scope !== "tasks") {
-      const files = yield* gitCall(git.contextFiles(workspace.path, p.query))
+      const files = yield* gitCall(git.contextFiles(workspace.path, p.query, input.actor._tag !== "owner"))
       result.truncated ||= files.truncated
       for (const path of files.items) {
         if (!Schema.is(ContextPath)(path)) continue

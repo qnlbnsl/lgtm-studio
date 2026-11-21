@@ -130,6 +130,7 @@ const summaries: Record<CommandName, string> = {
   "project.settings": "Read project service defaults.",
   "project.settings.set": "Set the workspace folder, shell, and lead launch defaults.",
   "project.repository.add": "Register an existing local repository.",
+  "project.repository.preparation.set": "Replace owner settings for new worktree copies, submodules and agent instructions.",
   "project.repository.base.set": "Change a repository base branch to an existing local branch.",
   "project.repository.locate": "Record a verified local repository location.",
   "project.repositories": "List registered repositories.",

@@ -117,3 +117,5 @@ The permission levels, from lowest to highest, are `read-only`, `ask`, `edit`, `
 A start without a permission level defaults to `auto`, limited by the saved harness default and your own ceiling.
 Automatic review uses the harness's automatic mode, or its edit mode when unavailable.
 Use `read-only` explicitly when selecting another agent's checkout.
+
+Worktrees under the repository's `.worktrees/` folder are managed by LGTM Studio. Never remove, prune or move them. If repository instructions conflict, report the conflict to your lead or the owner.

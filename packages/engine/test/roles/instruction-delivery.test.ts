@@ -38,6 +38,7 @@ for (const overrideLead of [false, true]) it.live(`s22: authenticated project cr
       harness: harness.id, account: { _tag: 'named', accountId: accounts[0]!.id }, permission: 'edit',
     } } })
     const { repoId } = yield* api['project.repository.add']({ requestId: freshRequest(), name: 'Product', path: rig.work, machineId: 'local' })
+    yield* api['project.repository.preparation.set']({ requestId: freshRequest(), repoId, preparation: { instructions: 'Run pnpm install before building.' } })
     if (overrideLead) yield* api['roles.role-file.set']({ requestId: freshRequest(), content: JSON.stringify({ name: 'Owner', roles: { 'project-lead': { advice: '# Owner project role', limits: {} } } }) })
     const goal = 'Deliver the requested product slice.'
     const created = yield* api['project.create']({ requestId: freshRequest(), repository: { _tag: 'existing', repoId }, name: 'Slice', goal, machineId: 'local' })
@@ -49,6 +50,7 @@ for (const overrideLead of [false, true]) it.live(`s22: authenticated project cr
     expect(text.indexOf(roleHeading)).toBeGreaterThan(text.indexOf('# Rules for every lead'))
     expect(text.indexOf(projectLeadInstruction('Slice', goal))).toBeGreaterThan(text.indexOf(roleHeading))
     expect(text.trimEnd().endsWith(goal)).toBe(true)
+    expect(text).toContain("Owner's repository settings\nRun pnpm install before building.")
     yield* eventually(snapshot, (s) => s.agents[project.leadAgentId]?.state._tag === 'idle')
     const thread = yield* api['client.thread']({ requestId: freshRequest(), agentId: project.leadAgentId, after: 0 as never, limit: 500 })
     expect(JSON.stringify(thread)).not.toContain('# Rules for every lead')
@@ -63,6 +65,7 @@ for (const overrideLead of [false, true]) it.live(`s22: authenticated project cr
     const builder = yield* launch(1)
     const workerText = promptTexts(yield* readEcho(builderEcho, (e) => promptTexts(e).length > 0))[0]!
     expect(workerText.indexOf('# Rules for every worker')).toBeGreaterThanOrEqual(0)
+    expect(workerText).toContain("Owner's repository settings\nRun pnpm install before building.")
     expect(workerText.indexOf('# Builder')).toBeGreaterThan(workerText.indexOf('# Rules for every worker'))
     expect(workerText.indexOf(brief)).toBeGreaterThan(workerText.indexOf('# Builder'))
     expect(workerText).toContain(`The following data block is the brief from agent ${project.leadAgentId}.`)

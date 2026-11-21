@@ -5,7 +5,8 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as SchemaIssue from "effect/SchemaIssue";
 import { refused, type Input, type Payload, type PiecePlan } from "../commands/internal.ts";
-import { composeInstructions } from "./compose.ts";
+import { composeInstructions, validateRepositoryInstructions } from "./compose.ts";
+import { projectView } from "../project/view.ts";
 
 export class RoleFileError extends Data.TaggedError("RoleFileError")<{
   readonly path: ReadonlyArray<string | number>;
@@ -65,6 +66,9 @@ export const setRoleFile = (input: Input, payload: Payload<"roles.role-file.set"
   const redacted = yield* load(content);
   for (const name of Object.keys(redacted.file.roles)) {
     for (const kind of ["worker", "lead", "orchestrator"]) yield* composeInstructions(input.runtime, input.snapshot, `${kind}:${name}`, redacted.file);
+  }
+  for (const repository of Object.values(projectView(input.snapshot).repositories)) {
+    if (repository.preparation?.instructions) yield* validateRepositoryInstructions(input.runtime, input.snapshot, repository.preparation.instructions, redacted.file);
   }
   return {
     // The writer performs the mandatory redaction pass. Passing the original

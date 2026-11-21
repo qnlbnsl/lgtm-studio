@@ -639,3 +639,44 @@ Optional remote discovery and fetching share a 20-second deadline.
 It otherwise uses the local commit and records why in `project.CreationFinished.detail`.
 A resumed creation that finds its existing worktree records that it reused that worktree.
 The fetch never updates a local branch or the main checkout's files.
+
+## Owner preparation settings for new worktrees
+
+The command `project.repository.preparation.set` replaces the optional `copyPaths`, `submodules` and `instructions` settings on a repository record.
+Only the owner can call it.
+Repository reads include the settings.
+A project creation pins its file and submodule settings in the existing creation intent.
+A worker allocation reads the repository record and checks that it has not changed before final registration.
+Both paths call `preparation.ts` after Git creates the worktree.
+Submodule failure appears as a fixed creation or start detail and does not refuse creation.
+Copied files never overwrite existing files.
+The setting command adds each pattern to the shared Git exclusion file.
+Agent-facing diffs and file reads hide untracked matching paths.
+Tracked matches remain visible to agents and reviewers.
+Copy patterns do not restrict owner reads.
+The shared exclusions persist after settings are cleared and have no removal command.
+Harnesses can still read the copied files, and their values are not registered secrets.
+Submodule initialization checks each name, path and URL against `.gitmodules` at the project's recorded starting commit.
+Workers use that same commit rather than the current project branch head.
+A missing starting commit falls back to the base branch with an explicit detail sentence.
+Approved paths must be exact gitlink entries in the new index.
+Unapproved, duplicate and overlapping paths are skipped with a fixed detail sentence.
+Names containing `=` or a newline are refused.
+Relative URLs are skipped.
+See the root security document for the copy bounds and descriptor requirements.
+
+Role composition selects the nearest registered repository or workspace containing the actual start folder.
+It appends the owner's instructions before redaction and slash escaping.
+Explicit start and end markers delimit the text.
+The setting command validates the total composed size against every current role.
+Normal starts, recovery, restoration and orientation use the same composition.
+The engine never treats the text as a setup command.
+
+Git views admit a tracked gitlink directory through a separate path check.
+Status includes its old, indexed and current commit identifiers.
+Index and tree metadata reads are batched across the changed paths.
+Embedded `.git` directories and missing markers are supported.
+Review files include the old and new identifiers.
+Diffs force the short submodule patch format.
+Discard fingerprints the index and nested head and refuses nested dirt before a checkout without fetching.
+The Files interface retains its regular-file policy.

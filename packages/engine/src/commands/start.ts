@@ -49,14 +49,14 @@ export const start = (input: Input, payload: Payload<"start">, pendingWorkspace?
     const request = { ...runtime, ...projectFolderScope(runtime, parent?.agentId, pendingWorkspace === undefined ? undefined : { workspace: pendingWorkspace, sequence: snapshot.sequence }), caller: actor, parentFolder: parent?.folder ?? payload.folder, folder: payload.folder };
     if (allocationSource) {
       yield* checkAllocationSource(request).pipe(Effect.mapError(error => refused(`Start folder: ${error.reason}`)));
-      yield* composeInstructions(runtime, snapshot, payload.role);
+      yield* composeInstructions(runtime, snapshot, payload.role, undefined, payload.folder);
       return { events: [] };
     }
     const grant = yield* checkFolder(request).pipe(
       Effect.mapError((error) => refused(`Start folder: ${error.reason}`)),
     );
     const folder = yield* folderForSpawn(grant, "start").pipe(Effect.mapError(() => refused()));
-    const instructions = yield* composeInstructions(runtime, snapshot, payload.role);
+    const instructions = yield* composeInstructions(runtime, snapshot, payload.role, undefined, payload.folder);
     const agentId = Schema.decodeUnknownSync(AgentId)(randomUUID());
     const deliveryId = Schema.decodeUnknownSync(DeliveryId)(randomUUID());
     const token = mintAgentToken();

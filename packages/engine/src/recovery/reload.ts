@@ -60,10 +60,10 @@ export const spawnInput = (
   const launchChoice = agent.configuration?.revision === undefined ? {
     ...(agent.model === undefined ? {} : { model: agent.model }), ...(agent.effort === undefined ? {} : { effort: agent.effort }),
   } : {};
-  const instructions = mode === "start" ? yield* composeInstructions(runtime, snapshot, agent.role) : undefined;
+  const instructions = mode === "start" ? yield* composeInstructions(runtime, snapshot, agent.role, undefined, agent.folder) : undefined;
   return { agentId: agent.agentId, token, folder, grant, harness, account,
     ...(instructions === undefined ? { restoreInstructions: () => runtime.views.snapshot.pipe(
-      Effect.flatMap((current) => composeInstructions(runtime, current, agent.role)),
+      Effect.flatMap((current) => composeInstructions(runtime, current, agent.role, undefined, agent.folder)),
       Effect.mapError(() => new RunnerRejected({ reason: "Role instructions could not be read." })),
     ) } : { instructions }),
     permission: Schema.decodeUnknownSync(PermissionLevel)(agent.permission), ...launchChoice,

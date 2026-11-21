@@ -43,7 +43,26 @@ export const effectiveLeadPermission = (lead: { readonly permission: typeof Perm
   lead.permission === "ask" && lead.permissionChosen !== true ? harnessDefault : lead.permission
 export const ProjectSettings = Schema.Struct({ workspaceFolder: ProjectPath, shell: ProjectName, workflowFolder: Schema.optionalKey(ProjectPath), reviewDefaults: Schema.optionalKey(Schema.Struct({ reviewers: Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(9)), differentVendor: Schema.Boolean })), lead: Schema.optionalKey(ProjectLeadDefaults), displayName: Schema.optionalKey(ProjectName) })
 export type ProjectSettings = typeof ProjectSettings.Type
-export const Repository = Schema.Struct({ repoId: RepositoryId, name: ProjectName, path: ProjectPath, baseBranch: Schema.optionalKey(ProjectName) })
+// Owner settings are engine state, never repository-authored configuration.
+export const validCopyPattern = (value: string) => new TextEncoder().encode(value).length <= 256 && !/[\\\x00-\x1f\x7f?:[\]{}]/.test(value)
+  && !value.startsWith("/") && value.split("/").every(part => part !== "" && part !== "." && part !== ".." && part.toLowerCase() !== ".git")
+  && !["*", ".*"].includes(value.split("/")[0]!)
+  && (value.match(/\*/g)?.length ?? 0) <= 1
+export const matchesCopyPattern = (pattern: string, path: string) => {
+  const parts = pattern.split("/"), names = path.split("/")
+  return parts.length === names.length && parts.every((part, i) => {
+    const name = names[i]!, star = part.indexOf("*")
+    return star === -1 ? part === name : name.length >= part.length - 1
+      && name.startsWith(part.slice(0, star)) && name.endsWith(part.slice(star + 1))
+  })
+}
+export const WorktreePreparation = Schema.Struct({
+  copyPaths: Schema.optionalKey(Schema.Array(Schema.String.check(Schema.makeFilter(validCopyPattern))).check(Schema.isMaxLength(16))),
+  submodules: Schema.optionalKey(Schema.Boolean),
+  instructions: Schema.optionalKey(Schema.String.check(Schema.makeFilter(value => new TextEncoder().encode(value).length <= 8192 && !/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(value))))
+})
+export type WorktreePreparation = typeof WorktreePreparation.Type
+export const Repository = Schema.Struct({ preparation: Schema.optionalKey(WorktreePreparation), repoId: RepositoryId, name: ProjectName, path: ProjectPath, baseBranch: Schema.optionalKey(ProjectName) })
 export type Repository = typeof Repository.Type
 export const RepositoryLocation = Schema.Struct({ repoId: RepositoryId, machineId: ProjectName, path: ProjectPath })
 export const Workspace = Schema.Struct({

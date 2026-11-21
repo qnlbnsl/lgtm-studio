@@ -62,7 +62,7 @@ export const checkedMetadata = async (root: string, folder: string): Promise<str
 
 // No pathspec syntax, parent traversal, Git metadata, symlink component, or
 // nested checkout is accepted. Deleted leaf paths are valid for add/restore.
-export const filePath = async (folder: string, path: string): Promise<string> => {
+export const filePath = async (folder: string, path: string, gitlink = false): Promise<string> => {
   if (!cleanText(path) || isAbsolute(path) || path.includes("\\")) return refuse();
   const parts = path.split("/");
   if (parts.some((part) => part === "" || part === "." || part === ".." || part.toLowerCase() === ".git")) return refuse();
@@ -76,7 +76,7 @@ export const filePath = async (folder: string, path: string): Promise<string> =>
         if (!info.isDirectory()) return refuse();
         try { await lstat(join(current, ".git")); return refuse(); }
         catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-      } else if (!info.isFile()) return refuse();
+      } else if (!info.isFile() && !(gitlink && info.isDirectory())) return refuse();
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }

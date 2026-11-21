@@ -20668,7 +20668,11 @@ No `git submodule update` runs anywhere, so a submodule folder stays empty in ev
 Ignored files that the build needs, such as environment files, are not copied.
 A repository cannot declare a setup command; its `.lgtm` folder is read only for workflows.
 Agents in such a repository start without dependencies, environment files or submodule content.
-State: Open.
+State: fixed in unit s31 on 2026-11-20.
+
+The owner can now save copied path patterns, fixed submodule initialization and agent instructions on the repository record.
+The engine never runs repository setup scripts.
+Website controls remain tracked in the feature list.
 
 ## 1470. A changed submodule pointer fails the whole diff of a checkout
 
@@ -20676,7 +20680,11 @@ Found on 2026-11-20 by reading the code.
 Status lists a changed submodule as a change.
 The diff, stage and discard actions pass every changed path to `filePath` (`project/git/paths.ts`), which refuses anything that is not a regular file.
 The whole diff then fails with "invalid_path".
-State: Open.
+State: fixed in unit s31 on 2026-11-20.
+
+Git views now treat gitlinks as commit pointers.
+Status, diff, stage, discard and review no longer read a gitlink directory as a file.
+Discard refuses nested dirt and fetching.
 
 ## 1471. A repository's own rules can tell agents to remove LGTM Studio's worktrees
 
@@ -20685,7 +20693,10 @@ The role prompts tell agents that the repository's instruction file binds them.
 That repository's file says every session must end with only the main checkout in `git worktree list`.
 An agent that obeys it could remove the project and worker worktrees.
 The repository's own session hooks would also run inside every agent, as issue 946 records.
-State: Open.
+State: fixed in unit s31 on 2026-11-20.
+
+The default lead and worker prompts now forbid removing, pruning or moving managed worktrees under `.worktrees/`.
+An agent must report conflicting repository instructions to its lead or the owner.
 
 ## 1472. Review and listing limits are close for a large monorepo
 
@@ -20974,6 +20985,225 @@ The independent-writer review case did not observe its controlled Git start with
 The shared host's load average exceeded 78 during the run.
 All seven cases passed in a single-worker rerun without implementation changes.
 
+## 1501. A preparation detail initially replaced the worker start identifiers
+
+Found while building unit s31 on 2026-11-20.
+State: fixed in unit s31.
+
+The first implementation supplied a custom worker reply containing only its preparation detail.
+The stored start receipt then lacked its request and agent identifiers.
+The final reply includes both identifiers and the detail.
+The integration regression starts a worker and reads its preparation result.
+
+## 1502. Safe preparation copying currently requires Linux directory descriptors
+
+Found while building unit s31 on 2026-11-20.
+State: open for support on other operating systems.
+
+Node.js has no directory-relative file-open interface with the required symbolic-link protection.
+The implementation uses Linux `/proc/self/fd` paths anchored to open directory descriptors.
+A host without that facility refuses configured copying.
+Submodule initialization and agent instructions do not require that copying facility.
+A portable implementation needs an equally safe directory-relative file interface.
+
+## 1503. Gitlink path admission initially changed an unsafe path refusal
+
+Found by the existing path-safety regression during unit s31 on 2026-11-20.
+State: fixed in unit s31.
+
+The first gitlink fallback queried Git before preserving the path validator's refusal.
+A parent traversal then produced a Git process failure instead of `invalid_path`.
+The fallback now checks the same path rules before querying pointer metadata.
+The existing regression verifies traversal, symbolic links, nested repositories and Git metadata refusals.
+
+## 1504. Staging a submodule deletion also exposes its directory as untracked
+
+Found by the new gitlink edge-case test during unit s31 on 2026-11-20.
+State: fixed in unit s31.
+
+Git reports the staged pointer deletion and the retained nested checkout separately.
+The aggregate diff initially tried to validate the extra directory as an ordinary file.
+Status normalization now combines those reports into the tracked pointer deletion.
+The regression covers the staged deletion, its committed diff and its review entry.
+
+## 1505. A gitlink added before the first commit uses the regular-file diff fallback
+
+Found while checking the remaining gitlink paths during unit s31 on 2026-11-20.
+State: fixed in unit s31.
+
+The initial-commit diff fallback reads each staged addition as an ordinary file.
+A staged submodule addition is a directory containing a commit pointer.
+The fallback now uses the cached Git patch for an added gitlink.
+The regression checks aggregate and individual diffs before the parent's first commit.
+
+## 1506. A pointer discard can overwrite ignored local files in a submodule
+
+Found while checking discard safety during unit s31 on 2026-11-20.
+State: fixed in unit s31.
+
+A normal Git submodule checkout can overwrite an ignored local file that becomes tracked at the target commit.
+The clean-status check does not report ignored files.
+Pointer discard now uses a detached checkout of the indexed local commit with `--no-overwrite-ignore`.
+The regression keeps the ignored file and the old nested head when the checkout refuses.
+
+## 1507. The Git application programming interface test omitted the new preparation event
+
+Found by the single full Vitest run during unit s31 on 2026-11-20.
+State: fixed in unit s31.
+
+The exact durable event inventory expected the old repository event list.
+The implementation correctly added `project.RepositoryPreparationChanged`.
+The test now expects the new event in its schema order.
+The subscription-visibility fixture also includes the new event.
+Focused reruns verify both event inventories.
+
+## 1508. Embedded or malformed submodule metadata broke the checkout's status
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: fixed in round 2.
+
+The first implementation read every nested `.git` as a regular marker file.
+An embedded repository instead has a `.git` directory.
+Status now handles both forms and a missing marker.
+A malformed marker leaves the nested checkout ineligible for discard without hiding other status rows or files.
+
+## 1509. Worktree preparation trusted submodule URLs committed by agents
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: fixed in round 2.
+
+A worker branch can contain agent changes to `.gitmodules`.
+Round 2 compared each path and URL with the file committed on the repository's recorded local base branch.
+Round 3 compares names too and uses the recorded starting commit when available.
+The update receives only matching paths.
+The creation detail records skipped entries with a fixed sentence.
+Shared Git refs and configuration remain trusted as documented in the security policy.
+Duplicate candidate paths are refused because Git could select an unapproved name for an approved path.
+Production explicitly disables file transport even when shared configuration enables it.
+
+## 1510. Copied configuration files lacked Git exclusions and read protections
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: fixed in round 2.
+
+The first implementation copied selected files without adding shared exclusion rules.
+Preparation settings now add each pattern to `info/exclude` for every checkout.
+Agent-facing diff and file reads hide untracked matching paths.
+Round 3 corrected an overly broad restriction that also hid tracked matches and affected owner reads.
+The documentation explains that every agent can still read these files through its harness.
+Their contents are not registered secrets and are unknown to log redaction.
+
+## 1511. Unsafe wildcard entries blocked preparation and overlapping matches were incorrect
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: fixed in round 2.
+
+A planted symbolic link or invalid wildcard name initially stopped all preparation.
+Wildcard enumeration now skips those entries.
+A leading segment of only `*` or `.*` is refused.
+A wildcard's prefix and suffix cannot overlap.
+A copy refusal names its configured pattern.
+
+## 1512. Repository instructions could exceed the composed limit only at agent start
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: fixed in round 2.
+
+The stored text had a byte limit but did not account for existing role prose when saved.
+The setting command now validates the complete composition for each current role.
+Explicit start and end markers delimit the owner's repository instructions.
+
+## 1513. Gitlink metadata reads scaled with deleted files and disagreed on renames
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: fixed in round 2.
+
+Status initially started two Git processes for every deleted ordinary file.
+It now batches index and tree pointer reads.
+A missing submodule directory reports no new head.
+Review metadata and its file list use the same rename detection.
+
+## 1514. Worker rollback cannot remove a worktree containing a gitlink
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: open.
+
+Git refuses `git worktree remove` without force when a worktree contains a gitlink.
+A worker allocation that fails after creation can therefore leave its worktree behind.
+The rollback warning asks for inspection.
+Automatic cleanup still needs a safe policy that protects nested work and never forces removal blindly.
+
+## 1515. Project agents can read their repository's copy patterns
+
+Found in review round 1 of unit s31 on 2026-11-20.
+State: documented limitation.
+
+The project snapshot includes the repository's preparation settings.
+An agent in that project can read `copyPaths`, including configuration filenames.
+The patterns are not secret values.
+The documentation now states this visibility alongside the harness access to copied files.
+
+## 1516. A wildcard match containing an asterisk could be expanded repeatedly
+
+Found while implementing review round 2 of unit s31 on 2026-11-20.
+State: fixed in round 2.
+
+A filesystem name can contain a literal asterisk.
+The first expansion passed that name back to the wildcard parser.
+Wildcard enumeration now skips such names as invalid matches.
+The regression also covers unsafe source and destination links beneath an intermediate wildcard.
+
+## 1517. A submodule path selector could include an unapproved nested gitlink
+
+Found in review round 2 of unit s31 on 2026-11-20.
+State: fixed in round 3.
+
+A literal Git path selector still includes descendants of its directory.
+An agent could replace an approved gitlink with a directory containing another gitlink.
+Preparation now requires an exact mode-160000 index entry at each approved path.
+It rejects overlapping submodule paths before running the update with literal selectors.
+A regression runs real Git with production options and an isolated local SSH transport fixture.
+
+## 1518. Submodule trust used a mutable shared base ref
+
+Found in review round 2 of unit s31 on 2026-11-20.
+State: fixed in round 3, with residual shared-directory trust documented.
+
+An agent could move the base ref before preparation resolved it.
+Project creation now uses its recorded starting commit.
+Worker preparation uses the project's recorded starting commit rather than the project branch head.
+Historical projects without that commit still use the base ref and explicitly report the fallback.
+Refs and configuration in the shared Git directory remain a trust boundary.
+
+## 1519. Copy patterns hid tracked files and affected owner reads
+
+Found in review round 2 of unit s31 on 2026-11-20.
+State: fixed in round 3.
+
+Copy-pattern filtering initially applied to owner reads and tracked files.
+The protection now applies only to agent reads of untracked paths.
+Tracked matches remain visible in file reads, context search, diffs and reviews.
+Owner reads retain their existing behavior.
+
+## 1520. Unsafe submodule names could alter a configuration override
+
+Found in review round 2 of unit s31 on 2026-11-20.
+State: fixed in round 3.
+
+A name containing an equals sign could change the key passed to Git's configuration override.
+Preparation refuses names containing an equals sign or a newline.
+It compares names as well as paths and URLs with the recorded commit.
+
+## 1521. Copy-pattern exclusions are permanent and shared by every checkout
+
+Found in review round 2 of unit s31 on 2026-11-20.
+State: open, documented limitation.
+
+Saving copy patterns adds exclusions to the shared Git directory's `info/exclude` file.
+The exclusions affect the main checkout and every linked worktree.
+Clearing or replacing preparation settings does not remove old exclusions.
+There is no engine command to remove them.
+
 ## 1530. Changing the workspace folder could exclude a registered repository
 
 Found while building unit s32-workspacesetting on 2026-11-20.
@@ -21066,3 +21296,25 @@ Captures now go into the browser test output folder unless `LGTM_CAPTURE_WORKSPA
 The input trims the submitted path.
 It releases the submitted draft so a refusal restores the saved value while focus remains in the field.
 The renderer and browser regressions cover that behavior.
+
+## 1539. The preparation detail names the base-branch fallback when it was not used
+
+Found on 2026-11-20 by the third review of unit s31-worktreeprep.
+The fallback sentence is appended whenever no starting commit is recorded and submodules are on (`packages/engine/src/project/preparation.ts`).
+That includes a repository with no `.gitmodules`, where no base-branch trust was used.
+State: Open. Minor.
+
+## 1540. The single-file commit no longer refuses a path that matches a copy pattern
+
+Found on 2026-11-20 by the third review of unit s31-worktreeprep.
+If a repository's committed `.gitignore` un-ignores a copied secret file, that file shows as untracked.
+`project.commit` with that path then commits it, and it appears in agent reviews.
+An agent can do the same with plain Git, so this is a lost second line of defence.
+State: Open. Minor.
+
+## 1541. Thousands of tracked files that match a copy pattern can fail agent file listings
+
+Found on 2026-11-20 by the third review of unit s31-worktreeprep.
+The agent listing passes every tracked name that matches a copy pattern to a second `git ls-files` call (`packages/engine/src/project/git/index.ts`).
+A very large match set could exceed the argument or output limit and fail the listing, file read and context search for agents.
+State: Open. Minor. Low likelihood.

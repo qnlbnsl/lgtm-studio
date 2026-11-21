@@ -18,7 +18,9 @@ export interface Bounded<A> { readonly items: ReadonlyArray<A>; readonly truncat
 export interface Repository { readonly path: string; readonly name: string; readonly commonDirectory: string }
 export interface Branch { readonly name: string; readonly head: string; readonly current: boolean; readonly upstream: string | null }
 export interface Worktree { readonly path: string; readonly head: string | null; readonly branch: string | null; readonly locked: boolean; readonly available: boolean }
+export interface SubmoduleChange { readonly oldHead: string | null; readonly newHead: string | null; readonly indexHead?: string | null }
 export interface Change {
+  readonly submodule?: SubmoduleChange;
   readonly path: string; readonly originalPath: string | null; readonly index: string; readonly worktree: string;
   readonly staged: boolean; readonly unstaged: boolean; readonly conflict: boolean; readonly untracked: boolean;
 }
@@ -27,7 +29,7 @@ export interface Diff {
   readonly binary: boolean; readonly truncated: boolean;
 }
 export interface Commit { readonly head: string; readonly parents: ReadonlyArray<string>; readonly author: string; readonly at: string; readonly title: string }
-export interface CommitFile { readonly path: string; readonly originalPath: string | null; readonly status: string }
+export interface CommitFile { readonly submodule?: SubmoduleChange; readonly path: string; readonly originalPath: string | null; readonly status: string }
 export interface GitState {
   readonly head: string | null; readonly branch: string | null; readonly upstream: string | null;
   readonly mergeHead: string | null;
@@ -58,9 +60,10 @@ export type FileRead =
 export interface DiscardPlan { readonly fingerprint: string; readonly paths: ReadonlyArray<string> }
 export interface PreparedDelivery { readonly delivery: GitReviewDelivery; readonly merged?: { readonly head: string; readonly localSync: string } }
 export interface GitService {
+  excludePreparationFiles(folder: string, patterns: ReadonlyArray<string>): GitOperation<void>;
   mutationIdentity(folder: string): GitOperation<GitMutationIdentity>;
-  readonly contextFiles: (folder: string, query: string) => GitOperation<Bounded<string>>;
-  readonly contextFile: (folder: string, path: string) => GitOperation<void>;
+  readonly contextFiles: (folder: string, query: string, agentRead?: boolean) => GitOperation<Bounded<string>>;
+  readonly contextFile: (folder: string, path: string, agentRead?: boolean) => GitOperation<void>;
   discover(): GitOperation<Bounded<Repository>>;
   createRepository(name: string): GitOperation<Repository>;
   register(folder: string): GitOperation<Repository>;
@@ -88,8 +91,8 @@ export interface GitService {
   commit(folder: string, message: string, path?: string): GitOperation<string>;
   // The Files tab: one folder, one file, or one replaced file at a time. Only
   // tracked and nonignored untracked regular files are listed, read or written.
-  listFolder(folder: string, path?: string): GitOperation<FileListing>;
-  readFile(folder: string, path: string): GitOperation<FileRead>;
+  listFolder(folder: string, path?: string, agentRead?: boolean): GitOperation<FileListing>;
+  readFile(folder: string, path: string, agentRead?: boolean): GitOperation<FileRead>;
   writeFile(folder: string, path: string, version: string, bytes: Uint8Array): GitOperation<string>;
   fetch(folder: string): GitOperation<void>;
   pull(folder: string): GitOperation<void>;

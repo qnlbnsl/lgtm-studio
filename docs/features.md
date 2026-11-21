@@ -1600,6 +1600,17 @@ The standalone mock uses Maya Okafor's sample path.
 Issue 1466 records the fault that led to the request: a repository in a sibling folder could not be registered.
 On 2026-11-20 the owner's own workspace folder was widened by command from one folder of projects to its parent.
 
+## Website controls for repository worktree preparation
+
+State: To build.
+Recorded during unit s31 on 2026-11-20.
+
+The owner can set copied path patterns, submodule initialization and agent instructions through the client application programming interface (API) command `project.repository.preparation.set`.
+Repository reads include those settings.
+The website needs controls to read and change them.
+The owner's approval of their appearance remains required.
+Unit s31 adds no website controls or screen changes.
+
 ## Environment variables that LGTM Studio gives to agents
 
 State: Idea. Requested by the owner on 2026-11-20.
