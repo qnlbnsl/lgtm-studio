@@ -31,6 +31,9 @@ It stays as a reference until the Go programs replace it, and then it is removed
 | 2026-11-25 | A message to a running agent steers its turn, whether the owner or another agent sent it. |
 | 2026-11-25 | A machine proves itself with a key pair. The join token only authorizes the exchange of keys. |
 | 2026-11-25 | Version one drives every harness through the Agent Client Protocol (ACP) only. The software kits of single harnesses wait for version two. |
+| 2026-11-25 | Secrets live in a vault that the server holds. An agent uses a tool that needs a key without ever reading the key. See "Three rulings that later waves carry". |
+| 2026-11-25 | All agents have one source for their memory files, held by the server, so that accounts and machines share it. |
+| 2026-11-25 | Retries of a refused duty back off. After three refusals an investigation agent finds the cause and reports to the project lead. |
 
 ## The three parts and how they connect
 
@@ -374,12 +377,62 @@ The same day's checks of how each harness takes a message during a turn:
 - Codex advertises steering.
 - Cursor steers and queues only in its own terminal program. Over ACP, a second prompt cancels the running turn and starts a new one in the same conversation. The client uses that as steering for Cursor, and it holds a message itself when the message must wait.
 
+## Three rulings that later waves carry
+
+The owner ruled on 45 open issues on 2026-11-25. The rulings are in [docs/issues.md](../issues.md).
+Three of them shape the server and the client, so they are stated here.
+None of them is built in waves 0 or 1. Each names what wave 1 must not make harder.
+
+### A vault on the server, and tools that use a key the agent never reads
+
+This comes from the ruling on issue 326.
+
+- The server holds the secrets of tools, such as the key of a search service.
+- An agent's call to such a tool goes through its client to the server.
+- The server adds the secret to the call. The agent receives the result, never the key.
+- An agent sees the names of the variables of its environment. It does not see the values of the secret ones.
+
+What this asks of wave 1:
+
+- The table of secrets under "Secrets the server holds" is the start of the vault. Its rows carry a kind and an owner from the first version, so that the secrets of tools fit beside the server's own.
+- The link already leaves out "the calls an agent makes through its machine". Those calls are how a tool call reaches the vault, so the link contract keeps room for a call that travels up and an answer that travels down.
+
+Still open: whether the vault is the server's own table or a separate program, which the owner named earlier as OpenBao. Also open is how a tool that runs on the machine, and not on the server, gets its key without the agent being able to read it.
+
+### One source of memory files for all agents
+
+This comes from the ruling on issue 946.
+
+- The memory files of agents are held in one place by the server, possibly as rows in the database.
+- An agent on any machine, under any account of a harness, reads the same memories.
+- The aim is that a change of account, and a fleet of several machines, lose no memory.
+- The owner noted that this may be hard to build.
+
+What this asks of wave 1: nothing is built. The client must not treat the memory folder of a harness on one machine as the record. The record is the server's.
+
+Still open: how the server's memories reach a harness that reads memory from files in a fixed folder, how a memory that an agent writes on a machine travels back, and what happens when two agents write the same memory.
+
+### An investigation agent after three refusals
+
+This comes from the ruling on issue 336.
+
+- A duty that keeps being refused is retried with a growing wait between tries.
+- After three refusals the server starts an investigation agent, which is a new kind of agent.
+- It is a short job in the background. It runs on the account that has the lowest usage.
+- It finds out why the duty is refused and delivers the result to the project lead.
+- The project lead's own context is not filled with the search.
+
+What this asks of wave 1: nothing is built. The count of refusals and the time of the next try are stored in the database, by rule 7 of "Rules that every later part follows".
+
+Still open: which model the investigation agent uses, what it may read, and what happens when the investigation itself fails.
+
 ## What these two waves leave out
 
 - Running an agent. That is the first unit of wave 2.
 - Every service of the contract except `SessionService` and `ClientService`.
 - Byte streams on the link, and the calls an agent makes through its machine.
 - Choosing a machine for work.
+- The vault for the secrets of tools, the one source of memory files, and the investigation agent. See "Three rulings that later waves carry".
 - Several server nodes.
 - A client on Windows.
 - Any import of the old engine's data. The server starts with an empty database.
