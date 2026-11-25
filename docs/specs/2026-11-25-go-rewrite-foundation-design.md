@@ -32,6 +32,7 @@ It stays as a reference until the Go programs replace it, and then it is removed
 | 2026-11-25 | A machine proves itself with a key pair. The join token only authorizes the exchange of keys. |
 | 2026-11-25 | Version one drives every harness through the Agent Client Protocol (ACP) only. The software kits of single harnesses wait for version two. |
 | 2026-11-25 | Secrets live in a vault that the server holds. An agent uses a tool that needs a key without ever reading the key. See "Three rulings that later waves carry". |
+| 2026-11-25 | The vault is OpenBao. It is a service of the compose stack, beside PostgreSQL, and it needs no machine of its own. |
 | 2026-11-25 | All agents have one source for their memory files, held by the server, so that accounts and machines share it. |
 | 2026-11-25 | Retries of a refused duty back off. After three refusals an investigation agent finds the cause and reports to the project lead. |
 
@@ -199,12 +200,20 @@ It carries over how the old engine handles sign-in, with one change.
 Here the sessions are rows of a table, because nothing durable may live outside the database.
 The transaction of the database replaces the temporary file, the rename and the flush.
 
-### Secrets the server holds
+### Secrets live in OpenBao
 
 The server holds a few secrets of its own: its signing key for the link, and later the tokens of hosting accounts and notification carriers.
-They are stored in the database, encrypted with a key from the variable `LGTM_SECRET_KEY`.
-The installer makes that key once.
-A copy of the database alone is then useless for posing as the server, and every server node can be given the same key.
+The owner decided on 2026-11-25 that the vault is OpenBao, as a service of the compose stack beside PostgreSQL.
+The server's own tables hold no secret.
+
+- The folder `src/server/internal/vault/` is the only code that speaks to OpenBao. Every other part asks it for a secret by name.
+- OpenBao keeps its data in the same PostgreSQL, in a database of its own. Nothing durable is then added outside the database.
+- OpenBao unseals itself at start-up from a key file that the installer makes once. No one types a key after a restart.
+- A set-up step of the stack starts OpenBao the first time. It gives the server a credential that reaches only the server's own paths.
+- OpenBao is reachable only inside the stack.
+
+A copy of the database alone is useless for posing as the server, because every secret in it is encrypted under that key file.
+A person who wants OpenBao on a machine of its own points the server at its address. Nothing requires that.
 
 ## Serving the contract
 
@@ -316,6 +325,7 @@ The folder is `deploy/`.
 | Service | What it does |
 |---|---|
 | `postgres` | The database, with its data in a named volume. |
+| `openbao` | The vault. It keeps its data in `postgres`, and it is reachable only inside the stack. |
 | `server` | The Go server. It is reachable only inside the stack. |
 | `web` | A web server that serves the built website and passes the contract's calls on to `server`. |
 
@@ -357,6 +367,7 @@ Each line is a check that someone can run.
 10. A machine whose key the server does not know is refused. A client refuses a server whose key does not match the one it kept.
 11. Events that a machine buffered while the server was down arrive once, in order.
 12. `go test ./...` passes against a real PostgreSQL, and the test of the change feed fails when the lock is removed.
+13. Restarting the whole stack brings OpenBao back unsealed with no one typing a key, and the server reads its signing key from it.
 
 ## Facts checked on 2026-11-25
 
@@ -370,6 +381,8 @@ A throwaway Go program ran each of these on the development machine.
 | PostgreSQL | `github.com/jackc/pgx/v5` 5.13.0 | A write and its feed row in one transaction, and a second connection woke on it. |
 | Terminals | `github.com/creack/pty` 1.1.24 | Ran a shell in a terminal. Linux, macOS and the BSD systems only. |
 | Tools for agents | `github.com/modelcontextprotocol/go-sdk` 1.8.0 | A typed tool answered a call. |
+
+Read in the documentation of OpenBao on the same day, and not run: OpenBao can keep its data in PostgreSQL, and it can unseal itself from a key in a file.
 
 The same day's checks of how each harness takes a message during a turn:
 
@@ -394,10 +407,10 @@ This comes from the ruling on issue 326.
 
 What this asks of wave 1:
 
-- The table of secrets under "Secrets the server holds" is the start of the vault. Its rows carry a kind and an owner from the first version, so that the secrets of tools fit beside the server's own.
+- The vault is OpenBao, and it is part of the compose stack from wave 1. See "Secrets live in OpenBao". The server's own secrets go into it first. Each secret sits under a path that names its kind and its owner, so that the secrets of tools fit beside them later.
 - The link already leaves out "the calls an agent makes through its machine". Those calls are how a tool call reaches the vault, so the link contract keeps room for a call that travels up and an answer that travels down.
 
-Still open: whether the vault is the server's own table or a separate program, which the owner named earlier as OpenBao. Also open is how a tool that runs on the machine, and not on the server, gets its key without the agent being able to read it.
+Still open: how a tool that runs on the machine, and not on the server, gets its key without the agent being able to read it.
 
 ### One source of memory files for all agents
 
@@ -432,7 +445,7 @@ Still open: which model the investigation agent uses, what it may read, and what
 - Every service of the contract except `SessionService` and `ClientService`.
 - Byte streams on the link, and the calls an agent makes through its machine.
 - Choosing a machine for work.
-- The vault for the secrets of tools, the one source of memory files, and the investigation agent. See "Three rulings that later waves carry".
+- The secrets of tools in the vault, the one source of memory files, and the investigation agent. See "Three rulings that later waves carry".
 - Several server nodes.
 - A client on Windows.
 - Any import of the old engine's data. The server starts with an empty database.
