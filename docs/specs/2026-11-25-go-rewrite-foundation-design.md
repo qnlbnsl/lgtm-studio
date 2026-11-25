@@ -33,6 +33,17 @@ It stays as a reference until the Go programs replace it, and then it is removed
 | 2026-11-25 | Version one drives every harness through the Agent Client Protocol (ACP) only. The software kits of single harnesses wait for version two. |
 | 2026-11-25 | Secrets live in a vault that the server holds. An agent uses a tool that needs a key without ever reading the key. See "Three rulings that later waves carry". |
 | 2026-11-25 | The vault is OpenBao. It is a service of the compose stack, beside PostgreSQL, and it needs no machine of its own. |
+| 2026-11-25 | A website hosted on another site than its server gets a session cookie that is not strict. |
+| 2026-11-25 | Memories are kept in the database. A sync process on each client keeps a copy on its machine, and a new client receives them all when it starts. |
+| 2026-11-25 | The owner tells the server when a machine is gone for good. Its agents start again on another machine, each with a report of what happened before. |
+| 2026-11-25 | The owner signs in to a harness account once. The server stores the sign-in and gives each client what it needs when the client starts. |
+| 2026-11-25 | A running product is reached at the address of the server, and its traffic passes through the link to the machine that runs it. |
+| 2026-11-25 | `ReconnectClient` restarts a client that is connected. A client retries at least every 15 seconds and starts no web server. |
+| 2026-11-25 | No certificate needs a public authority. Trust comes from the join token and from the owner's approval of the machine. |
+| 2026-11-25 | A key reaches a shell command through a sandbox with placeholders, starting with the one Claude Code has built in. |
+| 2026-11-25 | One user on a machine is a convenience for now. Later the client runs as a user of its own, apart from the agents, as the server does. |
+| 2026-11-25 | When two agents write the same memory, both writes stand. A later pass reconciles the memories and removes stale ones. |
+| 2026-11-25 | The investigation agent runs the default agent for now. One setting for the whole server names that default. |
 | 2026-11-25 | All agents have one source for their memory files, held by the server, so that accounts and machines share it. |
 | 2026-11-25 | Retries of a refused duty back off. After three refusals an investigation agent finds the cause and reports to the project lead. |
 
@@ -192,6 +203,7 @@ It carries over how the old engine handles sign-in, with one change.
 - The password is checked in constant time. It travels in the request body only.
 - Up to eight sessions exist at once, and each lasts 30 days. A ninth sign-in removes the oldest.
 - A session is a random 256-bit token in a cookie with `HttpOnly` and `SameSite=Strict`. The cookie is `Secure` when the public address is `https`.
+- When the website is served from another site than the server, and that site is listed, the cookie is `SameSite=None` and `Secure` instead. That needs HTTPS.
 - The server stores only a verifier of each token, a creation time, a salt and a binding to the password. The binding uses scrypt with N=65536, r=8 and p=1, as the old engine does.
 - Changing or removing the password ends every session before the server opens its port.
 - The server allows a website on another origin only when that origin is listed. It refuses a page that is neither HTTPS nor loopback.
@@ -296,13 +308,21 @@ A lost connection does not prove that a harness stopped. Wave 2 settles what run
 | Down | State | Approved, renamed or removed. |
 
 `ClientService.ReconnectClient` cannot work as the contract describes it, because the server cannot dial a machine.
-It is an open question below.
+The owner decided on 2026-11-25 that the call restarts a client that is connected.
+A client that lost its connection retries at least every 15 seconds.
+The client starts no web server.
+Waking a sleeping machine through another client on its network waits for version two.
 
 ### Encryption on the link
 
 A machine reaches a loopback address over plain HTTP/2.
 It reaches any other address over HTTPS only, and the client refuses anything else.
 This is the same rule the website follows.
+
+The owner decided on 2026-11-25 that no certificate needs a public authority.
+The join token carries the fingerprint of the server's certificate, so the client trusts that certificate and no other.
+The machine presents a self-signed certificate made from its own key.
+The owner's approval of the machine is what trusts it.
 
 ## The client in wave 1
 
@@ -410,7 +430,7 @@ What this asks of wave 1:
 - The vault is OpenBao, and it is part of the compose stack from wave 1. See "Secrets live in OpenBao". The server's own secrets go into it first. Each secret sits under a path that names its kind and its owner, so that the secrets of tools fit beside them later.
 - The link already leaves out "the calls an agent makes through its machine". Those calls are how a tool call reaches the vault, so the link contract keeps room for a call that travels up and an answer that travels down.
 
-Still open: how a tool that runs on the machine, and not on the server, gets its key without the agent being able to read it.
+A shell command gets its key through a sandbox with placeholders. See "What the research on keys found".
 
 ### One source of memory files for all agents
 
@@ -423,7 +443,9 @@ This comes from the ruling on issue 946.
 
 What this asks of wave 1: nothing is built. The client must not treat the memory folder of a harness on one machine as the record. The record is the server's.
 
-Still open: how the server's memories reach a harness that reads memory from files in a fixed folder, how a memory that an agent writes on a machine travels back, and what happens when two agents write the same memory.
+Decided by the owner on 2026-11-25: a sync process on each client keeps a copy of the memories on its machine, in the folder each harness reads. A new client receives all of them when it starts. A memory that an agent writes travels back to the server through the same process. The aim is one pool for every harness, to be proven when it is built.
+
+Decided by the owner on 2026-11-25: when two agents write the same memory, both writes stand. A later pass, perhaps once a week, goes over the memories, reconciles them and removes stale ones. The idea is in [docs/features.md](../features.md).
 
 ### An investigation agent after three refusals
 
@@ -437,7 +459,74 @@ This comes from the ruling on issue 336.
 
 What this asks of wave 1: nothing is built. The count of refusals and the time of the next try are stored in the database, by rule 7 of "Rules that every later part follows".
 
-Still open: which model the investigation agent uses, what it may read, and what happens when the investigation itself fails.
+No agent starts the investigation agent; the server does. The owner decided on 2026-11-25 that it runs the default agent for now. One setting for the whole server names that default. The models on offer depend on the harnesses that are installed.
+
+Still open: what it may read, and what happens when the investigation itself fails.
+
+## More decisions of 2026-11-25 that later waves carry
+
+None of these is built in waves 0 or 1.
+
+### A machine that is gone for good
+
+- The owner tells the server that a machine is lost. The server does not decide this by itself.
+- Each agent of that machine is started again on another machine.
+- The new agent gets a report of what happened before. The server writes it from the conversation, which the database holds.
+- The new agent starts from the last commit the old one pushed. Files that were never pushed are lost.
+
+### One sign-in for every machine
+
+- The owner signs in to a harness account once, when the server is set up.
+- The server keeps the sign-in in OpenBao.
+- When a client starts, the server sends it the sign-ins it needs, encrypted to the key of that machine.
+- The client puts each sign-in where its harness reads it.
+
+Still to check for each harness: a sign-in renews itself, and a renewal on one machine may end the copies on the others. The client therefore sends a renewed sign-in back to the server.
+
+### Running products through the server
+
+- The website asks the server for a running product. The server passes the traffic down the link to the machine that runs it.
+- Each running product gets a port of its own on the server. A browser treats a different port as a different origin, so the scripts of a product cannot act as the website.
+- The port on the server need not match the port on the machine, because two machines may use the same one.
+- This needs no set-up of names.
+
+### What the research on keys found
+
+The research was done on 2026-11-25 from documentation and source. Nothing was run.
+
+How a key reaches a tool today:
+
+- A local tool program gets it from the settings file of the harness.
+- A remote tool gets it as a header from the same file.
+- A shell command inherits every variable the harness was started with.
+- Claude Code and Codex can run a helper command that prints the headers at the moment of the call. Cursor and Gemini cannot.
+- In every case the key ends in the memory of the harness or in the environment of a tool.
+
+What one user account means:
+
+- The client, the harness and its tools run as one user of the machine.
+- A process can read the environment of another process of the same user.
+- An agent can read every file that user owns, and that includes the private key of the machine.
+- A vault on each client therefore adds convenience and no protection. It can serve as a cache.
+- Only a separate user, or a sandbox, is a real boundary.
+
+Three designs, in the order the research recommends:
+
+1. **The key stays on the server.** The settings of the harness hold only a local address and a placeholder. The call goes up the link, the server adds the key from OpenBao and makes the call, and the agent gets the result. This covers remote tools. It is what "Three rulings that later waves carry" already describes.
+2. **A sandbox with placeholders.** A shell command sees a placeholder, and a proxy swaps in the real key for the hosts that are allowed. This is the only design that covers shell commands and local tool programs. Claude Code has it built in, and `sandbox-runtime` by Anthropic and `nono` do it for any program.
+3. **A vault on each client, filled from a file encrypted to the key of the machine.** The library `filippo.io/age` can encrypt to an Ed25519 key. Under one user this is a cache for design 1 and nothing more.
+
+The owner chose design 2 on 2026-11-25, starting with the sandbox that Claude Code has built in.
+
+- Read in the documentation of Claude Code on 2026-11-25: its setting `sandbox.credentials` can mask a variable or a file, and its proxy puts the real value back for the hosts named in `injectHosts`.
+- That needs the setting `network.tlsTerminate`.
+- It is honoured only from the settings of the user, from managed settings or from the `--settings` flag, never from a repository.
+- It covers sandboxed shell commands only, on Linux, macOS and the Windows Subsystem for Linux.
+- Tool programs run outside that sandbox. Design 1 therefore stays for remote tools: the server makes the call.
+- Codex, Gemini and Cursor have no such setting. They would run under a sandbox program such as `sandbox-runtime` or `nono`.
+- One user on a machine is a convenience for now. Later the client runs as a user of its own, apart from the agents, and an agent then cannot read the files of the client.
+
+Projects that do part of this: `superfly/tokenizer` (Apache License 2.0, Go), `Infisical/agent-vault` (MIT License, Go), `anthropics/sandbox-runtime` (Apache License 2.0, TypeScript), `nolabs-ai/nono` (Apache License 2.0, Rust), `docker/mcp-gateway` (MIT License, Go) and `stacklok/toolhive` (Apache License 2.0, Go).
 
 ## What these two waves leave out
 
@@ -452,14 +541,11 @@ Still open: which model the investigation agent uses, what it may read, and what
 
 ## Open questions
 
-1. How does a website hosted on another site than its server sign in? The session cookie is strict, so the browser does not send it across sites. The compose stack avoids the question by serving both from one address.
-2. Does `ReconnectClient` stay in the contract? A machine dials the server, so the server cannot call an offline machine.
-3. How does the client trust a certificate that no public authority signed? The join token could carry the certificate's fingerprint as it carries the server key's.
-4. What happens to an agent's work when its machine is gone for good?
-5. When one account is used on several machines, does the owner sign in on each one?
-6. Which hostnames do running products get, so that a product's frame may have an origin of its own?
+1. Does Claude Code apply its sandbox when the client drives it through the Agent Client Protocol? Can an agent still reach the real key another way, such as through its tool for reading files? Both are checked before the part is built.
+2. Which sandbox program do Codex, Gemini and Cursor run under?
+3. What may the investigation agent read, and what happens when the investigation itself fails?
 
-Questions 1, 2 and 3 touch wave 1. None of them stops it from being built on one machine with a loopback address.
+None of them touches wave 0 or wave 1.
 
 ## What must change outside this document before builders start
 

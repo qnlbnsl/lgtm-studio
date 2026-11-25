@@ -2631,3 +2631,19 @@ The owner described this on 2026-11-24, after the first-run step "Harnesses" was
 - What the owner sees while a new machine installs and signs in, and what happens when one harness fails.
 - Whether the owner may leave a harness out on one machine.
 - `SECURITY.md` has not been read against copying a sign-in from one machine to another.
+
+## A regular pass that reconciles the memories of agents
+
+The owner raised this on 2026-11-25, while the design of the Go rewrite was reviewed.
+
+- The server holds one pool of memory files for all agents.
+- When two agents write the same memory, both writes stand.
+- A pass, perhaps once a week, goes over the memories.
+- It merges memories that say the same thing, settles those that disagree, and removes those that have gone stale.
+
+### Undecided
+
+- Who runs the pass: an agent of a kind of its own, or the server.
+- Whether the owner sees and approves what the pass changes.
+- How a memory is judged stale.
+- The owner named Hermes as a project to look at for this. What it does has not been read.
