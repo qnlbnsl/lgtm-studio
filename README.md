@@ -543,8 +543,6 @@ See [the adapter findings](docs/research/2026-11-17-auto-permissions.md) for the
 ## Documents
 
 - [AGENTS.md](AGENTS.md): rules for coding agents working in this repository.
-- [SECURITY.md](SECURITY.md): how to report a vulnerability, and the security
-  rules the design must keep.
 - [docs/features.md](docs/features.md): the feature list.
 - [docs/notifications.md](docs/notifications.md): email, ntfy, quiet hours, and notification API actions.
 - [docs/issues.md](docs/issues.md): the running list of problems found.

@@ -7411,3 +7411,22 @@ Found on 2026-11-24, while the first step of the first-run setup was redrawn in 
 14. **The versions and archive addresses are for Linux on x86-64 only.** A machine with another system would need another archive.
 15. **An account row on the Harnesses page has a coloured left edge, and a helper sentence under a subscription at its limit.** Both are older than this change and go against the owner's standing rules.
 16. **The sign-in drawn on the first-run step is a demonstration, and real harnesses differ.** The owner raised this on 2026-11-24. The step shows a code to compare, for every harness. Claude Code and others give a link to open and no code. How OpenCode signs in was not looked up, and a harness may have no proper sign-in at all. The step has to draw what each harness really does before it is built.
+
+## 1632. What the design of the Go rewrite leaves open
+
+Found on 2026-11-25, while `docs/specs/2026-11-25-go-rewrite-foundation-design.md` was written. Nothing here is fixed.
+
+1. **`AGENTS.md` named the wrong language for new code.** This was closed the same day: the owner had the file rewritten short, and it now names Go. Its "Language" section says TypeScript with the Effect library on Node.js 26. The owner decided on 2026-11-24 that the server and the client are written in Go. A builder who reads the file will write the wrong language.
+2. **Rule 4 of `SECURITY.md` kept web sessions in a file.** This was closed the same day: the owner removed `SECURITY.md`, because its rules described the old engine. The design keeps sessions in the database.
+3. **`ClientService.ReconnectClient` cannot work as the contract describes it.** A machine dials the server, so the server cannot call a machine that is offline.
+4. **`WatchMap` and `WatchPreviews` send the whole record or list on each change.** The design gives every `Watch` call one shape: everything first, then one change at a time.
+5. **A plain database sequence does not give commit order.** A check against PostgreSQL 16 showed a reader missing a change that committed late. The change feed must take its positions under a lock, and a test must prove it.
+6. **Cursor does not steer or queue over the Agent Client Protocol (ACP).** A second prompt cancels the running turn, starts a new one in the same conversation, stops that turn's subagents, and leaves the interrupted tool call open. Real steering exists only in Cursor's own terminal program. The owner decided on 2026-11-25 that version one uses ACP only.
+7. **The Go library for ACP speaks protocol version 1.** The old engine asks for version 2 first. Claude and Codex answer a version 2 greeting with a different shape, which the library does not send.
+8. **The terminal library `github.com/creack/pty` has no Windows support.** A client on Windows needs another library or a finished upstream change.
+9. **A website hosted on another site than its server cannot sign in with a strict cookie.** The compose stack avoids this by serving both from one address.
+10. **A client has no way yet to trust a certificate that no public authority signed.**
+11. **The project has no security document.** The owner removed `SECURITY.md` on 2026-11-25. A new one is written when the design has settled. Until then, nothing tells a person how to report a vulnerability.
+12. **Older documents still point at `SECURITY.md` and at numbered rules of the old `AGENTS.md`.** They are `docs/remote-access.md`, `docs/features.md`, two files in `docs/research/`, the older files in `docs/specs/`, the plans in `.plans/`, and comments in `packages/`. The three scope files in `.plans/scopes/engine/` name sections of `AGENTS.md` that no longer exist.
+13. **Two tests of the old engine read `SECURITY.md`.** The test in `packages/engine/test/harnesses/signin-documentation.test.ts` was removed with the file. The test in `packages/contracts/test/permission-scale.test.ts` now reads only the decisions record.
+14. **`README.md` still describes the old engine.**

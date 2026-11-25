@@ -148,7 +148,7 @@ It can write an override that the next agent of that role receives as engine ins
 This is the same file-access exposure as `~/.lgtm/workflows`.
 File checks guard against unsafe paths and accidents.
 They do not separate programs running as the same user.
-The agent sandbox described in `SECURITY.md` remains planned.
+The agent sandbox remains planned.
 
 ## What the prose does not enforce
 

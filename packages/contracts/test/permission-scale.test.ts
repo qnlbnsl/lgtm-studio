@@ -128,10 +128,9 @@ it('s26 r2 M1: status distinguishes an older mapping from an unsupported automat
   expect(autoPermissionStatus({ ...legacy, permissionMapping: { ...legacy.permissionMapping, auto: 'acceptEdits' } })).toMatch(/no separate automatic review mode/);
 });
 
-it('s26 r2 M2: security documentation states the automatic reviewer and folder-ceiling limits', () => {
-  const security = readFileSync(new URL('../../../SECURITY.md', import.meta.url), 'utf8');
+it('s26 r2 M2: the decisions record states the automatic reviewer and folder-ceiling limits', () => {
   const decisions = readFileSync(new URL('../../../.plans/plans/lgtm-engine/decisions.md', import.meta.url), 'utf8');
-  for (const text of [security, decisions]) {
+  for (const text of [decisions]) {
     expect(text).toContain('Only requests the harness raises reach the engine');
     expect(text).toContain('The folder ceiling limits the start folder');
     expect(text).toContain('2026-11-17');
