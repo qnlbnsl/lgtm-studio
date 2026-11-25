@@ -31,3 +31,6 @@ src/frontend/.cert/
 # Session reports stay out of the repository (decided 2026-11-25).
 docs/sessions/
 .session-reports/
+
+# Local selection of agent plugins.
+.skillpack.json
