@@ -1,0 +1,42 @@
+{
+  "name": "@lgtm/engine",
+  "version": "0.0.1",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=26.13 <27"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@agentclientprotocol/claude-agent-acp": "0.99.1",
+    "@agentclientprotocol/codex-acp": "2.6.0",
+    "@effect/platform-node": "catalog:",
+    "@lgtm/contracts": "workspace:*",
+    "@lgtm/t3-effect-acp": "workspace:*",
+    "@lgtm/t3-node-sqlite": "workspace:*",
+    "@lgtm/t3-provider-instance": "workspace:*",
+    "@lydell/node-pty": "1.2.0-beta.15",
+    "effect": "catalog:",
+    "nodemailer": "10.5.0",
+    "parse5": "8.1.0",
+    "ws": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "@lgtm/client": "workspace:*",
+    "@lgtm/testing": "workspace:*",
+    "@types/node": "catalog:",
+    "@types/nodemailer": "8.0.2",
+    "@types/ws": "catalog:",
+    "fast-check": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

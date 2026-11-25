@@ -1,0 +1,71 @@
+#!/bin/sh
+set -eu
+
+# Start a second, separate LGTM Studio service from this checkout, for testing
+# changes to LGTM Studio while the stable service keeps running.
+# It uses its own state folder and its own port, so it shares no projects,
+# accounts or sessions with the stable service.
+
+usage() {
+  echo 'Usage: LGTM_WEB_PASSWORD=<password> bin/lgtm-dev <port> [name]' >&2
+  echo 'Starts a development service from this checkout on 127.0.0.1:<port>.' >&2
+  echo 'Its state folder is ~/.local/state/lgtm-dev/<name>; the name defaults to this folder'"'"'s name.' >&2
+  echo 'Stop it with: bin/lgtm-dev stop [name]' >&2
+  exit 2
+}
+
+# An agent's shell carries the stable service's socket and token, which the
+# client would prefer over the state folder. This script never talks to it.
+unset LGTM_SOCKET LGTM_TOKEN
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+[ $# -ge 1 ] || usage
+name=${2:-$(basename -- "$root")}
+case $name in *[!A-Za-z0-9._-]*|''|.*) echo 'lgtm-dev: the name may hold only letters, digits, dots, hyphens and underscores, and may not start with a dot.' >&2; exit 2;; esac
+state=${HOME:?}/.local/state/lgtm-dev/$name
+stable=${XDG_STATE_HOME:-$HOME/.local/state}/lgtm
+[ "$state" != "$stable" ] || { echo 'lgtm-dev: refusing to use the stable state folder.' >&2; exit 2; }
+
+is_engine() { ps -p "$1" -o args= 2>/dev/null | grep -q 'packages/engine/src/service\.ts'; }
+if [ "$1" = stop ]; then
+  pid=$(cat "$state/engine.pid" 2>/dev/null || true)
+  case $pid in ''|*[!0-9]*) echo "lgtm-dev: no development service is recorded for $name."; exit 0;; esac
+  # Stop only an engine process, and only while this state folder still answers.
+  if LGTM_HOME=$state "$root/bin/lgtm" client.web.settings --input '{}' >/dev/null 2>&1 && is_engine "$pid"; then kill "$pid" 2>/dev/null || true; echo "lgtm-dev: stopped $name (pid $pid)."
+  else echo "lgtm-dev: the recorded process is not a running development service for $name; nothing was stopped."; fi
+  rm -f "$state/engine.pid"
+  exit 0
+fi
+
+port=$1
+case $port in ''|*[!0-9]*|0*) usage;; esac
+[ "$port" -ge 1024 ] && [ "$port" -le 65535 ] || { echo 'lgtm-dev: the port must be between 1024 and 65535.' >&2; exit 2; }
+[ "$port" != 8787 ] || { echo 'lgtm-dev: port 8787 belongs to the stable service; choose another.' >&2; exit 2; }
+[ -n "${LGTM_WEB_PASSWORD:-}" ] || { echo 'lgtm-dev: set LGTM_WEB_PASSWORD for the development service.' >&2; exit 2; }
+
+# The client refuses a socket below a folder that others can write to.
+mkdir -p "$HOME/.local/state/lgtm-dev" && chmod 700 "$HOME/.local/state/lgtm-dev"
+( cd "$root" && pnpm --filter @lgtm/studio build >/dev/null 2>&1 ) || { echo 'lgtm-dev: the website build failed; run pnpm install first.' >&2; exit 1; }
+
+export LGTM_HOME=$state
+settings() { "$root/bin/lgtm" client.web.settings --input '{}' 2>/dev/null; }
+wait_ready() { n=0; until settings >/dev/null; do n=$((n + 1)); [ "$n" -lt 60 ] || { echo 'lgtm-dev: the service did not answer:' >&2; "$root/bin/lgtm" client.web.settings --input '{}' >&2 || true; exit 1; }; sleep 1; done; }
+running_pid() { "$root/bin/lgtm" serve --detach 2>&1 | sed -n 's/.*pid \([0-9][0-9]*\).*/\1/p' | head -n 1; }
+
+pid=$(running_pid); wait_ready
+# "already running" prints no process number; the recorded one still holds.
+[ -n "$pid" ] || pid=$(cat "$state/engine.pid" 2>/dev/null || true)
+case $pid in ''|*[!0-9]*) pid='';; *) echo "$pid" > "$state/engine.pid";; esac
+if ! settings | grep -q "\"port\": $port,"; then
+  # Keep every other web setting; replace only the port.
+  changed=$(settings | tr -d '\n' | sed -e 's/"requestId": "[^"]*",//' -e 's/,[[:space:]]*"serverState": "[^"]*"//' -e "s/\"port\": [0-9]*/\"port\": $port/")
+  "$root/bin/lgtm" client.web.settings.set --input "{\"settings\":$changed}" >/dev/null
+  # A port change applies at the next start.
+  [ -n "$pid" ] && is_engine "$pid" || { echo 'lgtm-dev: the port is saved; restart the development service by hand to apply it.' >&2; exit 1; }
+  kill "$pid"; n=0; while kill -0 "$pid" 2>/dev/null; do n=$((n + 1)); [ "$n" -lt 30 ] || break; sleep 1; done
+  pid=$(running_pid); wait_ready
+fi
+unset LGTM_WEB_PASSWORD
+state_now=$(settings | sed -n 's/.*"serverState": "\([a-z-]*\)".*/\1/p')
+[ -z "$pid" ] || echo "$pid" > "$state/engine.pid"
+echo "Development service for $name: http://127.0.0.1:$port/ (state $state_now, pid $pid, data in $state, log in $state/service.log)"
+[ "$state_now" = running ] || { echo 'lgtm-dev: the web server is not running; see the state above.' >&2; exit 1; }

@@ -1,0 +1,458 @@
+import { deletedEvent } from '../project/deleted.ts';
+import type { AgentChoice, AgentConfiguration } from "@lgtm/contracts";
+import { configurationMatches } from "../runner/choices.ts";
+import { safeStartFailure, type StartFailure } from "@lgtm/contracts/startFailure";
+import {
+  EventSequence as EventSequenceSchema, eventEffect, projectTeamGroup, type ProjectView,
+  type ProjectRequestLink, type QuestionMetadata, type Account, type Actor, type Caller, type PermissionAction, type AgentId, type Delivery, type Event, type EventEnvelope, type EventSequence, type LifecycleState,
+  pieceNamespaces, EngineEvent, type PieceNamespace, type PermissionOption, type SessionReference, type WaitMember,
+} from "@lgtm/contracts";
+import * as Schema from "effect/Schema";
+import { guardPiece } from "../pieces/guardPiece.ts";
+import { pieceViews, type PieceView } from "../pieces/viewTables.ts";
+
+// The engine views. Every record keeps the plain data the log holds, so a
+// client can read it without the log. Nothing here is a second source of
+// truth: the log is, and `rebuild` folds it from sequence 1.
+interface AgentRow {
+  readonly agentId: AgentId;
+  readonly name: string;
+  readonly role: string;
+  readonly groups: ReadonlyArray<string>;
+  readonly parent: Actor;
+  readonly harness: string;
+  readonly account: string;
+  readonly model?: string;
+  readonly effort?: string;
+  readonly configuration?: AgentConfiguration;
+  readonly permission: string;
+  readonly mode?: string;
+  readonly folder: string;
+  readonly runMode: string;
+  readonly state: LifecycleState;
+  readonly startFailure?: StartFailure | undefined;
+  readonly session?: SessionReference;
+  readonly protocolVersion?: number;
+  readonly reloadable?: boolean;
+  // Fix round 1, F8 and row 67: true from the sending of a compact delivery
+  // until that turn ends or the agent stops working.
+  readonly compacting: boolean;
+  readonly capacityHeld: boolean;
+}
+
+interface RequestTimes {
+  readonly sourceSequence: EventSequence;
+  readonly openedAt: EventEnvelope["occurredAt"];
+  readonly closedSequence?: EventSequence;
+  readonly answeredAt?: EventEnvelope["occurredAt"];
+}
+
+interface RequestRow extends RequestTimes, ProjectRequestLink {
+  readonly action?: PermissionAction;
+  readonly permissionRequestId: string;
+  readonly agentId: AgentId;
+  readonly status: "open" | "answered" | "cancelled";
+  readonly holder: Actor;
+  readonly deliveryId: string;
+  readonly toolCallId: string;
+  readonly description: string;
+  readonly options: ReadonlyArray<PermissionOption>;
+  readonly settingsWrite: boolean;
+  readonly answer?: { readonly _tag: "selected"; readonly optionId: string } | { readonly _tag: "cancelled" };
+  readonly answeredBy?: Caller;
+  readonly reason?: string;
+}
+
+interface QuestionRow extends RequestTimes, QuestionMetadata {
+  readonly projectApprovalOutcome?: import("@lgtm/contracts").ProjectApprovalOutcome;
+  readonly questionId: string;
+  readonly agentId: AgentId;
+  readonly status: "open" | "answered";
+  readonly holder: Actor;
+  readonly deliveryId: string;
+  readonly text: string;
+  readonly answer?: string;
+  readonly answeredBy?: Actor;
+  readonly answerDeliveryId?: string;
+}
+
+interface WaitRow {
+  readonly waitId: string;
+  readonly agentId: AgentId;
+  readonly members: ReadonlyArray<AgentId>;
+  readonly mode: "any" | "all";
+  readonly blocking: boolean;
+  // Rows 25 and 50: the sequence of the event that opened the wait.
+  readonly since: EventSequence;
+  readonly status: "open" | "satisfied" | "cancelled";
+  readonly resolved: ReadonlyArray<WaitMember>;
+  readonly reason?: string;
+}
+
+type DeliveryRow = Delivery & {
+  readonly status: "queued" | "sent" | "accepted" | "returned" | "withdrawn";
+  readonly method?: string;
+  readonly reason?: string;
+};
+
+type AccountRow = Account & {
+  readonly signedIn?: boolean;
+  readonly status: "available" | "out-of-usage" | "needs-sign-in";
+  readonly resetAt?: number;
+  readonly reason?: string;
+};
+
+export interface State {
+  readonly client: unknown;
+  readonly board: unknown;
+  readonly roles: unknown;
+  readonly project: unknown;
+  readonly sequence: EventSequence;
+  readonly agents: Readonly<Record<string, AgentRow>>;
+  readonly threads: Readonly<Record<string, ReadonlyArray<EventEnvelope>>>;
+  readonly requests: Readonly<Record<string, RequestRow>>;
+  readonly questions: Readonly<Record<string, QuestionRow>>;
+  readonly waits: Readonly<Record<string, WaitRow>>;
+  readonly deliveries: Readonly<Record<string, DeliveryRow>>;
+  readonly accounts: Readonly<Record<string, AccountRow>>;
+}
+
+const zero = Schema.decodeUnknownSync(EventSequenceSchema)(0);
+
+// Identities are any nonempty string, so `constructor`, `toString` and
+// `__proto__` are valid keys. Every keyed view is therefore a record without
+// a prototype: a key is present only when this reducer wrote it, and writing
+// `__proto__` makes an ordinary own property instead of changing a prototype.
+type Keyed<T> = Readonly<Record<string, T>>;
+
+const keyed = <T>(): Keyed<T> => Object.create(null) as Keyed<T>;
+
+export const emptyViews = (views: Readonly<Record<PieceNamespace, PieceView>> = pieceViews): State => ({
+  client: guardPiece("views", "client", () => views.client.empty(), undefined),
+  board: guardPiece("views", "board", () => views.board.empty(), undefined),
+  roles: guardPiece("views", "roles", () => views.roles.empty(), undefined),
+  project: guardPiece("views", "project", () => views.project.empty(), undefined),
+  sequence: zero, agents: keyed(), threads: keyed(), requests: keyed(), questions: keyed(), waits: keyed(),
+  deliveries: keyed(), accounts: keyed(),
+});
+
+// The agent whose thread an event belongs to. `DeliveryQueued` names its
+// agent only inside the delivery, so the log's agent column misses it
+// (issue 31). Account and harness events belong to no thread.
+const engineTags = new Set<string>(EngineEvent.members.map((member) => member.fields._tag.schema.literal));
+export const threadAgent = (event: Event): AgentId | undefined =>
+  !engineTags.has(event._tag) ? undefined : event._tag === "DeliveryQueued" ? event.delivery.target : "agentId" in event ? event.agentId : undefined;
+
+const lookup = <T>(record: Keyed<T>, key: string): T | undefined =>
+  Object.hasOwn(record, key) ? record[key] : undefined;
+
+const put = <T>(record: Keyed<T>, key: string, value: T): Keyed<T> => {
+  const next = Object.assign(Object.create(null) as Record<string, T>, record);
+  next[key] = value;
+  return next;
+};
+
+const omit = <T>(record: Keyed<T>, key: string): Keyed<T> => {
+  const next = Object.assign(Object.create(null) as Record<string, T>, record);
+  delete next[key];
+  return next;
+};
+
+// Update a record that exists. A stored history may name a record whose
+// opening event is missing (issue 44); the projection stays total and
+// leaves such an event out of that view, the same way live and on rebuild.
+const change = <T>(record: Keyed<T>, key: string, update: (row: T) => T): Keyed<T> => {
+  const row = lookup(record, key);
+  return row === undefined ? record : put(record, key, update(row));
+};
+
+// The lifecycle follows the contracts' event table, so this reducer and the
+// state machine cannot disagree. An event the table calls invalid in the
+// current state changes nothing: the engine refuses such events before they
+// are written, and a stored history is never rejected here.
+export const nextState = (current: LifecycleState, event: Event): LifecycleState => {
+  const effect = eventEffect(current._tag, event._tag);
+  switch (effect) {
+    case "invalid":
+    case "keep":
+    case "paused": return current;
+    case "transition": return event._tag === "StateChanged" ? event.state : current;
+    case "interrupted": return event._tag === "AgentInterrupted"
+      ? { _tag: "interrupted", previous: event.previous }
+      : current;
+    case "starting": return { _tag: "starting" };
+    case "working": return { _tag: "working" };
+    case "idle": return { _tag: "idle" };
+    case "crashed": return { _tag: "crashed" };
+    case "stopped": return { _tag: "stopped" };
+  }
+};
+
+const withoutReason = (row: DeliveryRow): DeliveryRow => {
+  const { reason: _reason, ...rest } = row;
+  return rest;
+};
+
+const desiredOf = (row: AgentRow): AgentChoice => row.configuration?.desired ?? {
+  ...(row.model === undefined ? {} : { model: row.model }), ...(row.effort === undefined ? {} : { effort: row.effort }),
+};
+const agentsAfter = (state: State, event: Event): State["agents"] => {
+  switch (event._tag) {
+    case "AgentStarted": return put(state.agents, event.agentId, {
+      agentId: event.agentId, name: event.name, role: event.role, groups: event.groups, parent: event.parent,
+      harness: event.harness, account: event.account,
+      ...(event.model === undefined ? {} : { model: event.model }),
+      ...(event.effort === undefined ? {} : { effort: event.effort }),
+      permission: event.permission, folder: event.folder, runMode: event.runMode, state: { _tag: "starting" },
+      compacting: false, capacityHeld: false,
+      configuration: { desired: { ...(event.model === undefined ? {} : { model: event.model }), ...(event.effort === undefined ? {} : { effort: event.effort }) }, status: "pending" },
+    });
+    case "SessionOpened": return change(state.agents, event.agentId, (row) => ({
+      ...row, state: nextState(row.state, event), startFailure: undefined, session: event.session,
+      protocolVersion: event.protocolVersion, reloadable: event.reloadable,
+      configuration: {
+        ...(row.configuration?.revision === undefined ? {} : { revision: row.configuration.revision }), desired: desiredOf(row),
+        ...(event.configuration === undefined ? {} : { applied: event.configuration }),
+        // An old session event cannot prove a requested model or effort.
+        // With no requested axes there is no outstanding configuration work.
+        status: configurationMatches(row.harness, desiredOf(row), event.configuration ?? {}) ? "applied" : "pending",
+      },
+    }));
+    case "AgentConfigurationChosen": return change(state.agents, event.agentId, (row) => ({
+      ...row, ...event.desired, configuration: { revision: event.revision, desired: event.desired, status: "pending",
+        ...(row.configuration?.applied === undefined ? {} : { applied: row.configuration.applied }) },
+    }));
+    case "AgentConfigurationObserved": return change(state.agents, event.agentId, (row) => {
+      const configuration = row.configuration ?? { desired: desiredOf(row), status: "pending" as const };
+      const matches = configurationMatches(row.harness, configuration.desired, event.applied);
+      return { ...row, configuration: { ...configuration, applied: event.applied,
+        status: configuration.status === "applied" && !matches ? "pending" : configuration.status } };
+    });
+    case "AgentConfigurationApplied": return change(state.agents, event.agentId, (row) => event.revision !== row.configuration?.revision ? row : ({
+      ...row, configuration: { ...row.configuration!, desired: desiredOf(row), applied: event.applied, status: "applied" },
+    }));
+    case "AgentConfigurationRefused": return change(state.agents, event.agentId, (row) => event.revision !== row.configuration?.revision ? row : ({
+      ...row, configuration: { desired: desiredOf(row), ...(event.revision === undefined ? {} : { revision: event.revision }),
+        ...(event.applied === undefined ? {} : { applied: event.applied }), status: event.status, reason: event.reason },
+    }));
+    case "project.TeamDeleted": {
+      const view = state.project as ProjectView, team = lookup(view.teams, JSON.stringify([event.projectId, event.teamId]));
+      if (team === undefined) return state.agents;
+      const group = team.group ?? projectTeamGroup(event.projectId, event.teamId);
+      return Object.fromEntries(Object.entries(state.agents).map(([id, agent]) => [id,
+        lookup(view.agentProjects, id) === event.projectId && agent.groups.includes(group)
+          ? { ...agent, groups: agent.groups.filter((label) => label !== group) } : agent]));
+    }
+    case "AgentGrouped": return change(state.agents, event.agentId, (row) => ({ ...row, groups: event.groups }));
+    case "ModeChanged": return change(state.agents, event.agentId, (row) => ({
+      ...row, mode: event.mode, permission: event.level,
+    }));
+    case "DeliverySent": return change(state.agents, event.agentId, (row) => {
+      const next = nextState(row.state, event);
+      const compacting = next._tag === "working" && lookup(state.deliveries, event.deliveryId)?.content._tag === "compact";
+      return next === row.state && compacting === row.compacting ? row : { ...row, state: next, compacting };
+    });
+    case "AgentStartFailed": return change(state.agents, event.agentId, (row) => ({
+      ...row, state: nextState(row.state, event), startFailure: safeStartFailure(event.reason),
+    }));
+    case "DeliveryHeld":
+    case "DeliveryReleased":
+    case "TurnStarted":
+    case "TurnEnded":
+    case "StateChanged":
+    case "AgentCrashed":
+    case "AgentInterrupted":
+    case "AgentReloadFailed":
+    case "AgentStopped": return change(state.agents, event.agentId, (row) => {
+      const next = nextState(row.state, event);
+      const compacting = row.compacting && event._tag !== "TurnEnded" && next._tag === "working";
+      const capacityHeld = event._tag === "DeliveryHeld" ? true
+        : event._tag === "DeliveryReleased" || event._tag === "AgentStopped" || event._tag === "AgentCrashed" ? false : row.capacityHeld;
+      return next === row.state && compacting === row.compacting && capacityHeld === row.capacityHeld
+        && !["AgentStopped", "AgentCrashed", "AgentInterrupted", "AgentReloadFailed"].includes(event._tag)
+        ? row : { ...row, state: next, compacting, capacityHeld,
+          ...(["AgentStopped", "AgentCrashed", "AgentInterrupted", "AgentReloadFailed"].includes(event._tag)
+            ? { configuration: { ...(row.configuration?.revision === undefined ? {} : { revision: row.configuration.revision }), desired: desiredOf(row), status: "pending" as const } } : {}) };
+    });
+    default: return state.agents;
+  }
+};
+
+const withoutAction = ({ action: _action, ...row }: RequestRow) => row;
+export const permissionAction = (event: PermissionAction): PermissionAction => Object.fromEntries(
+  ["toolKind", "toolInput", "locations", "inputRedacted", "inputTruncated"].flatMap((key) => {
+    const value = event[key as keyof PermissionAction];
+    return value === undefined ? [] : [[key, value]];
+  }),
+);
+const requestsAfter = (state: State, { event, sequence, occurredAt }: EventEnvelope): State["requests"] => {
+  switch (event._tag) {
+    case "PermissionRequested": return put(state.requests, event.permissionRequestId, {
+      permissionRequestId: event.permissionRequestId, agentId: event.agentId, status: "open", holder: event.holder,
+      sourceSequence: sequence, openedAt: occurredAt,
+      deliveryId: event.deliveryId, toolCallId: event.toolCallId, description: event.description,
+      options: event.options, settingsWrite: event.settingsWrite,
+      ...(event.projectId === undefined ? {} : { projectId: event.projectId }),
+      ...(event.taskId === undefined ? {} : { taskId: event.taskId }),
+      ...(event.sprintId === undefined ? {} : { sprintId: event.sprintId }),
+      ...(Object.keys(permissionAction(event)).length === 0 ? {} : { action: permissionAction(event) }),
+    });
+    case "PermissionMoved": return change(state.requests, event.permissionRequestId, (row) => ({
+      ...row, holder: event.to, deliveryId: event.deliveryId,
+    }));
+    case "PermissionAnswered": return change(state.requests, event.permissionRequestId, (row) => ({
+      ...withoutAction(row), status: "answered", closedSequence: sequence, answeredAt: occurredAt, answer: event.answer, answeredBy: event.answeredBy,
+    }));
+    case "PermissionCancelled": return change(state.requests, event.permissionRequestId, (row) => ({
+      ...withoutAction(row), status: "cancelled", closedSequence: sequence, answeredAt: occurredAt, reason: event.reason,
+    }));
+    default: return state.requests;
+  }
+};
+
+const questionsAfter = (state: State, { event, sequence, occurredAt }: EventEnvelope): State["questions"] => {
+  switch (event._tag) {
+    case "QuestionAsked": return put(state.questions, event.questionId, {
+      questionId: event.questionId, agentId: event.agentId, status: "open", holder: event.holder,
+      deliveryId: event.deliveryId, text: event.text, sourceSequence: sequence, openedAt: occurredAt,
+      ...Object.fromEntries(["title", "recommendation", "proposedAnswer", "projectId", "taskId", "sprintId", "projectApproval", "projectApprovalEffect"]
+        .flatMap((key) => event[key as keyof typeof event] === undefined ? [] : [[key, event[key as keyof typeof event]]])),
+    });
+    case "QuestionMoved": return change(state.questions, event.questionId, (row) => ({
+      ...row, holder: event.to, deliveryId: event.deliveryId,
+    }));
+    case "QuestionAnswered": return change(state.questions, event.questionId, (row) => ({
+      ...row, status: "answered", closedSequence: sequence, answeredAt: occurredAt, answer: event.text, answeredBy: event.answeredBy, answerDeliveryId: event.deliveryId,
+      ...(event.projectApprovalOutcome === undefined ? {} : { projectApprovalOutcome: event.projectApprovalOutcome }),
+    }));
+    default: return state.questions;
+  }
+};
+
+const wasResolved = (resolved: ReadonlyArray<WaitMember>, member: WaitMember): ReadonlyArray<WaitMember> =>
+  [...resolved.filter((row) => row.agentId !== member.agentId), member];
+
+const waitsAfter = (state: State, { sequence, event }: EventEnvelope): State["waits"] => {
+  switch (event._tag) {
+    case "WaitOpened": return put(state.waits, event.waitId, {
+      waitId: event.waitId, agentId: event.agentId, members: event.members, mode: event.mode,
+      blocking: event.blocking, since: sequence, status: "open", resolved: [],
+    });
+    case "WaitMemberResolved": return change(state.waits, event.waitId, (row) => ({
+      ...row, resolved: wasResolved(row.resolved, event.member),
+    }));
+    case "WaitSatisfied": return change(state.waits, event.waitId, (row) => ({
+      ...row, status: "satisfied", resolved: event.members,
+    }));
+    case "WaitCancelled": return change(state.waits, event.waitId, (row) => ({
+      ...row, status: "cancelled", reason: event.reason,
+    }));
+    default: return state.waits;
+  }
+};
+
+const deliveriesAfter = (state: State, event: Event): State["deliveries"] => {
+  switch (event._tag) {
+    case "AgentStarted": return event.firstPromptDelivery === undefined
+      ? state.deliveries
+      : put(state.deliveries, event.firstPromptDelivery.id, { ...event.firstPromptDelivery, status: "queued" });
+    case "DeliveryQueued": return put(state.deliveries, event.delivery.id, { ...event.delivery, status: "queued" });
+    case "DeliverySent": return change(state.deliveries, event.deliveryId, (row) => ({
+      ...withoutReason(row), status: "sent", method: event.method,
+    }));
+    case "DeliveryAccepted": return change(state.deliveries, event.deliveryId, (row) => ({
+      ...withoutReason(row), status: "accepted",
+    }));
+    case "DeliveryRequeued": return change(state.deliveries, event.deliveryId, (row) => ({
+      ...row, status: "queued", reason: event.reason,
+    }));
+    case "DeliveryReturned": return change(state.deliveries, event.deliveryId, (row) => ({
+      ...row, status: "returned", reason: event.reason,
+    }));
+    case "DeliveryWithdrawn": return change(state.deliveries, event.deliveryId, (row) => ({
+      ...row, status: "withdrawn", reason: event.reason,
+    }));
+    default: return state.deliveries;
+  }
+};
+
+// Whether an account is usable is separate from whether an agent resumed. An
+// account becoming available leaves paused agents and queued deliveries as
+// they are: the successful reload logs its own state change (rows 28 and 66).
+const accountsAfter = (state: State, event: Event): State["accounts"] => {
+  switch (event._tag) {
+    case "AccountChanged": {
+      if (event.account === undefined) return omit(state.accounts, event.accountId);
+      const existing = lookup(state.accounts, event.accountId);
+      // An edit keeps what the log said about the account's usability.
+      return put(state.accounts, event.accountId, {
+        ...event.account,
+        status: existing?.status ?? "available",
+        ...(existing?.signedIn === undefined || existing.harness !== event.account.harness
+          || existing.home !== event.account.home || existing.secret !== event.account.secret
+          || JSON.stringify(existing.environment) !== JSON.stringify(event.account.environment)
+          ? {} : { signedIn: existing.signedIn }),
+        ...(existing?.resetAt === undefined ? {} : { resetAt: existing.resetAt }),
+        ...(existing?.reason === undefined ? {} : { reason: existing.reason }),
+      });
+    }
+    case "SessionOpened": {
+      const agent = state.agents[event.agentId];
+      return agent === undefined ? state.accounts : change(state.accounts, agent.account, row => ({ ...row, signedIn: true }));
+    }
+    case "AccountNeedsSignIn": return change(state.accounts, event.accountId, ({ resetAt: _resetAt, ...row }) => ({
+      ...row, signedIn: false, status: "needs-sign-in", reason: event.reason,
+    }));
+    case "AccountOutOfUsage": return change(state.accounts, event.accountId, ({ reason: _reason, resetAt: _resetAt, ...row }) => ({
+      ...row, status: "out-of-usage", ...(event.resetAt === undefined ? {} : { resetAt: event.resetAt }),
+    }));
+    case "AccountAvailable": return change(state.accounts, event.accountId, ({ reason: _reason, resetAt: _resetAt, signedIn, ...row }) => ({
+      ...row, status: "available", ...(event.cause === "owner cleared" || signedIn === undefined ? {} : { signedIn }),
+    }));
+    default: return state.accounts;
+  }
+};
+
+// Live publication and rebuilding use this same pure fold.
+export const applyWith = (state: State, envelope: EventEnvelope, views: Readonly<Record<PieceNamespace, PieceView>> = pieceViews): State => {
+  const event = envelope.event;
+  // One admission gate protects every core and piece fold, live and replayed.
+  if (deletedEvent(state, event)) return { ...state, sequence: envelope.sequence };
+  const owner = threadAgent(event);
+  const pieces = { client: state.client, board: state.board, roles: state.roles, project: state.project };
+  for (const namespace of pieceNamespaces) {
+    pieces[namespace] = guardPiece("views", namespace, () => views[namespace].reduce(state[namespace], event, envelope.sequence, envelope.occurredAt), state[namespace]);
+  }
+  const next: State = {
+    ...pieces,
+    sequence: envelope.sequence,
+    agents: agentsAfter(state, event),
+    threads: owner === undefined
+      ? state.threads
+      : put(state.threads, owner, [...(lookup(state.threads, owner) ?? []), envelope]),
+    requests: requestsAfter(state, envelope),
+    questions: questionsAfter(state, envelope),
+    waits: waitsAfter(state, envelope),
+    deliveries: deliveriesAfter(state, event),
+    accounts: accountsAfter(state, event),
+  };
+  for (const namespace of pieceNamespaces) {
+    pieces[namespace] = guardPiece("views", namespace, () => {
+      const observe = views[namespace].observe;
+      return observe === undefined ? next[namespace] : observe(next, event, envelope.sequence);
+    }, next[namespace]);
+  }
+  const result = { ...next, ...pieces };
+  if (event._tag !== "project.Deleted") return result;
+  const agents = new Set<string>(event.agentIds);
+  const keep = <T>(rows: Keyed<T>, test: (row: T, key: string) => boolean): Keyed<T> => Object.fromEntries(Object.entries(rows).filter(([key, row]) => test(row, key)));
+  return { ...result,
+    agents: keep(result.agents, (_, id) => !agents.has(id)), threads: keep(result.threads, (_, id) => !agents.has(id)),
+    requests: keep(result.requests, (row) => !agents.has(row.agentId) && row.projectId !== event.projectId),
+    questions: keep(result.questions, (row) => !agents.has(row.agentId) && row.projectId !== event.projectId),
+    waits: keep(result.waits, (row) => !agents.has(row.agentId)),
+    deliveries: keep(result.deliveries, (row) => !agents.has(row.target)) };
+
+};
+
+export const apply = (state: State, envelope: EventEnvelope): State => applyWith(state, envelope);

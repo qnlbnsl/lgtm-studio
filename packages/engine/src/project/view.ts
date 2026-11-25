@@ -1,0 +1,254 @@
+import type { Event, Workspace, ProjectRecord, ProjectView, ProjectTaskRecord, TaskHistoryEntry } from "@lgtm/contracts"
+import type { Snapshot } from "../commands/internal.ts"
+
+export const own = <T>(rows: Readonly<Record<string, T>>, id: string): T | undefined => Object.hasOwn(rows, id) ? rows[id] : undefined
+export const projectKey = (projectId: string, id: string) => JSON.stringify([projectId, id])
+export const mockScreenKey = (projectId: string, revisionId: string, screenId: string) => JSON.stringify([projectId, revisionId, screenId])
+export const projectView = (snapshot: Snapshot): ProjectView => snapshot.project as ProjectView
+const empty = <T>(): Readonly<Record<string, T>> => Object.create(null)
+export const emptyProject = (): ProjectView => ({ gitAttempts: empty(), gitEvidence: empty(), gitReviews: empty(), taskNotifications: empty(), fileSaveNotices: empty(), setup: { step: "welcome" }, mockScreenReviews: empty(), mockRevisions: empty(), mockHeads: empty(), mockApprovals: empty(), designs: empty(), designHeads: empty(), creations: empty(), repositories: empty(), locations: empty(), workspaces: empty(), projects: empty(), teams: empty(), sprints: empty(), tasks: empty(), deletedTasks: empty(), agentProjects: empty(), parents: empty() })
+const change = <T>(rows: Readonly<Record<string, T>>, id: string, f: (row: T) => T) => {
+  const row = own(rows, id)
+  return row === undefined ? rows : { ...rows, [id]: f(row) }
+}
+// The fourth reducer argument is the persisted envelope time. Replay and live
+// publication must never create a new clock value for a task's history.
+// Keep the latest visit to each stage, so timing records stay bounded.
+const enterStage = (row: ProjectRecord, stage: NonNullable<ProjectRecord['stage']>, at: ProjectRecord['createdAt']): ProjectRecord => {
+  if (stage === row.stage || at === undefined) return { ...row, stage }
+  const times = (row.phaseTimes ?? []).map(time => time.phase === row.stage && time.end === undefined ? { ...time, end: at } : time)
+  return { ...row, stage, phaseTimes: [...times.filter(time => time.phase !== stage), { phase: stage, start: at }] }
+}
+
+export const projectAfter = (view: ProjectView, event: Event, sequence: number, occurredAt: number): ProjectView => {
+  const at = occurredAt as TaskHistoryEntry["at"]
+  const seq = sequence as TaskHistoryEntry["sequence"]
+  switch (event._tag) {
+    case "project.MockScreensSeen": {
+      const reviews = { ...view.mockScreenReviews }
+      for (const version of event.versions) {
+        const key = mockScreenKey(event.projectId, version.revisionId, version.screenId)
+        const row = own(reviews, key) ?? { projectId: event.projectId, ...version, comments: [] }
+        reviews[key] = { ...row, seen: { author: event.author, at } }
+      }
+      return { ...view, mockScreenReviews: reviews }
+    }
+    case "project.MockScreenSeen": {
+      const key = mockScreenKey(event.projectId, event.revisionId, event.screenId)
+      const row = own(view.mockScreenReviews, key) ?? { projectId: event.projectId, revisionId: event.revisionId, screenId: event.screenId, comments: [] }
+      return { ...view, mockScreenReviews: { ...view.mockScreenReviews, [key]: { ...row, seen: { author: event.author, at } } } }
+    }
+    case "project.MockScreenApprovalSet": {
+      const key = mockScreenKey(event.projectId, event.revisionId, event.screenId)
+      const row = own(view.mockScreenReviews, key) ?? { projectId: event.projectId, revisionId: event.revisionId, screenId: event.screenId, comments: [] }
+      return { ...view, mockScreenReviews: { ...view.mockScreenReviews, [key]: { ...row,
+        approval: { approved: event.approved, author: event.author, at } } } }
+    }
+    case "project.MockScreenCommented": {
+      const key = mockScreenKey(event.projectId, event.revisionId, event.screenId)
+      const row = own(view.mockScreenReviews, key) ?? { projectId: event.projectId, revisionId: event.revisionId, screenId: event.screenId, comments: [] }
+      return { ...view, mockScreenReviews: { ...view.mockScreenReviews, [key]: { ...row,
+        comments: [...row.comments, { commentId: event.commentId, author: event.author, text: event.text, at }] } } }
+    }
+    case "project.GitAttempted": return { ...view, gitAttempts: { ...view.gitAttempts,
+      [projectKey(event.attempt.caller._tag === "owner" ? "owner" : `agent:${event.attempt.caller.agentId}`, event.attempt.requestId)]: event.attempt } }
+    case "project.GitFinished": {
+      const key = projectKey(event.caller._tag === "owner" ? "owner" : `agent:${event.caller.agentId}`, event.operationRequestId)
+      const { [key]: _finished, ...gitAttempts } = view.gitAttempts
+      return { ...view, gitAttempts }
+    }
+    case "project.DesignRecorded": {
+      const { _tag, ...record } = event
+      return { ...view, designs: { ...view.designs, [projectKey(event.design.repoId, event.revisionId)]: { ...record, at } },
+        designHeads: { ...view.designHeads, [event.design.repoId]: event.revisionId } }
+    }
+    case "project.SetupAdvanced": {
+      const steps = ["welcome", "found", "project"]
+      return steps.indexOf(event.step) > steps.indexOf(view.setup.step) && view.setup.completedAt === undefined ? { ...view, setup: { ...view.setup, step: event.step } } : view
+    }
+    case "project.SetupCompleted": return view.setup.completedAt !== undefined ? view : { ...view, setup: { step: "project", projectId: event.projectId, completedAt: at } }
+    case "project.MockRecorded": {
+      const { _tag, ...revision } = event
+      return { ...view, mockHeads: { ...view.mockHeads, [event.projectId]: event.revisionId },
+        mockRevisions: { ...view.mockRevisions, [projectKey(event.projectId, event.revisionId)]: { ...revision, at } } }
+    }
+    case "project.MockApproved": {
+      const { _tag, ...approval } = event
+      return { ...view, mockApprovals: { ...view.mockApprovals, [projectKey(event.projectId, event.approvalId)]: { ...approval, at } } }
+    }
+    // Retain only the latest report per kind and latest review per workspace
+    // in the projection. The durable log preserves the complete history.
+    case "project.GitEvidenceReported": return { ...view, gitEvidence: { ...view.gitEvidence, [projectKey(event.report.worktreeId, event.report.kind)]: event.report } }
+    case "project.MainReviewOpened":
+    case "project.MainReviewDecided": return { ...view, gitReviews: { ...view.gitReviews, [event.review.worktreeId]: event.review } }
+    case "AgentStarted": {
+      const parent = event.parent._tag === "agent" ? event.parent.agentId : undefined
+      const projectId = event.projectId ?? (parent === undefined ? undefined : own(view.agentProjects, parent))
+      return { ...view, ...(parent === undefined ? {} : { parents: { ...view.parents, [event.agentId]: parent } }),
+        ...(projectId === undefined ? {} : { agentProjects: { ...view.agentProjects, [event.agentId]: projectId } }) }
+    }
+    case "project.SettingsChanged": return { ...view, settings: event.settings }
+    case "project.CreationPlanned": return { ...view, creations: { ...view.creations, [event.creation.requestId]: event.creation } }
+    case "project.CreationClaimed": return { ...view, creations: change(view.creations, event.creationRequestId, (row) => ({ ...row,
+      [event.kind === "repository" ? "repositoryIdentity" : "folderIdentity"]: event.identity })) }
+    case "project.CreationFinished": { const creations = { ...view.creations }; delete creations[event.creationRequestId]; return { ...view, creations } }
+    case "project.RepositoryPreparationChanged": return { ...view, repositories: change(view.repositories, event.repoId, row => ({ ...row, preparation: event.preparation })) }
+    case "project.RepositoryBaseChanged": {
+      const repository = own(view.repositories, event.repoId)
+      return repository === undefined ? view : { ...view, repositories: { ...view.repositories, [event.repoId]: { ...repository, baseBranch: event.baseBranch } } }
+    }
+    case "project.RepositoryAdded": { const { _tag, ...row } = event; return { ...view, repositories: { ...view.repositories, [row.repoId]: row } } }
+    case "project.RepositoryLocated": { const { _tag, ...row } = event; return { ...view, locations: { ...view.locations, [projectKey(row.repoId, row.machineId)]: row } } }
+    case "project.WorktreeCreated": { const { _tag, ...row } = event; return { ...view, workspaces: { ...view.workspaces, [row.worktreeId]: row } } }
+    case "project.Created": {
+      const { _tag, ...row } = event
+      const memberships = { ...view.agentProjects, [row.leadAgentId]: row.projectId }
+      // A record can be created for a lead whose children already exist.
+      let changed = true
+      while (changed) {
+        changed = false
+        for (const [child, parent] of Object.entries(view.parents)) {
+          if (own(memberships, child) === undefined && own(memberships, parent) === row.projectId) { memberships[child] = row.projectId; changed = true }
+        }
+      }
+      return { ...view, projects: { ...view.projects, [row.projectId]: { ...row, stage: row.stage ?? "plan", createdAt: at, phaseTimes: [{ phase: row.stage ?? "plan", start: at }] } }, agentProjects: memberships }
+    }
+    case "project.Placed": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, machineId: event.machineId, worktreeId: event.worktreeId })) }
+    case "project.PreferencesChanged": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, shell: event.shell })) }
+    case "project.Renamed": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, name: event.name })) }
+    case "project.GoalChanged": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, goal: event.goal })) }
+    case "project.ArchiveStarted": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, archiving: true })) }
+    case "project.Archived": return { ...view, projects: change(view.projects, event.projectId, (row) => ({ ...row, archiving: false, archivedAt: at })) }
+    case "project.Deleted": {
+      const keep = <T>(rows: Readonly<Record<string, T>>, test: (row: T, key: string) => boolean) => Object.fromEntries(Object.entries(rows).filter(([key, row]) => test(row, key)))
+      const related = <T extends { readonly projectId: string }>(rows: Readonly<Record<string, T>>) => keep(rows, (row) => row.projectId !== event.projectId)
+      const agents = new Set<string>(event.agentIds), worktrees = new Set<string>(event.worktreeIds)
+      const { _tag, ...deletion } = event
+      return { ...view, deletions: { ...view.deletions, [event.projectId]: deletion },
+        projects: related(view.projects), teams: related(view.teams), sprints: related(view.sprints), tasks: related(view.tasks), deletedTasks: related(view.deletedTasks ?? {}),
+        workspaces: keep(view.workspaces, (_, id) => !worktrees.has(id)),
+        agentProjects: keep(view.agentProjects, (id) => id !== event.projectId), parents: keep(view.parents, (parent, id) => !agents.has(parent) && !agents.has(id)),
+        gitAttempts: keep(view.gitAttempts, (attempt) => !worktrees.has(attempt.worktreeId)), gitReviews: related(view.gitReviews), gitEvidence: related(view.gitEvidence),
+        taskNotifications: related(view.taskNotifications), fileSaveNotices: related(view.fileSaveNotices),
+        mockRevisions: related(view.mockRevisions), mockHeads: keep(view.mockHeads, (_, id) => id !== event.projectId),
+        mockApprovals: related(view.mockApprovals), mockScreenReviews: related(view.mockScreenReviews),
+        setup: view.setup.projectId === event.projectId ? { step: view.setup.step, ...(view.setup.completedAt === undefined ? {} : { completedAt: view.setup.completedAt }) } : view.setup }
+    }
+    case "project.Restored": return { ...view, projects: change(view.projects, event.projectId, (row) => { const { archivedAt: _a, ...rest } = row; return { ...rest, archiving: false } }) }
+    case "project.PermissionChanged":
+    case "project.PermissionWithdrawn": return { ...view, projects: change(view.projects, event.projectId, (row) => {
+      if (event.permission === "planning") {
+        const { endResultApproval: _end, skipPlanningApproval: _skip, ...rest } = row
+        return { ...rest, planningPermissionChangedAt: seq, ...(event._tag === "project.PermissionChanged" ? { planningPermission: event.setting } : {}) }
+      }
+      const { buildApproval: _build, ...rest } = row
+      return { ...rest, workPermissionChangedAt: seq, ...(event._tag === "project.PermissionChanged" ? { workPermission: event.setting } : {}) }
+    }) }
+    case "project.PermissionDecided": {
+      let next = view
+      for (const permission of event.granted) next = projectAfter(next, { _tag: "project.ApprovalDecided", projectId: event.projectId,
+        questionId: event.questionId, approval: permission === "planning" ? "end-result" : "build", approved: true }, sequence, occurredAt)
+      return next
+    }
+    case "project.ApprovalGranted":
+    case "project.ApprovalDecided": return event._tag === "project.ApprovalDecided" && !event.approved ? view : { ...view, projects: change(view.projects, event.projectId, (row) => {
+      const approvalId = event._tag === "project.ApprovalGranted" ? event.requestId : event.questionId
+      const building = event.approval === "build" || event.approval === "skip-planning-and-build"
+      const stage = row.stage === "define" || row.stage === "plan" ? building ? "build" as const : "plan" as const : row.stage
+      return { ...(stage === undefined ? row : enterStage(row, stage, at)),
+        ...(event.approval === "end-result" ? { endResultApproval: approvalId }
+          : event.approval === "skip-planning" ? { skipPlanningApproval: approvalId }
+          : event.approval === "skip-planning-and-build" ? { skipPlanningApproval: approvalId, buildApproval: approvalId }
+          : { buildApproval: approvalId }) }
+    }) }
+    case "project.ApprovalWithdrawn": return { ...view, projects: change(view.projects, event.projectId, (row) => {
+      const { buildApproval: _building, ...withoutBuilding } = row
+      if (event.approval === "build") return withoutBuilding
+      const { endResultApproval: _scope, skipPlanningApproval: _skip, ...withoutScope } = withoutBuilding
+      return withoutScope
+    }) }
+    case "project.TeamDeleted": { const teams = { ...view.teams }; delete teams[projectKey(event.projectId, event.teamId)]; return { ...view, teams } }
+    case "project.TaskDeleted": {
+      const key = projectKey(event.projectId, event.taskId), task = own(view.tasks, key)
+      if (task === undefined) return view
+      const tasks = { ...view.tasks }; delete tasks[key]
+      return { ...view, tasks, deletedTasks: { ...view.deletedTasks, [key]: { ...task,
+        history: [...task.history, { sequence: seq, at, title: "Task deleted", detail: task.title, state: task.state, deleted: true }] } } }
+    }
+    case "project.StageChanged": return { ...view, projects: change(view.projects, event.projectId, (row) => enterStage(row, event.stage, at)) }
+    case "project.TeamAdded": { const { _tag, ...row } = event; return { ...view, teams: { ...view.teams, [projectKey(row.projectId, row.teamId)]: row } } }
+    case "project.SprintAdded": { const { _tag, ...row } = event; return { ...view, sprints: { ...view.sprints, [projectKey(row.projectId, row.sprintId)]: row } } }
+    case "project.SprintChanged": { const { _tag, projectId, sprintId, ...patch } = event; return { ...view, sprints: change(view.sprints, projectKey(projectId, sprintId), (row) => ({ ...row, ...patch })) } }
+    case "project.SprintCompleted": return { ...view, sprints: change(view.sprints, projectKey(event.projectId, event.sprintId), (row) => ({ ...row, completion: event.completion, evidence: event.evidence, completedAt: at })) }
+    case "project.OwnerTaskNotificationPlanned": {
+      const { _tag, ...row } = event
+      return { ...view, taskNotifications: { ...view.taskNotifications, [row.notificationId]: row } }
+    }
+    case "project.FileSaveNoticePlanned": {
+      const { _tag, ...row } = event
+      return { ...view, fileSaveNotices: { ...view.fileSaveNotices, [row.noticeId]: row } }
+    }
+    case "DeliveryQueued": {
+      const source = event.delivery.source
+      if (source?._tag === "piece" && source.namespace === "project" && source.id.startsWith("file-save:")) {
+        const id = source.id.slice("file-save:".length), row = own(view.fileSaveNotices, id)
+        if (row === undefined || row.deliveryId !== undefined || row.targetAgentId !== event.delivery.target) return view
+        return { ...view, fileSaveNotices: { ...view.fileSaveNotices, [id]: { ...row, deliveryId: event.delivery.id } } }
+      }
+      if (source?._tag !== "piece" || source.namespace !== "project" || !source.id.startsWith("task-notification:")) return view
+      const id = source.id.slice("task-notification:".length)
+      const row = own(view.taskNotifications, id)
+      if (row === undefined || row.deliveryId !== undefined || row.targetAgentId !== event.delivery.target) return view
+      return { ...view, taskNotifications: { ...view.taskNotifications, [id]: { ...row, deliveryId: event.delivery.id } } }
+    }
+    case "project.TaskAdded": {
+      const { _tag, ...row } = event
+      const activity = row.story?.activity.map((step) => ({ ...step, at: step.at ?? at }))
+      const history: TaskHistoryEntry[] = [{ sequence: seq, at, state: row.state, title: "Task added", detail: row.title },
+        ...(activity ?? []).map((step) => ({ sequence: seq, at: step.at, state: row.state,
+          ...("question" in step ? step.open : { title: step.title, detail: step.detail }) }))]
+      const task: ProjectTaskRecord = { ...row, ...(row.story === undefined ? {} : { story: { ...row.story, activity: activity! } }), history }
+      return { ...view, tasks: { ...view.tasks, [projectKey(row.projectId, row.taskId)]: task } }
+    }
+    case "project.TaskChanged": {
+      const { _tag, projectId, taskId, note, ...patch } = event
+      return { ...view, tasks: change(view.tasks, projectKey(projectId, taskId), (row) => ({ ...row, ...patch,
+        history: [...row.history, { sequence: seq, at, state: patch.state ?? row.state, title: "Task updated", detail: note ?? patch.title ?? patch.state ?? "Assignment updated" }] })) }
+    }
+    case "project.TaskNoted": return { ...view, tasks: change(view.tasks, projectKey(event.projectId, event.taskId), (row) => ({ ...row,
+      history: [...row.history, { sequence: seq, at, state: row.state, title: event.title, detail: event.detail }] })) }
+    default: return view
+  }
+}
+
+// Manual registration cannot supply projectId or owner. Those fields, together
+// with the owning agent's membership, identify an engine allocation, including
+// allocations written before workerSourceHead was introduced.
+export const allocatedWorkspaceInProject = (view: ProjectView, workspace: Workspace, projectId: string): boolean => {
+  const project = own(view.projects, projectId);
+  if (!project || workspace.repoId !== project.repoId) return false;
+  const teams = new Set(Object.values(view.teams).filter((team) => team.projectId === projectId).map((team) => team.worktreeId));
+  const roots = new Set([project.worktreeId, ...teams]);
+  const seen = new Set<string>();
+  let row: Workspace | undefined = workspace;
+  while (row && row.repoId === project.repoId && !seen.has(row.worktreeId)) {
+    // A direct team child was already readable on the base. It can anchor an
+    // engine allocation without becoming a new snapshot row itself.
+    if (roots.has(row.worktreeId)) return row !== workspace;
+    if (row !== workspace && row.checkout === "worktree" && row.parentId !== undefined && teams.has(row.parentId)) return true;
+    if (row.owner === undefined || row.projectId !== projectId || own(view.agentProjects, row.owner) !== projectId) return false;
+    seen.add(row.worktreeId);
+    row = row.parentId === undefined ? undefined : own(view.workspaces, row.parentId);
+  }
+  return false;
+};
+
+// Preserve the original project/team/direct-team-child Git scope and add only
+// engine allocations. An arbitrary manual descendant is not a project grant.
+export const workspaceInProject = (view: ProjectView, workspace: Workspace, projectId: string): boolean => {
+  const project = own(view.projects, projectId);
+  return project !== undefined && workspace.repoId === project.repoId && (project.worktreeId === workspace.worktreeId
+    || Object.values(view.teams).some((team) => team.projectId === projectId
+      && (team.worktreeId === workspace.worktreeId || workspace.checkout === "worktree" && team.worktreeId === workspace.parentId))
+    || allocatedWorkspaceInProject(view, workspace, projectId));
+};

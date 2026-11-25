@@ -1,0 +1,109 @@
+// The codebase map of a project.
+//
+// A map is one page that an agent builds with Floorplan in the project's checkout. It shows how
+// the code fits together and what was changed. The page is an agent's output, so a server never
+// trusts it: the website reads it from a short-lived address and shows it in a sandboxed frame.
+syntax = "proto3";
+
+package lgtm.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// MapService reads the codebase map of a project and asks for a new one.
+// Every call needs a session.
+service MapService {
+  // WatchMap sends the state of one project's map once, and then again whenever it changes.
+  rpc WatchMap(WatchMapRequest) returns (stream WatchMapResponse);
+  // BuildMap asks the project's agent to build the map, or to bring the one it has up to date.
+  // The result arrives on WatchMap.
+  rpc BuildMap(BuildMapRequest) returns (BuildMapResponse);
+  // OpenMap makes an address the map's page can be read from, for ten minutes.
+  rpc OpenMap(OpenMapRequest) returns (OpenMapResponse);
+  // ReleaseMap ends an address before its time is up.
+  rpc ReleaseMap(ReleaseMapRequest) returns (ReleaseMapResponse);
+}
+
+// MapState says whether a project has a map.
+enum MapState {
+  MAP_STATE_UNSPECIFIED = 0;
+  // No map was ever built in the project's checkout.
+  MAP_STATE_NONE = 1;
+  // A map's page exists and can be opened.
+  MAP_STATE_READY = 2;
+}
+
+// CodebaseMap is what the server knows about one project's map, without the page itself.
+message CodebaseMap {
+  string project_id = 1;
+  MapState state = 2;
+  // True while an agent builds the map or brings it up to date. An older page stays open meanwhile.
+  bool building = 3;
+  // The size of the page.
+  uint64 size_bytes = 4;
+  // When the page was last written. A change of this time means there is a new page to open.
+  google.protobuf.Timestamp modified_at = 5;
+  // What the map says about itself. Absent when the server cannot read it.
+  optional MapFacts facts = 6;
+  // Set in place of `project_id` when the map is of a repository's main checkout.
+  string repository_id = 7;
+}
+
+// MapFacts are counts the map records about the code it describes.
+// They do not say whether the map still matches the checkout.
+message MapFacts {
+  // When the agent finished the map.
+  google.protobuf.Timestamp generated_at = 1;
+  // The files the map describes.
+  optional uint32 files = 2;
+  // The lines of code in those files.
+  optional uint32 lines = 3;
+  // The parts the map groups the code into.
+  optional uint32 parts = 4;
+  // The connections the map draws between files and parts.
+  optional uint32 links = 5;
+}
+
+// MapFrame is a short-lived address of a map's page.
+message MapFrame {
+  string id = 1;
+  // The address of the page. It is a full address, or a path on the server's own address.
+  // A page read from it must be shown in a frame with `sandbox="allow-scripts allow-popups"`.
+  string url = 2;
+  // When the address stops working. A page that is already open keeps working.
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message WatchMapRequest {
+  string project_id = 1;
+  // Set in place of `project_id` for the map of a repository's main checkout.
+  string repository_id = 2;
+}
+
+message WatchMapResponse {
+  CodebaseMap map = 1;
+}
+
+message BuildMapRequest {
+  string project_id = 1;
+  // Set in place of `project_id` for the map of a repository's main checkout.
+  string repository_id = 2;
+}
+
+message BuildMapResponse {}
+
+message OpenMapRequest {
+  string project_id = 1;
+  // Set in place of `project_id` for the map of a repository's main checkout.
+  string repository_id = 2;
+}
+
+message OpenMapResponse {
+  MapFrame frame = 1;
+}
+
+message ReleaseMapRequest {
+  // The id of the frame to end.
+  string id = 1;
+}
+
+message ReleaseMapResponse {}

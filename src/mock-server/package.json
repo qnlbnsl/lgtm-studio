@@ -1,0 +1,26 @@
+{
+  "name": "@lgtm/mock-server",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "A server that holds sample data and answers the contract in src/contracts. The website is built against it.",
+  "type": "module",
+  "exports": {
+    "./engine": "./src/engine.ts"
+  },
+  "scripts": {
+    "dev": "node --watch src/serve.ts",
+    "start": "node src/serve.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "catalog:",
+    "@connectrpc/connect": "catalog:",
+    "@connectrpc/connect-node": "catalog:",
+    "@lgtm/api": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:"
+  }
+}

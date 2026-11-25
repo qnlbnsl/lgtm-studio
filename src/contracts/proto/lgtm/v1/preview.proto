@@ -1,0 +1,135 @@
+syntax = "proto3";
+
+package lgtm.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// The running product of a project, which the Browser page of the Design view shows.
+//
+// A repository also has previews. They run in its main checkout, on the base branch. Such a
+// preview names its repository in `repository_id`, and its `project_id` is empty.
+//
+// A preview is one command that a machine runs in a worktree, and the port the product then
+// answers on. The server passes the product's pages on to the website, so the owner sees the
+// product from any device that reaches the server.
+//
+// The product's pages are code that agents wrote. The server treats them as it treats a
+// codebase map: it serves them at a frame's own address, which is its own key, ends after a
+// short time, and never carries the owner's session. A real server serves each preview from a
+// hostname of its own, apart from the website's. Only then may the frame keep its own storage.
+service PreviewService {
+  // Sends the previews of one project, and sends the whole list again after each change.
+  rpc WatchPreviews(WatchPreviewsRequest) returns (stream WatchPreviewsResponse);
+  // Asks the preview's machine to run its command.
+  rpc StartPreview(StartPreviewRequest) returns (StartPreviewResponse);
+  // Asks the preview's machine to stop its command. Every open address of the preview ends.
+  rpc StopPreview(StopPreviewRequest) returns (StopPreviewResponse);
+  // Gives one address at which the running product can be read, for one frame.
+  rpc OpenPreview(OpenPreviewRequest) returns (OpenPreviewResponse);
+  // Ends one address before its time.
+  rpc ReleasePreview(ReleasePreviewRequest) returns (ReleasePreviewResponse);
+  // Adds a preview to a project, or changes one. A change of the command, the port or the
+  // machine stops a preview that runs.
+  rpc SavePreview(SavePreviewRequest) returns (SavePreviewResponse);
+  // Takes a preview away. It stops first when it runs.
+  rpc RemovePreview(RemovePreviewRequest) returns (RemovePreviewResponse);
+}
+
+enum PreviewState {
+  PREVIEW_STATE_UNSPECIFIED = 0;
+  PREVIEW_STATE_STOPPED = 1;
+  PREVIEW_STATE_STARTING = 2;
+  PREVIEW_STATE_RUNNING = 3;
+  PREVIEW_STATE_FAILED = 4;
+}
+
+message Preview {
+  string id = 1;
+  string project_id = 2;
+  // The name the owner reads, such as "Website".
+  string name = 3;
+  // The command the machine runs, such as "pnpm dev".
+  string command = 4;
+  // The port the product answers on, on that machine.
+  uint32 port = 5;
+  // The machine that runs the command. It is a client of the server.
+  string client_id = 6;
+  string client_name = 7;
+  // The branch of the worktree the command runs in.
+  string branch = 8;
+  PreviewState state = 9;
+  // Why the command failed. Empty in every other state.
+  string error = 10;
+  google.protobuf.Timestamp started_at = 11;
+  // Set in place of `project_id` when the preview runs in a repository's main checkout.
+  string repository_id = 12;
+}
+
+// One address at which a running product can be read. `url` is a full address, or a path on the server.
+message PreviewFrame {
+  string id = 1;
+  string url = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message WatchPreviewsRequest {
+  string project_id = 1;
+  // Set in place of `project_id` for the previews of a repository's main checkout.
+  string repository_id = 2;
+}
+
+message WatchPreviewsResponse {
+  repeated Preview previews = 1;
+}
+
+message StartPreviewRequest {
+  string id = 1;
+}
+
+message StartPreviewResponse {}
+
+message StopPreviewRequest {
+  string id = 1;
+}
+
+message StopPreviewResponse {}
+
+message OpenPreviewRequest {
+  string id = 1;
+}
+
+message OpenPreviewResponse {
+  PreviewFrame frame = 1;
+}
+
+message ReleasePreviewRequest {
+  string id = 1;
+}
+
+message ReleasePreviewResponse {}
+
+message SavePreviewRequest {
+  // The preview to change. Empty adds a new one to `project_id`.
+  string id = 1;
+  string project_id = 2;
+  // The name is not empty, and no other preview of the project has it.
+  string name = 3;
+  // The command is not empty. The machine runs it in the project's worktree.
+  string command = 4;
+  // A port from 1 to 65535.
+  uint32 port = 5;
+  // The machine that runs the command. Empty keeps the machine, or takes the project's machine for a new preview.
+  string client_id = 6;
+  // Set in place of `project_id` to add a preview to a repository's main checkout.
+  string repository_id = 7;
+}
+
+message SavePreviewResponse {
+  Preview preview = 1;
+}
+
+message RemovePreviewRequest {
+  string id = 1;
+}
+
+message RemovePreviewResponse {}

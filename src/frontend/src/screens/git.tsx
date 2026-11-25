@@ -1,0 +1,1119 @@
+import * as liveGit from '../live/git';
+import { live, refuse } from '../lib';
+// The project's Git tab: worktrees, changes, diffs, commits, history, conflicts and integration.
+// Standalone mode uses sample data. Live actions run through the authenticated engine.
+import { useState, useEffect, useMemo } from 'preact/hooks';
+import { Icon, cx, update, ago, useNow, persist, remember, useMedia, plural, href, MIN, HOUR, DAY } from '../lib';
+import { byId, agentOf, leadOf, teamOf, teamName, machineOf, placePath, isMain } from '../data';
+import * as act from '../actions';
+import { Avatar, Back, OwnerAvatar, Menu, Empty, ListResizer } from '../ui';
+import type { ComponentChildren } from 'preact';
+import type { Id, Ms, State, Project, Team, MergeEvidence, MergeDelivery } from '../types';
+
+// ---- the Git records --------------------------------------------------------------
+// The sample seeds these records, and the live website writes the same shapes from the engine.
+// Fields marked live only are read only when the page is connected.
+export interface GitLine { t: 'add' | 'del' | 'ctx'; o?: number | undefined; n?: number | undefined; text: string }
+export interface Hunk { oldStart: number; newStart: number; oldCount?: number; newCount?: number; label: string; lines: GitLine[] }
+/** A changed file in a worktree or in a commit. */
+export interface GitFile {
+  id: Id; path: string; status: 'M' | 'A' | 'D' | 'R' | 'C' | string; staged: boolean; kind: 'text' | 'binary' | 'large' | string;
+  /** The hunks of a text file. A large file has none until it is shown, and a binary file never has any. */
+  hunks?: Hunk[] | null; add?: number | null; del?: number | null;
+  oldPath?: string | undefined; size?: string; byOwner?: boolean;
+  /** Live only: a conflicted path, whether its diff was read, and why it could not be. */
+  conflict?: boolean; loaded?: boolean; diffError?: string; conflictError?: string; truncated?: boolean;
+}
+export interface GitCommit {
+  hash: string; subject: string; body?: string; author: Id; ts: Ms; files: GitFile[]; refs: string[]; merge?: boolean;
+  /** Live only: whether the commit's files were read. */
+  loaded?: boolean;
+}
+export type ConflictChoice = 'ours' | 'theirs' | 'both';
+/** Lines both sides agree on, between two conflicts. */
+export interface ConflictContext { id?: undefined; start: number; ctx: string[]; choice?: undefined; hunk?: undefined }
+export interface ConflictBlock {
+  id: string; choice: ConflictChoice | null; ours: string[]; base: string[]; theirs: string[];
+  /** Live only: the conflict's place in the engine's list. */
+  hunk?: number; start?: undefined; ctx?: undefined;
+}
+export type ConflictPart = ConflictContext | ConflictBlock;
+export interface ConflictSelection { path: string; head: string; fingerprint: string; choices: (ConflictChoice | null)[] }
+export interface ConflictFile {
+  id: Id; path: string; resolved: boolean; parts: ConflictPart[];
+  /** Live only: the version of the conflict the choices apply to, and whether it was read. */
+  selection?: ConflictSelection | undefined; fingerprint?: string; loaded?: boolean; conflictError?: string;
+}
+export interface MergeState { from: string; by: Id | null; startedAt: Ms | null; files: ConflictFile[] }
+/** Live only: the open or decided merge review of a project branch. */
+export interface GitReview {
+  id: Id; kind: string; project: Id; agent: Id; worktreeId?: Id; destinationId?: Id; title: string;
+  source?: string; target?: string; head: string; baseHead: string; status: string; outcome?: string;
+  answer?: string; answeredAt?: Ms | null; createdAt: Ms; brief?: string; body?: string; notice?: string | null;
+  delivery?: MergeDelivery | null; localSync?: string | null; prTitle?: string;
+  evidence: MergeEvidence; files?: GitFile[]; truncated?: boolean;
+}
+export interface Worktree {
+  id: Id; repo: Id; kind: 'base' | 'project' | 'team' | 'agent' | string; branch: string; parent: string | null;
+  machine: Id; folder: string; files: GitFile[]; commits: GitCommit[];
+  /** Commits ahead of the parent, and behind it. The live website does not always know how far behind. */
+  ahead: number; behind: number | null; merge: MergeState | null;
+  owner: Id | null; team: Id | null; project: Id | null;
+  merged?: Ms | null; stale?: boolean; integratedAt?: Ms;
+  /** Live only: the engine's view of the checkout. */
+  parentId?: Id | null; head?: string; mergeHead?: string | null; review?: GitReview; reviewLoaded?: boolean;
+  ready?: boolean; truncated?: boolean; historyTruncated?: boolean; gitError?: string | null;
+}
+export type GitTabName = 'changes' | 'history' | 'conflicts';
+/** What the Git tab shows for one worktree: the view, the open file or commit, and the draft message. */
+export interface GitView { tab?: GitTabName; file?: Id | null; commit?: string | null; cfile?: Id | null; message?: string }
+export type GitUi = Record<Id, GitView>;
+type DiffMode = 'unified' | 'split';
+
+// ---- sample diffs ---------------------------------------------------------------
+// Written in unified form. A header reads "@@ -old +new @@ label"; the counts are worked out.
+const DIFFS = {
+  sidebar: `@@ -1 +1 @@
+ import { useState } from 'react';
+-import { NavRail } from './NavRail';
++import { Rail } from './Rail';
++import { useAttention } from './useAttention';
+ import { ProjectTree } from './ProjectTree';
+ import type { Project } from '@lgtm/api';
+
+@@ -18 +19 @@ export function Sidebar({ projects, current }: SidebarProps) {
+   const [folded, setFolded] = useState(readFolded);
+-  const waiting = projects.filter((p) => p.requests.length > 0).length;
++  const attention = useAttention(projects);
+
+   const toggle = () => {
+     setFolded((f) => {
+       writeFolded(!f);
+       return !f;
+     });
+   };
+
+-  if (folded) return <NavRail projects={projects} onOpen={toggle} />;
++  if (folded) {
++    return <Rail projects={projects} attention={attention} onOpen={toggle} />;
++  }
+
+   return (
+     <aside className="sidebar" aria-label="Projects">
+@@ -44 +48 @@ export function Sidebar({ projects, current }: SidebarProps) {
+       <header className="sidebar-head">
+         <Brand />
+-        {waiting > 0 && <span className="count">{waiting}</span>}
++        {attention.total > 0 && (
++          <span className="count" aria-label={attention.label}>
++            {attention.total}
++          </span>
++        )}
+         <button type="button" className="icon-btn" aria-label="Fold the sidebar" onClick={toggle}>
+           <PanelLeft size={16} />
+         </button>
+       </header>
+-      <ProjectTree projects={projects} current={current} />
++      <ProjectTree projects={projects} current={current} counts={attention.byProject} />
+     </aside>
+   );
+ }`,
+  sidebarCss: `@@ -12 +12 @@ .sidebar {
+   display: flex;
+   flex-direction: column;
+   width: var(--sidebar-width, 264px);
++  min-width: 0;
+   background: var(--color-sidebar);
+   border-right: 1px solid var(--color-line);
+ }
+@@ -31 +32 @@ .sidebar-head {
+-.sidebar.folded { width: 56px; }
+-.sidebar.folded .label { display: none; }
++.rail {
++  display: grid;
++  grid-auto-rows: var(--row);
++  justify-items: center;
++  width: 48px;
++  padding-block: var(--space-2);
++}
++.rail .pip {
++  position: absolute;
++  inset: 4px 4px auto auto;
++  width: 7px;
++  height: 7px;
++  border-radius: 50%;
++  background: var(--color-warn);
++}`,
+  useAttention: `@@ -0 +1 @@
++import { useMemo } from 'react';
++import type { Project } from '@lgtm/api';
++
++export interface Attention {
++  total: number;
++  label: string;
++  byProject: Record<string, number>;
++}
++
++// Counts every open request once, under the project that owns it.
++export function useAttention(projects: readonly Project[]): Attention {
++  return useMemo(() => {
++    const byProject: Record<string, number> = {};
++    let total = 0;
++    for (const project of projects) {
++      const open = project.requests.filter((r) => r.status === 'open').length;
++      byProject[project.id] = open;
++      total += open;
++    }
++    const label = total === 1 ? '1 request needs you' : total + ' requests need you';
++    return { total, label, byProject };
++  }, [projects]);
++}`,
+  rail: `@@ -1 +1 @@
+ import type { Project } from '@lgtm/api';
++import type { Attention } from './useAttention';
+
+-interface NavRailProps {
++interface RailProps {
+   projects: readonly Project[];
++  attention: Attention;
+   onOpen: () => void;
+ }
+
+-export function NavRail({ projects, onOpen }: NavRailProps) {
++export function Rail({ projects, attention, onOpen }: RailProps) {
+   return (
+-    <nav className="sidebar folded">
++    <nav className="rail" aria-label="Projects">
+       <button type="button" className="icon-btn" aria-label="Open the sidebar" onClick={onOpen}>`,
+  legacy: `@@ -1 +0 @@
+-// Kept for the old two-column layout. Nothing imports it since the navigation foundation.
+-export const LEGACY_NAV = [
+-  { id: 'threads', label: 'Threads' },
+-  { id: 'board', label: 'Board' },
+-  { id: 'roster', label: 'Roster' },
+-] as const;
+-
+-export type LegacyNavId = (typeof LEGACY_NAV)[number]['id'];`,
+  sidebarTest: `@@ -22 +22 @@ describe('Sidebar', () => {
+     expect(screen.getByRole('navigation', { name: 'Projects' })).toBeVisible();
+   });
+
++  it('counts a request once when two agents share a project', () => {
++    render(<Sidebar projects={[withRequests('console', 3)]} current="console" />);
++    expect(screen.getByLabelText('3 requests need you')).toHaveTextContent('3');
++  });
++
+   it('folds into a rail and remembers it', async () => {
+     const user = userEvent.setup();
+     render(<Sidebar projects={projects} current="console" />);
+-    await user.click(screen.getByRole('button', { name: 'Fold' }));
++    await user.click(screen.getByRole('button', { name: 'Fold the sidebar' }));
+     expect(localStorage.getItem('sidebar.folded')).toBe('true');
+   });`,
+  bell: `@@ -9 +9 @@ export function Bell({ requests }: BellProps) {
+   const open = requests.filter((r) => r.status === 'open');
+-  const count = open.length + requests.filter((r) => r.kind === 'failed').length;
++  // A failed start is already an open request. Counting it again doubled the bell.
++  const count = open.length;
+   return (
+     <button type="button" className="bell" aria-label={label(count)}>`,
+  thread: `@@ -40 +40 @@ export function Thread({ agent, messages }: ThreadProps) {
+   const end = useRef<HTMLDivElement>(null);
++  const pinned = usePinnedToEnd(end);
+
+   useEffect(() => {
+-    end.current?.scrollIntoView();
+-  }, [messages.length]);
++    if (pinned) end.current?.scrollIntoView({ block: 'end' });
++  }, [messages.length, pinned]);`,
+  reconnect: `@@ -14 +14 @@ it('reconnects after the socket drops', async () => {
+   const client = connect(server.url);
+   server.dropAll();
+-  await sleep(250);
+-  expect(client.status).toBe('live');
++  await waitFor(() => expect(client.status).toBe('live'), { timeout: 2000 });
+   client.close();
+ });`,
+};
+
+// ---- parsing ---------------------------------------------------------------------
+function parseDiff(text: string): Hunk[] {
+  const hunks: Hunk[] = []; let h: Hunk | null = null; let o = 0; let n = 0;
+  for (const raw of text.split('\n')) {
+    const m = /^@@ -(\d+) \+(\d+) @@ ?(.*)$/.exec(raw);
+    if (m) { o = +m[1]; n = +m[2]; h = { oldStart: o, newStart: n, label: m[3], lines: [] }; hunks.push(h); continue; }
+    if (!h) continue;
+    const t = raw[0] === '+' ? 'add' : raw[0] === '-' ? 'del' : 'ctx'; const text2 = raw.slice(1);
+    if (t === 'add') h.lines.push({ t, n: n++, text: text2 });
+    else if (t === 'del') h.lines.push({ t, o: o++, text: text2 });
+    else h.lines.push({ t, o: o++, n: n++, text: text2 });
+  }
+  for (const k of hunks) {
+    k.oldCount = k.lines.filter((l) => l.t !== 'add').length; k.newCount = k.lines.filter((l) => l.t !== 'del').length;
+  }
+  return hunks;
+}
+const count = (hunks: Hunk[], t: GitLine['t']) => hunks.reduce((a, k) => a + k.lines.filter((l) => l.t === t).length, 0);
+
+// Believable filler for files that have no hand-written diff.
+const POOL: Record<string, string[]> = {
+  ts: ['const next = queue.shift();', 'if (!next) return;', 'await store.append(event);', 'return { ok: true, value };', 'export function resolve(id: string) {', '}', 'const key = id + ":" + revision;', 'for (const item of items) visit(item);', 'throw new NotFound(id);', 'log.debug("resolved", { id });'],
+  css: ['display: flex;', 'gap: var(--space-2);', 'min-width: 0;', 'color: var(--color-muted);', 'border-radius: var(--radius-sm);', 'padding: 0 var(--inset);', '}', '.row:hover { background: var(--color-raised); }'],
+  md: ['Each request names the agent that raised it.', 'The lead answers for its teams.', '', 'Run the full suite before a hand-over.', 'A fix sprint merges on its own after a passing run.', '## What changes for the owner', 'Nothing is merged into the base branch without approval.'],
+  json: ['"name": "@lgtm/web",', '"private": true,', '"type": "module",', '"test": "vitest run",', '"typecheck": "tsc --noEmit"', '},'],
+  yaml: ["  '@types/node@26.1.0':", '    resolution: {integrity: sha512-9fT2k1mQp7Lw3xVbY0aZr8eH}', '    dependencies:', '      undici-types: 7.2.0', "  'vitest@4.0.3':", '    engines: {node: ">=24"}', '    dev: true'],
+};
+function synth(path: string, add: number, del: number, seed = 1, status = 'M'): string {
+  const ext = path.split('.').pop()!; const pool = POOL[({ tsx: 'ts', ts: 'ts', css: 'css', md: 'md', json: 'json', yaml: 'yaml' } as Record<string, string>)[ext]] || POOL.ts;
+  const pick = (i: number) => pool[(i * 5 + (i >> 2) + seed * 3 + path.length) % pool.length];
+  const out: string[] = []; let left = [add, del]; let at = 8 + (seed * 13) % 40; let i = 0;
+  if (status === 'A') return ['@@ -0 +1 @@', ...Array.from({ length: add }, (_, k) => '+' + pick(k))].join('\n');
+  if (status === 'D') return ['@@ -1 +0 @@', ...Array.from({ length: Math.max(del, 4) }, (_, k) => '-' + pick(k))].join('\n');
+  while (left[0] > 0 || left[1] > 0) {
+    const a = Math.min(left[0], 2 + (i + seed) % 5); const d = Math.min(left[1], 1 + (i * 3 + seed) % 4);
+    out.push(`@@ -${at} +${at} @@`);
+    for (let k = 0; k < 3; k++) out.push(' ' + pick(i++));
+    for (let k = 0; k < d; k++) out.push('-' + pick(i++));
+    for (let k = 0; k < a; k++) out.push('+' + pick(i++));
+    for (let k = 0; k < 2; k++) out.push(' ' + pick(i++));
+    left = [left[0] - a, left[1] - d]; at += 30 + d + a;
+    if (out.length > 4000) break;
+  }
+  return out.join('\n');
+}
+
+let seq = 0;
+/** How a sample file is written: a hand-written diff by name, or counts for filler lines. */
+interface FileOpt { diff?: keyof typeof DIFFS; add?: number; del?: number; staged?: boolean; kind?: string; oldPath?: string; size?: string }
+function file(path: string, status: string, opt: FileOpt = {}): GitFile {
+  const f: GitFile & { diff?: string } = { id: 'f' + (++seq), path, status, staged: false, kind: 'text', ...opt };
+  if (f.kind === 'text') {
+    f.hunks = parseDiff(opt.diff ? DIFFS[opt.diff] : synth(path, opt.add ?? 6, opt.del ?? (status === 'A' ? 0 : 3), seq, status));
+    f.add = count(f.hunks, 'add'); f.del = count(f.hunks, 'del');
+  } else if (f.kind === 'large') { f.hunks = null; } else { f.add = 0; f.del = 0; }
+  delete f.diff;
+  return f;
+}
+let hseq = 0;
+function hash() { hseq += 1; let x = (hseq * 2654435761) >>> 0; x ^= x >>> 13; return ((x * 40503) >>> 0).toString(16).padStart(8, '0').slice(0, 7); }
+function commit(subject: string, author: Id, agoMs: number, files: [string, string, FileOpt?][], refs: string[] = []): GitCommit {
+  return { hash: hash(), subject, author, ts: Date.now() - agoMs, files: files.map(([p, st, o]) => file(p, st, o || {})), refs };
+}
+
+// ---- seed -------------------------------------------------------------------------
+type WorktreeSeed = Partial<Worktree> & Pick<Worktree, 'id' | 'repo' | 'kind' | 'branch' | 'parent' | 'machine' | 'folder'>;
+export function seedGit(state: State): void {
+  const wts: Worktree[] = []; const P = (id: Id) => byId(state.projects, id);
+  const repoOf = (p: Project) => byId(state.repos, p.repo)!;
+  const wt = (o: WorktreeSeed) => { const w: Worktree = { files: [], commits: [], ahead: 0, behind: 0, merge: null, owner: null, team: null, project: null, ...o }; wts.push(w); return w; };
+
+  // Base branches, one for each repository.
+  for (const r of state.repos) {
+    const machine = Object.keys(r.folders)[0];
+    wt({
+      id: 'base-' + r.id, repo: r.id, kind: 'base', branch: r.main, parent: null, machine, folder: r.folders[machine],
+      commits: [
+        commit('Merge pull request #34 from area/website', 'owner', 2 * DAY, [['packages/web/src/App.tsx', 'M', { add: 14, del: 6 }], ['docs/issues.md', 'M', { add: 9, del: 0 }]], [r.main, 'origin/' + r.main]),
+        commit('Record the open preview issuance failure', 'owner', 2 * DAY + 3 * HOUR, [['docs/issues.md', 'M', { add: 12, del: 1 }]]),
+        commit('Budget the serial journey test', 'owner', 3 * DAY, [['packages/web/test/journey.test.ts', 'M', { add: 8, del: 4 }]]),
+        commit('Recover committed first projects after reload', 'owner', 4 * DAY, [['packages/engine/src/projects.ts', 'M', { add: 31, del: 9 }], ['packages/engine/test/projects.test.ts', 'M', { add: 44, del: 0 }]], ['v0.4.0']),
+      ],
+    });
+  }
+
+  // Agent console: the rich one.
+  const c = P('console');
+  if (c) {
+    const root = repoOf(c).folders[c.machine] || '~/projects/lgtm-studio';
+    const nav = [
+      commit('Merge feat/agent-console/shell: navigation foundation', 'console-lead', 1 * DAY + 2 * HOUR, [['packages/web/src/shell/NavRail.tsx', 'A', { add: 48 }], ['packages/web/src/shell/Sidebar.tsx', 'M', { add: 22, del: 30 }], ['packages/web/src/routes.ts', 'M', { add: 17, del: 5 }]], ['LS-A01-1']),
+      commit('Start the project from master', 'console-lead', 4 * DAY, [['docs/specs/agent-console.md', 'A', { add: 36 }]]),
+    ];
+    wt({
+      id: 'console', repo: c.repo, project: c.id, kind: 'project', branch: c.branch, parent: repoOf(c).main, machine: c.machine, folder: c.folder, owner: c.lead,
+      ahead: 9, behind: 0,
+      commits: [commit('Fix the flaky reconnect test start', 'console-lead', 25 * MIN, [['packages/web/test/reconnect.test.ts', 'M', { diff: 'reconnect' }]], [c.branch]), ...nav],
+    });
+    wt({
+      id: 'console-shell', repo: c.repo, project: c.id, kind: 'team', team: 'console-shell', branch: 'feat/agent-console/shell', parent: c.branch, machine: 'studio', folder: root + '/.worktrees/agent-console-shell', owner: 'shell-lead',
+      ahead: 5, behind: 1,
+      files: [
+        file('packages/web/src/shell/sidebar.css', 'M', { diff: 'sidebarCss', staged: true }),
+        file('packages/web/src/shell/useAttention.ts', 'A', { diff: 'useAttention', staged: true }),
+        file('packages/web/src/shell/Sidebar.tsx', 'M', { diff: 'sidebar' }),
+        file('packages/web/src/shell/Rail.tsx', 'R', { diff: 'rail', oldPath: 'packages/web/src/shell/NavRail.tsx' }),
+        file('packages/web/src/shell/Sidebar.test.tsx', 'M', { diff: 'sidebarTest' }),
+        file('packages/web/src/shell/legacy-nav.ts', 'D', { diff: 'legacy' }),
+        file('packages/web/public/rail-icons.png', 'A', { kind: 'binary', size: '18.4 KB' }),
+        file('pnpm-lock.yaml', 'M', { kind: 'large', add: 1204, del: 988 }),
+      ],
+      commits: [
+        commit('Count each open request once in the bell', 'shell-b2', 38 * MIN, [['packages/web/src/shell/Bell.tsx', 'M', { diff: 'bell' }], ['packages/web/src/shell/Bell.test.tsx', 'M', { add: 14, del: 2 }]], ['feat/agent-console/shell']),
+        commit('Render the folded rail at 48 pixels', 'shell-b1', 1 * HOUR + 20 * MIN, [['packages/web/src/shell/NavRail.tsx', 'M', { add: 26, del: 11 }], ['packages/web/src/shell/sidebar.css', 'M', { add: 19, del: 4 }]]),
+        commit('Split LS-A01-3 into four subitems', 'shell-lead', 2 * HOUR + 40 * MIN, [['.lgtm/sprints/LS-A01-3.md', 'M', { add: 28, del: 3 }]]),
+        commit('Remember the folded sidebar between visits', 'shell-b1', 3 * HOUR, [['packages/web/src/shell/Sidebar.tsx', 'M', { add: 15, del: 2 }], ['packages/web/src/shell/storage.ts', 'A', { add: 21 }]]),
+        commit('Add the attention count fixture', 'shell-test', 3 * HOUR + 30 * MIN, [['packages/web/test/fixtures/attention.ts', 'A', { add: 40 }]]),
+        ...nav,
+      ],
+    });
+    wt({
+      id: 'console-shell-b2', repo: c.repo, project: c.id, kind: 'agent', team: 'console-shell', branch: 'feat/agent-console/shell-builder-2', parent: 'feat/agent-console/shell', machine: 'studio', folder: root + '/.worktrees/agent-console-shell-b2', owner: 'shell-b2',
+      ahead: 1, behind: 0,
+      files: [file('packages/web/src/shell/ProjectTree.tsx', 'M', { add: 11, del: 4 }), file('packages/web/src/shell/ProjectTree.test.tsx', 'M', { add: 23, del: 0 })],
+      commits: [commit('Pass attention counts into the project tree', 'shell-b2', 12 * MIN, [['packages/web/src/shell/ProjectTree.tsx', 'M', { add: 18, del: 6 }]], ['feat/agent-console/shell-builder-2']), ...nav],
+    });
+    wt({
+      id: 'console-threads', repo: c.repo, project: c.id, kind: 'team', team: 'console-threads', branch: 'feat/agent-console/threads', parent: c.branch, machine: 'studio', folder: root + '/.worktrees/agent-console-threads', owner: 'threads-lead',
+      ahead: 4, behind: 1,
+      files: [file('packages/web/src/thread/usePinnedToEnd.ts', 'A', { add: 27, staged: true }), file('packages/web/test/thread-scroll.test.ts', 'A', { add: 34, staged: true })],
+      merge: {
+        from: 'feat/agent-console/threads-builder-1', by: 'threads-lead', startedAt: Date.now() - 9 * MIN,
+        files: [
+          {
+            id: 'cf1', path: 'packages/web/src/thread/Thread.tsx', resolved: false,
+            parts: [
+              { start: 38, ctx: ['export function Thread({ agent, messages }: ThreadProps) {', '  const end = useRef<HTMLDivElement>(null);'] },
+              {
+                id: 'k1', choice: null,
+                ours: ['  const pinned = usePinnedToEnd(end);', '', '  useEffect(() => {', "    if (pinned) end.current?.scrollIntoView({ block: 'end' });", '  }, [messages.length, pinned]);'],
+                base: ['  useEffect(() => {', '    end.current?.scrollIntoView();', '  }, [messages.length]);'],
+                theirs: ['  useLayoutEffect(() => {', "    end.current?.scrollIntoView({ behavior: 'instant' });", '  }, [messages.length, agent.id]);'],
+              },
+              { start: 46, ctx: ['', '  return (', '    <section className="thread" aria-label={agent.name}>'] },
+              {
+                id: 'k2', choice: null,
+                ours: ['      {messages.map((m) => <Message key={m.id} message={m} collapseOver={24} />)}'],
+                base: ['      {messages.map((m) => <Message key={m.id} message={m} />)}'],
+                theirs: ['      {messages.map((m) => (', '        <Message key={m.id} message={m} draft={drafts[m.id]} />', '      ))}'],
+              },
+              { start: 49, ctx: ['      <div ref={end} />', '    </section>', '  );', '}'] },
+            ],
+          },
+          {
+            id: 'cf2', path: 'packages/web/src/thread/thread.css', resolved: false,
+            parts: [
+              { start: 20, ctx: ['.msg .body {', '  line-height: var(--leading-body);'] },
+              { id: 'k3', choice: null, ours: ['  max-width: var(--measure);', '  overflow-wrap: anywhere;'], base: ['  max-width: 72ch;'], theirs: ['  max-width: 72ch;', '  white-space: pre-wrap;'] },
+              { start: 23, ctx: ['}'] },
+            ],
+          },
+        ],
+      },
+      commits: [
+        commit('Keep the thread pinned to the end while reading', 'threads-b1', 50 * MIN, [['packages/web/src/thread/Thread.tsx', 'M', { diff: 'thread' }]], ['feat/agent-console/threads']),
+        commit('Collapse long replies over 24 lines', 'threads-b1', 2 * HOUR, [['packages/web/src/thread/Message.tsx', 'M', { add: 33, del: 7 }], ['packages/web/src/thread/thread.css', 'M', { add: 12, del: 1 }]]),
+        commit('Write the thread scroll test first', 'threads-tw', 2 * HOUR + 30 * MIN, [['packages/web/test/thread-scroll.test.ts', 'A', { add: 52 }]]),
+        ...nav,
+      ],
+    });
+    wt({
+      id: 'console-review', repo: c.repo, project: c.id, kind: 'team', team: 'console-review', branch: 'feat/agent-console/review', parent: c.branch, machine: 'studio', folder: root + '/.worktrees/agent-console-review', owner: 'review-lead',
+      ahead: 0, behind: 1, commits: nav,
+    });
+  }
+
+  // Every other project: its own branch and one worktree for each team. A project that has
+  // not reached Plan has no worktree yet.
+  for (const p of state.projects) {
+    if (p.id === 'console' || p.stage === 'Design') continue;
+    const teams = state.teams.filter((t) => t.project === p.id); const lead = p.lead;
+    const merged = p.phase === 'running';
+    wt({
+      id: p.id, repo: p.repo, project: p.id, kind: 'project', branch: p.branch, parent: repoOf(p).main, machine: p.machine, folder: p.folder, owner: lead,
+      ahead: merged ? 0 : p.id === 'apiref' ? 14 : 3, behind: 0, merged: merged ? Date.now() - 6 * DAY : null,
+      commits: [
+        commit(p.id === 'apiref' ? 'Redirect the old page addresses' : 'Merge the first sprint', lead, 3 * HOUR, [[p.id === 'apiref' ? 'redirects.json' : 'src/index.ts', p.id === 'apiref' ? 'A' : 'M', { add: 37, del: 0 }], ['README.md', 'M', { add: 6, del: 2 }]], [p.branch]),
+        commit('Write the plan and its statements', lead, 1 * DAY, [['.lgtm/plan.md', 'A', { add: 58 }]]),
+      ],
+    });
+    for (const t of teams) {
+      const ag = state.agents.find((a) => a.team === t.id && a.role === 'team-lead'); const busy = p.stage === 'Build';
+      wt({
+        id: t.id, repo: p.repo, project: p.id, kind: 'team', team: t.id, branch: t.branch, parent: p.branch, machine: p.machine, folder: p.folder + '-' + t.id.split('-').pop(), owner: ag?.id || lead,
+        ahead: busy ? 2 : 0, behind: 0,
+        files: busy ? [file('src/exports/csv.ts', 'M', { add: 24, del: 8 }), file('src/exports/query.ts', 'M', { add: 9, del: 3, staged: true }), file('src/exports/csv.test.ts', 'A', { add: 41 })] : [],
+        commits: [commit(busy ? 'Write voided invoices as their own rows' : 'Finish the last review round', ag?.id || lead, 2 * HOUR, [[busy ? 'src/exports/csv.ts' : 'docs/review/round-2.md', busy ? 'M' : 'A', { add: 19, del: busy ? 5 : 0 }]], [t.branch])],
+      });
+    }
+  }
+  state.worktrees = wts.map((w) => ({ ...w, stale: false }));
+  state.gitUi = {};
+}
+
+// ---- helpers ----------------------------------------------------------------------
+const STATUS: Record<string, string> = { M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed' };
+const baseName = (p: string) => p.split('/').pop();
+const dirName = (p: string) => p.split('/').slice(0, -1).join('/');
+function findWt(s: State, id: Id): Worktree { return byId(s.worktrees, id)!; }
+function who(s: State, id: Id | null | undefined): string { return id === 'owner' ? 'You' : agentOf(s, id)?.name || (live.on ? id || '' : 'Agent'); }
+function Author({ s, id }: { s: State; id: Id }) {
+  const a = id !== 'owner' && agentOf(s, id);
+  return <span class="git-author">
+    {a ? <Avatar agent={a} s={s} size="sm" status={false} /> : <OwnerAvatar s={s} size="sm" />}
+    <span class="truncate">{who(s, id)}</span>
+  </span>;
+}
+function ownerText(s: State, w: Worktree): string {
+  if (w.kind === 'base') return 'Base branch';
+  const a = agentOf(s, w.owner); if (!a) return 'No owner';
+  const t = w.team && teamOf(s, w.team);
+  return w.kind === 'project' ? a.name : `${a.name} · ${teamName(t as Team | null)}`;
+}
+function AheadBehind({ w }: { w: Worktree }) {
+  if (w.kind === 'base') return null;
+  return <span class="git-ab" title={`${plural(w.ahead, 'commit')} ahead of ${w.parent}${w.behind == null ? '' : ', ' + w.behind + ' behind'}`}>
+    <span class={cx(!w.ahead && 'faint')}><Icon name="arrow-up" size={11} />{w.ahead}</span>
+    <span class={cx(w.behind ? 'warn-text' : 'faint')}><Icon name="arrow-down" size={11} />{w.behind ?? '—'}</span>
+  </span>;
+}
+function StatusLetter({ status }: { status: string }) { return <span class={cx('git-st', status)} title={STATUS[status]}>{status}</span>; }
+function Counts({ f }: { f: GitFile }) {
+  if (f.add == null || f.del == null) return <span class="git-counts faint">—</span>;
+  if (f.kind === 'binary') return <span class="git-counts faint">binary</span>;
+  return <span class="git-counts">
+    <span class="success-text">+{f.add.toLocaleString('en-GB')}</span>
+    <span class="error-text">−{f.del.toLocaleString('en-GB')}</span>
+  </span>;
+}
+
+// ---- actions ----------------------------------------------------------------------
+function stage(wid: Id, ids: Id[], staged: boolean, all = false) { if (live.on) return liveGit.stage(wid, ids, staged, all); update((s) => { for (const f of findWt(s, wid).files) if (ids.includes(f.id)) f.staged = staged; }); }
+function discard(s: State, w: Worktree, files: GitFile[]) { if (live.on) return liveGit.discard(w, files);
+  act.confirm({
+    title: files.length === 1 ? `Discard changes to ${baseName(files[0].path)}?` : `Discard ${files.length} changed files?`,
+    body: `The files in ${w.branch} go back to the last commit. This cannot be undone.`,
+    lost: files.slice(0, 6).map((f) => f.path), action: 'Discard',
+    onConfirm: () => { update((st) => { const x = findWt(st, w.id); x.files = x.files.filter((f) => !files.some((g) => g.id === f.id)); }); act.toast(files.length === 1 ? 'Changes discarded' : `${files.length} files discarded`); },
+  });
+}
+function doCommit(wid: Id, message: string) { if (live.on) return liveGit.commit(wid, message);
+  let n = 0;
+  update((s) => {
+    const w = findWt(s, wid); const staged = w.files.filter((f) => f.staged); n = staged.length;
+    for (const k of w.commits) k.refs = k.refs.filter((r) => r !== w.branch);
+    w.commits.unshift({ hash: hash(), subject: message.split('\n')[0], body: message.split('\n').slice(1).join('\n').trim(), author: 'owner', ts: Date.now(), files: staged.map((f) => ({ ...f, staged: false })), refs: [w.branch] });
+    w.files = w.files.filter((f) => !f.staged); w.ahead += 1;
+  });
+  act.toast(`Committed ${plural(n, 'file')} to the worktree`);
+}
+function updateFromBase(wid: Id) { if (live.on) return refuse();
+  update((s) => {
+    const w = findWt(s, wid); const n = w.behind!;
+    for (const k of w.commits) k.refs = k.refs.filter((r) => r !== w.branch);
+    w.commits.unshift({ hash: hash(), subject: `Merge ${w.parent} into ${w.branch}`, author: 'owner', ts: Date.now(), files: [file('packages/web/test/reconnect.test.ts', 'M', { diff: 'reconnect' })], refs: [w.branch], merge: true });
+    w.behind = 0; w.ahead += n;
+  });
+  act.toast('Updated from the base. No conflicts.');
+}
+function integrate(wid: Id) { if (live.on) return liveGit.integrate(wid);
+  let msg = '';
+  update((s) => {
+    const w = findWt(s, wid); const parent = s.worktrees.find((x) => x.repo === w.repo && x.branch === w.parent);
+    if (parent) {
+      const mine = w.commits.slice(0, w.ahead).map((k) => ({ ...k, refs: [] }));
+      for (const k of parent.commits) k.refs = k.refs.filter((r) => r !== parent.branch);
+      parent.commits.unshift({ hash: hash(), subject: `Merge ${w.branch}`, author: 'owner', ts: Date.now(), files: mine.flatMap((k) => k.files).slice(0, 8), refs: [parent.branch], merge: true }, ...mine);
+      parent.ahead += w.ahead + 1;
+      for (const x of s.worktrees) if (x.id !== w.id && x.repo === w.repo && x.parent === parent.branch) x.behind! += 1;
+    }
+    msg = `Integrated ${plural(w.ahead, 'commit')} into ${w.parent}`; w.ahead = 0; w.integratedAt = Date.now();
+  });
+  act.toast(msg);
+}
+function openReview(s: State, w: Worktree, project: Project) { if (live.on) return liveGit.openReview(w, project);
+  let r = s.requests.find((x) => x.kind === 'merge' && x.project === project.id && x.source === w.branch && x.status === 'open');
+  if (!r) {
+    const dirty = s.worktrees.filter((x) => x.project === project.id && x.kind !== 'project' && (x.ahead || x.files.length || x.merge)).length;
+    r = {
+      id: 'q-merge-' + project.id, kind: 'merge', agent: project.lead, project: project.id, title: `Merge ${w.branch} into ${w.parent}`,
+      body: dirty ? `You opened this review early. ${plural(dirty, 'team worktree')} still ${dirty === 1 ? 'holds' : 'hold'} work that is not on ${w.branch}.` : 'Every team has integrated its work. Users will notice this change.',
+      createdAt: Date.now(), status: 'open', source: w.branch, target: w.parent!,
+      brief: dirty ? `You opened this review early. ${plural(dirty, 'team worktree')} still ${dirty === 1 ? 'holds' : 'hold'} work that is not on ${w.branch}.` : 'Every team has integrated its work.', notice: dirty ? null : 'This change reaches users.',
+      evidence: { tests: { ok: false, text: `No full run on the latest commit ${w.commits[0]?.hash || ''}`, value: 'No full run', sub: 'On the latest commit' }, review: { ok: false, text: 'The review team has not finished its last round', value: 'Not finished', sub: 'Last round still open' }, commits: w.ahead, files: Math.max(7, w.ahead * 4) },
+    };
+    update((st) => { st.requests = st.requests.filter((x) => x.id !== r!.id); st.requests.push(r!); });
+  }
+  act.openDialog({ type: 'merge-review', requestId: r!.id });
+}
+function choose(wid: Id, fid: Id, kid: string, choice: ConflictChoice | null) { if (live.on) return liveGit.choose(wid, fid, kid, choice);
+  update((s) => { const f = findWt(s, wid).merge!.files.find((x) => x.id === fid)!; f.parts.find((p) => p.id === kid)!.choice = choice; if (!choice) f.resolved = false; });
+}
+function markResolved(wid: Id, fid: Id, value = true) { if (live.on) return liveGit.resolve(wid, fid, value); update((s) => { findWt(s, wid).merge!.files.find((x) => x.id === fid)!.resolved = value; }); }
+function continueMerge(wid: Id) { if (live.on) return liveGit.continueMerge(wid);
+  update((s) => {
+    const w = findWt(s, wid); const m = w.merge!;
+    for (const k of w.commits) k.refs = k.refs.filter((r) => r !== w.branch);
+    w.commits.unshift({ hash: hash(), subject: `Merge ${m.from} into ${w.branch}`, author: 'owner', ts: Date.now(), refs: [w.branch], merge: true, files: m.files.map((f) => file(f.path, 'M', { add: 5, del: 3 })) });
+    w.merge = null; w.ahead += 1;
+    const a = agentOf(s, m.by); if (a && a.state !== 'stopped') { a.state = 'working'; a.activity = 'Running the team checks after the merge'; }
+  });
+  act.toast('Merge finished');
+}
+function abortMerge(s: State, w: Worktree) { if (live.on) return refuse();
+  act.confirm({
+    title: 'Abort this merge?', body: `${w.branch} goes back to how it was before ${w.merge!.from} was merged in. Your conflict choices are lost.`, action: 'Abort merge',
+    onConfirm: () => { update((st) => { findWt(st, w.id).merge = null; }); act.toast('Merge aborted'); },
+  });
+}
+
+// ---- diff -------------------------------------------------------------------------
+function splitRows(h: Hunk) {
+  const rows: [GitLine | null, GitLine | null][] = []; let i = 0; const L = h.lines;
+  while (i < L.length) {
+    if (L[i].t === 'ctx') { rows.push([L[i], L[i]]); i++; continue; }
+    const dels: GitLine[] = []; const adds: GitLine[] = [];
+    while (i < L.length && L[i].t === 'del') dels.push(L[i++]);
+    while (i < L.length && L[i].t === 'add') adds.push(L[i++]);
+    for (let k = 0; k < Math.max(dels.length, adds.length); k++) rows.push([dels[k] || null, adds[k] || null]);
+  }
+  return rows;
+}
+function Diff({ f, mode }: { f: GitFile; mode: DiffMode }) {
+  const [showLarge, setShowLarge] = useState(false);
+  const large = useMemo(() => (f.kind === 'large' && showLarge ? parseDiff(synth(f.path, 160, 120, 5)) : null), [f.id, showLarge]);
+  useEffect(() => setShowLarge(false), [f.id]);
+  if (live.on && !f.loaded) return <div class="diff-note" role="status">Loading diff…</div>;
+  if (live.on && f.diffError) return <div class="diff-note" role="status">{f.diffError}</div>;
+  if (f.kind === 'binary') {
+    return <div class="diff-note">
+      <Icon name="image" size={18} />
+      <strong>Binary file</strong>
+      <span>{f.status === 'A' ? 'A new' : 'A changed'} file{f.size ? ' of ' + f.size : ''}. There is no text to compare.</span>
+    </div>;
+  }
+  if (f.kind === 'large' && !showLarge) {
+    return <div class="diff-note">
+      <Icon name="file-diff" size={18} />
+      <strong>Large diff hidden</strong>
+      <span>
+        {(f.add! + f.del!).toLocaleString('en-GB')}
+        {' changed lines. Lock files and generated files are folded so the page stays quick.'}
+      </span>
+      <button type="button" class="btn" onClick={() => setShowLarge(true)}>Show anyway</button>
+    </div>;
+  }
+  const hunks = (large || f.hunks)!;
+  if (!hunks.length) return <div class="diff-note"><strong>No text changes</strong><span>Only the file's name or mode changed.</span></div>;
+  const head = (h: Hunk) => `@@ −${h.oldStart},${h.oldCount} +${h.newStart},${h.newCount} @@`;
+  if (mode === 'split') {
+    return <div class="diff-scroll">
+      <table class="diff split">
+        <colgroup><col class="ln" /><col /><col class="ln" /><col /></colgroup>
+        {hunks.map((h) => <tbody>
+        <tr class="hunk"><td colspan={4}><span>{head(h)}</span>{h.label && <b>{h.label}</b>}</td></tr>
+        {splitRows(h).map(([a, b]) => <tr>
+          <td class={cx('ln', a && a.t === 'del' && 'del', !a && 'none')}>{a?.o}</td>
+          <td class={cx('code', a && a.t === 'del' && 'del', !a && 'none')}>{a ? a.text || ' ' : ''}</td>
+          <td class={cx('ln', b && b.t === 'add' && 'add', !b && 'none')}>{b?.n}</td>
+          <td class={cx('code', b && b.t === 'add' && 'add', !b && 'none')}>{b ? b.text || ' ' : ''}</td>
+        </tr>)}
+      </tbody>)}
+        {large && <tbody><tr class="hunk"><td colspan={4}><span>The first {hunks.length} of many hunks are shown.</span></td></tr></tbody>}
+      </table>
+    </div>;
+  }
+  return <div class="diff-scroll">
+    <table class="diff unified">
+      {hunks.map((h) => <tbody>
+      <tr class="hunk"><td colspan={4}><span>{head(h)}</span>{h.label && <b>{h.label}</b>}</td></tr>
+      {h.lines.map((l) => <tr class={l.t}>
+        <td class="ln">{l.o}</td>
+        <td class="ln">{l.n}</td>
+        <td class="sign">{l.t === 'add' ? '+' : l.t === 'del' ? '−' : ''}</td>
+        <td class="code">{l.text || ' '}</td>
+      </tr>)}
+    </tbody>)}
+      {large && <tbody><tr class="hunk"><td colspan={4}><span>The first {hunks.length} of many hunks are shown.</span></td></tr></tbody>}
+    </table>
+  </div>;
+}
+function FileHead({ f, children, onBack }: { f: GitFile; children?: ComponentChildren; onBack?: (() => void) | null }) {
+  return <header class="diff-head">
+    {onBack && <button type="button" class="icon-btn" aria-label="Back to the file list" onClick={onBack}><Icon name="arrow-left" size={16} /></button>}
+    <StatusLetter status={f.status} />
+    <div class="diff-path">
+      <b class="truncate">{baseName(f.path)}</b>
+      <span class="mono truncate-start">{f.status === 'R' ? `${f.oldPath} → ${f.path}` : dirName(f.path)}</span>
+    </div>
+    <Counts f={f} />
+    {children}
+  </header>;
+}
+
+// ---- what one agent changed -------------------------------------------------------------
+// The files a worker has changed and not committed, and its commits. A file opens its diff under
+// its row. An agent with a worktree of its own shows that worktree's files. An agent that writes in
+// its team's worktree shows the files its task names.
+/** Puts one commit in the Git view: its worktree, the History page, and the commit. A link to Git calls it. */
+export function showCommit(s: State, project: Project, hash: string): void {
+  const w = (s.worktrees || []).find((x) => (x.project === project.id || (x.kind === 'base' && x.repo === project.repo)) && x.commits.some((c) => c.hash === hash));
+  if (w && !live.on) update((st) => { st.inspecting[project.id] = w.branch; st.gitUi[w.id] = { ...(st.gitUi[w.id] || {}), tab: 'history', commit: hash }; });
+}
+export function AgentChanges({ s, agent, taskFiles, project }: { s: State; agent: { id: Id; team: Id | null; project: Id }; taskFiles: string[]; project: Project }) {
+  const now = useNow(60000); const [open, setOpen] = useState<Id | null>(null);
+  const wts = s.worktrees.filter((w) => w.project === agent.project);
+  const own = wts.find((w) => w.owner === agent.id && w.kind === 'agent');
+  const shared = own ? undefined : wts.find((w) => w.kind === 'team' && w.team === agent.team);
+  const files = own ? own.files : shared ? shared.files.filter((f) => taskFiles.includes(f.path)) : [];
+  const seen = new Set<string>();
+  const commits = wts.flatMap((w) => w.commits).filter((c) => c.author === agent.id && !seen.has(c.hash) && seen.add(c.hash)).sort((a, b) => b.ts - a.ts);
+  const sum = (fs: GitFile[], k: 'add' | 'del') => fs.reduce((n, f) => n + (f[k] || 0), 0);
+  return <>
+    <div class="section-head">
+      <h2>Changed, not committed</h2>
+      <span class="count">{files.length}</span>
+      {files.length > 0 && <span class="git-counts"><span class="success-text">+{sum(files, 'add')}</span><span class="error-text">−{sum(files, 'del')}</span></span>}
+      <span class="grow" />
+      {(own || shared) && <span class="muted mono agp-branch truncate-start">{(own || shared)!.branch}</span>}
+    </div>
+    {files.length === 0 ? <p class="muted agp-none" data-empty>No changes</p>
+    : <ul class="agp-changes">
+      {files.map((f) => <li key={f.id} class={cx(open === f.id && 'open')}>
+        <button type="button" aria-expanded={open === f.id} onClick={() => setOpen(open === f.id ? null : f.id)} title={f.path}>
+          <Icon name="chevron-right" size={13} class="twist" />
+          <StatusLetter status={f.status} />
+          <span class={cx('name', f.status === 'D' && 'gone')}>{baseName(f.path)}</span>
+          <span class="dir truncate-start">{f.status === 'R' ? `${f.oldPath} → ${f.path}` : dirName(f.path)}</span>
+          <Counts f={f} />
+        </button>
+        {open === f.id && <div class="agp-diff"><Diff f={f} mode="unified" /></div>}
+      </li>)}
+    </ul>}
+    <div class="section-head"><h2>Commits</h2><span class="count">{commits.length}</span></div>
+    {commits.length === 0 ? <p class="muted agp-none" data-empty>No commits</p>
+    : <ul class="agp-commits">
+      {commits.map((c) => <li key={c.hash}>
+        <a href={href(`${placePath(project)}/git`)} onClick={() => showCommit(s, project, c.hash)}>
+          <span class="subject truncate">{c.subject}</span>
+          <span class="tag commit">{c.hash.slice(0, 7)}</span>
+          <span class="git-counts"><span class="success-text">+{sum(c.files, 'add')}</span><span class="error-text">−{sum(c.files, 'del')}</span></span>
+          <span class="muted num when">{ago(c.ts, now)} ago</span>
+        </a>
+      </li>)}
+    </ul>}
+  </>;
+}
+
+// ---- changes ----------------------------------------------------------------------
+function FileRow({ f, selected, onSelect, actions }: { f: GitFile; selected: boolean; onSelect: () => void; actions: ComponentChildren }) {
+  return <li class={cx('git-file', selected && 'sel')}>
+    <button type="button" class="git-file-main" aria-current={selected ? 'true' : undefined} onClick={onSelect} title={f.path}>
+      <Icon name={f.kind === 'binary' ? 'image' : /\.(tsx?|css|json)$/.test(f.path) ? 'file-code' : 'file-text'} size={14} class="faint" />
+      <span class={cx('name', f.status === 'D' && 'gone')}>{baseName(f.path)}</span>
+      <span class="dir truncate-start">{dirName(f.path)}</span>
+    </button>
+    <span class="git-file-acts">{actions}</span>
+    <StatusLetter status={f.status} />
+  </li>;
+}
+interface ViewProps { s: State; w: Worktree; mode: DiffMode; phone: boolean }
+function Changes({ s, w, mode, phone }: ViewProps) {
+  const ui = s.gitUi[w.id] || {}; const setUi = (patch: GitView) => update((st) => { st.gitUi[w.id] = { ...(st.gitUi[w.id] || {}), ...patch }; });
+  const staged = w.files.filter((f) => f.staged); const unstaged = w.files.filter((f) => !f.staged);
+  const sel = byId(w.files, ui.file) || (phone ? null : unstaged[0] || staged[0]);
+  const msg = ui.message || ''; const readOnly = w.kind === 'base';
+  const can = staged.length > 0 && msg.trim().length > 0 && (live.on ? !w.files.some((f) => f.conflict) && w.ready : !w.merge);
+  const commitNow = () => { if (!can) return; if (live.on) { doCommit(w.id, msg.trim()); return; } doCommit(w.id, msg.trim()); setUi({ message: '', file: null }); };
+  const [writing, setWriting] = useState(false);
+  const generate = () => { if (live.on) return refuse(); if (!staged.length || writing) return; setWriting(true); setTimeout(() => { setWriting(false); setUi({ message: act.commitMessage(staged.map((f) => f.path)) }); }, 900); };
+  const why = w.merge && !live.on ? 'Finish or abort the merge first' : w.files.some((f) => f.conflict) ? 'Resolve the conflicted files first' : !staged.length ? 'Stage a file first' : '';
+  if (!w.files.length) {
+    return <div class="git-clean">
+      <Empty title="Nothing to commit" icon="circle-check">
+        <a class="link" href="#" onClick={(e) => { e.preventDefault(); if (live.on) return liveGit.selectGit(w.id, 'history'); setUi({ tab: 'history' }); }}>
+          Open the history
+        </a>
+      </Empty>
+    </div>;
+  }
+  const group = (title: string, files: GitFile[], isStaged: boolean) => files.length > 0 && <section class="git-group">
+    <div class="section-head">
+      <h3>{title}</h3>
+      <span class="count">{files.length}</span>
+      <span class="grow" />
+      {!isStaged && <button type="button" class="icon-btn sm" aria-label="Discard all changes" data-tip="Discard all" onClick={() => discard(s, w, files)}>
+        <Icon name="undo-2" size={14} />
+      </button>}
+      <button type="button" class="icon-btn sm" aria-label={isStaged ? 'Unstage all' : 'Stage all'} data-tip={isStaged ? 'Unstage all' : 'Stage all'} onClick={() => stage(w.id, files.map((f) => f.id), !isStaged, true)}>
+        <Icon name={isStaged ? 'minus' : 'plus'} size={14} />
+      </button>
+    </div>
+    <ul>
+      {files.map((f) => <FileRow key={f.id} f={f} selected={sel?.id === f.id} onSelect={() => setUi({ file: f.id })} actions={<>
+        {!isStaged && <button type="button" class="icon-btn sm" aria-label={`Discard changes to ${baseName(f.path)}`} data-tip="Discard" onClick={() => discard(s, w, [f])}>
+        <Icon name="undo-2" size={13} />
+      </button>}
+        <button type="button" class="icon-btn sm" aria-label={`${isStaged ? 'Unstage' : 'Stage'} ${baseName(f.path)}`} data-tip={isStaged ? 'Unstage' : 'Stage'} onClick={() => stage(w.id, [f.id], !isStaged)}>
+          <Icon name={isStaged ? 'minus' : 'plus'} size={13} />
+        </button>
+      </>} />)}
+    </ul>
+  </section>;
+  return <div class={cx('git-split', phone && sel && 'detail')}>
+    {!phone && <ListResizer s={s} fallback={280} />}
+    <div class="git-list">
+      <form class="git-commit" onSubmit={(e) => { e.preventDefault(); commitNow(); }}>
+        <textarea class="textarea" rows={2} placeholder={writing ? 'Writing the message…' : `Message for the commit on ${baseName(w.branch)}`} aria-label="Commit message" value={msg} onInput={(e) => setUi({ message: (e.target as HTMLTextAreaElement).value })} onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); commitNow(); } }} />
+        <div class="row">
+          {/* The list under this line counts the staged files, so the line says only what blocks a commit. */}
+          <span class="muted grow truncate" title={why}>{why}</span>
+          <button type="button" class="btn sm ghost" disabled={!staged.length || writing || !!w.merge} data-tip={`Writes the message with ${s.settings.gitModel || 'Haiku 5.5'}`} onClick={generate}>
+            <Icon name={writing ? 'loader-circle' : 'sparkles'} size={13} class={writing ? 'spin' : ''} />
+            Generate
+          </button>
+          <button type="submit" class="btn primary sm" disabled={!can}><Icon name="check" size={13} />Commit</button>
+        </div>
+      </form>
+      <div class="git-groups">
+        {group('Staged', staged, true)}
+        {group('Changes', unstaged, false)}
+      </div>
+    </div>
+    <div class="git-detail">
+      {sel ? <>
+        <FileHead f={sel} onBack={phone ? () => setUi({ file: null }) : null}>
+          <button type="button" class="btn sm" onClick={() => stage(w.id, [sel.id], !sel.staged)}>
+            {sel.staged ? 'Unstage' : 'Stage'}
+          </button>
+        </FileHead>
+        <Diff f={sel} mode={mode} />
+      </> : <div class="diff-note"><strong>No file selected</strong></div>}
+    </div>
+  </div>;
+}
+
+// ---- history ----------------------------------------------------------------------
+function Ref({ name, w }: { name: string; w: Worktree }) { return <span class={cx('git-ref', name === w.branch && 'head', /^v\d|^SP-/.test(name) && 'tag')}>
+  <Icon name={/^v\d|^SP-/.test(name) ? 'pin' : 'git-branch'} size={10} />
+  {name}
+</span>; }
+function History({ s, w, mode, phone }: ViewProps) {
+  const now = useNow(); const ui = s.gitUi[w.id] || {}; const setUi = (patch: GitView) => update((st) => { st.gitUi[w.id] = { ...(st.gitUi[w.id] || {}), ...patch }; });
+  const sel = w.commits.find((k) => k.hash === ui.commit) || (phone ? null : w.commits[0]);
+  const [closed, setClosed] = useState<Record<Id, boolean>>({});
+  if (!w.commits.length) return <div class="git-clean">
+    <Empty title="No commits" icon="history" />
+  </div>;
+  return <div class={cx('git-split history', phone && sel && 'detail')}>
+    {!phone && <ListResizer s={s} fallback={340} />}
+    <div class="git-list">
+      <ol class="git-log">
+        {w.commits.map((k, i) => <li key={k.hash}>
+      <button type="button" class={cx('git-commit-row', sel?.hash === k.hash && 'sel', i >= w.ahead && w.kind !== 'base' && 'shared')} aria-current={sel?.hash === k.hash ? 'true' : undefined} onClick={() => live.on ? liveGit.selectGit(w.id, 'history', k.hash) : setUi({ commit: k.hash })}>
+        <span class={cx('node', k.merge && 'merge')} />
+        <span class="subject"><span class="truncate">{k.subject}</span></span>
+        <span class="meta">
+          <Author s={s} id={k.author} />
+          <span class="mono faint">{k.hash}</span>
+          <span class="faint when">{ago(k.ts, now)}</span>
+        </span>
+        {k.refs.length > 0 && <span class="refs">{k.refs.map((r) => <Ref name={r} w={w} />)}</span>}
+      </button>
+    </li>)}
+      </ol>
+      {w.kind !== 'base' && <p class="git-hint">
+        {w.ahead ? `The first ${plural(w.ahead, 'commit')} ${w.ahead === 1 ? 'is' : 'are'} not on ${w.parent} yet.` : `Every commit here is on ${w.parent}.`}
+      </p>}
+    </div>
+    <div class="git-detail">
+      {sel ? <>
+        <header class="commit-head">
+          {phone && <button type="button" class="icon-btn" aria-label="Back to the history" onClick={() => setUi({ commit: null })}>
+            <Icon name="arrow-left" size={16} />
+          </button>}
+          <div class="col grow" style="min-width:0;gap:4px">
+            <h2>{sel.subject}</h2>
+            <div class="row commit-meta">
+              <Author s={s} id={sel.author} />
+              <span class="muted">committed {ago(sel.ts, now) === 'now' ? 'just now' : ago(sel.ts, now) + ' ago'}</span>
+              <button type="button" class="tag copy" title="Copy the commit hash" onClick={() => { navigator.clipboard?.writeText(sel.hash).catch(() => {}); act.toast('Commit hash copied'); }}>
+                {sel.hash}
+                <Icon name="copy" size={10} />
+              </button>
+              <span class="muted">
+                {sel.loaded ? plural(sel.files.length, 'file') : live.on ? 'Loading files…' : plural(sel.files.length, 'file')}
+              </span>
+            </div>
+            {sel.body && <p class="muted" style="white-space:pre-wrap">{sel.body}</p>}
+          </div>
+        </header>
+        <div class="commit-files">
+          {sel.files.map((f) => <section class="commit-file" key={sel.hash + f.id}>
+          <button type="button" class="commit-file-head" aria-expanded={!closed[f.id]} onClick={() => setClosed((x) => ({ ...x, [f.id]: !x[f.id] }))}>
+            <Icon name="chevron-right" size={13} class="twist" />
+            <StatusLetter status={f.status} />
+            <span class="mono truncate-start">{f.path}</span>
+            <span class="grow" />
+            <Counts f={f} />
+          </button>
+          {!closed[f.id] && <Diff f={f} mode={mode} />}
+        </section>)}
+        </div>
+      </> : <div class="diff-note"><strong>No commit selected</strong></div>}
+    </div>
+  </div>;
+}
+
+// ---- conflicts --------------------------------------------------------------------
+const CHOICES: [ConflictChoice, string][] = [['ours', 'Use ours'], ['theirs', 'Use theirs'], ['both', 'Use both']];
+function Pane({ title, sub, lines, tone, picked }: { title: string; sub: string; lines: string[]; tone: string; picked?: boolean }) {
+  return <div class={cx('cf-pane', tone, picked && 'picked')}>
+    <header><b>{title}</b><span class="mono truncate-start">{sub}</span></header>
+    <pre>{lines.length ? lines.join('\n') : ' '}</pre>
+  </div>;
+}
+function Conflicts({ s, w, phone }: { s: State; w: Worktree; phone: boolean }) {
+  const m = w.merge; const ui = s.gitUi[w.id] || {}; const setUi = (patch: GitView) => update((st) => { st.gitUi[w.id] = { ...(st.gitUi[w.id] || {}), ...patch }; });
+  if (!m) return <div class="git-clean">
+    <Empty title="No conflicts" icon="circle-check" />
+  </div>;
+  const sel = m.files.find((f) => f.id === ui.cfile) || (phone ? null : m.files.find((f) => !f.resolved) || m.files[0]);
+  const blocks = (f: ConflictFile) => f.parts.filter((p) => p.id); const left = (f: ConflictFile) => blocks(f).filter((p) => !p.choice).length;
+  const allDone = m.files.every((f) => f.resolved);
+  return <div class={cx('git-split conflicts', phone && sel && 'detail')}>
+    <div class="git-list">
+      <div class="cf-summary">
+        <div class="row" style="gap:6px"><Icon name="git-merge" size={14} class="warn-text" /><b>Merge in progress</b></div>
+        <p>
+          {'Merging '}
+          <span class="mono">{m.from}</span>
+          {' into '}
+          <span class="mono">{w.branch}</span>
+          {'. '}
+          {live.on ? '' : who(s, m.by) + ' started it ' + ago(m.startedAt!) + ' ago and stopped at ' + plural(m.files.length, 'file') + '.'}
+        </p>
+        <div class="row" style="gap:6px">
+          <button type="button" class="btn primary sm" disabled={!allDone} title={allDone ? '' : 'Resolve every file first'} onClick={() => continueMerge(w.id)}>
+            Continue merge
+          </button>
+          <button type="button" class="btn sm ghost" onClick={() => abortMerge(s, w)}>Abort</button>
+        </div>
+      </div>
+      <section class="git-group">
+        <div class="section-head"><h3>Conflicted files</h3><span class="count">{m.files.filter((f) => !f.resolved).length}</span></div>
+        <ul>
+          {m.files.map((f) => <li class={cx('git-file', sel?.id === f.id && 'sel')}>
+          <button type="button" class="git-file-main" aria-current={sel?.id === f.id ? 'true' : undefined} onClick={() => setUi({ cfile: f.id })} title={f.path}>
+            <Icon name={f.resolved ? 'circle-check' : 'triangle-alert'} size={14} class={f.resolved ? 'success-text' : 'warn-text'} />
+            <span class="name">{baseName(f.path)}</span>
+            <span class="dir truncate-start">{dirName(f.path)}</span>
+          </button>
+          <span class={cx('cf-left', f.resolved ? 'faint' : 'warn-text')}>
+            {f.resolved ? 'Resolved' : left(f) ? `${left(f)} left` : 'Ready'}
+          </span>
+        </li>)}
+        </ul>
+      </section>
+    </div>
+    <div class="git-detail">
+      {sel ? <>
+        <header class="diff-head">
+          {phone && <button type="button" class="icon-btn" aria-label="Back to the conflicted files" onClick={() => setUi({ cfile: null })}>
+            <Icon name="arrow-left" size={16} />
+          </button>}
+          <span class="git-st C" title="Conflicted">C</span>
+          <div class="diff-path">
+            <b class="truncate">{baseName(sel.path)}</b>
+            <span class="mono truncate-start">{dirName(sel.path)}</span>
+          </div>
+          <span class="muted not-phone">
+            {sel.resolved ? 'Resolved' : left(sel) ? `${plural(left(sel), 'conflict')} left` : 'Every conflict has a choice'}
+          </span>
+          {sel.resolved ? <button type="button" class="btn sm" onClick={() => markResolved(w.id, sel.id, false)}>Reopen</button>
+            : <button type="button" class="btn sm primary" disabled={left(sel) > 0 || (live.on && !sel.loaded)} onClick={() => { if (live.on) return markResolved(w.id, sel.id); markResolved(w.id, sel.id); act.toast(`${baseName(sel.path)} marked resolved`); }}>
+              Mark resolved
+            </button>}
+        </header>
+        <div class="cf-body">
+          {(() => { let n = 0; return sel.parts.map((p) => {
+          if (!p.id) return <div class="cf-ctx">{p.ctx!.map((line, i) => <div><span class="ln">{p.start! + i}</span>{line || ' '}</div>)}</div>;
+          n += 1; const result = p.choice === 'ours' ? p.ours : p.choice === 'theirs' ? p.theirs : p.choice === 'both' ? [...p.ours, ...p.theirs] : null;
+          return <section class={cx('cf-block', p.choice && 'chosen')} key={p.id}>
+            <header>
+              <b>Conflict {n} of {blocks(sel).length}</b>
+              {p.choice ? <span class="success-text row" style="gap:4px">
+                <Icon name="check" size={12} />
+                {{ ours: 'Using ours', theirs: 'Using theirs', both: 'Using both, ours first' }[p.choice]}
+              </span> : <span class="warn-text">Unresolved</span>}
+              <span class="grow" />
+              <div class="seg">
+                {CHOICES.map(([id, label]) => <button type="button" aria-pressed={p.choice === id} disabled={sel.resolved} onClick={() => { if (p.choice !== id) choose(w.id, sel.id, p.id, id); }}>
+                {label}
+              </button>)}
+              </div>
+            </header>
+            {result ? <div class="cf-panes one"><Pane title="Result" sub={sel.path} lines={result} tone="result" /></div>
+              : <div class="cf-panes">
+                <Pane title="Ours" sub={w.branch} lines={p.ours} tone="ours" />
+                <Pane title="Base" sub="common ancestor" lines={p.base} tone="base" />
+                <Pane title="Theirs" sub={m.from} lines={p.theirs} tone="theirs" />
+              </div>}
+          </section>;
+        }); })()}
+        </div>
+      </> : <div class="diff-note"><strong>No file selected</strong></div>}
+    </div>
+  </div>;
+}
+
+// ---- integrate strip ---------------------------------------------------------------
+function Integrate({ s, w, project }: { s: State; w: Worktree; project: Project }) {
+  const now = useNow();
+  if (w.kind === 'base') return <div class="git-integrate">
+    <Icon name="lock" size={14} class="faint" />
+    <span class="muted">The base branch. Work reaches it only through a merge review that you approve.</span>
+  </div>;
+  const parent = <span class="mono">{w.parent}</span>;
+  const dirty = w.files.length > 0;
+  if (w.kind === 'project') {
+    const req = live.on ? w.review : s.requests.find((x) => x.kind === 'merge' && x.project === project.id && x.source === w.branch);
+    if (project.merged || w.merged) {
+      return <div class="git-integrate ok">
+        <Icon name="git-merge" size={14} class="success-text" />
+        <span>
+          <b>Merged</b>
+          {' into '}
+          {parent}
+          {w.merged ? ` ${ago(w.merged, now)} ago` : req?.answeredAt ? ` ${ago(req.answeredAt, now) === 'now' ? 'just now' : ago(req.answeredAt, now) + ' ago'}` : ''}
+          {'. '}
+          {req?.delivery?.mode === 'github' && <>
+        <a class="link" href={req.delivery.url} target="_blank" rel="noopener noreferrer">#{req.delivery.number}</a>
+        {' · '}
+        {req.delivery.state}
+        {'. '}
+      </>}
+          {req?.localSync || 'The branch can be deleted.'}
+        </span>
+      </div>;
+    }
+    const open = req && req.status === 'open';
+    return <div class={cx('git-integrate', open && 'warn')}>
+      <Icon name="git-pull-request" size={14} class={open ? 'warn-text' : 'muted'} />
+      <span class="grow">
+        {req?.delivery && (req.delivery.mode === 'github' ? <>
+        {'GitHub '}
+        <a class="link" href={req.delivery.url} target="_blank" rel="noopener noreferrer">#{req.delivery.number}</a>
+        {' · '}
+        {req.delivery.state}
+        {'. '}
+      </> : req.delivery.reason + ' ')}
+        {' '}
+        {open ? <><b>Awaiting merge.</b> {plural(w.ahead, 'commit')} ahead of {parent}.</> : <>{plural(w.ahead, 'commit')} ahead of {parent}{w.behind ? ` and ${w.behind} behind` : ''}. Only you can merge it.</>}
+      </span>
+      {w.behind! > 0 && <button type="button" class="btn sm" onClick={() => updateFromBase(w.id)}>Update from base</button>}
+      <button type="button" class={cx('btn sm', open && 'primary')} disabled={!w.ahead} onClick={() => openReview(s, w, project)}>
+        Open merge review
+      </button>
+    </div>;
+  }
+  const block = w.merge ? 'Finish the merge first' : dirty ? 'Commit or discard the changes first' : w.behind ? 'Update from the base first' : !w.ahead ? 'Nothing to integrate' : '';
+  return <div class="git-integrate">
+    <Icon name="git-merge" size={14} class="muted" />
+    <span class="grow">
+      {!w.ahead && !w.behind ? <>Up to date with {parent}{w.integratedAt ? ' · integrated just now' : ''}</>
+      : <>
+        {w.ahead ? plural(w.ahead, 'commit') + ' ahead of' : 'Up to date with'}
+        {' '}
+        {parent}
+        {w.behind ? <> and <b class="warn-text">{w.behind} behind</b></> : ''}
+      </>}
+    </span>
+    {w.behind! > 0 && <button type="button" class="btn sm" disabled={!!w.merge} onClick={() => updateFromBase(w.id)}>Update from base</button>}
+    <button type="button" class="btn sm" disabled={!!block} title={block} onClick={() => integrate(w.id)}>Integrate into {w.parent}</button>
+  </div>;
+}
+
+// ---- the tab ----------------------------------------------------------------------
+const KIND_WORD: Record<string, string> = { base: 'Base', project: 'Project', team: 'Team', agent: 'Agent' };
+// Files is its own project tab beside Git. It is a placeholder until the file view is chosen.
+
+export function GitTab({ s, project }: { s: State; project: Project }) {
+  useEffect(() => liveGit.openScreen('git', project.id), [project.id]);
+  const phone = useMedia('(max-width: 860px)');
+  const [modePref, setModePref] = useState(() => persist<DiffMode>('gitDiffMode', 'unified'));
+  const setMode = (m: DiffMode) => { setModePref(m); remember('gitDiffMode', m); };
+  const mode = phone ? 'unified' : modePref;
+  const all = (s.worktrees || []).filter((w) => w.project === project.id || (w.kind === 'base' && w.repo === project.repo));
+  // A repository's own Git view is its main checkout, which is the base worktree.
+  const mine = isMain(project) ? all : all.filter((w) => w.kind !== 'base');
+  if (!mine.length) {
+    return <div class="git">
+      <div class="git-clean">
+        <Empty title="No worktrees" icon="git-branch">
+          <a class="link" href={`#/p/${project.id}/status`}>Project status</a>
+        </Empty>
+      </div>
+    </div>;
+  }
+  const order: Record<string, number> = { project: 0, team: 1, agent: 2, base: 3 };
+  const list = [...all].sort((a, b) => order[a.kind] - order[b.kind]);
+  const w = list.find((x) => x.branch === s.inspecting[project.id]) || list.find((x) => x.branch === project.branch) || list[0];
+  const ui = s.gitUi[w.id] || {}; const tab = ui.tab || (w.merge ? 'conflicts' : 'changes');
+  const setTab = (t: GitTabName) => live.on ? liveGit.selectGit(w.id, t) : update((st) => { st.gitUi[w.id] = { ...(st.gitUi[w.id] || {}), tab: t }; });
+  const pick = (x: Worktree) => live.on ? liveGit.selectGit(x.id) : update((st) => { st.inspecting[project.id] = x.branch; });
+  const conflictCount = w.merge ? w.merge.files.filter((f) => !f.resolved).length : 0;
+  const owner = agentOf(s, w.owner);
+  return <fieldset class="git" disabled={live.on && (liveGit.busy('git') || liveGit.busy('git-plan'))} aria-busy={live.on && liveGit.busy('git')} style="border:0;padding:0;margin:0;min-width:0">
+    <div class="git-bar">
+      <Back path={`${placePath(project)}/git`} />
+      <Menu class="git-pick" width={400} label="Choose a worktree" header={<div class="menu-label">Worktrees of {project.name}</div>} trigger={<>
+          <Icon name="git-branch" size={14} />
+          <b class="mono truncate-start">{w.branch}</b>
+          <Icon name="chevrons-up-down" size={12} class="faint" />
+        </>} items={list.map((x) => ({
+          label: <span class="mono">{x.branch}</span>, checked: x.id === w.id, onSelect: () => pick(x),
+          sub: <span class="git-pick-sub">
+            {x.merge ? <span class="warn-text">Conflict</span> : x.files.length ? <span>{x.files.length} changed</span> : null}
+            <span>{KIND_WORD[x.kind]}</span>
+          </span>,
+        }))} />
+      <span class="git-owner not-phone">
+        {owner ? <Avatar agent={owner} s={s} size="sm" /> : <Icon name="lock" size={13} class="faint" />}
+        <span class="truncate">{ownerText(s, w)}</span>
+        <span class="faint truncate">on {machineOf(s, w.machine)?.name}</span>
+      </span>
+      <AheadBehind w={w} />
+      {live.on && <>
+        <button type="button" class="btn sm" onClick={() => liveGit.refreshGit(project.id)}>Refresh Git</button>
+        {['fetch', 'pull', 'push'].map((op) => <button type="button" class="btn sm" onClick={() => liveGit.syncGit(w.id, op)}>{op[0].toUpperCase() + op.slice(1)}</button>)}
+        {liveGit.busy('git') && <span role="status">Working…</span>}
+      </>}
+      {live.on && w.truncated && <span role="alert">The change list is incomplete.</span>}
+      {w.stale && <span role="alert">This worktree could not be refreshed.</span>}
+      <span class="grow" />
+      <div class="seg" role="tablist" aria-label="Git views">
+        <button type="button" aria-pressed={tab === 'changes'} onClick={() => setTab('changes')}>
+          Changes
+          {w.files.length > 0 && <span class="count">{w.files.length}</span>}
+        </button>
+        <button type="button" aria-pressed={tab === 'history'} onClick={() => setTab('history')}>History</button>
+        {(w.merge || tab === 'conflicts') && <button type="button" aria-pressed={tab === 'conflicts'} onClick={() => setTab('conflicts')}>
+          Conflicts
+          {conflictCount > 0 && <span class="count warn">{conflictCount}</span>}
+        </button>}
+      </div>
+      {tab !== 'conflicts' && <div class="seg not-phone" aria-label="Diff layout">
+        <button type="button" aria-pressed={mode === 'unified'} onClick={() => setMode('unified')}>
+          <Icon name="rows-2" size={13} />
+          Unified
+        </button>
+        <button type="button" aria-pressed={mode === 'split'} onClick={() => setMode('split')}>
+          <Icon name="columns-2" size={13} />
+          Split
+        </button>
+      </div>}
+    </div>
+    <Integrate s={s} w={w} project={project} />
+    {w.merge && tab !== 'conflicts' && <div class="git-integrate warn">
+      <Icon name="triangle-alert" size={14} class="warn-text" />
+      <span class="grow">
+        <b>A merge stopped on {plural(conflictCount || w.merge.files.length, 'conflicted file')}.</b>
+        {' Commits wait until it is finished or aborted.'}
+      </span>
+      <button type="button" class="btn sm warn" onClick={() => setTab('conflicts')}>Resolve conflicts</button>
+    </div>}
+    {tab === 'changes' ? <Changes key={w.id} s={s} w={w} mode={mode} phone={phone} />
+      : tab === 'history' ? <History key={w.id} s={s} w={w} mode={mode} phone={phone} />
+      : <Conflicts key={w.id} s={s} w={w} phone={phone} />}
+  </fieldset>;
+}

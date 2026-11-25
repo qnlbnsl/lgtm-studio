@@ -1,0 +1,1074 @@
+import { permissionModeFor } from "@lgtm/contracts";
+import { instructionEnvelope } from "../routing/envelope.ts";
+import { instructionEcho } from "../roles/instructionEcho.ts";
+import { randomUUID } from "node:crypto";
+import { readlinkSync, rmSync, statSync } from "node:fs";
+import { homedir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
+import { comparePermission, type AgentChoice, type AgentConfiguration, type ContextUsage, DeliveryId, ThreadContent, type PermissionLevel, type SessionReference, type TurnUsage } from "@lgtm/contracts";
+import { AcpClient, layerChildProcess } from "@lgtm/t3-effect-acp/client";
+import { AcpRequestError } from "@lgtm/t3-effect-acp/errors";
+import type { AgentCapabilities } from "@lgtm/t3-effect-acp/schema-v1";
+import { mergeProviderInstanceEnvironment } from "@lgtm/t3-provider-instance/instanceEnvironment";
+import { HomeDirectory } from "@lgtm/t3-provider-instance/HostProcess";
+import * as Context from "effect/Context";
+import * as Deferred from "effect/Deferred";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
+import * as FileSystem from "effect/FileSystem";
+import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
+import * as Path from "effect/Path";
+import * as Queue from "effect/Queue";
+import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as Scope from "effect/Scope";
+import * as Sink from "effect/Sink";
+import * as Stream from "effect/Stream";
+import * as SqlClient from "effect/sql/SqlClient";
+import * as ChildProcess from "effect/process/ChildProcess";
+import { ChildProcessSpawner, makeHandle, type ChildProcessHandle } from "effect/process/ChildProcessSpawner";
+import { credentialSourceFor, makeCredentialRegistry, type CredentialRegistry } from "../accounts/credentialSource.ts";
+import { withCodexHome } from "../accounts/shadowHome.ts";
+import { SecretStore } from "../commands/SecretStore.ts";
+import { folderForSpawn } from "../identity/ceiling.ts";
+import { sha256Hex } from "../identity/credential.ts";
+import { makeRedactor } from "../identity/redactor.ts";
+import { Redactor, type RedactionPart } from "../log/Redactor.ts";
+import { makeStderrTail, stderrTailLines } from "../recovery/crash.ts";
+import { linuxProcessReader } from "../recovery/orphans.ts";
+import { buildBaseEnvironment } from "./baseEnvironment.ts";
+import { harnessLogin, homeConflict, loginRefusal } from "./harnesses.ts";
+import { classifyError } from "./classify.ts";
+import { mcpScriptPath, withLgtmMcp } from "./codexMcp.ts";
+import { cursorMcpConfig, cursorModelId, cursorServerName } from "./cursorMcp.ts";
+import { compactPrompt } from "./compact.ts";
+import { negotiatedChoices, reportedChoice, selector, selectValues, validChoiceId } from "./choices.ts";
+import { setConfig, type ConfigOption } from "./config.ts";
+import { denyArguments } from "./denyRead.ts";
+import { reportedLevel } from "./modes.ts";
+import { makePermissionHold, mapPermissionOption, settingsWrite } from "./permissions.ts";
+import { resetTimeFromError } from "./resetTime.ts";
+import { Runner, RunnerRejected, type ReplayItem, type RunnerEvent, type SessionInfo } from "./Runner.ts";
+import { translate, type Translated } from "./translate.ts";
+import { makeTerminalOutput, terminalDataOnly, withoutTerminalData, withoutTerminalPayload } from "./terminal.ts";
+import { owedAfter } from "../roles/instructionObligation.ts";
+
+export interface AcpRunnerOptions {
+  readonly socketPath: string;
+  readonly stateFolder: string;
+  readonly environment: Record<string, string | undefined>;
+  // Enabled only by the service after row 74's real temporary-folder check.
+  readonly protocolLog?: boolean;
+  // Issue 223: the harness login stores opened by launches. The service
+  // shares one registry with its own redactor; without one the runner keeps
+  // its own, so its redaction still covers them.
+  readonly credentials?: CredentialRegistry;
+  readonly classifyError?: (input: { harness: string; text: string }) => "out-of-usage" | "signed-out" | "capacity" | undefined;
+}
+type Spawn = Parameters<Runner["Service"]["start"]>[0];
+type Send = Parameters<Runner["Service"]["prompt"]>[0];
+type Hold = Effect.Success<ReturnType<typeof makePermissionHold>>;
+interface Turn {
+  readonly compact?: boolean;
+  readonly instructionPrefix?: string;
+  readonly instructionEcho?: ReturnType<typeof instructionEcho>;
+  messageIds?: Map<string, string>;
+  readonly deliveryId: Send["delivery"]["id"];
+  readonly sentSequence: number;
+  replied: boolean;
+  idle: boolean;
+  ended: boolean;
+  cancelled?: boolean;
+  text: string;
+  error?: string;
+  resetAt?: number;
+  usage?: TurnUsage;
+}
+interface Process {
+  readonly input: Spawn;
+  readonly incarnation: string;
+  readonly scope: Scope.Closeable;
+  readonly child: ChildProcessHandle;
+  readonly client: AcpClient["Service"];
+  readonly secrets: Array<Redacted.Redacted<string>>;
+  // Fix round 1, F3: whether this spawn's login store can be inspected now.
+  readonly covered: () => boolean;
+  readonly holds: Map<string, Hold>;
+  readonly responses: Map<string, Deferred.Deferred<void, RunnerRejected>>;
+  // Issue 154: the redacted replay of this spawn's load, returned with it.
+  readonly replay: Array<ReplayItem>;
+  sessionId: string;
+  version: number;
+  capabilities?: AgentCapabilities;
+  loading: boolean;
+  ready: boolean;
+  stopped: boolean;
+  dead: boolean;
+  mode: string;
+  options: ReadonlyArray<ConfigOption>;
+  legacyModels?: unknown;
+  applied: AgentChoice;
+  configuring: boolean;
+  configurationUncertain: boolean;
+  context: ContextUsage;
+  contextNeedsTurn: boolean;
+  commands: ReadonlyArray<{ name: string }>;
+  instructionsPending: boolean;
+  instructionRestoreWarned: boolean;
+  message?: {
+    readonly id: string;
+    sourceId?: string;
+    itemId: string;
+    boundary?: boolean;
+    coverageLost?: boolean;
+    discarded?: number;
+    role: "user" | "agent" | undefined;
+    readonly pending: Array<{ readonly passthrough?: boolean; readonly bytes: number; length: number; text: string; readonly event: Extract<RunnerEvent, { _tag: "deliveryUpdate" }> }>;
+  };
+  readonly terminalOutput: ReturnType<typeof makeTerminalOutput>;
+  turn?: Turn;
+  sent?: Deferred.Deferred<void, RunnerRejected>;
+}
+const rejected = (reason: string) => new RunnerRejected({ reason });
+const invalidateContext = (entry: Process) => {
+  // Reconciliation before a replacement session's first turn has no old
+  // occupancy to invalidate. Preserve its honest "not reported" state.
+  if (entry.context._tag !== "unavailable" || entry.context.reason !== "not-reported") {
+    entry.context = { _tag: "unavailable", reason: "configuration-changed" };
+  }
+  entry.contextNeedsTurn = true;
+};
+const tokenCount = (value: unknown): value is number => typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+// The pinned ACP Usage has only these input counters. Do not infer request
+// times or cache lifetimes from arbitrary _meta. In particular, Claude 0.99.1
+// reports a turn tally here, not a verified last-request snapshot.
+const terminalUsage = (value: unknown): TurnUsage | undefined => {
+  if (typeof value !== "object" || value === null) return undefined;
+  const source = value as Record<string, unknown>;
+  const usage: Record<string, number> = {};
+  for (const key of ["inputTokens", "cachedReadTokens", "cachedWriteTokens"] as const) {
+    if (tokenCount(source[key])) usage[key] = source[key];
+  }
+  return Object.keys(usage).length === 0 ? undefined : usage;
+};
+const recordTurnError = (turn: Turn, error: unknown) => {
+  turn.error = JSON.stringify(error);
+  const resetAt = resetTimeFromError(error);
+  if (resetAt === undefined) delete turn.resetAt;
+  else turn.resetAt = resetAt;
+};
+
+export const layer = (configuration: AcpRunnerOptions) => Layer.effect(Runner, Effect.gen(function* () {
+  const spawner = yield* ChildProcessSpawner;
+  const secrets = yield* SecretStore;
+  const fileSystem = yield* FileSystem.FileSystem;
+  const pathService = yield* Path.Path;
+  const lifetime = yield* Effect.scope;
+  const suppliedRedactor = yield* Effect.serviceOption(Redactor);
+  const processDatabase = yield* Effect.serviceOption(SqlClient.SqlClient);
+  const processes = new Map<string, Process>();
+  const credentials = configuration.credentials ?? makeCredentialRegistry();
+  // Login-store leaves are not per-process: they stay registered for the
+  // runner's whole life, so no release of a process's secrets can drop one
+  // before that process's last output is redacted (issue 223).
+  const fallback = makeRedactor({ secrets: () => [...processes.values()].flatMap((entry) => entry.secrets).concat(credentials.secrets()),
+    tokenHashes: () => new Set([...processes.values()].map(entry => entry.incarnation)) });
+  // Fix round 1, F3: while a process's login store cannot be inspected, a
+  // token written there is unknown to the redactor. Every redaction for that
+  // process checks the store first and, if it cannot be read, returns this
+  // fixed text in place of anything it would release. Coverage is checked
+  // before redacting, so text decided while it was lost is never released
+  // later as if it had been covered.
+  const withheldText = "[output withheld: account credentials cannot be inspected]";
+  const always = () => true;
+  const guarded = (covered: () => boolean, redact: Effect.Effect<string>) => Effect.suspend(() => {
+    const ok = covered();
+    return redact.pipe(Effect.map((clean) => ok || clean === "" ? clean : withheldText));
+  });
+  const redactText = (text: string, covered: () => boolean = always) => guarded(covered, Option.isSome(suppliedRedactor)
+    ? Effect.suspend(() => suppliedRedactor.value.redactText(fallback.redactText(text))) : Effect.sync(() => fallback.redactText(text)));
+  // Issue 223: decoded adapter data can hold a secret in its JSON-escaped
+  // form. Serializing that data again escapes it a second time, a form the
+  // redactor does not match, and a client decoding the result gets the
+  // secret back. So structured adapter data is redacted at its decoded
+  // string leaves and keys before anything serializes it.
+  // One redaction pass per value: every key and string leaf, in walk order,
+  // joined by a separator holding a fresh random nonce (fix round 1, F6).
+  // Neither adapter data nor a registered secret can contain a nonce chosen
+  // after both exist, so no input adds a separator and no match spans a
+  // whole one. A match that eats part of one only lowers the count, which
+  // falls back to one pass per string.
+  const strings = (value: unknown, found: Array<string>): void => {
+    if (typeof value === "string") found.push(value);
+    else if (Array.isArray(value)) for (const item of value) strings(item, found);
+    else if (value !== null && typeof value === "object") for (const [key, item] of Object.entries(value)) { found.push(key); strings(item, found); }
+  };
+  const rebuild = (value: unknown, next: () => string): unknown => {
+    if (typeof value === "string") return next();
+    if (Array.isArray(value)) return value.map((item) => rebuild(item, next));
+    if (value === null || typeof value !== "object") return value;
+    const copy: Record<string, unknown> = {};
+    for (const [, item] of Object.entries(value)) {
+      // Defined, not assigned, so a `__proto__` key stays an ordinary field.
+      const key = next();
+      Object.defineProperty(copy, key, { value: rebuild(item, next), enumerable: true, writable: true, configurable: true });
+    }
+    return copy;
+  };
+  const cleanStructure = (value: unknown, covered: () => boolean = always): Effect.Effect<unknown> => Effect.gen(function* () {
+    const found: Array<string> = [];
+    strings(value, found);
+    if (found.length === 0) return value;
+    const separator = `\n\u0000${randomUUID()}\u0000\n`;
+    let clean = found.some((text) => text.includes(separator)) ? []
+      : (yield* redactText(found.join(separator), covered)).split(separator);
+    if (clean.length !== found.length) clean = yield* Effect.forEach(found, (text) => redactText(text, covered));
+    let at = 0;
+    return rebuild(value, () => clean[at++]!);
+  });
+  // The gated protocol log writes whole frames. Each line is decoded and
+  // cleaned as structure; a line that is not a whole frame is withheld.
+  const protocolPayload = (payload: unknown, covered: () => boolean): Effect.Effect<unknown> => typeof payload !== "string" ? cleanStructure(withoutTerminalPayload(payload), covered)
+    : Effect.forEach(payload.split("\n").filter((line) => line.trim() !== ""), (line) => {
+      let frame: unknown;
+      try { frame = JSON.parse(line); } catch { return Effect.succeed("adapter frame withheld: not a whole frame"); }
+      return cleanStructure(withoutTerminalPayload(frame), covered).pipe(Effect.map((clean) => JSON.stringify(clean)));
+    }).pipe(Effect.map((lines) => lines.join("\n")));
+  const events = yield* Queue.unbounded<RunnerEvent>();
+  const redactChunk = (itemId: string, text: string, final: boolean, covered: () => boolean = always) => guarded(covered, Effect.gen(function* () {
+    // Resolved spawn credentials are covered even before the service's
+    // registry sees them. Each redactor retains its own bounded carry.
+    if (Option.isSome(suppliedRedactor) && suppliedRedactor.value.redactChunkWithSecrets !== undefined) {
+      return yield* suppliedRedactor.value.redactChunkWithSecrets(itemId, text, final,
+        [...processes.values()].flatMap((entry) => entry.secrets).concat(credentials.secrets()));
+    }
+    let clean = fallback.redactChunk(itemId, text, final);
+    if (Option.isSome(suppliedRedactor) && suppliedRedactor.value.redactChunk !== undefined) {
+      clean = yield* suppliedRedactor.value.redactChunk(itemId, clean, final);
+    }
+    return yield* redactText(clean);
+  }));
+  const threadContent = ThreadContent;
+  const emit = (event: RunnerEvent) => Queue.offer(events, event).pipe(Effect.asVoid);
+  // Records one replayed update for the load's result. Breaks in a row are
+  // kept as one, so a long replay of other content stays small.
+  const noteReplay = (entry: Process, item: ReplayItem) => {
+    if (item._tag === "break" && entry.replay.at(-1)?._tag === "break") return;
+    entry.replay.push(item);
+  };
+  // One security carry survives content updates. Original span lengths assign
+  // replacements to the right chunk without moving later ordinary text before
+  // a tool or plan. Already decided text is released immediately, even when
+  // only part of its source chunk is decided.
+  const messageParts = (entry: Process, text: string, final: boolean): Effect.Effect<ReadonlyArray<RedactionPart>> => Effect.gen(function* () {
+    const buffer = entry.message;
+    if (buffer === undefined) return [];
+    const covered = entry.covered();
+    // Keep the following tool metadata in the same withheld interval, even
+    // when the owner repairs the store after seeing the message's marker.
+    // A new healthy message starts a new interval.
+    if (!final) buffer.coverageLost = !covered;
+    const end = final || !covered;
+    const parts = Option.isSome(suppliedRedactor) && suppliedRedactor.value.redactPartsWithSecrets !== undefined
+      ? yield* suppliedRedactor.value.redactPartsWithSecrets(buffer.id, text, end,
+        [...processes.values()].flatMap(process => process.secrets).concat(credentials.secrets()))
+      : yield* Effect.forEach(fallback.redactParts(buffer.id, text, end), part => redactText(part.text, entry.covered).pipe(
+        Effect.map(clean => ({ ...part, text: clean, replacement: part.replacement || clean !== part.text }))));
+    const masked = covered || parts.length === 0 ? parts : [{length:parts.reduce((sum,part)=>sum+part.length,0),text:withheldText,replacement:true}];
+    // A supplied redactor may have no withholding method. Its security carry
+    // remains intact after queue overflow; skip spans already replaced here
+    // when it eventually returns them, including private match continuations.
+    let discarded = buffer.discarded ?? 0;
+    if (discarded === 0) return masked;
+    const kept: Array<RedactionPart> = [];
+    for (const part of masked) {
+      const skip = Math.min(discarded, part.length);
+      discarded -= skip;
+      if (skip < part.length) kept.push(skip === 0 ? part : {
+        length: part.length - skip, text: part.replacement ? "" : part.text.slice(skip), replacement: part.replacement,
+      });
+    }
+    buffer.discarded = discarded;
+    return kept;
+  });
+  const retainParts = (entry: Process, parts: ReadonlyArray<RedactionPart>) => {
+    const buffer = entry.message;
+    if (buffer === undefined) return;
+    for (const part of parts) {
+      let left = part.length;
+      let offset = 0;
+      for (const pending of buffer.pending) {
+        if (pending.passthrough || pending.length === 0) continue;
+        const take = Math.min(left, pending.length);
+        pending.text += part.replacement ? offset === 0 ? part.text : "" : part.text.slice(offset, offset + take);
+        pending.length -= take;
+        left -= take;
+        offset += take;
+        if (left === 0) break;
+      }
+    }
+  };
+  const drainMessages = (entry: Process, final: boolean) => Effect.gen(function* () {
+    const buffer = entry.message;
+    if (buffer === undefined) return;
+    if (final) retainParts(entry, yield* messageParts(entry, "", true));
+    else if (buffer.pending.length > 1024 || buffer.pending.reduce((sum, item) => sum + item.bytes + 3 * item.length + Buffer.byteLength(item.text), 0) > 1024 * 1024) {
+      // Never finalize an undecided raw suffix on overflow. Replace it in
+      // event order, but keep covered match context for any later remainder.
+      const supplied = Option.isSome(suppliedRedactor) ? suppliedRedactor.value : undefined;
+      if (supplied?.redactPartsWithSecrets !== undefined && supplied.withholdParts === undefined) {
+        const length = buffer.pending.reduce((sum, item) => sum + item.length, 0);
+        buffer.discarded = (buffer.discarded ?? 0) + length;
+        retainParts(entry, [{ length, text: withheldText, replacement: true }]);
+      } else {
+        const parts = supplied?.redactPartsWithSecrets !== undefined && supplied.withholdParts !== undefined
+          ? yield* supplied.withholdParts(buffer.id, withheldText)
+          : fallback.withholdParts(buffer.id, withheldText);
+        retainParts(entry, parts);
+      }
+    }
+    while (buffer.pending.length > 0) {
+      const first = buffer.pending[0]!;
+      if (first.passthrough) {
+        buffer.pending.shift();
+        if (entry.turn !== undefined) entry.turn.text += first.event.text;
+        if (entry.loading) noteReplay(entry, { _tag: "break" });
+        yield* emit(first.event);
+        continue;
+      }
+      if (first.text.length === 0 && first.length > 0) break;
+      const text = first.text;
+      first.text = "";
+      if (first.length === 0) buffer.pending.shift();
+      if (entry.turn !== undefined) entry.turn.text += text;
+      if (first.event.replay) noteReplay(entry, first.event.role === "user" ? { _tag: "user", text } : { _tag: "break" });
+      yield* emit({ ...first.event, text, content: { _tag: "text", text } });
+      if (first.length > 0) break;
+    }
+    if (final) delete entry.message;
+  });
+  // Content remains in event order behind the undecided message tail. Only
+  // redacted content and chunk metadata are queued, never additional raw text.
+  // Permission and mode control events remain immediate so a held request can
+  // be answered while the message carry awaits its next chunk.
+  const emitContent = (entry: Process, event: Extract<RunnerEvent, { _tag: "deliveryUpdate" }>) => Effect.gen(function* () {
+    if (entry.message === undefined) {
+      if (entry.turn !== undefined) entry.turn.text += event.text;
+      if (entry.loading) noteReplay(entry, { _tag: "break" });
+      yield* emit(event);
+    } else {
+      entry.message.pending.push({ passthrough: true, bytes: Buffer.byteLength(JSON.stringify(event)), length: 0, text: "", event });
+      entry.message.boundary = true;
+      yield* drainMessages(entry, false);
+    }
+  });
+  const publishTerminals = (entry: Process, updates: ReadonlyArray<Translated>) => Effect.gen(function* () {
+    if (entry.turn === undefined && !entry.loading) return;
+    for (const translated of updates) {
+      const deliveryId = entry.turn?.deliveryId ?? Schema.decodeUnknownSync(DeliveryId)(`replay-${randomUUID()}`);
+      // Latch coverage loss for this publication, including a store change
+      // during redaction. Withholding trusted schema keys makes an invalid
+      // shape, so replace the whole item instead of decoding that shape.
+      let lost = false;
+      const covered = () => { lost ||= !entry.covered(); return !lost; };
+      const content = covered() ? yield* cleanStructure(translated.content, covered).pipe(
+        Effect.flatMap(Schema.decodeUnknownEffect(threadContent)),
+        Effect.catch(() => covered() ? Effect.fail(rejected("adapter terminal content is malformed")) : Effect.succeed(undefined)),
+      ) : undefined;
+      const text = yield* redactText(translated.text, covered);
+      const withheld = content === undefined || !covered();
+      yield* emitContent(entry, { _tag: "deliveryUpdate", agentId: entry.input.agentId, incarnation: entry.incarnation, deliveryId,
+        kind: withheld ? "message" : "tool-call", replay: entry.loading,
+        ...(withheld ? { role: "agent" as const } : {}),
+        text: withheld ? withheldText : text, content: withheld ? { _tag: "text", text: withheldText } : content });
+    }
+  });
+  const drainTerminals = (entry: Process) => entry.terminalOutput.finish().pipe(Effect.flatMap((updates) => publishTerminals(entry, updates)));
+  const identity = (entry: Process) => ({ agentId: entry.input.agentId, incarnation: entry.incarnation });
+  const live = (agentId: string, incarnation?: string) => Effect.suspend(() => {
+    const entry = processes.get(agentId);
+    return entry === undefined || entry.dead || entry.stopped || !entry.ready || (incarnation !== undefined && incarnation !== entry.incarnation)
+      ? Effect.fail(rejected("agent process is not live")) : Effect.succeed(entry);
+  });
+  const finish = (entry: Process, turn: Turn) => Effect.gen(function* () {
+    if (turn.ended || !turn.replied || !turn.idle || entry.stopped || entry.dead) return;
+    turn.ended = true;
+    yield* drainMessages(entry, true);
+    const tail = turn.instructionEcho?.finish() ?? "";
+    if (tail.length > 0) {
+      const text = yield* redactText(tail, entry.covered);
+      turn.text += text;
+      yield* emit({ _tag: "deliveryUpdate", ...identity(entry), deliveryId: turn.deliveryId,
+        kind: "message", itemId: randomUUID(), replay: false, role: "user", text, content: { _tag: "text", text } });
+    }
+    yield* drainTerminals(entry);
+    const clean = yield* redactText(turn.error ?? turn.text, entry.covered);
+    const harness = entry.input.harness.id;
+    // Only the recorded cursor adapter reports usage exhaustion as a
+    // successful text reply. Agent prose cannot establish a signed-out error.
+    const candidate = turn.error !== undefined || harness === "cursor"
+      ? (configuration.classifyError ?? classifyError)({ harness, text: clean }) : undefined;
+    const classification = turn.cancelled ? undefined : turn.error !== undefined || candidate === "out-of-usage" ? candidate : undefined;
+    yield* emit({ _tag: "promptReply", ...identity(entry), deliveryId: turn.deliveryId,
+      outcome: turn.cancelled ? { _tag: "success" } : classification === "capacity" ? { _tag: "capacity", error: clean } : classification !== undefined ? { _tag: "pause", reason: classification, error: clean,
+        ...(classification === "out-of-usage" && turn.error !== undefined && turn.resetAt !== undefined ? { resetAt: turn.resetAt } : {}) }
+        : turn.error !== undefined ? { _tag: "error", error: clean } : { _tag: "success" } });
+    const succeeded = turn.error === undefined && !turn.cancelled && classification === undefined;
+    if (succeeded) entry.instructionsPending = owedAfter(entry.instructionsPending, { _tag: "turnSucceeded", compact: turn.compact === true, carried: turn.instructionPrefix !== undefined });
+    if (entry.turn === turn) delete entry.turn;
+    yield* emit({ _tag: "turnEnded", ...identity(entry), deliveryId: turn.deliveryId,
+      sentSequence: turn.sentSequence,
+      ...(turn.cancelled ? { stopped: true } : {}),
+      ...(turn.usage === undefined ? {} : { usage: turn.usage }),
+    });
+  });
+  const setMode = (entry: Process, permission: PermissionLevel) => Effect.gen(function* () {
+    const mode = permissionModeFor(entry.input.harness, permission);
+    entry.mode = mode;
+    entry.options = yield* setConfig(entry.client, entry.sessionId, entry.options, "mode", mode, entry.version);
+  });
+  const close = (entry: Process) => Effect.gen(function* () {
+    entry.stopped = true;
+    yield* drainMessages(entry, true);
+    yield* drainTerminals(entry);
+    if (entry.sent !== undefined) yield* Deferred.fail(entry.sent, rejected("agent process stopped"));
+    for (const delivered of entry.responses.values()) yield* Deferred.fail(delivered, rejected("permission answer delivery failed"));
+    entry.responses.clear();
+    if (processes.get(entry.input.agentId) === entry) processes.delete(entry.input.agentId);
+    // The detached process group belongs to this spawn. Children cannot
+    // retain the protocol pipes or a permission hold after it is stopped.
+    yield* Effect.sync(() => { try { process.kill(-Number(entry.child.pid), "SIGKILL"); } catch { /* already gone */ } });
+    yield* Scope.close(entry.scope, Exit.void);
+    entry.holds.clear();
+    entry.secrets.length = 0;
+  });
+  // Issue 103: the duplicate-process check and the reservation are one
+  // synchronous step, and the reservation lasts until the process is
+  // registered or the spawn has failed, so two setups for one agent can never
+  // both reach the spawn, even from a caller that bypasses the send lanes.
+  const reserved = new Set<string>();
+  const spawn = (input: Spawn, session?: SessionReference, discovery = false): Effect.Effect<SessionInfo, RunnerRejected> => Effect.suspend(() => {
+    if (processes.has(input.agentId) || reserved.has(input.agentId)) return Effect.fail(rejected("agent already has a process"));
+    reserved.add(input.agentId);
+    return spawnReserved(input, session, discovery).pipe(Effect.ensuring(Effect.sync(() => { reserved.delete(input.agentId); })));
+  });
+  const spawnReserved = (input: Spawn, session?: SessionReference, discovery = false): Effect.Effect<SessionInfo, RunnerRejected> => Effect.gen(function* () {
+    if (session !== undefined && session._tag !== "acp") return yield* rejected("session is not an ACP session");
+    const harness = input.harness;
+    if (harness.runMode !== "acp" || !isAbsolute(harness.adapterPath) || resolve(harness.adapterPath) !== harness.adapterPath) return yield* rejected("adapter path is not resolved");
+    if ((input.model !== undefined && harness.models.length > 0 && !harness.models.includes(input.model))
+      || (input.effort !== undefined && harness.efforts.length > 0 && !harness.efforts.includes(input.effort))) return yield* rejected("configuration is not recorded");
+    const startingMode = permissionModeFor(harness, input.permission);
+    if (harness.reportedModes.length > 0 && !harness.reportedModes.some((mode) => mode.id === startingMode)) return yield* rejected("mode is not recorded");
+    // Fix round 2, F-1: a field the harness cannot apply would run the agent on
+    // another login than the account names, so it is refused here as well as
+    // when the account is set.
+    if (input.account.secret?.startsWith("secret:client.") || Object.values(input.account.environment ?? {}).some((value) => value.startsWith("secret:client."))) return yield* rejected("reserved secret reference");
+    const unsupported = loginRefusal(harness.id, input.account);
+    if (unsupported !== undefined) return yield* rejected(unsupported);
+    const resolvedSecrets = [input.token];
+    const variables: Record<string, string> = {};
+    for (const [name, value] of Object.entries(input.account.environment ?? {})) {
+      if (name.startsWith("HERDR_") || name.startsWith("LGTM_")) continue;
+      if (value.startsWith("secret:")) {
+        const secret = yield* secrets.resolve(value);
+        if (secret === undefined) return yield* rejected("account secret is unavailable");
+        resolvedSecrets.push(secret);
+        variables[name] = Redacted.value(secret);
+      } else variables[name] = value;
+    }
+    // Fix round 1, A9: the account's `home` goes to the harness's own login
+    // variable and its `secret` to the harness's key variable. HOME is not
+    // touched, so the keychain login stays reachable.
+    const login = harnessLogin(harness.id);
+    // The environment is already resolved, so a reference to the same folder is no conflict.
+    const conflict = homeConflict(harness.id, input.account.home, login.homeVariable === undefined ? undefined : variables[login.homeVariable]);
+    if (conflict !== undefined) return yield* rejected(`account home differs from ${conflict}`);
+    if (input.account.home !== undefined && login.homeVariable !== undefined && harness.id !== "codex") variables[login.homeVariable] = input.account.home;
+    const secretVariable = input.account.secret !== undefined && login.keyVariable !== undefined && variables[login.keyVariable] === undefined ? login.keyVariable : undefined;
+    if (secretVariable !== undefined && input.account.secret !== undefined) {
+      const secret = yield* secrets.resolve(input.account.secret);
+      if (secret === undefined) return yield* rejected("account secret is unavailable");
+      resolvedSecrets.push(secret);
+      variables[secretVariable] = Redacted.value(secret);
+    }
+    if (harness.id === "codex") {
+      variables.CODEX_CONFIG = yield* Effect.try({
+        try: () => withLgtmMcp(variables.CODEX_CONFIG),
+        catch: () => rejected("account tool server configuration cannot be prepared"),
+      });
+      const homed = yield* withCodexHome({ stateFolder: configuration.stateFolder, home: configuration.environment.HOME ?? input.folder, accountId: input.account.id, variables,
+        ...(input.account.home === undefined ? {} : { homePath: input.account.home }) }).pipe(
+        Effect.provideService(FileSystem.FileSystem, fileSystem), Effect.provideService(Path.Path, pathService),
+        Effect.mapError(() => rejected("account home cannot be prepared")),
+      );
+      Object.assign(variables, homed);
+    }
+    const base = buildBaseEnvironment({ parent: configuration.environment, accountVariables: variables,
+      lgtmSocket: configuration.socketPath, lgtmToken: Redacted.value(input.token) });
+    const environment = yield* mergeProviderInstanceEnvironment(Object.entries(variables).map(([name, value]) => ({ name, value, sensitive: name === secretVariable || (input.account.environment?.[name]?.startsWith("secret:") ?? false) })), base).pipe(
+      Effect.provideService(HomeDirectory, configuration.environment.HOME ?? input.folder),
+    );
+    // Issue 223: the adapter can read its own login store and print a token
+    // from it. Every token in that store is registered before the process
+    // exists, and a store that cannot be inspected refuses the launch.
+    const spawnEnvironment = Object.fromEntries(Object.entries(environment).filter((pair): pair is [string, string] => pair[1] !== undefined));
+    const credentialSource = credentialSourceFor({ harnessId: harness.id, home: spawnEnvironment.HOME ?? homedir(), variables: spawnEnvironment });
+    yield* credentials.open(credentialSource).pipe(Effect.mapError(() => rejected("account credentials cannot be inspected")));
+    const covered = () => credentials.healthy(credentialSource);
+    const args = yield* Effect.try({ try: () => [...harness.adapterArguments, ...denyArguments(harness, input.folder, configuration.stateFolder, environment)], catch: () => rejected("deny rule cannot be resolved") });
+    const scope = yield* Scope.fork(lifetime);
+    let serverName = "lgtm";
+    let entry: Process | undefined;
+    return yield* Effect.gen(function* () {
+      if (harness.id === "cursor") {
+        const sessions = join(configuration.stateFolder, "cursor-sessions", input.agentId);
+        if (discovery) yield* Scope.addFinalizer(scope, Effect.sync(() => rmSync(sessions, { recursive: true, force: true })));
+        const settings = yield* Effect.acquireRelease(
+          Effect.try({ try: () => {
+            serverName = cursorServerName(sessions);
+            return cursorMcpConfig(environment, serverName, input.folder, sessions);
+          }, catch: () => rejected("account tool server configuration cannot be prepared") }),
+          (settings) => Effect.sync(settings.remove),
+        ).pipe(Scope.provide(scope));
+        environment.CURSOR_CONFIG_DIR = settings.directory;
+      }
+      // No asynchronous work separates the final grant check from spawn.
+      const folder = yield* folderForSpawn(input.grant, session === undefined ? "start" : "reload").pipe(Effect.mapError(() => rejected("folder grant is no longer valid")));
+      if (folder !== input.folder) return yield* rejected("spawn folder differs from grant");
+      const grantedIdentity = yield* Effect.try({ try: () => statSync(folder, { bigint: true }), catch: () => rejected("spawn folder cannot be checked") });
+      const child = yield* spawner.spawn(ChildProcess.make(harness.adapterPath, args, { cwd: folder, env: environment, extendEnv: false, detached: true, stdin: { stream: "pipe", endOnDone: false } })).pipe(
+        Scope.provide(scope), Effect.mapError(() => rejected("adapter spawn failed")),
+      );
+      yield* Scope.addFinalizer(scope, Effect.sync(() => { try { process.kill(-Number(child.pid), "SIGKILL"); } catch { /* gone */ } }));
+      // Persist before speaking ACP: a killed service must leave enough
+      // identity for both the orphan sweep and owner-upgrade ancestry guard.
+      if (Option.isSome(processDatabase) && process.platform === "linux") {
+        const facts = linuxProcessReader.facts(Number(child.pid));
+        if (facts === undefined) return yield* rejected("adapter process identity unavailable");
+        const sql = processDatabase.value;
+        yield* sql`INSERT INTO processes (agent_id, group_id, boot_id, start_time, user_id, executable)
+          VALUES (${input.agentId}, ${Number(child.pid)}, ${linuxProcessReader.bootId()}, ${facts.startTime}, ${facts.userId}, ${facts.executable})`.pipe(
+          Effect.mapError(() => rejected("adapter process identity could not be recorded")),
+        );
+      }
+      const checkChildFolder = Effect.gen(function* () {
+        yield* folderForSpawn(input.grant, session === undefined ? "start" : "reload").pipe(Effect.mapError(() => rejected("folder grant is no longer valid")));
+        if (process.platform !== "linux") return;
+        const valid = yield* Effect.try({ try: () => {
+          const actual = statSync(`/proc/${child.pid}/cwd`, { bigint: true });
+          return readlinkSync(`/proc/${child.pid}/cwd`) === folder && actual.dev === grantedIdentity.dev && actual.ino === grantedIdentity.ino;
+        }, catch: () => rejected("spawn folder cannot be checked") });
+        if (!valid) return yield* rejected("spawn folder was redirected");
+      });
+      yield* checkChildFolder;
+      // Stderr is consumed continuously and never forwarded to service stdio.
+      // The local carry covers spawn credentials even before registration.
+      const stderrRedactor = makeRedactor({ secrets: () => resolvedSecrets.concat(credentials.secrets()), tokenHashes: () => new Set() });
+      const stderrTail = yield* makeStderrTail({ maxLines: stderrTailLines,
+        redactChunk: (id, text, final) => redactChunk(id, stderrRedactor.redactChunk(id, text, final), final, covered),
+      });
+      yield* Scope.addFinalizer(scope, stderrTail.finish().pipe(Effect.asVoid));
+      const stderrReader = yield* child.stderr.pipe(Stream.decodeText, Stream.runForEach(stderrTail.push), Effect.catch(() => Effect.void), Effect.forkIn(scope));
+      // A write acknowledgement is separate from the eventual prompt reply.
+      // Keep stdin open between writes; each sink run waits for the actual
+      // process pipe, so callers return only after their frame was written.
+      const transportHandle = makeHandle({ ...child, stdin: Sink.forEach((chunk: Uint8Array) =>
+        Stream.make(chunk).pipe(Stream.run(child.stdin), Effect.tap(() => Effect.gen(function* () {
+          for (const line of new TextDecoder().decode(chunk).split("\n")) {
+            if (line.trim() === "") continue;
+            let frame: { method?: string };
+            try { frame = JSON.parse(line); } catch { continue; }
+            if (frame.method === "session/prompt" && entry?.sent !== undefined) yield* Deferred.succeed(entry.sent, undefined);
+          }
+        }))),
+      ) });
+      const context = yield* Layer.build(layerChildProcess(transportHandle, {
+        logIncoming: true, logOutgoing: configuration.protocolLog === true,
+        // Outside gated protocol test mode this callback emits only the
+        // fixed diagnostic, without frame payloads, methods or request ids.
+        logger: (event) => event.stage === "decode_failed" ? Effect.logWarning("adapter frame dropped: malformed")
+          : configuration.protocolLog === true ? protocolPayload(event.payload, covered).pipe(Effect.flatMap((payload) => Effect.logInfo(payload))) : Effect.void,
+        onIncomingRequest: (_id, method) => method === "session/request_permission" ? Effect.void : Effect.logWarning("adapter request refused: unsupported"),
+        onOutgoingResponse: (id) => Effect.gen(function* () {
+          const delivered = entry?.responses.get(id);
+          if (delivered === undefined) return;
+          entry?.responses.delete(id);
+          yield* Deferred.succeed(delivered, undefined);
+        }),
+        onOutgoingResponseFailure: (id) => Effect.gen(function* () {
+          const delivered = entry?.responses.get(id);
+          if (delivered === undefined) return;
+          entry?.responses.delete(id);
+          yield* Deferred.fail(delivered, rejected("permission answer delivery failed"));
+          yield* Effect.logWarning("permission answer delivery failed");
+          // A committed answer whose response failed must not leave a live
+          // child holding a request the log already considers answered.
+          try { if (entry !== undefined) process.kill(-Number(entry.child.pid), "SIGKILL"); } catch { /* gone */ }
+        }),
+      })).pipe(Scope.provide(scope));
+      const client = Context.get(context, AcpClient);
+      const processEntry: Process = { input, incarnation: sha256Hex(Redacted.value(input.token)), scope, child, client, secrets: resolvedSecrets, covered,
+        holds: new Map(), responses: new Map(), replay: [],
+        terminalOutput: makeTerminalOutput({ redactChunk: (id, text, final) => redactChunk(id, text, final, covered), redactText: (text) => redactText(text, covered) }), sessionId: session?._tag === "acp" ? session.sessionId : "", version: 0,
+        instructionsPending: session === undefined ? owedAfter(false, { _tag: "conversationOpened" }) : input.instructionsOwed === true, instructionRestoreWarned: false, loading: session !== undefined, ready: false, stopped: false, dead: false, mode: startingMode, options: [], commands: [], applied: {}, configuring: false, configurationUncertain: false, context: { _tag: "unavailable", reason: "not-reported" }, contextNeedsTurn: session !== undefined };
+      entry = processEntry;
+      processes.set(input.agentId, processEntry);
+      yield* Scope.addFinalizer(scope, Effect.gen(function* () {
+        // Stop the producer before flushing and releasing its credentials.
+        yield* Fiber.interrupt(stderrReader);
+        yield* stderrTail.finish();
+        yield* drainMessages(processEntry, true);
+        yield* drainTerminals(processEntry).pipe(Effect.catch(() => Effect.logWarning("adapter terminal output dropped: malformed")));
+      }).pipe(Effect.ensuring(Effect.sync(() => {
+        processEntry.secrets.length = 0;
+        if (processes.get(input.agentId) === processEntry) processes.delete(input.agentId);
+      }))));
+      yield* client.handleSessionUpdate((notification) => Effect.gen(function* () {
+        const current = processEntry;
+        if (current.dead || current.stopped || (current.sessionId !== "" && notification.sessionId !== current.sessionId)) return;
+        const update = notification.update as Record<string, any>;
+        if (update.sessionUpdate === "available_commands_update") {
+          current.commands = Array.isArray(update.availableCommands) ? update.availableCommands.filter((command: any) => command !== null && typeof command === "object" && typeof command.name === "string") : [];
+          if (current.turn !== undefined) yield* emit({ _tag: "deliveryUpdate", ...identity(current), deliveryId: current.turn.deliveryId,
+            kind: "available_commands_update", replay: current.loading, text: "" });
+          return;
+        }
+        if (update.sessionUpdate === "config_option_update" || update.sessionUpdate === "current_mode_update") {
+          if (Array.isArray(update.configOptions)) {
+            const previous = current.applied;
+            current.options = update.configOptions;
+            current.applied = yield* safeApplied(current, reportedChoice(current.options));
+            if (previous.model !== current.applied.model || previous.effort !== current.applied.effort) {
+              invalidateContext(current);
+              if (current.ready && !current.loading && !current.configuring) yield* emit({ _tag: "configurationReported", ...identity(current), applied: current.applied });
+            }
+          }
+          const mode = update.currentModeId ?? current.options.find((option) => option.category === "mode")?.currentValue;
+          if (current.ready && !current.loading && typeof mode === "string" && mode !== current.mode) {
+            const level = reportedLevel(harness, mode, input.permission);
+            if (level !== undefined) current.mode = mode;
+            const safeMode = yield* redactText(mode, current.covered);
+            yield* emit({ _tag: "modeReported", ...identity(current), mode: safeMode, ...(level === undefined ? {} : { level }), ceiling: input.permission });
+          }
+          return;
+        }
+        if (update.sessionUpdate === "usage_update") {
+          if (current.ready && !current.loading && !current.configuring && !current.contextNeedsTurn) {
+            current.context = tokenCount(update.used) && tokenCount(update.size) && update.size > 0 && update.used <= update.size
+              ? { _tag: "available", used: update.used, window: update.size, percent: (update.used / update.size) * 100,
+                reportedAt: Date.now(), ...(current.applied.model === undefined ? {} : { model: current.applied.model }) }
+              : { _tag: "unavailable", reason: "invalid-report" };
+          }
+          // Replay and updates outside a turn must never seed the next turn.
+          if (!current.loading && current.turn !== undefined && !current.turn.ended && tokenCount(update.used)) {
+            current.turn.usage = { ...current.turn.usage, used: update.used };
+          }
+          return;
+        }
+        if (update.sessionUpdate === "state_update" && update.state === "idle") {
+          yield* drainMessages(current, true);
+          if (!current.loading && current.turn !== undefined && !current.turn.ended) {
+            const usage = terminalUsage(update.usage);
+            if (usage !== undefined) current.turn.usage = { ...current.turn.usage, ...usage };
+            current.turn.idle = true;
+            if (update.stopReason === "cancelled") current.turn.cancelled = true;
+            // ACP v2 puts the prompt's terminal error in its idle update;
+            // the raw request reply is only an acknowledgement.
+            if (update.error !== undefined) recordTurnError(current.turn, update.error);
+            yield* finish(current, current.turn);
+          }
+          return;
+        }
+        // Message chunks stay raw for the streaming redactor; every other
+        // update is serialized by the translator, so it is cleaned first.
+        const chunk = update.sessionUpdate === "agent_message_chunk" || update.sessionUpdate === "user_message_chunk";
+        // Fix round 1, F3: while the login store cannot be inspected, a
+        // non-message update becomes one fixed withheld item. It is
+        // translated raw only to learn its items; none of its data is used.
+        const covered = current.covered();
+        const lost = !chunk && (!covered || current.message?.coverageLost === true);
+        const translatedUpdates = !lost && terminalDataOnly(update) ? []
+          : translate(chunk || lost ? update : yield* cleanStructure(withoutTerminalData(update), current.covered), current.loading);
+        if (current.turn === undefined && !current.loading) {
+          if (translatedUpdates.length > 0) yield* Effect.logWarning("adapter content dropped: no active turn");
+          return;
+        }
+        let terminalUpdates: ReadonlyArray<Translated> = [];
+        if (lost) {
+          // Discard pending terminal carry when coverage is lost; no raw text
+          // from that interval may be released after the login store recovers.
+          yield* current.terminalOutput.finish({ resetLimitWarning: false });
+        } else {
+          terminalUpdates = yield* current.terminalOutput.push(update);
+        }
+        for (const translated of translatedUpdates) {
+          const deliveryId = current.turn?.deliveryId ?? Schema.decodeUnknownSync(DeliveryId)(`replay-${randomUUID()}`);
+          if (translated.kind === "message") {
+            // Keep security carry across source identities too. Each pending
+            // chunk retains its own speaker and item id; original-span mapping
+            // prevents ordinary text from moving to another speaker (issue 144).
+            const changed = current.message !== undefined && (current.message.role !== translated.role || current.message.sourceId !== translated.messageId);
+            if (current.message === undefined || current.message.boundary || changed) {
+              let id: string = randomUUID();
+              if (translated.messageId !== undefined && current.turn !== undefined) {
+                const ids = current.turn.messageIds ??= new Map();
+                const source = `${translated.role}:${translated.messageId}`;
+                id = ids.get(source) ?? id;
+                ids.set(source, id);
+              }
+              if (current.message !== undefined) {
+                current.message.itemId = id;
+                current.message.boundary = false;
+                current.message.role = translated.role;
+                if (translated.messageId === undefined) delete current.message.sourceId;
+                else current.message.sourceId = translated.messageId;
+              } else current.message = { id, itemId: id, ...(translated.messageId === undefined ? {} : { sourceId: translated.messageId }), role: translated.role, pending: [] };
+            }
+            const visibleText = translated.role === "user" ? current.turn?.instructionEcho?.push(translated.text) ?? translated.text : translated.text;
+            if (visibleText.length === 0 && translated.text.length > 0) continue;
+            const event: Extract<RunnerEvent, { _tag: "deliveryUpdate" }> = {
+              _tag: "deliveryUpdate", ...identity(current), deliveryId, kind: "message", itemId: current.message.itemId, replay: current.loading,
+              ...(translated.role === undefined ? {} : { role: translated.role }), text: "",
+            };
+            current.message.pending.push({ text: "", bytes: Buffer.byteLength(JSON.stringify(event)), length: visibleText.length, event });
+            retainParts(current, yield* messageParts(current, visibleText, false));
+            yield* drainMessages(current, false);
+            continue;
+          }
+          yield* drainMessages(current, lost);
+          if (lost) {
+            yield* emitContent(current, { _tag: "deliveryUpdate", ...identity(current), deliveryId, kind: "message", replay: current.loading,
+              role: "agent", text: withheldText, content: { _tag: "text", text: withheldText } });
+            continue;
+          }
+          const text = yield* redactText(translated.text, current.covered);
+          // Redact string leaves, including JSON unicode escapes decoded by ACP.
+          const clean = (value: unknown): Effect.Effect<unknown> => typeof value === "string" ? redactText(value, current.covered)
+            : Array.isArray(value) ? Effect.forEach(value, clean)
+            : value !== null && typeof value === "object" ? Effect.forEach(Object.entries(value), ([key, value]) => clean(value).pipe(Effect.map((value) => [key, value] as const))).pipe(Effect.map(Object.fromEntries))
+            : Effect.succeed(value);
+          const content = yield* clean(translated.content).pipe(Effect.flatMap(Schema.decodeUnknownEffect(threadContent)),
+            Effect.mapError(() => rejected("adapter content is malformed")));
+          yield* emitContent(current, { _tag: "deliveryUpdate", ...identity(current), deliveryId,
+            kind: translated.kind, replay: current.loading, text, content });
+        }
+        // The pinned adapters emit terminal data before the tool report. Keep
+        // the retained snapshot last so an empty report cannot hide it.
+        yield* publishTerminals(current, terminalUpdates);
+      }).pipe(Effect.catch(() => Effect.logWarning("adapter update dropped: malformed"))));
+      // Only a genuine secret prefix may delay earlier content here. The
+      // decided message prefix is already published. Permission control must
+      // stay answerable, so its durable event can precede that held suffix
+      // and queued tool content; replay preserves this same stored order.
+      yield* client.handleRequestPermission((request, context) => Effect.gen(function* () {
+        yield* drainMessages(processEntry, false);
+        const tool = request.toolCall;
+        if ((processEntry.sessionId !== "" && request.sessionId !== processEntry.sessionId)
+          || (yield* redactText(tool.toolCallId, processEntry.covered)) !== tool.toolCallId) return yield* AcpRequestError.invalidParams("Permission request refused");
+        for (const option of request.options) {
+          if ((yield* redactText(option.optionId, processEntry.covered)) !== option.optionId) return yield* AcpRequestError.invalidParams("Permission option refused");
+        }
+        // Gemini CLI 0.67.0, acpSession.ts sendUpdateAndExecuteToolCall:
+        // the published bundle gemini-QWDTSJTS.js includes server_name and
+        // tool_name only for ToolMcpConfirmationDetails. newSessionConfig
+        // replaces client-supplied servers without carrying their trust flag,
+        // so a session-scoped native server trust setting is unavailable.
+        // Never infer identity from the title, arguments, or a tool-name prefix.
+        const meta = tool._meta?.["gemini-cli"] as { mcp?: { server_name?: unknown; tool_name?: unknown } } | undefined;
+        const geminiOwn = harness.id === "gemini" && meta?.mcp?.server_name === "lgtm"
+          && typeof meta.mcp.tool_name === "string" && /^[A-Za-z0-9_-]+$/.test(meta.mcp.tool_name);
+        // Claude's plan mode still invokes canUseTool for an allowed MCP tool
+        // (verified with Haiku). claude-agent-acp 0.99.1 canUseTool forwards
+        // SDK 0.3.312's mcpServer verbatim in claudeCode _meta. The v2 renderer
+        // supplies toolCall.name; v1 keeps toolName in claudeCode _meta.
+        // The SDK calls process servers supplied via query options "dynamic";
+        // user/project/plugin servers are distinct sources. A title alone, or
+        // a matching name from one of those sources, never grants approval.
+        const claude = tool._meta?.claudeCode as { mcpServer?: { name?: unknown; source?: unknown }; toolName?: unknown } | undefined;
+        const claudeToolName = tool.name ?? claude?.toolName;
+        const claudeOwn = harness.id === "claude" && claude?.mcpServer?.name === "lgtm" && claude.mcpServer.source === "dynamic"
+          && typeof claudeToolName === "string" && /^mcp__lgtm__[A-Za-z0-9_-]+$/.test(claudeToolName)
+          && (claude.toolName === undefined || claude.toolName === claudeToolName);
+        if ((geminiOwn || claudeOwn) && processEntry.ready && !processEntry.stopped && !processEntry.dead && processEntry.covered()) {
+          const once = request.options.filter((option) => option.kind === "allow_once");
+          if (once.length === 1 && new Set(request.options.map((option) => option.optionId)).size === request.options.length) {
+            return { outcome: { outcome: "selected" as const, optionId: once[0]!.optionId } };
+          }
+        }
+        const hold = yield* makePermissionHold(request.options);
+        processEntry.holds.set(hold.id, hold);
+        processEntry.responses.set(context.requestId, hold.delivered);
+        const description = yield* redactText(tool.title ?? "Permission requested", processEntry.covered);
+        const mapped = yield* Effect.forEach(request.options, (option) => Effect.gen(function* () {
+          return mapPermissionOption(harness.id, { ...option, name: yield* redactText(option.name, processEntry.covered), kind: yield* redactText(option.kind, processEntry.covered) });
+        }));
+        // Redact the whole decoded value before applying either byte cap.
+        const fields: import("@lgtm/contracts").PermissionAction = yield* Effect.gen(function* () {
+          const result: Record<string, unknown> = {};
+          if (tool.kind != null) result.toolKind = tool.kind;
+          if (tool.rawInput !== undefined) {
+            const clean = yield* cleanStructure(tool.rawInput, processEntry.covered);
+            const encoded = JSON.stringify(clean);
+            if (encoded !== JSON.stringify(tool.rawInput)) result.inputRedacted = true;
+            if (Buffer.byteLength(encoded) > 8192) {
+              result.inputTruncated = true;
+              // A cut remains valid JSON, even for multibyte text and escapes.
+              const characters = Array.from(encoded);
+              let low = 0, high = Math.min(characters.length, 8192);
+              while (low < high) {
+                const middle = Math.ceil((low + high) / 2);
+                if (Buffer.byteLength(JSON.stringify(characters.slice(0, middle).join(""))) <= 8192) low = middle;
+                else high = middle - 1;
+              }
+              result.toolInput = characters.slice(0, low).join("");
+            } else result.toolInput = clean;
+          }
+          if (tool.locations != null) {
+            const clean = (yield* cleanStructure(tool.locations, processEntry.covered)) as Array<{ path: string; line?: number }>;
+            const bounded: Array<{ path: string; line?: number }> = [];
+            for (const location of clean.slice(0, 16)) {
+              if (Buffer.byteLength(JSON.stringify([...bounded, location])) > 2048) break;
+              bounded.push(location);
+            }
+            result.locations = bounded;
+          }
+          return result;
+        });
+        yield* emit({ _tag: "permissionRequested", ...fields, ...identity(processEntry), permissionRequestId: hold.id,
+          toolCallId: tool.toolCallId, description, options: mapped, settingsWrite: settingsWrite((tool.locations ?? []).map((location) => location.path), folder, environment.CLAUDE_CONFIG_DIR) });
+        return { outcome: yield* Deferred.await(hold.answer) };
+      }));
+      const initialized = yield* client.agent.initialize({ protocolVersion: 2, clientInfo: { name: "lgtm", version: "0.0.1" }, clientCapabilities: {} }).pipe(Effect.mapError(() => rejected("adapter initialization failed")));
+      processEntry.version = initialized.protocolVersion;
+      if (initialized.agentCapabilities !== undefined) processEntry.capabilities = initialized.agentCapabilities;
+      // Issue 240: the Claude Agent SDK passes this list to `claude` as a
+      // command-line argument, which any process of the same user can read.
+      // Claude Code 0.3.312 expands `${LGTM_TOKEN}` from its own environment,
+      // which holds the token. Other adapters receive the list over the pipe.
+      const mcpServers = harness.id === "codex" ? [] : [{ type: "stdio" as const, name: serverName, command: process.execPath, args: [mcpScriptPath, "mcp"],
+        env: [{ name: "LGTM_SOCKET", value: configuration.socketPath }, { name: "LGTM_TOKEN", value: harness.id === "claude" ? "${LGTM_TOKEN}" : Redacted.value(input.token) }] }];
+      // claude-agent-acp 0.99.1 createSession passes _meta.claudeCode.options
+      // to SDK query; allowedTools is session-local on new/load/resume.
+      // The SDK's mcp__<server> rule allows every tool on exactly that server.
+      // Neither this nor the Codex/Cursor settings changes the agent's mode.
+      const sessionOptions = harness.id === "claude"
+        ? { _meta: { claudeCode: { options: { allowedTools: ["mcp__lgtm"] } } } } : {};
+      // Row 66 and issue 93: reload only through a method this peer
+      // advertised at initialize, `session/load` first, else `session/resume`.
+      const loads = processEntry.capabilities?.loadSession === true;
+      const resumes = processEntry.capabilities?.sessionCapabilities?.resume !== undefined && processEntry.capabilities?.sessionCapabilities?.resume !== null;
+      if (session !== undefined && !loads && !resumes) return yield* rejected("adapter cannot reload");
+      const opened = yield* (session === undefined ? client.agent.createSession({ cwd: folder, mcpServers, ...sessionOptions })
+        : loads ? client.agent.loadSession({ sessionId: session.sessionId, cwd: folder, mcpServers, ...sessionOptions })
+        : client.agent.resumeSession({ sessionId: session.sessionId, cwd: folder, mcpServers, ...sessionOptions })).pipe(Effect.mapError((error) => {
+          const text = JSON.stringify(error);
+          const signedOut = /authentication required/i.test(text);
+          return new RunnerRejected({ reason: "adapter session failed", startFailure: signedOut
+            ? harness.id === "codex" && input.account.id !== "codex" ? "private-login-not-signed-in" : "not-signed-in" : "could-not-start" });
+        }));
+      if ("sessionId" in opened && typeof opened.sessionId === "string") processEntry.sessionId = opened.sessionId;
+      if (processEntry.sessionId === "" || (yield* redactText(processEntry.sessionId, processEntry.covered)) !== processEntry.sessionId) return yield* rejected("adapter session identifier refused");
+      yield* checkChildFolder;
+      yield* drainMessages(processEntry, true);
+      yield* drainTerminals(processEntry);
+      processEntry.loading = false;
+      processEntry.options = (opened.configOptions ?? []) as ReadonlyArray<ConfigOption>;
+      processEntry.legacyModels = opened.models;
+      if (input.model !== undefined) processEntry.options = yield* setConfig(client, processEntry.sessionId, processEntry.options, "model", harness.id === "cursor" ? cursorModelId(input.model, processEntry.options) : input.model, processEntry.version);
+      if (input.effort !== undefined) processEntry.options = yield* setConfig(client, processEntry.sessionId, processEntry.options, "thought_level", input.effort, processEntry.version);
+      yield* setMode(processEntry, input.permission);
+      const reported: { model?: string; effort?: string } = { ...reportedChoice(processEntry.options) };
+      for (const axis of ["model", "effort"] as const) {
+        const requested = axis === "model" && input.model !== undefined && harness.id === "cursor" ? cursorModelId(input.model, processEntry.options) : input[axis];
+        if (requested === undefined) continue;
+        // v1's legacy model call acknowledges with an empty response. A
+        // negotiated select, in either generation, must report the selection.
+        if (processEntry.version === 1 && axis === "model" && selector(processEntry.options, "model") === undefined) {
+          reported.model = requested;
+        } else if (reported[axis] !== requested) return yield* new RunnerRejected({
+          reason: "adapter did not acknowledge configuration", startFailure: axis === "model" ? "model-refused" : "effort-refused",
+        });
+      }
+      processEntry.applied = yield* safeApplied(processEntry, reported);
+      processEntry.ready = true;
+      yield* child.exitCode.pipe(Effect.result, Effect.flatMap((result) => Effect.gen(function* () {
+        processEntry.dead = true;
+        // Descendants must not keep stderr open after their adapter exits.
+        yield* Effect.sync(() => { try { process.kill(-Number(child.pid), "SIGKILL"); } catch { /* gone */ } });
+        // A helper in another session can inherit this pipe even after the
+        // adapter's own group is gone. It must not postpone the crash event.
+        const drained = yield* Fiber.join(stderrReader).pipe(Effect.timeoutOption(2_000));
+        if (Option.isNone(drained)) yield* Fiber.interrupt(stderrReader);
+        const stderr = yield* stderrTail.finish();
+        yield* drainMessages(processEntry, true);
+        yield* drainTerminals(processEntry);
+        if (processEntry.sent !== undefined) yield* Deferred.fail(processEntry.sent, rejected("agent process exited"));
+        for (const delivered of processEntry.responses.values()) yield* Deferred.fail(delivered, rejected("permission answer delivery failed"));
+        processEntry.responses.clear();
+        processEntry.holds.clear();
+        if (!processEntry.stopped) {
+          // Effect's Node spawner reports signal exits as a PlatformError
+          // whose original cause holds this fixed message (4.0.5).
+          const cause = result._tag === "Failure" ? result.failure.cause : undefined;
+          const signal = cause instanceof Error ? /^Process interrupted due to receipt of signal: '(SIG[A-Z0-9]+)'$/.exec(cause.message)?.[1] ?? null : null;
+          yield* emit({ _tag: "exited", ...identity(processEntry), exitCode: result._tag === "Success" ? Number(result.success) : null, signal, stderr });
+          if (processes.get(input.agentId) === processEntry) processes.delete(input.agentId);
+          // Close from the parent scope so the watcher never interrupts itself.
+          yield* close(processEntry).pipe(Effect.forkIn(lifetime));
+        }
+      })), Effect.forkIn(scope));
+      // Every replayed update was flushed into `replay` before loading ended.
+      const replay = session === undefined ? {} : { replay: processEntry.replay.splice(0) };
+      return { session: { _tag: "acp" as const, sessionId: processEntry.sessionId }, protocolVersion: initialized.protocolVersion,
+        reloadable: loads || resumes, configuration: processEntry.applied, ...replay };
+    }).pipe(Effect.onExit((exit) => Exit.isFailure(exit) ? entry === undefined ? Scope.close(scope, Exit.void) : close(entry) : Effect.void));
+  });
+  const safeApplied = (entry: Process, choice: AgentChoice): Effect.Effect<AgentChoice> => Effect.gen(function* () {
+    const result: { model?: string; effort?: string } = {};
+    for (const axis of ["model", "effort"] as const) {
+      const value = choice[axis];
+      if (validChoiceId(value) && (yield* redactText(value, entry.covered)) === value) result[axis] = value;
+    }
+    return result;
+  });
+  const configure = (input: Parameters<Runner["Service"]["configure"]>[0]) => Effect.gen(function* () {
+    const entry = yield* live(input.agentId, input.incarnation);
+    if (entry.turn !== undefined && !entry.turn.ended) return yield* rejected("configuration waits for turn end");
+    if (entry.configuring) return yield* rejected("configuration already reserved");
+    if (entry.configurationUncertain) return { status: "unavailable" as const, reason: "configuration-unknown" as const, applied: entry.applied };
+    entry.configuring = true;
+    return yield* Effect.gen(function* () {
+      const failure = (status: "refused" | "unsupported" | "unavailable", reason: NonNullable<AgentConfiguration["reason"]>) =>
+        ({ status, reason, applied: entry.applied });
+      for (const axis of ["model", "effort"] as const) {
+        const requested = input.desired[axis];
+        const value = axis === "model" && requested !== undefined && entry.input.harness.id === "cursor"
+          ? cursorModelId(requested, entry.options) : requested;
+        if (value === undefined || entry.applied[axis] === value) continue;
+        const category = axis === "model" ? "model" : "thought_level";
+        const option = selector(entry.options, category);
+        // Live changes use only an advertised select option. The start path's
+        // old-generation compatibility calls are not evidence of live support.
+        if (option === undefined || (option.id ?? option.configId) === undefined) return failure("unsupported", "not-supported");
+        if (!selectValues(option).some((item) => item.id === value) || (yield* redactText(value, entry.covered)) !== value) return failure("refused", "adapter-refused");
+        invalidateContext(entry);
+        const changed = yield* setConfig(entry.client, entry.sessionId, entry.options, category, value, entry.version).pipe(
+          Effect.timeoutOption(10_000), Effect.result);
+        if (changed._tag === "Failure" || Option.isNone(changed.success)) {
+          // A failed call may have reached the peer. Forget that axis rather
+          // than claiming the previous value still describes the live process.
+          const { [axis]: _unknown, ...known } = entry.applied;
+          entry.applied = known;
+          entry.configurationUncertain = changed._tag === "Success" || changed.failure.configurationUncertain === true;
+          return entry.configurationUncertain ? failure("unavailable", "configuration-unknown") : failure("refused", "adapter-refused");
+        }
+        if (entry.stopped || entry.dead || processes.get(input.agentId) !== entry) return failure("unavailable", "not-live");
+        entry.options = changed.success.value;
+        entry.applied = yield* safeApplied(entry, reportedChoice(entry.options));
+        if (entry.applied[axis] !== value) return failure("refused", "not-acknowledged");
+      }
+      return { status: "applied" as const, applied: entry.applied };
+    }).pipe(Effect.ensuring(Effect.sync(() => { entry.configuring = false; })));
+  });
+  const send = (input: Send, compact: boolean) => Effect.gen(function* () {
+    const entry = yield* live(input.agentId, input.incarnation);
+    if (input.delivery.target !== input.agentId || (!compact && input.delivery.content._tag !== "prompt" && input.delivery.content._tag !== "carry-on")) return yield* rejected("delivery does not match send");
+    if (entry.configuring || entry.configurationUncertain) return yield* rejected("configuration is not confirmed");
+    if (entry.turn !== undefined && !entry.turn.ended) return yield* rejected("agent already has a turn");
+    const callerText = compact ? yield* compactPrompt(entry.commands) : input.delivery.content._tag === "prompt" || input.delivery.content._tag === "carry-on" ? input.delivery.content.text : "";
+    const owed = !compact && entry.instructionsPending;
+    let source = owed ? entry.input.instructions : undefined;
+    if (owed && source === undefined && entry.input.restoreInstructions !== undefined) {
+      const restored = yield* entry.input.restoreInstructions().pipe(Effect.result);
+      if (restored._tag === "Success") {
+        source = restored.success;
+        entry.instructionRestoreWarned = false;
+      } else if (!entry.instructionRestoreWarned) {
+        entry.instructionRestoreWarned = true;
+        yield* Effect.logWarning("Role instruction restoration failed; sending the caller text without instructions.");
+      }
+    }
+    const instructions = source === undefined ? undefined : yield* redactText(source, entry.covered);
+    const origin = input.startBrief === true && input.delivery.sender._tag === "agent" ? yield* redactText(input.delivery.sender.agentId, entry.covered) : undefined;
+    const instructionPrefix = instructions === undefined ? undefined : instructionEnvelope(instructions, origin);
+    const text = (instructionPrefix ?? "") + callerText;
+    const turn: Turn = { compact, ...(instructionPrefix === undefined ? {} : { instructionPrefix, instructionEcho: instructionEcho(instructionPrefix) }), deliveryId: input.delivery.id, sentSequence: input.sentSequence, replied: false, idle: false, ended: false, text: "" };
+    entry.turn = turn;
+    entry.contextNeedsTurn = false;
+    const sent = yield* Deferred.make<void, RunnerRejected>();
+    entry.sent = sent;
+    // The raw request preserves the protocol reply separately from v2's idle
+    // notice; AcpClient.agent.prompt deliberately combines the two.
+    yield* entry.client.raw.request("session/prompt", { sessionId: entry.sessionId, prompt: [{ type: "text", text }] }).pipe(
+      Effect.result, Effect.flatMap((reply) => Effect.gen(function* () {
+        if (reply._tag === "Failure") yield* Deferred.fail(sent, rejected("prompt send failed"));
+        if (entry.stopped || entry.dead) return;
+        const response = reply._tag === "Success" ? reply.success as { error?: unknown; usage?: unknown; stopReason?: unknown } : undefined;
+        if (entry.version === 1 && response?.stopReason === "cancelled") turn.cancelled = true;
+        // ACP v1 delivers its terminal usage on the prompt reply instead.
+        if (entry.version === 1) {
+          const usage = terminalUsage(response?.usage);
+          if (usage !== undefined) turn.usage = { ...turn.usage, ...usage };
+        }
+        const error = reply._tag === "Failure" ? reply.failure : response?.error;
+        if (error !== undefined) recordTurnError(turn, error);
+        turn.replied = true;
+        if (entry.version === 1 || reply._tag === "Failure") turn.idle = true;
+        yield* finish(entry, turn);
+      })), Effect.forkIn(entry.scope, { startImmediately: true }),
+    );
+    yield* Deferred.await(sent).pipe(Effect.ensuring(Effect.sync(() => { if (entry.sent === sent) delete entry.sent; })));
+  });
+  return Runner.of({
+    discover: (input) => Effect.gen(function* () {
+      yield* spawn(input, undefined, true);
+      const entry = yield* live(input.agentId, sha256Hex(Redacted.value(input.token)));
+      return yield* negotiatedChoices(entry.options, (value) => redactText(value, entry.covered), entry.legacyModels);
+    }).pipe(Effect.ensuring(Effect.suspend(() => {
+      const entry = processes.get(input.agentId);
+      return (entry === undefined ? Effect.void : close(entry)).pipe(Effect.ensuring(
+        Option.isSome(processDatabase) ? processDatabase.value`DELETE FROM processes WHERE agent_id = ${input.agentId}`.pipe(Effect.asVoid, Effect.orDie) : Effect.void,
+      ));
+    }).pipe(Effect.orDie))),
+    start: (input) => spawn(input), load: (input) => spawn(input, input.session),
+    prompt: (input) => send(input, false), compact: (input) => send(input, true),
+    configure,
+    choices: ({ agentId, incarnation }) => Effect.gen(function* () {
+      const entry = yield* live(agentId, incarnation);
+      return yield* negotiatedChoices(entry.options, (value) => redactText(value, entry.covered), entry.legacyModels);
+    }),
+    context: ({ agentId, incarnation }) => live(agentId, incarnation).pipe(Effect.map((entry) => entry.context)),
+    cancel: ({ agentId, deliveryId, sentSequence }) => Effect.gen(function* () {
+      const entry = yield* live(agentId);
+      const turn = entry.turn;
+      if (deliveryId !== undefined && (turn === undefined || turn.ended || turn.deliveryId !== deliveryId
+        || turn.sentSequence !== sentSequence)) return yield* rejected("reply is no longer active");
+      const holds = [...entry.holds.values()];
+      yield* entry.client.agent.cancel({ sessionId: entry.sessionId }).pipe(
+        Effect.mapError(() => rejected("cancel failed")));
+      yield* drainMessages(entry, true);
+      for (const hold of holds) entry.holds.delete(hold.id);
+      for (const hold of holds) yield* Deferred.succeed(hold.answer, { outcome: "cancelled" });
+      for (const hold of holds) yield* Deferred.await(hold.delivered);
+    }),
+    answerPermission: ({ agentId, requestId, optionId }) => Effect.gen(function* () {
+      const entry = yield* live(agentId);
+      const hold = entry.holds.get(requestId);
+      if (hold === undefined || !hold.options.has(optionId)) return yield* rejected("permission answer is not offered");
+      entry.holds.delete(requestId);
+      yield* Deferred.succeed(hold.answer, { outcome: "selected", optionId });
+      yield* Deferred.await(hold.delivered);
+    }),
+    setMode: ({ agentId, permission }) => Effect.gen(function* () {
+      const entry = yield* live(agentId);
+      if (comparePermission(permission, entry.input.permission) > 0) return yield* rejected("mode exceeds permission ceiling");
+      yield* setMode(entry, permission).pipe(Effect.tapError(() => entry.child.kill({ killSignal: "SIGKILL" }).pipe(Effect.catch(() => Effect.void))));
+    }),
+    stop: ({ agentId }) => Effect.gen(function* () { const entry = processes.get(agentId); if (entry !== undefined) yield* close(entry); }),
+    capabilities: { loadSession: true, resumeSession: true, setModeConfigOption: true },
+    events: Stream.fromQueue(events),
+  });
+}));

@@ -1,0 +1,52 @@
+import * as Schema from "effect/Schema"
+import { HarnessId } from "./ids.ts"
+import { PermissionLevel } from "./permission.ts"
+
+export const RunMode = Schema.Literals(["acp", "interactive"])
+export type RunMode = typeof RunMode.Type
+
+const PermissionMapping = Schema.Struct({
+  "read-only": Schema.NonEmptyString,
+  ask: Schema.NonEmptyString,
+  edit: Schema.NonEmptyString,
+  auto: Schema.optionalKey(Schema.NonEmptyString),
+  full: Schema.NonEmptyString
+})
+
+const DenyMechanism = Schema.Union([
+  Schema.TaggedStruct("none", {}),
+  Schema.TaggedStruct("launch-arguments", {
+    // Placeholders {stateFolder} and {settingsPath} are resolved at spawn.
+    readArguments: Schema.Array(Schema.String),
+    writeArguments: Schema.Array(Schema.String)
+  })
+])
+
+export const HarnessSettings = Schema.Struct({
+  id: HarnessId,
+  runMode: RunMode,
+  adapterPath: Schema.String.check(Schema.isPattern(/^\/.+$/)),
+  adapterArguments: Schema.Array(Schema.String),
+  permissionMapping: PermissionMapping,
+  reportedModes: Schema.Array(Schema.Struct({ id: Schema.NonEmptyString, level: PermissionLevel })),
+  defaultModel: Schema.optionalKey(Schema.NonEmptyString),
+  defaultEffort: Schema.optionalKey(Schema.NonEmptyString),
+  // Cache lifetime in minutes, set by the owner when usage has no TTL split.
+  cacheLifetime: Schema.optionalKey(Schema.Literals([5, 60])),
+  defaultPermission: PermissionLevel,
+  models: Schema.Array(Schema.NonEmptyString),
+  efforts: Schema.Array(Schema.NonEmptyString),
+  denyReadMechanism: DenyMechanism
+})
+export type HarnessSettings = typeof HarnessSettings.Type
+
+// Historical harness events have no auto field. Their edit mode remains the
+// conservative fallback; no event migration changes an existing agent.
+export const permissionModeFor = (harness: HarnessSettings, level: PermissionLevel): string =>
+  level === "auto" ? harness.permissionMapping.auto ?? harness.permissionMapping.edit : harness.permissionMapping[level]
+
+export const autoPermissionStatus = (harness: HarnessSettings): string | undefined =>
+  harness.permissionMapping.auto === undefined
+    ? "This stored permission mapping has no auto entry; auto uses this harness's edit mode."
+    : harness.permissionMapping.auto === harness.permissionMapping.edit
+      ? "This harness has no separate automatic review mode; auto uses this harness's edit mode." : undefined

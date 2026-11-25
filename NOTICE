@@ -1,0 +1,118 @@
+LGTM Studio
+Copyright (C) 2026 Kunal Bansal
+
+LGTM Studio is licensed under the GNU Affero General Public License,
+version 3 only. The licence text is in the LICENSE file. The code listed
+below comes from other projects and keeps the licence named in its entry.
+
+This file lists the code in LGTM Studio that comes from other open-source
+projects. Each entry names the project, its copyright holder, its licence,
+where the code lives in LGTM Studio, and where the licence text is.
+
+- T3 Code (https://github.com/pingdotgg/t3code)
+  Copyright (c) 2026 T3 Tools Inc. MIT License.
+  In LGTM Studio, one folder for each copied package, all under third_party/t3code/:
+    third_party/t3code/effect-acp (the Agent Client Protocol client and server)
+    third_party/t3code/node-sqlite (the SQLite client for Node.js)
+    third_party/t3code/provider-instance (provider instance settings and home layouts)
+    third_party/t3code/provider-testing (replay and fake-program test helpers)
+    third_party/t3code/source-control (the commit-message credit remover)
+  Each file, its source file in T3 Code and its changes are listed in
+  third_party/t3code/README.md.
+  Licence text: third_party/t3code/LICENSE.
+
+- Inter (https://github.com/rsms/inter)
+  Copyright 2016 The Inter Project Authors. SIL Open Font License 1.1.
+  In LGTM Studio: third_party/inter/InterVariable-latin.woff2, the Latin subset of
+  Inter 4.001, used by the web mock in design/ and the production shell
+  through packages/web/src/tokens.css.
+  Licence text: third_party/inter/OFL.txt.
+
+- JetBrains Mono (https://github.com/JetBrains/JetBrainsMono)
+  Copyright 2020 The JetBrains Mono Project Authors. SIL Open Font License 1.1.
+  In LGTM Studio: third_party/jetbrains-mono/JetBrainsMono-latin.woff2, the Latin
+  subset of JetBrains Mono 2.211, used by the web mock in design/ and the
+  production shell through packages/web/src/tokens.css.
+  Licence text: third_party/jetbrains-mono/OFL.txt.
+
+- Lucide (https://lucide.dev)
+  Copyright Lucide Contributors 2022, with portions copyright Cole Bemis
+  2013-2022 as part of Feather (MIT). ISC License.
+  In LGTM Studio: icon paths in design/mock/js/icons.js for the web mock, and
+  earlier in design/workbench.html and design/workbench.js, removed on 2026-11-12.
+  Each icon and where it is used are listed in third_party/lucide/README.md.
+  Licence text: third_party/lucide/LICENSE.
+
+- OpenPencil (https://github.com/open-pencil/open-pencil)
+  Copyright (c) 2026 Danila Poyarkov and OpenPencil contributors. MIT License.
+  Pinned source: cb717376a6252b0387f95d1e8bf33a0b196eb9bf.
+  In LGTM Studio: the licence and browser-distribution integration attribution in
+  third_party/open-pencil/. The pinned local editor image contains the
+  upstream browser distribution, its licence and generated dependency notices.
+  The exact successful build and retained raw evidence are in BUILD.md.
+  No launched editor, accepted service or shipped distribution is claimed.
+  Copied source files, changes and build-receipt requirements are listed in
+  third_party/open-pencil/README.md. Licence text: third_party/open-pencil/LICENSE.
+
+- parse5 (https://github.com/inikulin/parse5), version 8.1.0
+  Copyright (c) 2013-2019 Ivan Nikulin. MIT License.
+  Engine dependency used through its public HTML parser and source locations.
+  Its entities 9.0.0 dependency (https://github.com/fb55/entities) is
+  Copyright (c) Felix Böhm, BSD 2-Clause licence.
+  No implementation source is copied into LGTM Studio's own source tree.
+  Attribution: third_party/parse5/README.md.
+  Licence texts: third_party/parse5/LICENSE and third_party/parse5/entities.LICENSE.
+
+- htm (https://github.com/developit/htm), version 3.1.1, with Preact
+  (https://github.com/preactjs/preact) bundled inside its standalone build
+  htm is Copyright 2018 Google Inc., Apache License 2.0.
+  Preact is Copyright (c) 2015-present Jason Miller, MIT License.
+  In LGTM Studio: third_party/htm-preact/standalone.module.js, unchanged, loaded
+  only by the web mock in design/mock/. No production code uses it.
+  The source and checksum are listed in third_party/htm-preact/README.md.
+  Licence texts: third_party/htm-preact/LICENSE and
+  third_party/htm-preact/preact.LICENSE.
+
+- CodeMirror 6 (https://codemirror.net), @codemirror/view 6.43.15 and the
+  packages listed in third_party/codemirror/README.md
+  Copyright (C) 2018-2024 Marijn Haverbeke and others. MIT License.
+  In LGTM Studio: third_party/codemirror/codemirror.bundle.js, one unchanged
+  bundle of those packages. The web mock in design/mock/ and the web page's
+  Files tab (packages/web/src/files/editor.tsx) load it as the file editor.
+  The versions, build command and checksum are listed in
+  third_party/codemirror/README.md.
+  Licence texts, one for each package: third_party/codemirror/LICENSE.
+
+LGTM Studio is also inspired by Herdr Synapse
+(https://github.com/vitalysim/herdr-synapse), Copyright 2026 Vitaly
+Simonovich, Apache License 2.0. No Synapse code has been copied into LGTM Studio.
+If any is, it will be listed here with its licence.
+
+LGTM Studio displays codebase maps produced by Floorplan
+(https://github.com/haydenschmitty/floorplan), released under the MIT License.
+No Floorplan code is copied into LGTM Studio.
+The engine adds or keeps a "Made with Floorplan" credit link.
+The page could hide that link.
+
+The production shell in packages/web/src/shell/Icon.tsx reuses Lucide
+Contributors' lucide-static 0.460.0 icons/*.svg paths, taken from the older
+web mock's design/workbench.html and design/workbench.js at LGTM Studio commit
+bef4b1090a8dc783075f835e7c5e90dbc3b8aad9. See
+third_party/lucide/README.md and third_party/lucide/LICENSE (ISC; Feather
+portions copyright Cole Bemis 2013–2022, MIT).
+
+- xterm.js (https://github.com/xtermjs/xterm.js), @xterm/xterm 6.0.0.
+  Copyright (c) 2017-2019, The xterm.js authors.
+  Copyright (c) 2014-2016, SourceLair Private Company.
+  Copyright (c) 2012-2013, Christopher Jeffrey. MIT License.
+  In LGTM Studio: an ordinary npm dependency of packages/studio, bundled for
+  the connected project Terminal tab. The build adds the page's style nonce
+  before its three renderer style elements are attached.
+  The dependency's LICENSE ships with the built website as licenses/xterm.txt.
+
+- Effect (https://github.com/Effect-TS/effect), effect 4.0.5.
+  Copyright (c) 2023 Effectful Technologies Inc. MIT License.
+  In LGTM Studio: an ordinary npm dependency. One unexported function,
+  isNoTransactionError from effect/sql/SqlClient, is adapted in
+  packages/engine/src/log/EventLog.ts, with its source named above it.
+  The licence text ships with the dependency as node_modules/effect/LICENSE.

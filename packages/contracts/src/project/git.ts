@@ -1,0 +1,142 @@
+import * as Schema from "effect/Schema"
+import * as Rpc from "effect/rpc/Rpc"
+import * as RpcGroup from "effect/rpc/RpcGroup"
+import { AgentId, EpochMilliseconds, EventSequence, RequestId } from "../ids.ts"
+import { ProjectId, ProjectName, ProjectPath, ProjectText, RepositoryId, WorkspaceId } from "./schema.ts"
+
+const text = Schema.String.check(Schema.isMaxCodePoints(1024 * 1024))
+const nullable = Schema.NullOr(text)
+const count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+const items = <S extends Schema.Constraint>(item: S) => Schema.Struct({ items: Schema.Array(item).check(Schema.isMaxLength(200)), truncated: Schema.Boolean })
+export const GitBranch = Schema.Struct({ name: text, head: text, current: Schema.Boolean, upstream: nullable })
+export const GitCheckout = Schema.Struct({ path: text, head: nullable, branch: nullable, locked: Schema.Boolean, available: Schema.Boolean })
+const SubmoduleChange = Schema.Struct({ oldHead: nullable, newHead: nullable, indexHead: Schema.optionalKey(nullable) })
+export const GitChange = Schema.Struct({ submodule: Schema.optionalKey(SubmoduleChange), path: text, originalPath: nullable, index: text, worktree: text, staged: Schema.Boolean, unstaged: Schema.Boolean, conflict: Schema.Boolean, untracked: Schema.Boolean })
+export const GitDiff = Schema.Struct({ patch: text, additions: count, deletions: count, binary: Schema.Boolean, truncated: Schema.Boolean })
+export const GitCommit = Schema.Struct({ head: text, parents: Schema.Array(text), author: text, at: text, title: text })
+export const GitCommitFile = Schema.Struct({ submodule: Schema.optionalKey(SubmoduleChange), path: text, originalPath: nullable, status: text })
+export const GitState = Schema.Struct({ head: nullable, branch: nullable, upstream: nullable, mergeHead: nullable, ahead: count, behind: count, behindParent: Schema.optionalKey(count), pending: count, pendingSince: nullable })
+export const GitChoice = Schema.Literals(["ours", "theirs", "both"])
+export const GitSelection = Schema.Struct({ path: ProjectPath, fingerprint: ProjectName, head: ProjectName, choices: Schema.Array(Schema.NullOr(GitChoice)).check(Schema.isMaxLength(8192)) })
+export const GitConflict = Schema.Struct({ ...GitSelection.fields, ours: text, base: text, theirs: text,
+  segments: Schema.Array(Schema.Union([
+    Schema.Struct({ kind: Schema.Literal("context"), line: count, context: Schema.Array(text) }),
+    Schema.Struct({ kind: Schema.Literal("conflict"), ours: Schema.Array(text), base: Schema.Array(text), theirs: Schema.Array(text) })
+  ])) })
+// The Files tab reads one folder or one file of a registered worktree at a
+// time. Text is returned plain; a client colours it. Binary and large files
+// are described, never returned. A version is the SHA-256 of the file's bytes.
+export const FileChange = Schema.Literals(["added", "modified", "deleted", "renamed", "untracked", "conflict"])
+export const FileEntry = Schema.Struct({ name: text, path: text, kind: Schema.Literals(["folder", "file"]), size: Schema.NullOr(count), change: Schema.NullOr(FileChange) })
+export const FileListing = Schema.Struct({ folder: text, items: Schema.Array(FileEntry).check(Schema.isMaxLength(500)), truncated: Schema.Boolean })
+export const FileImageType = Schema.Literals(["image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"])
+export const FileContent = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("text"), path: text, size: count, version: text, text, editable: Schema.Boolean }),
+  Schema.Struct({ kind: Schema.Literal("image"), path: text, size: count, version: text, mediaType: FileImageType, data: text }),
+  Schema.Struct({ kind: Schema.Literal("binary"), path: text, size: count }),
+  Schema.Struct({ kind: Schema.Literal("large"), path: text, size: count })
+])
+export type FileContent = typeof FileContent.Type
+export const fileTextLimit = 512 * 1024
+export const GitDiscardPlan = Schema.Struct({ fingerprint: ProjectName, paths: Schema.Array(ProjectPath).check(Schema.isMaxLength(200)) })
+export const GitReview = Schema.Struct({ head: text, baseHead: text, branch: text, base: text, commits: items(GitCommit), files: items(GitCommitFile), diff: GitDiff })
+// Reports describe observed work. They are never approval credentials or
+// engine-executed test proof. The thread reference must exist in this project.
+export const GitEvidenceKind = Schema.Literals(["tests", "review"])
+export const GitEvidenceStatus = Schema.Literals(["passed", "failed"])
+export const GitEvidence = Schema.Struct({ reportId: RequestId, projectId: ProjectId, worktreeId: WorkspaceId,
+  head: ProjectName, kind: GitEvidenceKind, status: GitEvidenceStatus, summary: ProjectText,
+  threadAgentId: AgentId, threadSequence: EventSequence,
+  reportedBy: Schema.Union([Schema.TaggedStruct("owner", {}), Schema.TaggedStruct("agent", { agentId: AgentId })]),
+  provenance: Schema.Literal("reported"), recordedAt: EpochMilliseconds })
+export type GitEvidence = typeof GitEvidence.Type
+export const GitEvidenceSlot = Schema.Struct({ state: Schema.Literals(["missing", "current", "stale"]), report: Schema.NullOr(GitEvidence) })
+export const GitEvidenceSet = Schema.Struct({ tests: GitEvidenceSlot, review: GitEvidenceSlot })
+export type GitEvidenceSet = typeof GitEvidenceSet.Type
+export const GitApprovalDecision = Schema.Literals(["approve", "approve_without_evidence"])
+export const GitReviewDelivery = Schema.Union([
+  Schema.Struct({ mode: Schema.Literal("local"), reason: text }),
+  Schema.Struct({ mode: Schema.Literal("github"), repository: text, remote: text, number: count,
+    url: text, state: Schema.Literals(["OPEN", "CLOSED", "MERGED"]), title: text, body: text, remoteBaseHead: text }),
+])
+export type GitReviewDelivery = typeof GitReviewDelivery.Type
+export const GitMainReview = Schema.Struct({ reviewId: RequestId, projectId: ProjectId, worktreeId: WorkspaceId,
+  destinationId: WorkspaceId, head: ProjectName, baseHead: ProjectName, branch: ProjectName, base: ProjectName,
+  delivery: Schema.optionalKey(GitReviewDelivery), localSync: Schema.optionalKey(text),
+  evidence: GitEvidenceSet, openedAt: EpochMilliseconds,
+  decision: Schema.NullOr(GitApprovalDecision), outcome: Schema.Literals(["open", "merged", "refused", "sent_back"]),
+  mergeHead: nullable, reason: nullable, decidedAt: Schema.NullOr(EpochMilliseconds) })
+export type GitMainReview = typeof GitMainReview.Type
+// Durable evidence of an admitted operation, before external Git can change.
+// A pending attempt is not a receipt or a claim that the mutation succeeded.
+export const GitMutationIdentity = Schema.Struct({ head: nullable, branch: nullable, tree: nullable, mergeHead: nullable })
+export type GitMutationIdentity = typeof GitMutationIdentity.Type
+export const GitAttempt = Schema.Struct({ requestId: RequestId, bodyHash: Schema.NonEmptyString,
+  caller: Schema.Union([Schema.TaggedStruct("owner", {}), Schema.TaggedStruct("agent", { agentId: AgentId })]),
+  command: ProjectName, worktreeId: WorkspaceId, before: GitMutationIdentity,
+  destination: Schema.optionalKey(GitMutationIdentity) })
+export type GitAttempt = typeof GitAttempt.Type
+const request = { requestId: RequestId }
+const workspace = { ...request, worktreeId: WorkspaceId, projectId: Schema.optionalKey(ProjectId) }
+const repository = { ...request, repoId: RepositoryId }
+const error = Schema.TaggedStruct("CommandError", { ...request, reason: Schema.String })
+const ack = Schema.Struct(request)
+const reply = <S extends Schema.Constraint>(result: S) => Schema.Struct({ ...request, result })
+const readReply = <S extends Schema.Constraint>(result: S) => Schema.Union([reply(result), Schema.Struct({ ...request, data: Schema.String })])
+export const ProjectGitRpcGroup = RpcGroup.make(
+  Rpc.make("repository.discover", { payload: request, success: reply(items(Schema.Struct({ path: text, name: text }))), error }),
+  Rpc.make("branches", { payload: repository, success: reply(items(GitBranch)), error }),
+  Rpc.make("checkouts", { payload: repository, success: reply(items(GitCheckout)), error }),
+  Rpc.make("changes", { payload: workspace, success: readReply(items(GitChange)), error }),
+  Rpc.make("diff", { payload: { ...workspace, path: Schema.optionalKey(ProjectPath), staged: Schema.optionalKey(Schema.Boolean), commit: Schema.optionalKey(ProjectName) }, success: readReply(GitDiff), error }),
+  Rpc.make("history", { payload: { ...workspace, limit: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1), Schema.isLessThanOrEqualTo(200))) }, success: readReply(items(GitCommit)), error }),
+  Rpc.make("commit.files", { payload: { ...workspace, commit: ProjectName }, success: readReply(items(GitCommitFile)), error }),
+  Rpc.make("git.state", { payload: { ...workspace, target: Schema.optionalKey(ProjectName) }, success: readReply(GitState), error }),
+  Rpc.make("stage", { payload: { ...workspace, path: ProjectPath }, success: ack, error }),
+  Rpc.make("unstage", { payload: { ...workspace, path: ProjectPath }, success: ack, error }),
+  // Issue 1540: copied files that were not staged, named only when there are any.
+  Rpc.make("stage.all", { payload: workspace, success: Schema.Struct({ ...request, result: Schema.optionalKey(Schema.Struct({ skipped: Schema.Array(text) })) }), error }),
+  Rpc.make("unstage.all", { payload: workspace, success: ack, error }),
+  Rpc.make("discard.plan", { payload: { ...workspace, paths: Schema.optionalKey(GitDiscardPlan.fields.paths) }, success: reply(GitDiscardPlan), error }),
+  Rpc.make("discard", { payload: { ...workspace, plan: GitDiscardPlan, confirmed: Schema.Boolean }, success: ack, error }),
+  Rpc.make("files.list", { payload: { ...workspace, folder: Schema.optionalKey(ProjectPath) }, success: readReply(FileListing), error }),
+  Rpc.make("files.read", { payload: { ...workspace, path: ProjectPath }, success: readReply(FileContent), error }),
+  Rpc.make("files.write", { payload: { ...workspace, projectId: ProjectId, path: ProjectPath, version: ProjectName,
+    text: Schema.String.check(Schema.isMaxCodePoints(fileTextLimit)) }, success: reply(Schema.Struct({ version: text, told: count })), error }),
+  // With a path, only that file is committed. Other staged files stay staged.
+  Rpc.make("commit", { payload: { ...workspace, message: ProjectText, path: Schema.optionalKey(ProjectPath) }, success: reply(Schema.Struct({ head: text })), error }),
+  Rpc.make("fetch", { payload: workspace, success: ack, error }),
+  Rpc.make("pull", { payload: workspace, success: ack, error }),
+  Rpc.make("push", { payload: workspace, success: ack, error }),
+  Rpc.make("integrate", { payload: { ...workspace, destinationId: WorkspaceId, expectedHead: ProjectName }, success: reply(Schema.Struct({ head: text })), error }),
+  Rpc.make("update", { payload: { ...workspace, destinationId: WorkspaceId, expectedHead: ProjectName }, success: reply(Schema.Struct({ head: text })), error }),
+  Rpc.make("merge.abort", { payload: { ...workspace, expectedHead: ProjectName, expectedMergeHead: ProjectName, confirmed: Schema.Boolean }, success: ack, error }),
+  Rpc.make("conflict.resolved", { payload: workspace, success: reply(items(Schema.Struct({ path: ProjectPath, fingerprint: ProjectName }))), error }),
+  Rpc.make("conflict.reopen", { payload: { ...workspace, path: ProjectPath, expectedHead: ProjectName, expectedMergeHead: ProjectName, fingerprint: ProjectName, confirmed: Schema.Boolean }, success: ack, error }),
+  Rpc.make("review", { payload: { ...workspace, base: ProjectName }, success: readReply(GitReview), error }),
+  Rpc.make("review.report", { payload: { ...workspace, projectId: ProjectId, head: ProjectName, kind: GitEvidenceKind,
+    status: GitEvidenceStatus, summary: ProjectText, threadAgentId: AgentId, threadSequence: EventSequence }, success: ack, error }),
+  Rpc.make("review.prepare", { payload: { ...workspace, projectId: ProjectId, destinationId: WorkspaceId },
+    success: reply(Schema.Struct({ review: GitMainReview, comparison: GitReview })), error }),
+  Rpc.make("review.status", { payload: { ...workspace, projectId: ProjectId },
+    success: readReply(Schema.Struct({ review: Schema.NullOr(GitMainReview), evidence: GitEvidenceSet })), error }),
+  Rpc.make("review.approve", { payload: { ...workspace, projectId: ProjectId, reviewId: RequestId,
+    expectedHead: ProjectName, expectedBaseHead: ProjectName, confirmed: Schema.Boolean, decision: GitApprovalDecision },
+    success: reply(GitMainReview), error }),
+  Rpc.make("review.decline", { payload: { ...workspace, projectId: ProjectId, reviewId: RequestId, expectedHead: ProjectName, expectedBaseHead: ProjectName, reason: ProjectText }, success: reply(GitMainReview), error }),
+  Rpc.make("conflict", { payload: { ...workspace, path: ProjectPath }, success: readReply(GitConflict), error }),
+  Rpc.make("conflict.choose", { payload: { ...workspace, selection: GitSelection, hunk: count, choice: GitChoice }, success: reply(GitConflict), error }),
+  Rpc.make("conflict.resolve", { payload: { ...workspace, selection: GitSelection }, success: ack, error })
+).prefix("project.")
+const owner = ["owner"] as const
+const member = ["owner", "agent"] as const
+export const projectGitAccess = {
+  "project.repository.discover": owner, "project.branches": owner, "project.checkouts": owner,
+  "project.changes": member, "project.diff": member, "project.history": member, "project.commit.files": member, "project.git.state": member,
+  "project.stage": owner, "project.unstage": owner, "project.stage.all": owner, "project.unstage.all": owner, "project.discard.plan": owner, "project.discard": owner,
+  "project.update": owner, "project.merge.abort": owner, "project.conflict.resolved": owner, "project.conflict.reopen": owner, "project.review.decline": owner,
+  "project.files.list": owner, "project.files.read": owner, "project.files.write": owner,
+  "project.commit": owner, "project.fetch": owner, "project.pull": owner, "project.push": owner, "project.integrate": owner, "project.review": member,
+  "project.conflict": member, "project.conflict.choose": owner, "project.conflict.resolve": owner,
+  "project.review.report": member, "project.review.prepare": owner, "project.review.status": member, "project.review.approve": owner
+} satisfies Record<import("effect/rpc/Rpc").Tag<RpcGroup.Rpcs<typeof ProjectGitRpcGroup>>, ReadonlyArray<import("../commands.ts").CallerKind>>

@@ -1,0 +1,38 @@
+import * as Contracts from "../../src/index.ts";
+import type * as RpcGroup from "effect/rpc/RpcGroup";
+import { expect } from "vitest";
+
+export const clientCommands = [
+  "client.terminal.list", "client.terminal.open", "client.terminal.write", "client.terminal.resize", "client.terminal.close", "client.terminal.subscribe",
+  "client.harness.account.add", "client.harness.signin.start", "client.harness.signin.write", "client.harness.signin.resize", "client.harness.signin.stop", "client.harness.signin.subscribe",
+  "client.harness.status", "client.harness.recipe", "client.harness.install", "client.harness.account.check",
+  "client.harness.choices",
+  "client.snapshot", "client.roster", "client.thread", "client.subscribe", "client.event", "client.sequence", "client.requests",
+  "client.alerts.quiet.set", "client.alerts.carrier.enabled.set", "client.alerts.carrier.remove",
+  "client.alerts.retry", "client.alerts.test", "client.alerts.prompt.dismiss",
+  "client.agent.configuration", "client.agent.context",
+  "client.alerts.list", "client.alerts.dismiss", "client.alerts.settings", "client.alerts.settings.set",
+  "client.alerts.carrier.set", "client.alerts.carrier.set-token", "client.alerts.carrier.clear-token",
+  "client.web.settings", "client.web.settings.set",
+  "client.service.version", "client.service.restart",
+  "client.workflows.list", "client.workflows.read", "client.workflows.clone", "client.workflows.save", "client.workflows.validate", "client.workflows.delete",
+] as const;
+export const clientTags = [
+  "client.AlertDestinationChanged", "client.AlertDestinationTokenSet", "client.AlertDestinationTokenCleared", "client.AlertCarrierEnabled", "client.AlertQuietChanged",
+  "client.AlertBaseline", "client.AlertRaised", "client.AlertDelivered", "client.AlertDeliveryFailed",
+  "client.AlertPromptDismissed", "client.AlertCleared", "client.AlertSettingsChanged", "client.AlertCarrierChanged",
+  "client.AlertCarrierTokenSet", "client.AlertCarrierTokenCleared", "client.WebSettingsChanged",
+  "client.ServiceRestartRequested", "client.WebServerDown", "client.WebServerUp",
+] as const;
+
+export const definitions = () => {
+  const group = (Contracts as unknown as { ClientRpcGroup?: RpcGroup.RpcGroup<any> }).ClientRpcGroup;
+  expect(group, "Unit 2 must export ClientRpcGroup definitions without installing unhandled commands").toBeDefined();
+  return group!;
+};
+
+export const accessTable = () => {
+  const access = (Contracts as unknown as { clientCommandAccess?: Record<string, readonly string[]> }).clientCommandAccess;
+  expect(access, "ClientRpcGroup needs its own clientCommandAccess before handlers install commands").toBeDefined();
+  return access!;
+};

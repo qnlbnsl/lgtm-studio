@@ -1,0 +1,26 @@
+id = "lgtm"
+name = "LGTM Studio"
+version = "0.0.1"
+min_herdr_version = "0.8.2"
+platforms = ["linux"]
+
+[[startup]]
+command = ["lgtm", "serve", "--detach"]
+
+[[actions]]
+id = "serve"
+title = "Start LGTM Studio"
+contexts = ["global"]
+command = ["lgtm", "serve", "--detach"]
+
+[[actions]]
+id = "view"
+title = "View LGTM Studio threads"
+contexts = ["global"]
+command = ["node", "./src/openPane.ts"]
+
+[[panes]]
+id = "view"
+title = "LGTM Studio threads"
+placement = "split"
+command = ["lgtm", "view"]

@@ -1,0 +1,255 @@
+import { CommandsRpcGroup, commandAccess, type CallerKind } from "@lgtm/contracts"
+import type * as Rpc from "effect/rpc/Rpc"
+import type * as RpcGroup from "effect/rpc/RpcGroup"
+
+export type CommandName = Rpc.Tag<RpcGroup.Rpcs<typeof CommandsRpcGroup>> | "client.wait" | "thread.export"
+
+// The commands the lgtm command recognises are the requests of the RPC
+// group, the same list the client builds its methods from; only the
+// descriptions below are written here.
+export const commandNames: ReadonlyArray<CommandName> = [...CommandsRpcGroup.requests.keys()] as Array<CommandName>
+
+const summaries: Record<CommandName, string> = {
+  "client.terminal.list": "List live project terminals opened by this local-socket connection. Authenticated web sessions share the owner's web terminals.",
+  "client.terminal.open": "Open an owner shell in a registered local project worktree, if enabled in service settings.",
+  "client.terminal.write": "Send keys on the opening connection only. A standalone invocation cannot control an existing terminal. --text puts keys in shell history.",
+  "client.terminal.resize": "Resize a project terminal on its opening connection only.",
+  "client.terminal.close": "Kill a project terminal process group on its opening connection only.",
+  "client.terminal.subscribe": "Read ephemeral project terminal output on its opening connection only.",
+  "client.harness.account.add": "Add an account using an existing, managed separate, or advanced login folder.",
+  "client.harness.signin.start": "Run the account sign-in in a private owner terminal session.",
+  "client.harness.signin.write": "Send keys on the initiating connection. Standalone invocations open a new connection and cannot control an existing session. --text puts keys in shell history.",
+  "client.harness.signin.resize": "Resize the initiating owner terminal session. Standalone invocations open a new connection and cannot control an existing session.",
+  "client.harness.signin.stop": "Stop the sign-in process group and check local sign-in. Standalone invocations open a new connection and cannot control an existing session.",
+  "client.harness.signin.subscribe": "Read ephemeral sign-in output only on the initiating connection. Standalone invocations open a new connection and cannot control an existing session.",
+  "client.service.version": "Read the running version and optionally compare the tracked remote branch over HTTPS without downloading code.",
+  "client.service.restart": "Confirm stopping running agents, then restart the service with its original arguments and environment. Pages stay signed in; terminals close.",
+  "client.harness.status": "Read each harness's installed program, path and version.",
+  "client.harness.recipe": "Show the exact repository-owned install commands for a harness.",
+  "client.harness.install": "Install a harness using its fixed user-only recipe. Provider sign-in stays in your terminal.",
+  "client.harness.account.check": "Check local sign-in evidence without authenticating with a provider.",
+  "project.context.search": "Search readable project tasks and files in a registered local project workspace; returns typed references and truncation state.",
+  "project.repository.discover": "Discover bounded local repositories inside the workspace folder.",
+  "project.branches": "List actual branches of a registered local repository.",
+  "project.checkouts": "List actual checkouts of a registered local repository.",
+  "project.changes": "Read changed files in a registered workspace in your project.",
+  "project.diff": "Read a bounded patch in a registered workspace in your project.",
+  "project.history": "Read a bounded commit history in a registered workspace in your project.",
+  "project.commit.files": "Read the files changed by a commit in your project.",
+  "project.git.state": "Read actual branch, head, sync and merge state in your project.",
+  "project.stage": "Stage a changed file in a registered local workspace.",
+  "project.unstage": "Unstage a changed file in a registered local workspace.",
+  "project.stage.all": "Stage all nonconflicting changed files in a registered workspace.",
+  "project.unstage.all": "Unstage all nonconflicting staged files in a registered workspace.",
+  "project.discard.plan": "Read the exact file list and fingerprint for confirmed discard.",
+  "project.discard": "Discard unstaged changes using a current confirmed plan.",
+  "project.commit": "Commit staged changes in a registered workspace, or one named file and only that file.",
+  "project.map": "Read codebase map availability and bounded graph facts for a registered checkout.",
+  "project.map.open": "Open a ten-minute isolated codebase map address as the owner.",
+  "project.map.release": "Release an isolated codebase map frame by its id.",
+  "project.files.list": "List one folder of a registered local workspace with each entry's change.",
+  "project.files.read": "Read one file of a registered local workspace as text, an image, or a binary or large notice.",
+  "project.files.write": "Save one text file in a registered local project workspace against the version that was read.",
+  "project.fetch": "Fetch origin for a registered local workspace.",
+  "project.pull": "Fast-forward a clean registered local workspace from its upstream.",
+  "project.push": "Publish the registered workspace branch to origin.",
+  "project.integrate": "Merge a registered team into its project, or a registered builder into its team.",
+  "project.update": "Merge the registered parent head into a clean project, team or builder workspace.",
+  "project.merge.abort": "Abort the expected active merge after explicit confirmation.",
+  "project.conflict.resolved": "List reopenable resolved text files in the current merge.",
+  "project.conflict.reopen": "Restore a resolved file's original conflict stages in the expected merge.",
+  "project.review.decline": "Send an open main review back with a reason addressed to its project lead on the board.",
+  "project.review": "Read actual review evidence against a local base branch in your project.",
+  "project.review.report": "Record reported test or review data for the current project head with an existing project thread item; reports never approve a merge.",
+  "project.review.prepare": "Prepare against the live GitHub base and publish or reconcile the project pull request; local fallback requires an absent GitHub remote, CLI, or active account.",
+  "project.review.status": "Read the latest project review and current or stale reported evidence.",
+  "project.review.approve": "Approve the reviewed heads as the owner and merge the prepared GitHub pull request, or its recorded local fallback; a refused outcome is not a merge.",
+  "project.conflict": "Read canonical conflict hunks in a registered workspace in your project.",
+  "project.conflict.choose": "Choose a canonical conflict hunk after checking its fingerprint.",
+  "project.conflict.resolve": "Resolve canonical conflict hunks from current confirmed choices.",
+
+  "client.alerts.quiet.set": "Set quiet hours, their time zone and the failure override.",
+  "client.alerts.carrier.remove": "Remove one carrier configuration and its secret.",
+  "client.alerts.carrier.enabled.set": "Enable or disable one configured notification carrier.",
+  "client.alerts.carrier.set": "Change the alert carrier.",
+  "client.alerts.carrier.set-token": "Store the carrier token from standard input, after confirming the server.",
+  "client.alerts.carrier.clear-token": "Clear the carrier token.",
+  "client.alerts.retry": "Retry the displayed failed notification using its generation and attempt.",
+  "client.alerts.test": "Send a test through the configured notification service.",
+  "client.alerts.prompt.dismiss": "Remember the choice to decline the phone notification offer.",
+  "client.alerts.list": "List alerts.",
+  "client.alerts.dismiss": "Dismiss an alert.",
+  "client.alerts.settings": "Read alert settings.",
+  "client.alerts.settings.set": "Change an alert kind's push setting.",
+  start: "Start an agent.",
+  configure: "Choose an agent's model and/or effort for its next turn. Read client.agent.configuration for acknowledgement or refusal.",
+  "client.harness.choices": "Discover a harness account’s reported models and effort choices.",
+  "client.agent.configuration": "Read an agent's desired and applied configuration and available choices.",
+  "client.agent.context": "Read the latest reported context usage, or its unavailable state.",
+  prompt: "Send a prompt to an agent.",
+  answer: "Answer a permission request or a question that was passed to you.",
+  "pass-up": "Pass a permission request or a question up to your lead.",
+  ask: "Ask your lead a question.",
+  wait: "Wait for agents to settle. With --block, hold this process until they do.",
+  "cancel-reply": "Cancel the active reply and keep the agent running.",
+  stop: "Stop an agent.",
+  resume: "Resume an agent.",
+  release: "Release an agent’s capacity hold.",
+  compact: "Compact an agent's context.",
+  group: "Add an agent to groups, or remove it from them.",
+  accounts: "List, add, set, disable or remove accounts.",
+  "accounts set-secret": "Store an account's secret, read from standard input.",
+  "accounts mark-available": "Mark an account available again.",
+  harnesses: "List, set or reset harness settings.",
+  subscribe: "Print the event stream from a sequence.",
+  "client.workflows.list": "List default, user and repository workflows.",
+  "client.workflows.read": "Read a workflow definition.",
+  "client.workflows.clone": "Clone a workflow with a new name.",
+  "client.workflows.save": "Save or rename a user workflow.",
+  "client.workflows.validate": "Validate a workflow without saving.",
+  "client.workflows.delete": "Delete a user workflow.",
+  "client.web.settings": "Read the web server settings and state.",
+  "client.web.settings.set": "Change the web server settings.",
+  "debug.compare-views": "Compare the live views with a rebuild (test services only).",
+  "client.snapshot": "Read client.snapshot, the current team and its sequence.",
+  "client.roster": "Read client.roster, filtered by group, role or parent.",
+  "client.requests": "Read the durable request index and answered history.",
+  "client.thread": "Read client.thread, one page of an agent's events.",
+  "client.event": "Read client.event, a whole event by sequence.",
+  "client.sequence": "Read client.sequence, the published views sequence.",
+  "client.subscribe": "Follow client.subscribe, a filtered event stream.",
+  "client.wait": "Wait for agents using the owner's client helper.",
+  "thread.export": "Export a thread to a local file with mode 0600.",
+  "board.open": "Open a plain channel or a channel bound to a group.",
+  "board.members": "Add or remove members of a plain channel.",
+  "board.post": "Write a post in a channel or to a direct target, and request replies when needed.",
+  "board.close": "Withdraw an open post.",
+  "board.acknowledge": "Mark an addressed post as taken up when you start responding.",
+  "board.read": "Read a page of posts and mark the returned posts as read.",
+  "board.peek": "Read a channel without advancing any read marks (owner only).",
+  "board.channels": "List the channels you can read.",
+  "board.status": "Read board counts, reply obligations and delivery status.",
+  "board.flush": "Queue a board wake with an agent's unread posts and owed notices.",
+  "project.settings": "Read project service defaults.",
+  "project.settings.set": "Set the workspace folder, shell, and lead launch defaults.",
+  "project.repository.add": "Register an existing local repository.",
+  "project.repository.preparation.set": "Replace owner settings for new worktree copies, submodules and agent instructions.",
+  "project.repository.base.set": "Change a repository base branch to an existing local branch.",
+  "project.repository.locate": "Record a verified local repository location.",
+  "project.repositories": "List registered repositories.",
+  "project.workspace.register": "Register an existing local checkout and its actual branch.",
+  "project.workspaces": "List registered workspaces.",
+  "project.setup": "Read durable first-run progress and positive completion.",
+  "project.setup.advance": "Advance first-run progress without regressing it.",
+  "project.setup.complete": "Complete first-run setup after a successful project creation.",
+  "project.setup.discover": "Observe actual repositories, adapters and local credential evidence without launching or signing in.",
+  "project.placement.preview": "Preview actual project placement without reserving paths or creating files.",
+  "project.mocks.comment": "Post a plain text owner comment on the current recorded mock screen.",
+  "project.mocks.screen.approve": "Approve or withdraw owner approval of one recorded screen without advancing the project stage.",
+  "project.mocks.seen": "Record that the owner has seen exactly one recorded screen version.",
+  "project.mocks.seen.batch": "Record all displayed unseen screen versions atomically as the owner.",
+  "project.mocks.reviews.read": "Read bounded historical screen feedback for your whole project in one reply.",
+  "project.mocks.editor.save": "Save an editor export into the exact recorded design file and record a new mock revision as the owner.",
+  "project.mocks.screen.read": "Read versioned comments, approval and seen marks on a screen in your project.",
+  "project.mocks.record": "Record a project-scoped mock revision with actual artifact references.",
+  "project.mocks.read": "Read bounded immutable mock revisions and current owner approval.",
+  "project.mocks.artifact": "Read actual bounded artifact text as data, or unavailable.",
+  "project.mocks.approve": "Approve the exact reviewed revision and deliver planning to its project lead.",
+  "project.design.record": "Register revision-bound repository Design files and evidenced shared components.",
+  "project.design.read": "Read registered repository Design metadata and actual bounded artifact availability.",
+  "project.create": "Create a local project and repository checkout, and start its lead.",
+  "project.creation.abandon": "Abandon an unfinished creation intent without changing any files.",
+  "project.creations": "Read unfinished project creations and their owned folders for recovery.",
+  "project.goal.set": "Change a project's goal.",
+  "project.archive": "Stop every project agent and archive the project after confirmed stops.",
+  "project.delete": "Permanently hide an archived project and its history. Keep all worktree folders and branches. Requires --confirmed true.",
+  "project.restore": "Restore an archived project without launching another lead.",
+  "project.permission.set": "Set Project planning or Starting work to Allowed, Not allowed or Always ask for permission as the owner.",
+  "project.approval.grant": "Grant an ask permission as the owner.",
+  "project.approval.withdraw": "Withdraw one lead permission grant as the owner.",
+  "project.rename": "Rename a project within its repository.",
+  "project.place": "Confirm the current project workspace; changes require machine pairing.",
+  "project.preferences.set": "Set a project's preferred shell.",
+  "project.stage.set": "Set your project's stage. This does not record owner approval.",
+  "project.requests": "Read current and answered project requests as the owner or actual lead.",
+  "project.read": "Read a bounded page of project records.",
+  "project.team.delete": "Delete an empty team after stopping its agents. Its board history becomes read-only.",
+  "project.task.delete": "Delete a task that was never started.",
+  "project.team.create": "Create a project team with its group board channel.",
+  "project.sprint.create": "Create a sprint with its owner and dependencies.",
+  "project.sprint.update": "Update a sprint before completion.",
+  "project.sprint.complete": "Complete a sprint with evidence after its tasks and dependencies finish.",
+  "project.task.create": "Assign a task to a team and an unfinished sprint.",
+  "project.task.update": "Update a task you lead or own.",
+  "project.task.note": "Append a timestamped task history note.",
+  "project.task.history": "Read a bounded page of task history.",
+  "roles.orient": "Read your team and role advice.",
+  "roles.handoff": "Read an agent's handoff.",
+  "roles.role-file.set": "Load a role file from its content.",
+  "roles.role-file.get": "Read the loaded role file and its hash.",
+  "roles.settings.get": "Read the stall watch settings.",
+  "roles.settings.set": "Change the stall watch settings.",
+  "roles.snooze": "Snooze a group's team-idle notices.",
+  "roles.actions.list": "List the stall watch's action records.",
+  "roles.record": "Record a stall watch action (service only)."
+}
+
+export const isCommand = (name: string): name is CommandName => (commandNames as ReadonlyArray<string>).includes(name)
+
+// The longest command name that opens the arguments: "accounts set-secret"
+// before "accounts".
+export const matchCommand = (args: ReadonlyArray<string>): { readonly command: CommandName; readonly rest: ReadonlyArray<string> } | undefined => {
+  const names: ReadonlyArray<CommandName> = [...commandNames, "client.wait", "thread.export"]
+  const candidates = names.flatMap((command) => [
+    { command, words: command.split(" ") },
+    { command, words: command === "debug.compare-views" ? [command] : command.replaceAll(".", " ").split(" ") },
+  ])
+    .sort((a, b) => b.words.length - a.words.length)
+  for (const { command, words } of candidates) {
+    if (words.every((word, index) => args[index] === word)) return { command, rest: args.slice(words.length) }
+  }
+  return undefined
+}
+
+export const helpText = (command: CommandName): string => {
+  const access: ReadonlyArray<CallerKind> = command in commandAccess ? commandAccess[command as keyof typeof commandAccess] : ["owner"]
+  const callers = `Allowed callers: ${access.join(", ")}.\n` + (access.length === 1 && access[0] === "owner"
+    ? "This command is for the owner's terminal; an agent's identity is refused.\n" : "")
+  if (command === "accounts set-secret") {
+    return [
+      "Usage: lgtm accounts set-secret <account-id> <env-name>", "",
+      summaries[command], callers,
+      "Arguments:",
+      "  <account-id>  The account the secret belongs to.",
+      "  <env-name>    The environment variable the secret becomes for the agent.", "",
+      "The secret is read from standard input, never from an argument, and is not echoed.",
+      "Pipe it in, or type it at the prompt. One final newline is removed."
+    ].join("\n") + "\n"
+  }
+  if (command === "client.alerts.carrier.set-token") return [
+    "Usage: lgtm client alerts carrier set-token [ntfy|email]", "       lgtm client.alerts.carrier.set-token [ntfy|email]", "", summaries[command], callers,
+    "Select ntfy (the default) or email. Type yes to confirm the displayed server, then supply its password or token on standard input.",
+    "The token is never echoed or accepted in --input."
+  ].join("\n") + "\n"
+  const options = [
+    "Options:",
+    "  --input <json>  The command's payload as one JSON object. A requestId is added when absent.",
+    "  --help          Show this help."
+  ]
+  if (command === "project.mocks.editor.save") options.splice(1, 0,
+    "  --file <path>   Read an editor export of at most 512 KiB on this computer.",
+    "                  Put the recorded identities and confirmed: true in --input; omit content.")
+  if (command === "thread.export") return `Usage: lgtm thread export <agent> --out <file>\n\nExport all thread pages to a file on this computer with mode 0600.\n${callers}\nUse the positional agent and --out; --input is not supported.\n`
+  if (command === "wait" || command === "client.wait") {
+    options.splice(1, 0,
+      "  --block         Hold this process until the agents settle. Exit 1 if any crashed or stopped,",
+      "                  else 2 if any paused or was interrupted, else 0.",
+      "  --mode <any|all>  Wait for any one, or for all (default all).",
+      "  <agent-id>...   The agents to wait for, with --block or --mode.")
+  }
+  if (command === "subscribe") options.splice(1, 0, "  --after <n>     Print events after this sequence (default 0).")
+  const invocation = command === "debug.compare-views" ? command : command.replaceAll(".", " ")
+  const usage = [`Usage: lgtm ${invocation} [options]`]
+  if (invocation !== command) usage.push(`       lgtm ${command} [options]`)
+  return [...usage, "", summaries[command], callers, ...options].join("\n").replace(/\n\n\n/g, "\n\n") + "\n"
+}

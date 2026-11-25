@@ -1,0 +1,512 @@
+/* Home, the project board, sprint and task pages, the team page, and Chat. */
+
+/* ---- Home: one triage table ------------------------------------------------- */
+.home-head { display: flex; align-items: center; gap: var(--space-2); height: var(--tabrow); padding: 0 var(--space-4); border-bottom: 1px solid var(--color-line); flex: none; min-width: 0; }
+.home-head h1 { font-size: var(--text-md); font-weight: var(--weight-strong); white-space: nowrap; }
+.phone-offer { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--color-muted); font-size: var(--text-sm); white-space: nowrap; min-width: 0; }
+.phone-offer > span { overflow: hidden; text-overflow: ellipsis; }
+.seg-n { color: var(--color-faint); font-variant-numeric: tabular-nums; font-weight: var(--weight-body); }
+.seg > button[aria-pressed="true"] .seg-n { color: var(--color-muted); }
+.filter-btn { gap: 5px; font-weight: var(--weight-body); }
+.filter-btn b { font-weight: var(--weight-medium); max-width: 180px; overflow: hidden; text-overflow: ellipsis; }
+.filter-btn.set { background: var(--color-selected); }
+.filter-btn .icon { color: var(--color-faint); }
+.show-answered { font-size: var(--text-sm); color: var(--color-muted); margin-left: var(--space-1); }
+.home-filters .search { flex: 0 1 220px; }
+.th-sort { display: inline-flex; align-items: center; gap: 4px; height: 100%; color: inherit; font: inherit; letter-spacing: inherit; }
+.th-sort:hover { color: var(--color-text); }
+th[aria-sort] .th-sort { color: var(--color-text); }
+th.num .th-sort { flex-direction: row-reverse; }
+.rq-table { table-layout: fixed; }
+.rq-table col.c-title { width: auto; } .rq-table col.c-type { width: 104px; } .rq-table col.c-repo { width: 112px; }
+.rq-table col.c-project { width: 17%; } .rq-table col.c-stage { width: 92px; } .rq-table col.c-agent { width: 17%; } .rq-table col.c-wait { width: 132px; }
+.rq-table td { overflow: hidden; text-overflow: ellipsis; }
+.rq-title { display: table-cell; }
+.rq-title > * { vertical-align: middle; }
+.rq-title .truncate { display: inline-block; max-width: calc(100% - 26px); font-weight: var(--weight-medium); }
+.rq-toggle { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-right: 6px; border-radius: 4px; color: var(--color-faint); }
+.rq-toggle:hover { background: var(--color-sunken); color: var(--color-text); }
+.rq-toggle .icon { transition: transform var(--motion-fast) var(--ease); }
+.rq-toggle[aria-expanded="true"] .icon { transform: rotate(90deg); }
+.rq-wait { color: var(--color-muted); }
+.rq-wait.long { color: var(--color-warn); font-weight: var(--weight-strong); }
+.rq.closed .rq-title .truncate { color: var(--color-muted); font-weight: var(--weight-body); }
+.rq.expanded td { border-bottom-color: transparent; background: var(--color-surface); }
+.table tr.rq-detail:hover { background: transparent; }
+/* The expanded part lines up with the title's text, clear of the arrow: the cell's own
+   padding, plus the 20-pixel arrow and its 6-pixel gap, less the 3-pixel state edge. */
+.table .rq-detail > td { white-space: normal; height: auto; padding: var(--space-2) var(--space-6) var(--space-5) calc(var(--space-4) + 23px); background: var(--color-surface); border-left: 3px solid transparent; }
+.rq-detail .req { max-width: 900px; animation: open-row var(--motion-fast) var(--ease); }
+@keyframes open-row { from { opacity: 0; transform: translateY(-3px); } }
+.rq-none td { height: calc(var(--row) * 2); color: var(--color-muted); }
+.table tr.rq-group:hover { background: transparent; }
+.rq-group td { height: calc(var(--row) + 8px); padding-top: 8px; color: var(--color-muted); font-size: var(--text-xs); font-weight: var(--weight-strong); letter-spacing: .04em; text-transform: uppercase; }
+.rq-group .count { margin-left: 6px; }
+.stage-dots { display: inline-flex; align-items: center; gap: 3px; }
+.stage-dots i { width: 12px; height: 4px; border-radius: 2px; background: var(--color-line-strong); }
+.stage-dots i.done { background: var(--color-success); }
+.stage-dots i.now { background: var(--color-text); }
+.stage-dots span { margin-left: 6px; }
+
+/* ---- project board: Board, Table and Roadmap ---------------------------------- */
+.board-page { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.board-bar { display: flex; align-items: center; gap: var(--space-2); padding: 6px var(--space-4); border-bottom: 1px solid var(--color-line); flex: none; min-width: 0; }
+.board-bar .search { flex: 0 1 200px; }
+.view-tabs { display: flex; gap: 2px; padding: 2px; background: var(--color-sunken); border-radius: var(--radius-sm); flex: none; }
+.view-tab { display: inline-flex; align-items: center; gap: 6px; height: calc(var(--control) - 4px); padding: 0 10px; border-radius: 3px; color: var(--color-muted); font-size: var(--text-sm); font-weight: var(--weight-medium); white-space: nowrap; }
+.view-tab:hover { color: var(--color-text); }
+.view-tab[aria-current="page"] { background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-1); }
+.status-link { display: inline-flex; align-items: center; gap: 6px; height: var(--control); padding: 0 8px; border-radius: var(--radius-sm); font-size: var(--text-sm); font-weight: var(--weight-medium); white-space: nowrap; min-width: 0; }
+.status-link:hover { background: var(--color-raised); }
+/* lanes have a fixed width, so opening the lead panel never changes a card or a gap */
+/* The edges of the board blur and fade a little where lanes are cut off by the scroll. */
+.board-scroll { position: relative; flex: 1; min-height: 0; min-width: 0; display: flex; }
+.board-scroll::before, .board-scroll::after { content: ''; position: absolute; top: 0; bottom: 0; width: 36px; z-index: 2; pointer-events: none; opacity: 0; transition: opacity var(--motion-fast) var(--ease); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
+.board-scroll::before { left: 0; background: linear-gradient(to right, color-mix(in srgb, var(--color-bg) 85%, transparent), transparent); mask-image: linear-gradient(to right, #000 30%, transparent); -webkit-mask-image: linear-gradient(to right, #000 30%, transparent); }
+.board-scroll::after { right: 0; background: linear-gradient(to left, color-mix(in srgb, var(--color-bg) 85%, transparent), transparent); mask-image: linear-gradient(to left, #000 30%, transparent); -webkit-mask-image: linear-gradient(to left, #000 30%, transparent); }
+.board-scroll.more-left::before, .board-scroll.more-right::after { opacity: 1; }
+/* A card in Backlog or Planned drags. A line shows where it will land, and the other lanes dim. */
+.sprint-card[draggable="true"] { cursor: grab; }
+.sprint-card.dragging { opacity: .4; }
+.sprint-card.drop-before { box-shadow: 0 -3px 0 -1px var(--color-primary); }
+.board-lane.drop-end .cards::after { content: ''; height: 2px; border-radius: 1px; background: var(--color-primary); }
+.board-lane.locked > header, .board-lane.locked .cards { opacity: .45; }
+.lane-why { display: flex; align-items: flex-start; gap: 6px; padding: 0 8px 6px; font-size: var(--text-xs); color: var(--color-muted); line-height: 1.4; }
+.lane-why .icon { flex: none; margin-top: 2px; }
+.board-lanes { min-width: 0; flex: 1; min-height: 0; display: flex; gap: var(--space-3); padding: var(--space-3) var(--space-4); overflow: auto; align-items: stretch; }
+.board-lane { flex: 1 0 200px; min-width: 200px; max-width: 320px; display: flex; flex-direction: column; min-height: 0; background: var(--color-raised); border-radius: var(--radius-md); padding: 4px; }
+.board-lane > header { display: flex; align-items: center; gap: 8px; height: var(--row); padding: 0 8px; flex: none; }
+.board-lane > header h2 { font-size: var(--text-sm); font-weight: var(--weight-strong); color: var(--color-muted); }
+.board-lane .cards { display: grid; gap: 4px; align-content: start; overflow-y: auto; min-height: 0; flex: 1; }
+.sprint-card { display: grid; gap: 6px; padding: 8px 10px; border-radius: 6px; background: var(--color-surface); border: 1px solid var(--color-line); transition: border-color var(--motion-fast) var(--ease), box-shadow var(--motion-fast) var(--ease); min-width: 0; }
+.sprint-card:hover { border-color: var(--color-line-strong); box-shadow: var(--shadow-1); }
+.sprint-card.warn { border-color: var(--color-warn-line); }
+.sprint-card.error { border-color: color-mix(in srgb, var(--color-error) 50%, var(--color-line)); }
+.sprint-card h3 { font-size: var(--text-md); font-weight: var(--weight-medium); line-height: 1.35; }
+.sprint-card.done h3 { color: var(--color-muted); }
+.card-top, .card-foot { display: flex; align-items: center; gap: 6px; min-width: 0; font-size: var(--text-xs); }
+.card-foot .stage-word { color: var(--color-text); font-weight: var(--weight-medium); }
+.epic-chip { color: var(--color-muted); min-width: 0; }
+.sprint-card .need { display: flex; align-items: center; gap: 6px; color: var(--color-warn); font-size: var(--text-sm); font-weight: var(--weight-strong); }
+.sprint-card .need.error { color: var(--color-error); }
+.card-tldr { position: fixed; z-index: 80; padding: 8px 10px; border-radius: var(--radius-md); background: var(--color-surface); border: 1px solid var(--color-line-strong); box-shadow: var(--shadow-2); font-size: var(--text-sm); line-height: 1.5; color: var(--color-text); pointer-events: none; animation: fade var(--motion-fast) var(--ease); }
+.card-tldr b { font-weight: var(--weight-strong); color: var(--color-info); }
+.prio { display: inline-flex; align-items: center; gap: 4px; color: var(--color-faint); white-space: nowrap; }
+.prio.p-urgent { color: var(--color-error); } .prio.p-high { color: var(--color-warn); }
+.status-word { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.status-word::before { content: ''; width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--color-faint); }
+.status-word.st-in-progress::before { border-color: var(--color-info); background: var(--color-info); }
+.status-word.st-review::before { border-color: var(--color-accent); background: var(--color-accent); }
+.status-word.st-done::before { border-color: var(--color-success); background: var(--color-success); }
+.status-word.st-backlog::before { border-style: dashed; }
+.view-scroll { flex: 1; min-height: 0; overflow: auto; }
+.board-table td .tag { margin-right: 4px; }
+/* roadmap */
+.roadmap { flex: 1; min-height: 0; overflow: auto; --rm-name: 260px; }
+.rm-grid { display: grid; grid-template-columns: var(--rm-name) var(--rm-w); width: calc(var(--rm-name) + var(--rm-w)); min-height: 100%; }
+/* the names column: pinned to the left, as tall as the roadmap, and above everything that scrolls under it */
+.rm-names { position: sticky; left: 0; z-index: 5; min-width: 0; background-color: var(--color-bg); border-right: 1px solid var(--color-line); }
+/* both columns carry a ruled line every row, so the space below the last item reads as empty rows, not a void */
+.rm-names, .rm-time { --rm-rule: linear-gradient(to bottom, transparent calc(var(--row) - 1px), var(--color-line) calc(var(--row) - 1px)); }
+.rm-names { background-image: var(--rm-rule); background-size: 100% var(--row); }
+/* the time column: the day lines run its full height, so the grid does not stop at the last row */
+.rm-time { position: relative; min-width: 0; background-image: linear-gradient(to right, var(--color-line) 1px, transparent 1px), var(--rm-rule); background-size: var(--day) 100%, 100% var(--row); }
+.rm-cell { display: flex; align-items: center; gap: 6px; height: var(--row); padding: 0 var(--inset) 0 var(--space-4); border-bottom: 1px solid var(--color-line); min-width: 0; font-size: var(--text-sm); }
+.rm-head { position: sticky; top: 0; z-index: 4; background: var(--color-bg); color: var(--color-muted); font-size: var(--text-xs); font-weight: var(--weight-medium); }
+.rm-axis { position: sticky; padding: 0; }
+.rm-axis span { position: absolute; top: 0; height: 100%; display: flex; align-items: center; padding-left: 6px; font-size: var(--text-xs); color: var(--color-muted); border-left: 1px solid var(--color-line); width: var(--day); white-space: nowrap; }
+.rm-axis span.today { color: var(--color-text); font-weight: var(--weight-strong); }
+.rm-track { position: relative; display: block; padding: 0; }
+.rm-goal { color: var(--color-muted); }
+.rm-cell.epic { background: var(--color-raised); }
+.rm-cell.epic b { font-weight: var(--weight-strong); }
+.rm-bar { position: absolute; z-index: 2; top: 5px; bottom: 5px; display: flex; align-items: center; padding: 0 8px; border-radius: var(--radius-sm); font-size: var(--text-xs); font-weight: var(--weight-medium); min-width: 0; overflow: hidden; background: var(--color-surface); border: 1px solid var(--color-line-strong); }
+.rm-bar.epic { top: 11px; bottom: 11px; padding: 0; background: var(--color-muted); border: 0; }
+.rm-bar.st-in-progress { background: var(--color-info-soft); border-color: var(--color-info); color: var(--color-info); }
+.rm-bar.st-review { background: var(--color-selected); border-color: var(--color-accent); }
+.rm-bar.st-done { background: var(--color-success-soft); border-color: var(--color-success); color: var(--color-success); }
+.rm-bar.st-backlog { border-style: dashed; color: var(--color-muted); background: transparent; }
+.rm-now { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--color-warn); z-index: 1; pointer-events: none; }
+.only-phone-flex { display: none; }
+/* focus: the board fills the window */
+.app.focus { grid-template-columns: minmax(0, 1fr); }
+.app.focus .sidebar { display: none; }
+.app.focus .main { grid-template-rows: 0 minmax(0, 1fr); }
+.app.focus .topbar { visibility: hidden; border: 0; }
+
+/* ---- sprint, task and team pages -------------------------------------------- */
+.back { display: inline-flex; align-items: center; gap: 6px; color: var(--color-muted); font-size: var(--text-sm); font-weight: var(--weight-medium); }
+.back:hover { color: var(--color-text); }
+.status-line { display: flex; align-items: center; gap: 10px; color: var(--color-muted); flex-wrap: wrap; margin-bottom: var(--space-3); }
+.stack { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); max-width: 820px; }
+.lede { font-size: var(--text-lg); line-height: 1.55; max-width: var(--measure); margin-bottom: var(--space-4); }
+.facts { max-width: 820px; }
+.table-wrap { border: 1px solid var(--color-line); border-radius: var(--radius-md); overflow: auto; background: var(--color-surface); }
+.table-wrap .table th { background: var(--color-raised); }
+.table-wrap .table tr:last-child td { border-bottom: 0; }
+.file-list { display: grid; }
+.file-list li { display: flex; align-items: center; gap: 8px; min-height: 26px; min-width: 0; font-size: var(--text-sm); }
+.timeline { display: grid; gap: 0; position: relative; }
+.timeline li { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: var(--space-3); padding: 5px 0 5px 16px; position: relative; line-height: 1.5; }
+.timeline li::before { content: ''; position: absolute; left: 3px; top: 12px; width: 7px; height: 7px; border-radius: 50%; background: var(--color-line-strong); }
+.timeline li::after { content: ''; position: absolute; left: 6px; top: 22px; bottom: -8px; width: 1px; background: var(--color-line); }
+.timeline li:last-child::after { display: none; }
+.timeline time { color: var(--color-muted); font-size: var(--text-sm); white-space: nowrap; }
+.timeline b { font-weight: var(--weight-medium); }
+
+/* ---- chat ------------------------------------------------------------------ */
+.chat { display: grid; grid-template-columns: minmax(0, 1fr) auto; flex: 1; min-height: 0; }
+.chat-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.chat-head { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-4); border-bottom: 1px solid var(--color-line); flex: none; min-width: 0; }
+.chat-head h1 { font-size: var(--text-lg); font-weight: var(--weight-strong); letter-spacing: -.01em; white-space: nowrap; }
+.chat-main .composer-wrap { padding-bottom: var(--space-4); }
+.chat-aside { width: 320px; border-left: 1px solid var(--color-line); overflow: auto; padding: var(--space-3) var(--space-4); display: grid; gap: var(--gap-group); align-content: start; background: var(--color-bg); }
+.chat-aside h3 { font-size: var(--text-xs); font-weight: var(--weight-strong); color: var(--color-faint); letter-spacing: .04em; text-transform: uppercase; margin-bottom: 6px; }
+.chat-aside section { display: grid; gap: 4px; min-width: 0; }
+.chat-aside .pick { margin-left: -6px; }
+
+@media (max-width: 860px) {
+  .home-head { padding: 0 var(--space-3); }
+  .phone-offer > span { display: none; }
+  .home-filters .search { flex: 1 1 100%; max-width: none; }
+  .home-filters .seg { overflow-x: auto; max-width: 100%; scrollbar-width: none; }
+  .rq-table, .rq-table tbody { display: block; }
+  .rq-table thead, .rq-table colgroup { display: none; }
+  .rq-table tr.rq { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: var(--space-2); padding: 8px var(--space-3) 8px 0; border-bottom: 1px solid var(--color-line); border-left: 3px solid transparent; }
+  .rq-table tr.rq td { display: block; height: auto; border: 0; padding: 0; min-width: 0; }
+  .rq-table tr.rq td.state-cell { grid-column: 1; grid-row: 1; padding-left: var(--space-2); border: 0; }
+  .rq-table tr.rq td.rq-wait { grid-column: 2; grid-row: 1; }
+  .rq-table tr.rq td:nth-child(2) { grid-column: 1; grid-row: 2; padding-left: calc(var(--space-2) + 26px); display: flex; gap: 8px; align-items: center; }
+  .rq-table tr.rq td:nth-child(6) { grid-column: 2; grid-row: 2; font-size: var(--text-sm); color: var(--color-muted); }
+  .rq-table tr.rq td:nth-child(3), .rq-table tr.rq td:nth-child(5) { display: none; }
+  .rq-table tr.rq td.rq-project { grid-column: 1; grid-row: 3; padding-left: calc(var(--space-2) + 26px); font-size: var(--text-sm); color: var(--color-muted); }
+  .rq-table tr.rq-detail, .rq-table tr.rq-none, .rq-table tr.rq-group { display: block; }
+  .rq-table tr.rq-detail > td, .rq-table tr.rq-none > td, .rq-table tr.rq-group > td { display: block; padding-left: var(--space-3); padding-right: var(--space-3); }
+  .rq-table tr.rq-detail > td { padding-left: calc(var(--space-2) + 26px); }
+  .board-bar { flex-wrap: wrap; padding: 6px var(--space-3); }
+  .board-bar .search { flex: 1 1 140px; }
+  .board-bar .status-link { order: 5; }
+  .board-lane { flex-basis: min(300px, calc(100vw - 48px)); width: auto; }
+  .only-phone-flex { display: flex; border-bottom: 1px solid var(--color-line); padding: 0 var(--space-2); overflow-x: auto; height: var(--tabrow); flex: none; }
+  .stages li + li::before { width: 10px; margin: 0 5px; }
+  .timeline li { grid-template-columns: 64px minmax(0, 1fr); }
+  .table-wrap { overflow-x: auto; }
+}
+
+
+/* ---- repository page --------------------------------------------------------- */
+.repo-facts { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--color-line); align-items: start; }
+.repo-desc { display: grid; gap: 4px; max-width: var(--measure); }
+.repo-desc h2 { font-size: var(--text-xs); font-weight: var(--weight-strong); color: var(--color-faint); letter-spacing: .04em; text-transform: uppercase; }
+.repo-desc p { line-height: 1.55; }
+.repo-desc small { font-size: var(--text-xs); }
+@media (max-width: 860px) { .repo-facts { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 860px) { .rq-table tr.rq.expanded { background: var(--color-surface); } .rq-table tr.rq.expanded td { background: transparent; } }
+@media (max-width: 860px) { .roadmap { --rm-name: 150px; } .rm-cell { padding-left: var(--space-3); } }
+
+/* ---- the sprint page: the title and one tab at a time in the middle, a rail about the sprint on the right ----- */
+.tk { flex: 1; min-height: 0; min-width: 0; display: flex; container-type: inline-size; container-name: tk; }
+.tk-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.tk-head { flex: none; display: grid; gap: var(--space-2); min-width: 0; padding: var(--space-3) var(--space-5) var(--space-1); }
+.tk-titlerow { display: flex; align-items: flex-start; gap: var(--space-2); min-width: 0; }
+.tk-titlerow .icon-btn { margin-left: -6px; flex: none; }
+.tk-titlerow .tag { flex: none; margin-top: 4px; }
+.tk-titlerow .badge { flex: none; margin-top: 3px; }
+/* The name wraps. It is never cut. */
+.tk-name { font-size: var(--text-lg); font-weight: var(--weight-strong); line-height: 1.35; min-width: 0; overflow-wrap: anywhere; text-wrap: balance; padding-top: 1px; }
+/* A tab's own padding is 10 pixels, so the row starts 10 pixels early and the tab's word sits on the page's left edge. */
+.tk-tabrow { align-items: center; gap: var(--space-2); padding: 0 var(--space-5) 0 calc(var(--space-5) - 10px); overflow: visible; }
+.tk-tabs { display: flex; align-self: stretch; gap: 2px; flex: none; }
+.tk-tabs .count.warn { color: var(--color-warn); background: var(--color-warn-soft); }
+.tk-tabmeta { font-size: var(--text-xs); min-width: 0; }
+.tk-pane { flex: 1; min-height: 0; min-width: 0; overflow: auto; }
+.tk-pane.framed { display: flex; overflow: hidden; }
+.tk-pad { padding: var(--space-4) var(--space-5); max-width: 980px; }
+.tk-pad.tasks { padding-top: 0; }
+.tk-reqs { min-width: 0; }
+.tk-add { gap: var(--space-2); padding-top: var(--space-3); }
+.tk-add .input { flex: 1; min-width: 0; }
+.tk-none { padding: var(--space-3) 0; }
+/* Tasks: one line each. The columns have fixed widths, so they do not move from one sprint to the next.
+   The title takes the width that is left and is the only cell that may shorten. */
+.tk-tablewrap { min-width: 0; container-type: inline-size; container-name: tkt; }
+.tk-tasks { table-layout: fixed; }
+.tk-tasks th:first-child, .tk-tasks td:first-child { padding-left: 0; }
+.tk-tasks th:last-child, .tk-tasks td:last-child { padding-right: 0; }
+.tk-c-label { width: 64px; } .tk-c-status { width: 176px; } .tk-c-owner { width: 52px; } .tk-c-points { width: 64px; } .tk-c-sec { width: 28px; }
+.tk-t-title { overflow: hidden; text-overflow: ellipsis; }
+.tk-state { display: inline-flex; align-items: center; gap: 4px; font-size: var(--text-sm); }
+.tk-state.warn-text { font-weight: var(--weight-medium); }
+.tk-owner { gap: 6px; }
+.tk-t-sec .icon-btn { width: 24px; height: 24px; color: var(--color-muted); }
+/* An owner's name and the points show only when the page is wide enough for them. */
+.tk-wide { display: none; }
+@container tk (min-width: 900px) { .tk-wide { display: revert; } .tk-tight { display: none; } .tk-c-owner { width: 150px; } }
+/* A task table narrower than 480 pixels stacks, as "The phone" in DESIGN.md says: the name on the
+   first line, and the status first on the second. The title is whole and the owner has a name. */
+@container tkt (max-width: 479px) {
+  /* The rows share the body's columns, so the owner and the status each start at one edge down the list. */
+  .tk-tasks { display: block; }
+  .tk-tasks tbody { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; column-gap: var(--inset); }
+  .tk-tasks thead { display: none; }
+  .tk-tasks tbody tr { display: grid; grid-template-columns: subgrid; grid-column: 1 / -1; row-gap: 2px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--color-line); }
+  .tk-tasks td, .tk-tasks td:first-child, .tk-tasks td:last-child { height: auto; padding: 0; border: 0; white-space: normal; }
+  .tk-t-label { grid-area: 1 / 1; align-self: start; line-height: 1.4; }
+  .tk-t-title { grid-area: 1 / 2 / auto / span 2; overflow: visible; line-height: 1.4; }
+  .tk-t-owner { grid-area: 2 / 2; color: var(--color-muted); font-size: var(--text-sm); }
+  .tk-t-status { grid-area: 2 / 3; }
+  .tk-t-sec { grid-area: 1 / 4 / span 2; }
+  .tk-tasks td.tk-wide { display: none; }
+  .tk-oname { display: revert; }
+  .tk-tight { display: none; }
+  .tk-tasks tbody tr.tk-empty { display: block; grid-column: 1 / -1; padding: 0; border: 0; }
+  .tk-tasks tr.tk-empty td { display: block; padding: var(--space-3) 0; }
+}
+/* A finger gets a larger plan button. */
+@media (pointer: coarse) { .tk-t-sec .icon-btn { width: 40px; height: 40px; } }
+.tk-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--color-bg); }
+/* The rail: the next lane and its button, the goal, the facts, the evidence. */
+.tk-side { flex: none; width: 224px; min-height: 0; overflow: auto; border-left: 1px solid var(--color-line); padding: var(--space-4); display: grid; gap: var(--gap-group); align-content: start; font-size: var(--text-sm); }
+.tk-next { display: grid; gap: var(--space-2); }
+/* The sprint's lane, as the button that moves it. It stands first in the rail and is as wide as its word. */
+.tk-status { justify-self: start; gap: 6px; font-weight: var(--weight-medium); }
+.tk-move.split { display: flex; min-width: 0; }
+.tk-next .tk-move > .btn:first-child, .tk-next > .btn.tk-move { flex: 1; min-width: 0; justify-content: center; }
+.tk-move > .split-more.primary { border-left-color: color-mix(in srgb, var(--color-bg) 35%, transparent); }
+.tk-empty td { height: var(--row); }
+.tk-gate-for { display: inline-flex; align-items: baseline; gap: 6px; flex: none; }
+.tk-needs { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.tk-needs li { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.tk-needs li .icon { flex: none; color: var(--color-faint); }
+.tk-needs li.met { color: var(--color-muted); }
+.tk-needs li.met .icon { color: var(--color-success); }
+.tk-about { display: grid; gap: 2px; }
+.tk-about p { line-height: 1.45; }
+.tk-facts { display: grid; gap: var(--space-2); }
+.tk-facts > div { display: grid; grid-template-columns: 76px minmax(0, 1fr); gap: var(--space-2); align-items: baseline; min-height: 20px; }
+.tk-facts dt { color: var(--color-muted); }
+.tk-facts dd { min-width: 0; overflow-wrap: anywhere; }
+.tk-proof { display: grid; gap: 4px; margin-top: 2px; }
+.tk-proof li { display: flex; align-items: flex-start; gap: 6px; line-height: 1.4; }
+.tk-proof li .icon { flex: none; margin-top: 3px; }
+/* A narrow page has no room for a rail. Its facts become one line under the title, and its move becomes a row. */
+.tk-narrow { display: none; }
+@container tk (max-width: 600px) {
+  .tk-side { display: none; }
+  .tk-head { padding-inline: var(--space-3); }
+  .tk-tabrow { padding: 0 var(--space-3) 0 calc(var(--space-3) - 10px); }
+  .tk-pad { padding-inline: var(--space-3); }
+  .tk-statusline.tk-narrow { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 0; min-width: 0; font-size: var(--text-sm); color: var(--color-muted); }
+  /* The dot follows its word, so a wrapped line never starts with a dot. */
+  .tk-statusline > *:not(:last-child)::after { content: '·'; margin: 0 8px; color: var(--color-faint); }
+  .tk-statusline .tk-now { color: var(--color-text); font-weight: var(--weight-medium); }
+  .tk-goal.tk-narrow { display: block; line-height: 1.5; }
+  .tk-gate.tk-narrow { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: var(--space-4); min-width: 0; font-size: var(--text-sm); padding-block: var(--space-2); border-top: 1px solid var(--color-line); }
+  .tk-gate-what { display: grid; gap: 4px; min-width: 0; }
+  .tk-tasks th:nth-child(4), .tk-tasks td:nth-child(4) { display: none; }
+}
+
+/* The Questions view of a project: one question in full, and the list of the project's questions on the far right. */
+.qv { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); position: relative; }
+.qv.none { align-content: start; }
+.qv-main { min-width: 0; min-height: 0; overflow: auto; padding: var(--space-4) var(--space-5) var(--space-6); }
+.qv-back { margin: 0 0 var(--space-3) calc(var(--space-2) * -1); }
+/* One question as a report to skim: the question alone at the top, a block of facts, then ruled
+   sections of short points. Every text starts on one left line, and a point's mark hangs left of
+   it. On a wide pane the headings move into a column of their own, in line with the labels of the
+   facts, and every text starts on the second line. */
+.qv-main { container-type: inline-size; }
+.qd { --qd-label: 116px; display: grid; max-width: 620px; font-size: var(--text-md); line-height: 1.5; }
+/* The title, with the button that opens the asker's conversation at its right end. */
+.qd-head { display: flex; align-items: flex-start; gap: 12px; margin: 0 0 var(--space-2); }
+.qd-head .qd-thread { flex: none; margin: 2px 0 0; }
+.qd-head > h2 { flex: 1; min-width: 0; margin: 0; font-size: var(--text-xl); font-weight: var(--weight-strong); line-height: var(--leading-tight); letter-spacing: -.01em; overflow-wrap: anywhere; }
+.qd-facts { display: grid; padding-bottom: var(--space-3); }
+.qd-facts > div { display: grid; grid-template-columns: var(--qd-label) minmax(0, 1fr); align-items: center; min-height: 24px; }
+.qd-facts dt, .qd-sec > h3 { margin: 0; font-size: var(--text-xs); font-weight: var(--weight-strong); line-height: 20px; letter-spacing: .04em; text-transform: uppercase; color: var(--color-muted); }
+.qd-facts dd { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 0; font-weight: var(--weight-medium); }
+.qd-facts dd.long { color: var(--color-warn); }
+.qd-facts .qd-thread, .qd-meta .qd-thread { margin-left: 4px; font-weight: var(--weight-body); }
+.qd-sec { display: grid; gap: 6px; align-items: baseline; padding: var(--space-3) 0; border-top: 1px solid var(--color-line-strong); }
+.qd-sec:last-child { padding-bottom: 0; }
+.qd-body { min-width: 0; }
+/* An approval's command and folder, each in a code box, with the folder's label between them. */
+.qd-cmd { display: grid; gap: 6px; }
+.qd-cmd h4 { margin: 4px 0 0; font-size: var(--text-xs); font-weight: var(--weight-strong); line-height: 20px; letter-spacing: .04em; text-transform: uppercase; color: var(--color-muted); }
+.qd-cmd p { margin: 0; color: var(--color-muted); }
+.qd-points { display: grid; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.qd-points li { position: relative; overflow-wrap: anywhere; }
+/* A citation mark must not push its line apart from the lines beside it. */
+.qd sup.qc-cite { line-height: 0; }
+.qd-body code { font-family: var(--font-mono); font-size: .92em; background: var(--color-sunken); border-radius: 4px; padding: 1px 4px; }
+.qd-points:not(.one) li::before { content: ""; position: absolute; left: -11px; top: calc(.75em - 2px); width: 4px; height: 4px; border-radius: 50%; background: var(--color-faint); }
+/* The layout switch of the question page. It is a prototype's control, and it goes when the owner has chosen. */
+/* The answers: one choice among radio buttons, or several among checkboxes. Everything starts on the left edge. */
+.qd-choices { list-style: none; display: grid; margin: 0; padding: 0; }
+.qd-choices li { display: flex; align-items: flex-start; gap: var(--space-3); padding: 8px 0; border-top: 1px solid var(--color-line); }
+.qd-choices li:first-child { border-top: 0; padding-top: 0; }
+.qd-opt { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.qd-opt > input:not(.input) { flex: none; appearance: none; width: 16px; height: 16px; margin: 2px 0 0; border: 1.5px solid var(--color-line-strong); border-radius: 50%; background: var(--color-surface); cursor: pointer; }
+.qd-opt > input[type="checkbox"] { border-radius: 4px; }
+.qd-opt > input:not(.input):hover:not(:disabled) { border-color: var(--color-primary); }
+.qd-opt > input:not(.input):focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+/* A chosen answer is filled with the primary colour, as every chosen control is. */
+.qd-opt > input[type="radio"]:checked { border-color: var(--color-primary); background: radial-gradient(circle, var(--color-primary) 0 4px, var(--color-surface) 4.5px); }
+.qd-opt > input[type="checkbox"]:checked { border-color: var(--color-primary); background: var(--color-primary) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E") center / 11px no-repeat; }
+.qd-opt > input:not(.input):disabled { opacity: .45; }
+.qd-opt > input:disabled { cursor: default; }
+.qd-opt-t { display: grid; gap: 1px; min-width: 0; }
+.qd-opt-t b { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px 10px; font-weight: var(--weight-strong); line-height: 20px; }
+.qd-opt-t p { margin: 0; line-height: 1.5; color: var(--color-muted); }
+.qd-choices li.own .qd-opt { align-items: center; cursor: default; }
+.qd-choices li.own .qd-opt > input:not(.input) { margin-top: 0; }
+.qd-choices li.own .input { flex: 1; min-width: 0; background: var(--color-bg); }
+.qd-choices li.declined .qd-label { text-decoration: line-through; color: var(--color-muted); }
+.qd-choices li.off b { color: var(--color-muted); font-weight: var(--weight-body); }
+.qd-tick { flex: none; margin-top: 3px; color: var(--color-success); }
+.qd-send { margin-top: var(--space-3); }
+.qd-decide { display: flex; flex-wrap: wrap; gap: 8px; }
+.qd-decided { display: flex; align-items: center; gap: 10px; margin: 0; font-weight: var(--weight-medium); }
+/* The compact layout: the facts on one line, and the reasons folded under their headings. */
+.qd-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; margin: 0 0 var(--space-3); font-weight: var(--weight-medium); }
+.qd-meta > span { display: inline-flex; align-items: baseline; }
+.qd-meta i { margin-right: 6px; font-style: normal; font-size: var(--text-xs); font-weight: var(--weight-strong); letter-spacing: .04em; text-transform: uppercase; color: var(--color-muted); }
+.qd-meta .long { color: var(--color-warn); }
+/* The statement a question is about takes its own line, because it is a sentence. */
+.qd-meta .qd-about { flex-basis: 100%; font-weight: var(--weight-body); }
+.qd-rec { display: inline-flex; align-items: center; gap: 4px; flex: none; color: var(--color-success); font-size: var(--text-xs); font-weight: var(--weight-medium); }
+.qd-mine { display: inline-flex; align-items: center; gap: 4px; flex: none; min-height: 24px; color: var(--color-success); font-size: var(--text-sm); font-weight: var(--weight-medium); }
+/* An answer that was not chosen is muted, and still dark enough to read. */
+.qd-refs { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; font-size: var(--text-sm); }
+.qd-refs li { display: flex; gap: 8px; align-items: baseline; overflow-wrap: anywhere; }
+.qd-refs .qc-cite { font-size: var(--text-xs); margin: 0; }
+/* A phone's page edge is 12 pixels, so the mark is smaller and nearer the text. */
+@media (max-width: 860px) { .qd-points:not(.one) li::before { left: -8px; width: 3px; height: 3px; } }
+@container (min-width: 560px) {
+  .qd { --qd-label: 124px; max-width: 760px; }
+  .qd-sec { grid-template-columns: var(--qd-label) minmax(0, 1fr); gap: 0; }
+}
+.qv-list { min-width: 0; min-height: 0; overflow: auto; padding: 8px; background: var(--color-bg); }
+.qv-list h3 { font-size: var(--text-xs); font-weight: var(--weight-strong); color: var(--color-faint); letter-spacing: .04em; text-transform: uppercase; padding: 12px 8px 4px; }
+.qv-list h3:first-child { padding-top: 4px; }
+.qv-list ul { list-style: none; display: grid; gap: 1px; }
+.qv-row { display: grid; gap: 3px; padding: 7px 8px; border-radius: var(--radius-sm); color: var(--color-text); min-width: 0; }
+.qv-row:hover { background: var(--color-raised); }
+.qv-row[aria-current="page"] { background: var(--color-selected); }
+.qv-row[aria-current="page"] .qv-t { font-weight: var(--weight-medium); }
+/* A cancelled question is not live. Its row is quiet. */
+.qv-row.off .qv-t { color: var(--color-muted); }
+.qv-t { line-height: 1.35; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.qv-m { display: flex; align-items: flex-start; gap: 6px; min-width: 0; color: var(--color-muted); font-size: var(--text-sm); line-height: 20px; }
+.qv-m .truncate, .qv-said { flex: 1; min-width: 0; }
+/* An answer is shown whole. A long one wraps. */
+/* An answer keeps to two lines in the list. The question's page shows it whole. */
+.qv-said { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.qv-m time { flex: none; color: var(--color-faint); font-size: var(--text-xs); font-variant-numeric: tabular-nums; }
+.qv-m time.long { color: var(--color-warn); font-weight: var(--weight-medium); }
+@media (min-width: 861px) {
+  .mc-pane .qv:not(.none) { --list-d: 280px; --list-now: min(var(--list-w, var(--list-d)), calc(100% - 240px)); grid-template-columns: minmax(0, 1fr) var(--list-now); }
+  .mc-pane .qv > .qv-list { border-left: 1px solid var(--color-line); }
+  .mc-pane.no-list .qv { grid-template-columns: minmax(0, 1fr); }
+  .mc-pane.no-list .qv-list { display: none; }
+}
+@media (max-width: 860px) { .qv-main { padding-inline: var(--space-3); } }
+
+/* One agent's page, beside its conversation. */
+.agp { display: grid; gap: var(--space-2); align-content: start; grid-template-columns: minmax(0, 1fr); max-width: 1080px; container-type: inline-size; }
+.agp .section-head { margin-top: var(--space-3); }
+.agp-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; font-size: var(--text-sm); min-height: var(--control); }
+.agp-now { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--color-line); border-radius: var(--radius-md); background: var(--color-surface); min-width: 0; }
+.agp-now:hover { background: var(--color-raised); }
+.agp-now .tag { flex: none; }
+.agp-now .what { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.agp-now .what b { font-weight: var(--weight-medium); }
+.agp-now .what small { font-size: var(--text-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agp-now .where { font-size: var(--text-sm); white-space: nowrap; }
+.agp-now > .icon { color: var(--color-faint); flex: none; }
+.agp-branch { font-size: var(--text-xs); min-width: 0; max-width: 50%; }
+.agp-changes, .agp-commits { border: 1px solid var(--color-line); border-radius: var(--radius-md); background: var(--color-surface); overflow: hidden; }
+.agp-changes > li + li, .agp-commits > li + li { border-top: 1px solid var(--color-line); }
+.agp-changes button { display: flex; align-items: center; gap: 8px; width: 100%; min-height: var(--row); padding: 0 10px; text-align: left; min-width: 0; white-space: nowrap; }
+.agp-changes button:hover, .agp-commits a:hover { background: var(--color-raised); }
+.agp-changes .twist { color: var(--color-faint); flex: none; transition: transform var(--motion-fast) var(--ease); }
+.agp-changes .open .twist { transform: rotate(90deg); }
+.agp-changes .name { flex: 0 1 auto; min-width: 40px; overflow: hidden; text-overflow: ellipsis; font-weight: var(--weight-medium); }
+.agp-changes .name.gone { text-decoration: line-through; color: var(--color-muted); }
+.agp-changes .dir { flex: 1 1 0; min-width: 0; color: var(--color-faint); font-size: var(--text-xs); font-family: var(--font-mono); }
+.agp-diff { border-top: 1px solid var(--color-line); max-height: 420px; overflow: auto; }
+.agp-commits a { display: flex; align-items: center; gap: 10px; min-height: var(--row); padding: 0 10px; min-width: 0; }
+.agp-commits .subject { flex: 1 1 0; min-width: 0; }
+.agp-commits .when { font-size: var(--text-sm); white-space: nowrap; flex: none; min-width: 64px; text-align: right; }
+.agp-team a { display: flex; align-items: center; gap: 9px; min-height: var(--row); padding: 0 8px; margin: 0 -8px; border-radius: var(--radius-sm); min-width: 0; }
+.agp-team a:hover { background: var(--color-raised); }
+.agp-team b { font-weight: var(--weight-medium); flex: 0 0 132px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.agp-team a > span.truncate { flex: 1 1 0; min-width: 0; font-size: var(--text-sm); }
+.agp-team a > .icon { color: var(--color-faint); flex: none; }
+.agp-none { padding: 4px 0; }
+@container (max-width: 560px) { .agp-now .where { display: none; } }
+
+/* The terminal as a panel under a project's view. */
+.with-term { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.wt-view { flex: 1 1 0; min-height: 120px; overflow: auto; }
+.wt-view.fill { overflow: hidden; display: flex; flex-direction: column; }
+.wt-term { flex: 0 0 45%; min-height: 200px; display: flex; flex-direction: column; border-top: 1px solid var(--color-line-strong); position: relative; min-width: 0; }
+.wt-term > .term { flex: 1; min-height: 0; }
+.wt-close { position: absolute; top: 4px; right: 6px; z-index: 2; }
+.wt-term .term-tabs { padding-right: 36px; }
+button.nav-item { width: 100%; text-align: left; }
+.nav-item[aria-pressed="true"] { background: var(--color-selected); color: var(--color-text); }
+
+/* The statements a sprint delivers, in the sprint's rail. */
+.tk-states { display: grid; gap: 6px; margin-top: 2px; }
+.tk-states a { display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 6px; line-height: 1.4; border-radius: var(--radius-sm); }
+.tk-states a:hover { background: var(--color-raised); }
+.tk-states .num { text-align: right; font-variant-numeric: tabular-nums; }
+.tk-states small { font-size: var(--text-xs); white-space: nowrap; }
+.tk-states small.info { color: var(--color-info); }
+
+/* A task, open inside the Tasks tab of its sprint. The rail lists the sprint's tasks, as the Questions view lists questions. */
+.tkd { max-width: 720px; }
+.tkd-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: var(--space-2); }
+.tkd-head .tag { flex: none; margin-top: 3px; }
+.tkd-title { flex: 1; min-width: 0; font-size: var(--text-lg); font-weight: var(--weight-strong); line-height: 1.3; overflow-wrap: anywhere; }
+.tkd-head .btn, .tkd-head .icon-btn { flex: none; }
+.tk-side.tk-list { padding: 8px; gap: 0; }
+.tk-list ul { list-style: none; display: grid; gap: 1px; }
+
+/* An agent's page names the agent when the conversation is not beside it. */
+.agp-who { display: flex; align-items: center; gap: var(--space-2); font-size: var(--text-md); font-weight: var(--weight-strong); min-height: var(--control); }
+.agp-who .muted { font-weight: var(--weight-regular, 400); font-size: var(--text-sm); }
+/* The places a terminal can open in. */
+.tw { display: grid; gap: 1px; }
+.tw h3, .tr-head h3 { font-size: var(--text-sm); font-weight: var(--weight-strong); color: var(--color-muted); }
+.tw h3 { padding: 0 var(--space-2) var(--space-1); }
+/* "Add a repository": one field that searches the connected accounts and takes a pasted link. */
+.dialog.track { width: min(560px, 100%); }
+.tr-head h3 { font-size: var(--text-sm); font-weight: var(--weight-strong); color: var(--color-muted); }
+.tr-find { position: relative; display: flex; align-items: center; }
+.tr-find > svg { position: absolute; left: var(--space-3); pointer-events: none; }
+.tr-find .input { flex: 1; min-width: 0; height: calc(var(--control) + 6px); padding-left: calc(var(--space-3) + 24px); }
+.tr-accounts { display: flex; align-items: center; gap: var(--space-2); min-height: var(--control); font-size: var(--text-sm); }
+.tr-off { display: grid; justify-items: center; gap: var(--space-3); padding: var(--space-6) var(--inset); border: 1px solid var(--color-line); border-radius: var(--radius-md); }
+.tr-off strong { font-weight: var(--weight-medium); }
+.tr-list { list-style: none; border: 1px solid var(--color-line); border-radius: var(--radius-md); max-height: 288px; overflow: auto; }
+.tr-list li { display: grid; grid-template-columns: auto minmax(0, 1fr) auto 56px; align-items: center; gap: var(--space-2); min-height: var(--row); padding: 0 var(--space-2) 0 var(--inset); }
+.tr-list li + li { border-top: 1px solid var(--color-line); }
+.tr-list .muted { font-size: var(--text-sm); }
+.tr-list .btn, .tr-added { justify-self: end; }
+.tr-added { font-size: var(--text-sm); padding-right: var(--space-2); }
+/* Connections in Settings: the accounts of one service are a table under its name. */
+.cn-block { display: grid; gap: var(--space-2); padding: var(--space-3) 0; }
+.cn-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); min-height: var(--control); }
+.cn-head h3 { font-size: var(--text-md); font-weight: var(--weight-strong); }
+.cn-table .cn-act { text-align: right; width: 1%; }
+.tr-added { font-size: var(--text-sm); padding-right: var(--space-2); }
+/* The page of a repository that is on no machine yet. */
+.rs { display: grid; gap: var(--space-4); align-content: start; max-width: 720px; }
+.rs h1 { font-size: var(--text-lg); font-weight: var(--weight-strong); }
+.rs-facts { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: var(--space-1) var(--space-3); font-size: var(--text-sm); }
+.rs-facts dt { color: var(--color-muted); }
+.rs-facts dd { overflow-wrap: anywhere; }
+.rs-act { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.rs-act .select { width: auto; min-width: 180px; }

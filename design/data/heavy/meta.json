@@ -1,0 +1,58 @@
+{
+ "source": "heavy",
+ "exported_at": "2026-11-06T10:56:00.000Z",
+ "clock": 1793962560000,
+ "display_time_zone": "UTC",
+ "schema": {
+  "table": "events",
+  "migrations": [
+   1,
+   2,
+   3
+  ]
+ },
+ "row_counts": {
+  "events": 459,
+  "by_type": {
+   "QuestionAsked": 4,
+   "project.QuestionLinked": 4,
+   "project.MachineAdded": 3,
+   "project.RepositoryAdded": 5,
+   "project.RepositoryLocated": 9,
+   "AccountChanged": 5,
+   "project.AccountPlaced": 5,
+   "AccountNeedsSignIn": 1,
+   "project.WorktreeCreated": 20,
+   "project.Created": 10,
+   "AgentStarted": 33,
+   "SessionOpened": 32,
+   "project.TeamAdded": 12,
+   "board.ChannelOpened": 12,
+   "project.SprintAdded": 17,
+   "project.TaskAdded": 33,
+   "PromptSent": 7,
+   "TurnStarted": 40,
+   "ThreadItem": 84,
+   "TurnEnded": 40,
+   "PermissionRequested": 5,
+   "DeliveryQueued": 2,
+   "DeliverySent": 3,
+   "DeliveryAccepted": 2,
+   "DeliveryHeld": 1,
+   "DeliveryReleased": 1,
+   "board.PostWritten": 17,
+   "AgentStartFailed": 1,
+   "DeliveryRequeued": 1,
+   "client.AlertRaised": 3,
+   "client.AlertDeliveryFailed": 2,
+   "client.AlertDelivered": 1,
+   "project.StageChanged": 10,
+   "project.MocksStarted": 1,
+   "project.MockScreenAdded": 6,
+   "project.MockScreenRevised": 8,
+   "project.MockDataDrafted": 11,
+   "project.MockComponentUsed": 8
+  }
+ },
+ "notes": "Hand-made sample in the shape of the engine's events table. Event types starting project. are proposed for the new project piece and do not exist in the engine yet; see design/data/README.md."
+}

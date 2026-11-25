@@ -1,0 +1,97 @@
+import { offerQuestionAlert } from "../../routing/questionAvailability.ts";
+import { carrierNames, alertKindNames, type AlertKind, type QuietHours } from "@lgtm/contracts";
+import * as Clock from "effect/Clock";
+import * as Effect from "effect/Effect";
+import { refused, type Input, type PiecePlan } from "../../commands/internal.ts";
+import type { ReadHandler } from "../../api/reads.ts";
+import { destinationState, enabledDestinations } from "./destinations.ts";
+import { quietNow, validQuietHours } from "./quiet.ts";
+import { clientView } from "./view.ts";
+
+const settings = ({ snapshot, actor }: Input, payload: Record<string, unknown>) => Effect.gen(function* () {
+  if (actor._tag !== "owner") return yield* refused();
+  const view = clientView(snapshot.client);
+  return { reply: { requestId: payload.requestId, kinds: alertKindNames.map((kind) => ({ kind, push: view.push[kind] })),
+    carriers: carrierNames.map((name) => { const state = destinationState(view, name); return { name, enabled: state.enabled, carrier: state.carrier, tokenSet: state.tokenSet }; }),
+    quiet: view.quiet, carrier: view.carrier, tokenSet: view.tokenSet, pushPromptDismissed: view.pushPromptDismissed } };
+});
+const list = ({ runtime, snapshot, actor }: Input, payload: Record<string, unknown>) => Effect.gen(function* () {
+  if (actor._tag !== "owner") return yield* refused();
+  const view = clientView(snapshot.client);
+  const now = yield* Clock.currentTimeMillis;
+  const rows = Object.values(view.alerts).filter((row) => offerQuestionAlert(snapshot, row) && row.sequence > (payload.after as number)
+    && (payload.status === undefined || row.status === payload.status)).sort((a, b) => a.sequence - b.sequence);
+  const items = [];
+  let bytes = 2;
+  let next: number | undefined;
+  let lastSequence = 0;
+  for (const row of rows) {
+    if (items.length >= (payload.limit as number)) { next = lastSequence; break; }
+    // Reducers use only events and sequences. Timestamps come from the log,
+    // so both the live projection and its rebuild remain deterministic.
+    const marks = carrierNames.flatMap((carrier) => {
+      const state = destinationState(view, carrier); const mark = state.delivery[row.alertId];
+      return mark && mark.generation === state.generation ? [{ carrier, ...mark }] : [];
+    });
+    const deliveries = [];
+    for (const mark of marks) {
+      const stamp = yield* runtime.sql<{ occurred_at: number }>`SELECT occurred_at FROM events WHERE sequence = ${mark.sequence}`;
+      deliveries.push({ carrier: mark.carrier, generation: mark.generation, attempt: mark.attempt, at: stamp[0]!.occurred_at,
+        ...(mark.status === "failed" ? { status: mark.status, reason: mark.reason, final: mark.final } : { status: mark.status }) });
+    }
+    const mark = view.delivery[row.alertId];
+    const times = yield* runtime.sql<{ sequence: number; occurred_at: number }>`
+      SELECT sequence, occurred_at FROM events WHERE sequence = ${row.sequence} OR sequence = ${row.clearedSequence ?? -1} OR sequence = ${mark?.sequence ?? -1}`;
+    const delivery = mark?.generation !== view.generation ? undefined : {
+      generation: mark.generation, attempt: mark.attempt,
+      at: times.find((time) => time.sequence === mark.sequence)!.occurred_at,
+      ...(mark.status === "failed" ? { status: mark.status, reason: mark.reason, final: mark.final } : { status: mark.status }),
+    };
+    const item = { alertId: row.alertId, alertKey: row.alertKey, kind: row.kind, title: row.title,
+      sourceSequence: row.sourceSequence, status: row.status,
+      held: row.status === "open" && !row.baseline && view.push[row.kind] && quietNow(view.quiet, row.kind, now)
+        && enabledDestinations(view).some((state) => state.delivery[row.alertId]?.status !== "delivered"),
+      ...(delivery === undefined ? {} : { delivery }), deliveries,
+      raisedAt: times.find((time) => time.sequence === row.sequence)!.occurred_at,
+      ...(row.agentId === undefined ? {} : { agentId: row.agentId }),
+      ...(row.subject === undefined ? {} : { subject: row.subject }),
+      ...(row.baseline === undefined ? {} : { baseline: row.baseline }),
+      ...(row.clearedSequence === undefined ? {} : { clearedAt: times.find((time) => time.sequence === row.clearedSequence)!.occurred_at }),
+    };
+    const size = Buffer.byteLength(JSON.stringify(item)) + (items.length > 0 ? 1 : 0);
+    if (items.length > 0 && bytes + size > 900 * 1024) { next = lastSequence; break; }
+    items.push(item);
+    bytes += size;
+    lastSequence = row.sequence;
+  }
+  return { reply: { requestId: payload.requestId, items, ...(next === undefined ? {} : { next }) } };
+}).pipe(Effect.catchTag("SqlError", () => Effect.fail(refused("database read failed"))));
+
+export const alertReads = { "client.alerts.list": list, "client.alerts.settings": settings } satisfies Record<string, ReadHandler>;
+export const alertPlanners = {
+  "client.alerts.quiet.set": ({ actor }: Input, payload: Record<string, unknown>): Effect.Effect<PiecePlan, ReturnType<typeof refused>> => {
+    if (actor._tag !== "owner") return Effect.fail(refused());
+    const quiet = payload.quiet as QuietHours;
+    if (!validQuietHours(quiet)) return Effect.fail(refused("Use different start and end times and a valid time zone."));
+    return Effect.succeed({ events: [{ _tag: "client.AlertQuietChanged", quiet }], reply: () => ({ requestId: payload.requestId }) });
+  },
+  "client.alerts.prompt.dismiss": ({ snapshot, actor }: Input, payload: Record<string, unknown>): Effect.Effect<PiecePlan, ReturnType<typeof refused>> =>
+    actor._tag !== "owner" ? Effect.fail(refused()) : Effect.succeed({
+      events: clientView(snapshot.client).pushPromptDismissed ? [] : [{ _tag: "client.AlertPromptDismissed" }],
+      reply: () => ({ requestId: payload.requestId }),
+    }),
+  "client.alerts.dismiss": ({ snapshot, actor }: Input, payload: Record<string, unknown>): Effect.Effect<PiecePlan, ReturnType<typeof refused>> => {
+    if (actor._tag !== "owner") return Effect.fail(refused());
+    const alerts = clientView(snapshot.client).alerts;
+    const row = Object.hasOwn(alerts, payload.alertId as string) ? alerts[payload.alertId as string] : undefined;
+    if (row === undefined) return Effect.fail(refused("alert not found"));
+    return Effect.succeed({ events: row.status === "open" ? [{ _tag: "client.AlertCleared", alertId: row.alertId, cause: "dismissed" }] : [],
+      reply: () => ({ requestId: payload.requestId }) });
+  },
+  "client.alerts.settings.set": ({ actor }: Input, payload: Record<string, unknown>): Effect.Effect<PiecePlan, ReturnType<typeof refused>> =>
+    actor._tag !== "owner" ? Effect.fail(refused()) : Effect.succeed({
+      events: [{ _tag: "client.AlertSettingsChanged", kind: payload.kind as AlertKind, push: payload.push as boolean }],
+      reply: () => ({ requestId: payload.requestId }),
+    }),
+
+};

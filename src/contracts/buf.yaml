@@ -1,0 +1,10 @@
+# The contract's module. `buf lint` keeps the names and the layout of the files regular.
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

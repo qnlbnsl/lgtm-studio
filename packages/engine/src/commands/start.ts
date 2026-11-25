@@ -1,0 +1,158 @@
+import { composeInstructions } from "../roles/compose.ts";
+import { requireAgentBuilding } from "../project/approvals.ts";
+import { safeStartFailure, type StartFailure } from "@lgtm/contracts/startFailure";
+import { randomUUID } from "node:crypto";
+import { AgentId, DeliveryId, PermissionLevel, defaultChildPermission, type Event, type Workspace } from "@lgtm/contracts";
+import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+
+import { projectFolderScope } from "../project/folderScope.ts";
+import { pickAccount } from "../accounts/pick.ts";
+import { canUseMode, checkAllocationSource, checkFolder, folderForSpawn } from "../identity/ceiling.ts";
+import { mintAgentToken } from "../identity/tokens.ts";
+import type { LogWriteFailed } from "../log/EventLog.ts";
+import { agentText, senderOf } from "../routing/envelope.ts";
+import { bounded, SETUP_TIMEOUT_MILLIS } from "../recovery/reload.ts";
+import { withLane, withPreemption } from "../routing/lanes.ts";
+import { withWaitChecks } from "../routing/waits.ts";
+import { own, projectView } from "../project/view.ts";
+import { freshRequest, readHarnesses, refused, type Input, type Payload, type Plan } from "./internal.ts";
+import { validChoiceId } from "../runner/choices.ts";
+
+export const start = (input: Input, payload: Payload<"start">, pendingWorkspace?: Workspace, allocationSource = false): Effect.Effect<Plan, ReturnType<typeof refused> | LogWriteFailed> =>
+  Effect.gen(function* () {
+    const { runtime, actor, snapshot } = input;
+    if (actor._tag !== "owner" && actor._tag !== "agent") return yield* refused();
+    const parent = actor._tag === "agent" ? snapshot.agents[actor.agentId] : undefined;
+    const harness = (yield* readHarnesses(runtime)).find((settings) => settings.id === payload.harness);
+    if (harness === undefined || (payload.runMode !== undefined && payload.runMode !== harness.runMode)) return yield* refused();
+    const permission = payload.permission ?? defaultChildPermission(parent?.permission as PermissionLevel | undefined, harness.defaultPermission);
+    if (parent !== undefined) {
+      yield* requireAgentBuilding(input, parent.agentId);
+      const view = projectView(snapshot), id = own(view.agentProjects, parent.agentId);
+      const project = id === undefined ? undefined : own(view.projects, id);
+      if (project?.archiving || project?.archivedAt !== undefined) return yield* refused("project is archived or archiving");
+    }
+    if (actor._tag === "agent" && (parent === undefined || !canUseMode(actor, Schema.decodeUnknownSync(PermissionLevel)(parent.permission), permission))) {
+      return yield* refused();
+    }
+    const model = payload.model ?? harness.defaultModel;
+    const effort = payload.effort ?? harness.defaultEffort;
+    for (const value of [model, effort]) {
+      if (value !== undefined && (!validChoiceId(value) || (yield* runtime.log.redactText(value)) !== value)) return yield* refused();
+    }
+    if ((model !== undefined && harness.models.length > 0 && !harness.models.includes(model))
+      || (effort !== undefined && harness.efforts.length > 0 && !harness.efforts.includes(effort))) return yield* refused();
+    const account = pickAccount(snapshot, payload.harness, payload.account);
+    if (account === undefined) return yield* refused("no usable account");
+    const request = { ...runtime, ...projectFolderScope(runtime, parent?.agentId, pendingWorkspace === undefined ? undefined : { workspace: pendingWorkspace, sequence: snapshot.sequence }), caller: actor, parentFolder: parent?.folder ?? payload.folder, folder: payload.folder };
+    if (allocationSource) {
+      yield* checkAllocationSource(request).pipe(Effect.mapError(error => refused(`Start folder: ${error.reason}`)));
+      yield* composeInstructions(runtime, snapshot, payload.role, undefined, payload.folder);
+      return { events: [] };
+    }
+    const grant = yield* checkFolder(request).pipe(
+      Effect.mapError((error) => refused(`Start folder: ${error.reason}`)),
+    );
+    const folder = yield* folderForSpawn(grant, "start").pipe(Effect.mapError(() => refused()));
+    const instructions = yield* composeInstructions(runtime, snapshot, payload.role, undefined, payload.folder);
+    const agentId = Schema.decodeUnknownSync(AgentId)(randomUUID());
+    const deliveryId = Schema.decodeUnknownSync(DeliveryId)(randomUUID());
+    const token = mintAgentToken();
+    const event: Event = {
+      _tag: "AgentStarted", agentId, name: payload.name, role: payload.role, groups: payload.groups ?? [],
+      parent: actor, ...(payload.projectId === undefined ? {} : { projectId: payload.projectId }), harness: harness.id, account: account.id, permission,
+      folder, runMode: payload.runMode ?? harness.runMode,
+      ...(model === undefined ? {} : { model }), ...(effort === undefined ? {} : { effort }),
+      ...(payload.prompt === undefined ? {} : {
+        firstPromptDelivery: {
+          id: deliveryId, target: agentId, sender: senderOf(actor),
+          content: { _tag: "prompt" as const, text: agentText(senderOf(actor), deliveryId, payload.prompt) },
+        },
+      }),
+    };
+    // The new agent's send lane is held through the runner call (lanes.ts).
+    // Issue 78: the failure carries the wait checks it causes.
+    return {
+      events: [event], sideRows: { agentTokens: [{ agentId, tokenHash: token.tokenHash, revokedAt: null }] },
+      // Fix round 1, A3: the start registers a cancel signal before it asks
+      // for the lane, so a `stop` can pre-empt a setup that is still running
+      // (lanes.ts), and the setup is bounded by the same two minutes as a
+      // resume. A timeout stops the process and fails like a rejection below.
+      afterCommit: withPreemption(runtime.log, agentId)((handle) => Effect.gen(function* () {
+        // Issue 267: this start's incarnation is still current while the agent
+        // is starting (or paused while starting) and the token minted here is
+        // unrevoked. A later stop, resume or restart revokes that token first,
+        // so a check that finds it unrevoked also proves no later token exists.
+        const current = Effect.gen(function* () {
+          const state = (yield* runtime.views.snapshot).agents[agentId]?.state._tag;
+          if (state !== "starting" && state !== "paused") return false;
+          const rows = yield* runtime.sql<{ revoked_at: number | null }>`
+            SELECT revoked_at FROM agent_tokens WHERE token_hash = ${token.tokenHash} AND agent_id = ${agentId}`;
+          return rows[0] !== undefined && rows[0].revoked_at === null;
+        }).pipe(Effect.orElseSucceed(() => false));
+        // Writes the end of a start that did not open a session. The runner's
+        // reason never reaches the log. It writes nothing once a later command
+        // has ended or replaced this incarnation, checked inside the writer.
+        const failStart = (reason: StartFailure = "could-not-start") => runtime.log.transact((append) => Effect.gen(function* () {
+          if (!(yield* current)) return;
+          const snapshot = yield* runtime.views.snapshot;
+          yield* append(actor, freshRequest(), randomUUID(), withWaitChecks(snapshot, [
+            { _tag: "AgentStartFailed", agentId, reason },
+          ], runtime.lists), { revokeAgentTokens: [agentId] });
+        })).pipe(Effect.catchTag("RequestIdReused", () => Effect.void));
+        const cancelled = yield* Effect.gen(function* () {
+          // The new id becomes visible at commit, before this lane is acquired.
+          // A stop that wins the lane must prevent the later process spawn.
+          // Fix round 1, A2: a sign-out pauses a starting agent too; it still
+          // opens its session, which the pause then keeps.
+          const current = (yield* runtime.views.snapshot).agents[agentId];
+          const waiting = current?.state._tag;
+          const selectedModel = current?.model;
+          const selectedEffort = current?.effort;
+          if (waiting !== "starting" && waiting !== "paused") return false;
+          return yield* handle.cancellable(bounded(runtime, agentId, SETUP_TIMEOUT_MILLIS, Effect.suspend(() => runtime.runner.start({
+            agentId, token: token.token, folder, grant, harness, account, instructions,
+            permission, ...(selectedModel === undefined ? {} : { model: selectedModel }), ...(selectedEffort === undefined ? {} : { effort: selectedEffort }),
+          })))).pipe(
+            Effect.flatMap(Option.match({ onNone: () => Effect.succeed(true), onSome: (session) => runtime.log.transact((append) => Effect.gen(function* () {
+              // An exit can arrive while the session result is being returned.
+              const before = (yield* runtime.views.snapshot).agents[agentId]?.state._tag;
+              if (before !== "starting" && before !== "paused") return false;
+              // Fix round 1, A2: an account that signed out while this session
+              // was opened keeps the agent paused, in the same append, so no
+              // work reaches it; the owner's "account available" brings it back.
+              // An agent paused while starting whose account has since come back
+              // goes idle here, as it has a session now.
+              const snapshot = yield* runtime.views.snapshot;
+              const signedOut = snapshot.accounts[account.id]?.status === "needs-sign-in";
+              const lifecycle: ReadonlyArray<Event> = signedOut
+                ? [{ _tag: "StateChanged", agentId, state: { _tag: "paused", reason: "signed-out", midTurn: false } }]
+                : before === "paused" ? [{ _tag: "StateChanged", agentId, state: { _tag: "idle" } }] : [];
+              const opened: ReadonlyArray<Event> = [{ _tag: "SessionOpened", agentId, session: session.session,
+                protocolVersion: session.protocolVersion, reloadable: session.reloadable, ...(session.configuration === undefined ? {} : { configuration: session.configuration }) }, ...lifecycle];
+              yield* append(actor, freshRequest(), randomUUID(), lifecycle.length > 0 ? withWaitChecks(snapshot, opened, runtime.lists) : opened, {});
+              return false;
+            })).pipe(Effect.catchTag("RequestIdReused", () => Effect.succeed(false))) })),
+            Effect.catchTag("RunnerRejected", (error) => failStart(safeStartFailure(error.startFailure)).pipe(Effect.as(false))),
+          );
+        }).pipe(withLane(runtime.log, agentId));
+        if (!cancelled) return;
+        // Round 2, F-1: a stop cancelled the setup. The stop writes the
+        // agent's end only if it commits. Once it has ended, any way it ended,
+        // an agent still starting gets the failure from this start.
+        //
+        // Issue 267: the fallback takes the agent's lane again, so no later
+        // stop or resume runs between its check and its cleanup, and it acts
+        // only while this start's incarnation is still the current one. The
+        // runner stop selects by agent, so it must never reach a later process.
+        yield* handle.settled(SETUP_TIMEOUT_MILLIS);
+        yield* Effect.gen(function* () {
+          if (!(yield* current)) return;
+          yield* Effect.suspend(() => runtime.runner.stop({ agentId })).pipe(Effect.catchTag("RunnerRejected", () => Effect.void));
+          yield* failStart();
+        }).pipe(withLane(runtime.log, agentId));
+      })),
+    };
+  });

@@ -1,0 +1,25 @@
+/* The Browser page of the Design view: one bar, and the running product in a frame under it.
+   Every colour is a token from tokens.css. */
+.bw { display: flex; flex-direction: column; min-height: 0; min-width: 0; container-type: inline-size; }
+.bw-bar { display: flex; align-items: center; gap: var(--space-2); flex: none; min-width: 0; height: 44px; padding: 0 var(--space-3) 0 var(--space-4); border-bottom: 1px solid var(--color-line); font-size: var(--text-sm); }
+.bw-pick { display: inline-flex; align-items: center; gap: 6px; flex: none; height: var(--control); border-radius: var(--radius-sm); }
+button.bw-pick { margin-left: -8px; padding: 0 8px; }
+button.bw-pick:hover, button.bw-pick[aria-expanded="true"] { background: var(--color-raised); }
+.bw-pick b { font-size: var(--text-md); font-weight: var(--weight-strong); }
+.bw-state { display: inline-flex; align-items: center; gap: 6px; flex: none; color: var(--color-muted); }
+.bw-state.running { color: var(--color-success); }
+.bw-state.failed { color: var(--color-error); }
+.bw-where { min-width: 0; }
+.bw-sizes { flex: none; }
+.bw-stage { flex: 1; min-height: 0; min-width: 0; display: grid; }
+/* A sized product stands in the middle of the pane, on the canvas's dots. */
+.bw-stage.sized { place-items: center; overflow: hidden; background: var(--color-bg) radial-gradient(var(--color-line) 1px, transparent 1px) 0 0 / 16px 16px; }
+.bw-stage.sized .bw-device { overflow: hidden; border: 1px solid var(--color-line-strong); border-radius: var(--radius-md); background: var(--color-surface); }
+.bw-stage.full .bw-device { display: grid; min-height: 0; }
+.bw-frame { border: 0; background: var(--color-surface); transform-origin: 0 0; display: block; }
+.bw-stage.full .bw-frame { width: 100%; height: 100%; }
+.bw-none { display: grid; justify-items: center; align-content: center; gap: var(--space-3); flex: 1; padding: var(--space-6); text-align: center; }
+.bw-none strong { font-weight: var(--weight-strong); }
+.bw-busy { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--color-muted); font-size: var(--text-sm); }
+/* A narrow pane keeps the name, the state, Reload and Stop. The product already has a phone's width there. */
+@container (max-width: 520px) { .bw-where, .bw-sizes { display: none; } }

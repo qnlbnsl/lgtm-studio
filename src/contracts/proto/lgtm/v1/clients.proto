@@ -1,0 +1,150 @@
+// The clients of a server.
+//
+// A client is a machine that runs the client program. It joins a server with a token, and the
+// server then starts agents on it. The website calls a client a machine.
+syntax = "proto3";
+
+package lgtm.v1;
+
+import "google/protobuf/timestamp.proto";
+
+// ClientService lists the clients of a server and lets the owner add and remove them.
+// Every call needs a session.
+service ClientService {
+  // WatchClients sends every client once, and then each change as it happens.
+  rpc WatchClients(WatchClientsRequest) returns (stream WatchClientsResponse);
+  // CreateClientToken makes a token that one new client uses once to join this server.
+  // The server's own command `lgtm client add` makes the same kind of token.
+  rpc CreateClientToken(CreateClientTokenRequest) returns (CreateClientTokenResponse);
+  // RevokeClientToken ends a token that no client has used.
+  rpc RevokeClientToken(RevokeClientTokenRequest) returns (RevokeClientTokenResponse);
+  // ApproveClient lets a client that joined with a token start work, under the name the owner gives it.
+  rpc ApproveClient(ApproveClientRequest) returns (ApproveClientResponse);
+  // RenameClient gives a client another name.
+  rpc RenameClient(RenameClientRequest) returns (RenameClientResponse);
+  // ScanClientHarnesses asks an online client to look for harnesses again. The result arrives on WatchClients.
+  rpc ScanClientHarnesses(ScanClientHarnessesRequest) returns (ScanClientHarnessesResponse);
+  // ReconnectClient asks the server to try an offline client again. The result arrives on WatchClients.
+  rpc ReconnectClient(ReconnectClientRequest) returns (ReconnectClientResponse);
+  // RemoveClient disconnects a client and forgets it. It also refuses a client that waits for approval.
+  rpc RemoveClient(RemoveClientRequest) returns (RemoveClientResponse);
+}
+
+message Client {
+  string id = 1;
+  // The name the owner gave it. A client that waits for approval has the name of its host here.
+  string name = 2;
+  ClientState state = 3;
+  // True for the client on the machine that runs the server.
+  bool hosts_server = 4;
+  // Where the server reaches it, such as "192.168.1.24".
+  string address = 5;
+  // The folder that holds its repositories, such as "~/projects".
+  string workspace = 6;
+  // Its operating system, such as "Linux".
+  string os = 7;
+  // The version of the client program.
+  string version = 8;
+  // How many agents it may run at once.
+  uint32 agent_limit = 9;
+  uint32 cores = 10;
+  uint32 memory_gigabytes = 11;
+  // Load in percent. Both are absent while the client is not online.
+  optional uint32 cpu_percent = 12;
+  optional uint32 memory_percent = 13;
+  // When the server last heard from it.
+  google.protobuf.Timestamp last_seen = 14;
+  // When its current connection began. Absent while it is offline.
+  google.protobuf.Timestamp connected_at = 15;
+  // False until the client has looked for harnesses. The list below means nothing before that.
+  bool harnesses_scanned = 16;
+  repeated InstalledHarness harnesses = 17;
+  // The token it joined with. Set only while it waits for approval.
+  string token_id = 18;
+}
+
+enum ClientState {
+  CLIENT_STATE_UNSPECIFIED = 0;
+  // It joined with a token, and the owner has not approved it.
+  CLIENT_STATE_WAITING_FOR_APPROVAL = 1;
+  // The owner approved it, and it is not ready for agents yet.
+  CLIENT_STATE_JOINING = 2;
+  CLIENT_STATE_ONLINE = 3;
+  CLIENT_STATE_OFFLINE = 4;
+}
+
+// One harness a client looked for, such as "claude" or "codex".
+message InstalledHarness {
+  string harness = 1;
+  // Its version. Absent when the harness is not installed.
+  optional string version = 2;
+}
+
+message WatchClientsRequest {}
+
+message WatchClientsResponse {
+  oneof change {
+    // Every client. It is the first message of the stream, and it replaces what the website held.
+    ClientList all = 1;
+    // One client that is new or that changed.
+    Client saved = 2;
+    // The id of one client that is gone.
+    string removed_id = 3;
+  }
+}
+
+message ClientList {
+  repeated Client clients = 1;
+}
+
+message CreateClientTokenRequest {}
+
+message CreateClientTokenResponse {
+  // The token's id. It is safe to show and to store.
+  string token_id = 1;
+  // The secret a client presents once. The server shows it only in this reply.
+  string token = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+
+message RevokeClientTokenRequest {
+  string token_id = 1;
+}
+
+message RevokeClientTokenResponse {}
+
+message ApproveClientRequest {
+  string id = 1;
+  // The name the owner gives the client. Two clients cannot have the same name.
+  string name = 2;
+}
+
+message ApproveClientResponse {
+  Client client = 1;
+}
+
+message RenameClientRequest {
+  string id = 1;
+  // Two clients cannot have the same name.
+  string name = 2;
+}
+
+message RenameClientResponse {}
+
+message ScanClientHarnessesRequest {
+  string id = 1;
+}
+
+message ScanClientHarnessesResponse {}
+
+message ReconnectClientRequest {
+  string id = 1;
+}
+
+message ReconnectClientResponse {}
+
+message RemoveClientRequest {
+  string id = 1;
+}
+
+message RemoveClientResponse {}

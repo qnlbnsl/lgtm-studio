@@ -1,0 +1,51 @@
+// The session of a website with a server.
+syntax = "proto3";
+
+package lgtm.v1;
+
+// SessionService is the first service a website calls.
+//
+// A session travels in a cookie that the server sets on SignIn and clears on SignOut.
+// No message of this contract carries the session, so a page's own code never holds it.
+service SessionService {
+  // GetServer says what answers at an address. It is the only call that needs no session.
+  rpc GetServer(GetServerRequest) returns (GetServerResponse);
+  // SignIn checks the server's password and starts a session.
+  rpc SignIn(SignInRequest) returns (SignInResponse);
+  // SignOut ends the caller's session. Other sessions stay.
+  rpc SignOut(SignOutRequest) returns (SignOutResponse);
+}
+
+message GetServerRequest {}
+
+message GetServerResponse {
+  // The product that answers. A website refuses an address whose product is not "lgtm-studio".
+  string product = 1;
+  // The server's own version, such as "0.9.0".
+  string version = 2;
+  // The revision of this contract that the server speaks. It goes up when a change breaks older websites.
+  uint32 contract = 3;
+  // True for a server that holds sample data only.
+  bool sample = 4;
+  // True when the caller has a session.
+  bool signed_in = 5;
+}
+
+message SignInRequest {
+  // The server's password. It travels in the request body only.
+  string password = 1;
+}
+
+message SignInResponse {
+  SignInResult result = 1;
+}
+
+enum SignInResult {
+  SIGN_IN_RESULT_UNSPECIFIED = 0;
+  SIGN_IN_RESULT_SIGNED_IN = 1;
+  SIGN_IN_RESULT_REJECTED = 2;
+}
+
+message SignOutRequest {}
+
+message SignOutResponse {}

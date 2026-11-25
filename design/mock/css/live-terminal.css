@@ -1,0 +1,5 @@
+.term-host { flex: 1; min-height: 0; overflow: hidden; padding: 12px 16px; }
+.term-host .xterm { height: 100%; }
+.term-host .xterm-viewport { overflow-y: auto; }
+.term-host[hidden] { display: none; }
+.term-bar .btn { flex-shrink: 0; }

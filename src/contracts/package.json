@@ -1,0 +1,23 @@
+{
+  "name": "@lgtm/api",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "The contract between the website, the server and the client of LGTM Studio, in Protocol Buffers.",
+  "type": "module",
+  "exports": {
+    "./*": "./gen/lgtm/v1/*_pb.js"
+  },
+  "scripts": {
+    "generate": "buf generate",
+    "lint": "buf lint",
+    "check": "buf lint && buf generate && git diff --exit-code -- gen"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "catalog:"
+  },
+  "devDependencies": {
+    "@bufbuild/buf": "catalog:",
+    "@bufbuild/protoc-gen-es": "catalog:"
+  }
+}

@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- A sample plan page for the mock: the approved plan for SP-08 in the Agent console project. -->
+<title>SP-08 Search inside a thread</title>
+<link rel="stylesheet" href="../css/tokens.css">
+<link rel="stylesheet" href="plan.css">
+</head>
+<body>
+<article class="plan">
+<h1 id="sp-08-search-inside-a-thread">SP-08 Search inside a thread</h1>
+
+<h2 id="goal">Goal</h2>
+<p>The owner finds one message in a long thread without scrolling. A search box in the thread's head line filters the thread to the messages that hold the words.</p>
+
+<h2 id="what-the-owner-sees">What the owner sees</h2>
+<p>Ctrl F in a thread opens the search box. Each match is marked in its message, and a count such as "3 of 12" sits beside the box. Enter goes to the next match, and Shift Enter goes to the one before.</p>
+<p>Escape closes the box and returns the thread to where it was.</p>
+
+<h2 id="what-is-searched">What is searched</h2>
+<div class="tw"><table>
+<thead><tr><th>Part of a message</th><th>Searched</th></tr></thead>
+<tbody>
+<tr><td>The text of the owner and of the agent</td><td>Yes</td></tr>
+<tr><td>The summary line of a tool run</td><td>Yes</td></tr>
+<tr><td>The folded lines of a tool run</td><td>Only when the run is open</td></tr>
+<tr><td>A question and its answers</td><td>Yes</td></tr>
+</tbody>
+</table></div>
+
+<h2 id="checks">Checks</h2>
+<p>A thread of 4,000 messages answers a search in under 100 milliseconds. The browser tests search for a word that sits in the first message and in the last one.</p>
+</article>
+</body>
+</html>

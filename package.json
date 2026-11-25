@@ -1,0 +1,36 @@
+{
+  "name": "lgtm-studio",
+  "version": "0.0.1",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=26.13 <27"
+  },
+  "packageManager": "pnpm@12.16.1",
+  "scripts": {
+    "typecheck": "pnpm -r typecheck && tsc --noEmit",
+    "test": "vitest run",
+    "test:browser": "playwright test",
+    "check": "node scripts/check-private.mjs && pnpm -r typecheck && tsc --noEmit && vitest run && pnpm test:browser && scripts/check-credits.sh",
+    "check:private": "node scripts/check-private.mjs",
+    "record-fixtures": "node packages/engine/scripts/record-fixtures.ts",
+    "live-check": "node packages/engine/scripts/live-check.ts",
+    "live-check:roles": "node packages/engine/scripts/live-check-roles.ts",
+    "live-check:web": "node packages/engine/scripts/live-check-web.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "catalog:",
+    "@effect/openapi-generator": "catalog:",
+    "@effect/platform-node": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@types/node": "catalog:",
+    "@types/ws": "catalog:",
+    "effect": "catalog:",
+    "fast-check": "catalog:",
+    "jsdom": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vitest": "catalog:"
+  }
+}

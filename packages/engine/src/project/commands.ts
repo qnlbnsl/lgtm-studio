@@ -1,0 +1,554 @@
+import { sessions } from '../harnesses/signinRequests.ts'
+import { clientView } from '../client/alerts/view.ts'
+import { completionOwed, boardView } from "../board/wake.ts"
+import { requireEndResult, requireBuilding, permissionSetting, permissionOffReason } from "./approvals.ts"
+import { validateWorkflowFolder, workflowFolderReason } from "../workflows/folder.ts"
+import { declineMainReview } from "./gitReview.ts"
+import { checkoutHead, checkedMetadata, inside } from "./git/paths.ts"
+import { randomUUID } from "node:crypto"
+import { lstat, realpath, stat } from "node:fs/promises"
+import { isAbsolute, join, parse } from "node:path"
+import { RepositoryId, WorkspaceId, TeamId, SprintId, TaskId, ChannelId,
+  TaskNotificationId, stageLabel, projectTeamGroup, type Event, type Project, type Task } from "@lgtm/contracts"
+import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
+import { agentReadReply, type ReadHandler } from "../api/reads.ts"
+import { refused, type Input, type Payload, type PiecePlanner } from "../commands/internal.ts"
+import { canLeadProject, canReadProject } from "./access.ts"
+import { own, projectKey, projectView } from "./view.ts"
+import { projectAgents, taskMetadata } from "./snapshot.ts"
+import { cleanName, duplicateName } from "./names.ts"
+import { readHarnesses } from "../commands/internal.ts"
+
+import { withGit, gitCall, localMachine, safePath } from "./gitApi.ts"
+import { projectedTask, decisionHistory } from "./decisions.ts"
+import { taskNotificationSource } from "./taskDelivery.ts"
+import { projectRequests } from "./requests.ts"
+import { ownerNameSuggestion } from "./setup.ts"
+import { leadPermissionFor } from "./leadDefaults.ts"
+import { validChoiceId } from "../runner/choices.ts"
+import { searchContext } from "./context.ts"
+import { validateRepositoryInstructions } from "../roles/compose.ts"
+
+import { workspaceRepositoryRefusal } from "./errors.ts"
+
+const fresh = <S extends Schema.Top & { readonly Type: string }>(schema: S): S["Type"] => Schema.decodeUnknownSync(schema as never)(randomUUID()) as S["Type"]
+const preparationSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  if (input.actor._tag !== "owner") return yield* refused()
+  const p = raw as Payload<"project.repository.preparation.set">
+  const repository = own(projectView(input.snapshot).repositories, p.repoId)
+  if (repository === undefined) return yield* refused("repository is unavailable")
+  if (p.preparation.instructions !== undefined) yield* validateRepositoryInstructions(input.runtime, input.snapshot, p.preparation.instructions)
+  yield* withGit(input, git => gitCall(git.excludePreparationFiles(repository.path, p.preparation.copyPaths ?? [])))
+  return ack(p.requestId, [{ _tag: "project.RepositoryPreparationChanged", repoId: p.repoId, preparation: p.preparation }])
+})
+const ack = (requestId: unknown, events: ReadonlyArray<Event>) => ({ events, reply: () => ({ requestId }) })
+const requireProject = (input: Input, id: string, lead = true) => {
+  const row = own(projectView(input.snapshot).projects, id)
+  return row !== undefined && (lead ? canLeadProject(input.snapshot, input.actor, row) : canReadProject(input.snapshot, input.actor, id))
+    ? Effect.succeed(row) : Effect.fail(refused("project is unavailable to this caller"))
+}
+const member = (input: Input, projectId: string, agentId: string) =>
+  own(input.snapshot.agents, agentId) !== undefined && own(projectView(input.snapshot).agentProjects, agentId) === projectId
+// Registration uses the same trusted service and queue as public Git calls.
+const inspectCheckout = (input: Input, path: string, inferBase = false) => withGit(input, (git) => Effect.gen(function* () {
+  const repository = yield* gitCall(git.register(path))
+  const state = yield* gitCall(git.state(repository.path))
+  const checkouts = yield* gitCall(git.worktrees(repository.path))
+  const main = checkouts.items.find((row) => row.path === repository.path)
+  if (state.branch === null || main === undefined) return yield* refused("an existing local Git checkout root with a named branch is required")
+  return { path: repository.path, common: repository.commonDirectory, branch: state.branch,
+    ...(inferBase ? { baseBranch: yield* gitCall(git.detectBaseBranch(repository.path, true)) } : {}),
+    checkout: repository.commonDirectory === `${repository.path}/.git` ? "main" as const : "worktree" as const }
+}))
+const settingsSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.settings.set">
+  yield* safePath(input, p.settings.workspaceFolder)
+  const workspaceFolder = yield* Effect.tryPromise({ try: async () => {
+    if (!isAbsolute(p.settings.workspaceFolder)) throw new Error()
+    const folder = await realpath(p.settings.workspaceFolder)
+    if (!(await stat(folder)).isDirectory()) throw new Error()
+    return folder
+  }, catch: () => refused("workspace folder must be an existing absolute directory") })
+  const view = projectView(input.snapshot), previous = view.settings
+  if (workspaceFolder !== previous?.workspaceFolder) {
+    const excluded = yield* Effect.tryPromise({ try: async () => {
+      const references = [...Object.values(view.repositories), ...Object.values(view.locations), ...Object.values(view.workspaces)]
+      const checked = new Set<string>()
+      for (const row of references) {
+        const name = view.repositories[row.repoId]?.name ?? row.repoId
+        let path = row.path
+        try { path = await realpath(path) }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') return { name, path } }
+        if (!inside(workspaceFolder, path)) return { name, path }
+        if (checked.has(path)) continue
+        checked.add(path)
+        try {
+          await lstat(join(path, '.git'))
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+          return { name, path }
+        }
+        try {
+          // Observe the validated metadata without applying the old workspace
+          // boundary, so widening a legacy installation can repair it.
+          const common = await checkedMetadata(parse(workspaceFolder).root, path)
+          if (!inside(workspaceFolder, common)) return { name, path: common }
+        } catch { return { name, path } }
+      }
+    }, catch: () => refused('registered workspace not found') })
+    if (excluded !== undefined) return yield* refused(yield* input.runtime.log.redactText(workspaceRepositoryRefusal(excluded.name, excluded.path)))
+  }
+  const workflowFolder = p.clearWorkflowFolder ? undefined : p.settings.workflowFolder === undefined ? previous?.workflowFolder : yield* Effect.tryPromise({
+    try: () => validateWorkflowFolder(p.settings.workflowFolder!, input.runtime.stateFolder), catch: () => refused(workflowFolderReason),
+  })
+  const reviewDefaults = p.settings.reviewDefaults ?? previous?.reviewDefaults
+  const lead = p.settings.lead
+  if (lead !== undefined) {
+    const harness = (yield* readHarnesses(input.runtime)).find((row) => row.id === lead.harness)
+    const account = lead.account._tag === "named" ? own(input.snapshot.accounts, lead.account.accountId) : undefined
+    if (harness === undefined || lead.account._tag === "named" && account?.harness !== harness.id
+      || lead.model !== undefined && harness.models.length > 0 && !harness.models.includes(lead.model)
+      || lead.effort !== undefined && harness.efforts.length > 0 && !harness.efforts.includes(lead.effort)) return yield* refused("invalid lead defaults")
+    for (const value of [lead.model, lead.effort]) if (value !== undefined && (!validChoiceId(value) || (yield* input.runtime.log.redactText(value)) !== value)) return yield* refused("invalid lead defaults")
+  }
+  return ack(p.requestId, [{ _tag: "project.SettingsChanged", settings: { workspaceFolder, ...(reviewDefaults === undefined ? {} : { reviewDefaults }), ...(workflowFolder === undefined ? {} : { workflowFolder }), shell: yield* cleanName(input, p.settings.shell), ...(lead === undefined ? {} : { lead }),
+    ...(p.settings.displayName !== undefined ? { displayName: yield* cleanName(input, p.settings.displayName) } : projectView(input.snapshot).settings?.displayName === undefined ? {} : { displayName: projectView(input.snapshot).settings!.displayName! }) } }])
+})
+type Checkout = Effect.Success<ReturnType<typeof inspectCheckout>>
+type CheckoutReader = (input: Input, path: string) => Effect.Effect<Checkout, ReturnType<typeof refused>>
+const unobservedCheckout: CheckoutReader = () => Effect.fail(refused("project state changed; refresh and retry"))
+const repositoryAdd = (inspect: CheckoutReader = unobservedCheckout): PiecePlanner => (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.repository.add">
+  yield* localMachine(p.machineId); yield* safePath(input, p.path)
+  const checkout = yield* inspect(input, p.path)
+  if (checkout.baseBranch === undefined) return yield* refused("project state changed; refresh and retry")
+  if (Object.values(projectView(input.snapshot).repositories).some((repo) => repo.path === checkout.path)) return yield* refused("repository is already registered")
+  yield* safePath(input, checkout.baseBranch)
+  const repoId = fresh(RepositoryId)
+  return { events: [{ _tag: "project.RepositoryAdded", repoId, name: yield* cleanName(input, p.name), path: checkout.path, baseBranch: checkout.baseBranch },
+    { _tag: "project.RepositoryLocated", repoId, machineId: p.machineId, path: checkout.path }], reply: () => ({ requestId: p.requestId, repoId, baseBranch: checkout.baseBranch! }) }
+})
+const repositoryLocate = (inspect: CheckoutReader = unobservedCheckout): PiecePlanner => (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.repository.locate">
+  yield* localMachine(p.machineId); yield* safePath(input, p.path)
+  const repo = own(projectView(input.snapshot).repositories, p.repoId)
+  if (repo === undefined) return yield* refused("repository not found")
+  const registered = yield* inspect(input, repo.path)
+  const located = yield* inspect(input, p.path)
+  if (registered.common !== located.common) return yield* refused("checkout belongs to a different repository")
+  return ack(p.requestId, [{ _tag: "project.RepositoryLocated", repoId: p.repoId, machineId: p.machineId, path: located.path }])
+})
+const workspaceRegister = (inspect: CheckoutReader = unobservedCheckout): PiecePlanner => (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.workspace.register">
+  yield* localMachine(p.machineId); yield* safePath(input, p.path)
+  const view = projectView(input.snapshot)
+  const location = own(view.locations, projectKey(p.repoId, p.machineId))
+  if (location === undefined) return yield* refused("repository location not found")
+  const repo = yield* inspect(input, location.path)
+  const checkout = yield* inspect(input, p.path)
+  if (checkout.common !== repo.common || checkout.branch !== p.branch || checkout.checkout !== p.checkout) return yield* refused("checkout does not match the repository, branch and type")
+  if (Object.values(view.workspaces).some((row) => row.machineId === p.machineId && row.path === checkout.path)) return yield* refused("workspace is already registered")
+  if (p.parentId !== undefined) {
+    const parent = own(view.workspaces, p.parentId)
+    if (parent?.repoId !== p.repoId || parent.machineId !== p.machineId) return yield* refused("invalid parent workspace")
+  }
+  const worktreeId = fresh(WorkspaceId)
+  return { events: [{ _tag: "project.WorktreeCreated", worktreeId, repoId: p.repoId, machineId: p.machineId, branch: p.branch,
+    path: checkout.path, checkout: p.checkout, ...(p.parentId === undefined ? {} : { parentId: p.parentId }) }], reply: () => ({ requestId: p.requestId, worktreeId }) }
+})
+const unpreparedBase: PiecePlanner = () => Effect.fail(refused("project state changed; refresh and retry"))
+export const registrationPlanners = { "project.repository.base.set": unpreparedBase, "project.repository.add": repositoryAdd(), "project.repository.locate": repositoryLocate(),
+  "project.workspace.register": workspaceRegister() } satisfies Record<string, PiecePlanner>
+
+// Only checkout facts cross the writer boundary. The original admissions run
+// again against the current snapshot, including fresh names and collisions.
+export const prepareRegistration = (input: Input, name: keyof typeof registrationPlanners, raw: Record<string, unknown>) => Effect.gen(function* () {
+  if (name === "project.repository.base.set") {
+    if (input.actor._tag !== "owner") return yield* refused()
+    const repo = own(projectView(input.snapshot).repositories, raw.repoId as string)
+    if (repo === undefined) return yield* refused("repository not found")
+    const baseBranch = raw.baseBranch as string
+    if ((yield* input.runtime.log.redactText(baseBranch)) !== baseBranch) return yield* refused("name is invalid after redaction")
+    const checkIdle = (current: Input) => Effect.gen(function* () {
+      const view = projectView(current.snapshot)
+      if (Object.values(view.gitReviews).some((review) => review.outcome === "open" && own(view.projects, review.projectId)?.repoId === repo.repoId)
+        || Object.values(view.gitAttempts).some((attempt) => own(view.workspaces, attempt.worktreeId)?.repoId === repo.repoId)
+        || Object.values(view.creations).some((creation) => creation.repository.repoId === repo.repoId)) return yield* refused("finish the repository's open review, Git operation, or project creation before changing its base branch")
+    })
+    yield* checkIdle(input)
+    yield* safePath(input, repo.path)
+    yield* withGit(input, (git) => Effect.gen(function* () {
+      yield* gitCall(git.validateBranch(repo.path, baseBranch))
+      const trees = yield* gitCall(git.worktrees(repo.path))
+      if (trees.truncated) return yield* refused("Git: output_limit")
+      for (const tree of trees.items) if ((yield* gitCall(git.state(tree.path))).mergeHead !== null) return yield* refused("finish the repository's open review, Git operation, or project creation before changing its base branch")
+      return (yield* gitCall(git.state(repo.path))).branch
+    }))
+    const finalize: PiecePlanner = (current, payload) => Effect.gen(function* () {
+      if (current.actor._tag !== "owner" || JSON.stringify(own(projectView(current.snapshot).repositories, repo.repoId)) !== JSON.stringify(repo)) return yield* refused("project state changed; refresh and retry")
+      yield* checkIdle(current)
+      const head = yield* Effect.tryPromise({ try: () => checkoutHead(projectView(current.snapshot).settings!.workspaceFolder, repo.path),
+        catch: () => refused("project state changed; refresh and retry") })
+      const checkoutBranch = head.startsWith("ref: refs/heads/") ? head.slice("ref: refs/heads/".length) : null
+      return ack(payload.requestId, [{ _tag: "project.RepositoryBaseChanged", repoId: repo.repoId, baseBranch },
+        ...Object.values(projectView(current.snapshot).workspaces).filter((row) => checkoutBranch === baseBranch && row.repoId === repo.repoId && row.checkout === "main" && row.path === repo.path)
+          .map((row) => ({ _tag: "project.WorktreeCreated" as const, ...row, branch: baseBranch }))])
+    })
+    return finalize
+  }
+  const observed = projectView(input.snapshot), path = raw.path as string
+  yield* localMachine(raw.machineId as string); yield* safePath(input, path)
+  const repoId = raw.repoId as string, machineId = raw.machineId as string
+  const repository = own(observed.repositories, repoId), location = own(observed.locations, projectKey(repoId, machineId))
+  if (name === "project.repository.locate" && repository === undefined) return yield* refused("repository not found")
+  const relatedPath = name === "project.repository.locate" ? repository?.path : name === "project.workspace.register" ? location?.path : undefined
+  if (name !== "project.repository.add" && relatedPath === undefined) return yield* refused("repository location not found")
+  const related = relatedPath === undefined ? undefined : yield* inspectCheckout(input, relatedPath)
+  const checkout = yield* inspectCheckout(input, path, name === "project.repository.add")
+  const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
+  const inspect: CheckoutReader = (current, requestedPath) => Effect.gen(function* () {
+    const view = projectView(current.snapshot)
+    yield* safePath(current, requestedPath)
+    if (current.actor._tag !== "owner" || !same(view.settings, observed.settings)
+      || name !== "project.repository.add" && (!same(repository, own(view.repositories, repoId))
+        || !same(location, own(view.locations, projectKey(repoId, machineId))))
+      || raw.parentId !== undefined && !same(own(observed.workspaces, raw.parentId as string), own(view.workspaces, raw.parentId as string))) return yield* refused("project state changed; refresh and retry")
+    if (requestedPath === path) return checkout
+    if (requestedPath === relatedPath && related !== undefined) return related
+    return yield* refused("project state changed; refresh and retry")
+  })
+  return name === "project.repository.add" ? repositoryAdd(inspect) : name === "project.repository.locate" ? repositoryLocate(inspect) : workspaceRegister(inspect)
+})
+const approvalChange = (approved: boolean): PiecePlanner => (input, raw) => Effect.gen(function* () {
+  if (input.actor._tag !== "owner") return yield* refused("Only the owner can change project approvals.")
+  const p = raw as Payload<"project.approval.grant">, project = yield* requireProject(input, p.projectId)
+  if (project.archiving || project.archivedAt !== undefined) return yield* refused("The project is archived or archiving.")
+  const permission = p.approval === "build" ? "starting-work" : "planning"
+  if (permissionSetting(project, permission) === "denied") return yield* refused(permissionOffReason(permission))
+  if (permissionSetting(project, permission) !== "ask") return yield* refused("This lead permission is already allowed and needs no grant.")
+  return ack(p.requestId, [approved ? { _tag: "project.ApprovalGranted", projectId: p.projectId, approval: p.approval, requestId: p.requestId }
+    : { _tag: "project.PermissionWithdrawn", projectId: p.projectId, permission }])
+})
+const permissionSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  if (input.actor._tag !== "owner") return yield* refused("Only the owner can change lead permissions.")
+  const p = raw as Payload<"project.permission.set">, project = yield* requireProject(input, p.projectId)
+  if (project.archiving || project.archivedAt !== undefined) return yield* refused("The project is archived or archiving.")
+  return ack(p.requestId, permissionSetting(project, p.permission) === p.setting ? []
+    : [{ _tag: "project.PermissionChanged", projectId: p.projectId, permission: p.permission, setting: p.setting }])
+})
+const rename: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.rename">; const project = yield* requireProject(input, p.projectId)
+  const name = yield* cleanName(input, p.name)
+  if (duplicateName(input, { repoId: project.repoId, machineId: project.machineId, name }, project.projectId)) return yield* refused("project name already exists in this repository")
+  return ack(p.requestId, [{ _tag: "project.Renamed", projectId: p.projectId, name }])
+})
+const place: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.place">; const project = yield* requireProject(input, p.projectId)
+  const workspace = own(projectView(input.snapshot).workspaces, p.worktreeId)
+  if (workspace?.repoId !== project.repoId) return yield* refused("workspace belongs to a different repository")
+  if (p.worktreeId !== project.worktreeId || workspace.machineId !== project.machineId) return yield* refused("project placement cannot change before machine pairing")
+  if (Object.values(input.snapshot.agents).some((agent) => member(input, p.projectId, agent.agentId)
+    && !["stopped", "crashed"].includes(agent.state._tag))) return yield* refused("stop the project's agents before changing placement")
+  return ack(p.requestId, [{ _tag: "project.Placed", projectId: p.projectId, worktreeId: p.worktreeId, machineId: workspace.machineId }])
+})
+const preferencesSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.preferences.set">; yield* requireProject(input, p.projectId)
+  return ack(p.requestId, [{ _tag: "project.PreferencesChanged", projectId: p.projectId, shell: yield* cleanName(input, p.shell) }])
+})
+const stageSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.stage.set">; const project = yield* requireProject(input, p.projectId)
+  // Stages describe progress. Only an owner answer records consent.
+  if (p.stage !== "define") yield* requireEndResult(input, project)
+  if (["build", "review", "handover"].includes(p.stage)) yield* requireBuilding(input, project)
+  const view = projectView(input.snapshot), head = own(view.mockHeads, p.projectId)
+  const revision = head === undefined ? undefined : own(view.mockRevisions, projectKey(p.projectId, head))
+  if (p.stage === "design" && (revision?.bundle.screens.length ?? 0) === 0) return yield* refused("projects without screens begin in Plan")
+  if (p.stage !== "design" && (revision?.bundle.screens.length ?? 0) > 0
+    && !Object.values(view.mockApprovals).some((row) => row.projectId === p.projectId && row.revisionId === head)) return yield* refused("approve the current mock revision before leaving Design")
+  return ack(p.requestId, [{ _tag: "project.StageChanged", projectId: p.projectId, stage: p.stage }])
+})
+const teamCreate: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.team.create">; const project = yield* requireProject(input, p.projectId)
+  yield* requireEndResult(input, project)
+  if (input.runtime.lists?.boardEnabled === false) return yield* refused("board disabled")
+  const view = projectView(input.snapshot)
+  const workspace = own(view.workspaces, p.worktreeId)
+  if (workspace?.repoId !== project.repoId || workspace.machineId !== project.machineId
+    || workspace.projectId !== undefined && workspace.projectId !== p.projectId
+    || workspace.worktreeId !== project.worktreeId && workspace.parentId !== project.worktreeId) return yield* refused("invalid team workspace")
+  if (Object.values(view.teams).some((row) => row.worktreeId === p.worktreeId)) return yield* refused("workspace already belongs to a team")
+  const area = p.area === undefined ? undefined : yield* cleanName(input, p.area)
+  const name = yield* cleanName(input, p.stage === undefined ? p.name : `${stageLabel(p.stage)}${area === undefined ? "" : ` · ${area}`}`)
+  if (Object.values(view.teams).some((row) => row.projectId === p.projectId && row.name.toLowerCase() === name.toLowerCase())) return yield* refused("team name already exists")
+  const teamId = fresh(TeamId); const channelId = fresh(ChannelId)
+  const group = projectTeamGroup(p.projectId, teamId)
+  const manager = { _tag: "agent", agentId: project.leadAgentId } as const
+  return { events: [{ _tag: "project.TeamAdded", projectId: p.projectId, teamId, name, worktreeId: p.worktreeId, group, channelId,
+    ...(p.stage === undefined ? {} : { stage: p.stage }), ...(area === undefined ? {} : { area }) },
+    { _tag: "board.ChannelOpened", channelId, name: `Team_${teamId}`, kind: "group", opener: manager, manager,
+      anchorAgentId: project.leadAgentId, group, members: [] }], reply: () => ({ requestId: p.requestId, teamId, channelId, group }) }
+})
+const dependenciesValid = (input: Input, projectId: string, needs: ReadonlyArray<string>, sprintId?: string): boolean => {
+  const view = projectView(input.snapshot)
+  if (new Set(needs).size !== needs.length || needs.some((id) => id === sprintId || own(view.sprints, projectKey(projectId, id)) === undefined)) return false
+  const seen = new Set<string>()
+  const reachesSelf = (id: string): boolean => {
+    if (id === sprintId) return true
+    if (seen.has(id)) return false
+    seen.add(id)
+    return own(view.sprints, projectKey(projectId, id))?.needs.some(reachesSelf) ?? false
+  }
+  return !needs.some(reachesSelf)
+}
+const sprintCreate: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.sprint.create">; const project = yield* requireProject(input, p.projectId)
+  yield* requireEndResult(input, project)
+  if (!member(input, p.projectId, p.owner) || !dependenciesValid(input, p.projectId, p.needs)) return yield* refused("invalid sprint owner or dependencies")
+  const label = yield* cleanName(input, p.label)
+  if (Object.values(projectView(input.snapshot).sprints).some((row) => row.projectId === p.projectId && row.label.toLowerCase() === label.toLowerCase())) return yield* refused("sprint label already exists")
+  const sprintId = fresh(SprintId)
+  return { events: [{ _tag: "project.SprintAdded", projectId: p.projectId, sprintId, label, name: yield* cleanName(input, p.name), goal: p.goal, phase: p.phase, owner: p.owner, needs: p.needs }], reply: () => ({ requestId: p.requestId, sprintId }) }
+})
+const requireSprint = (input: Input, projectId: string, sprintId: string) => {
+  const row = own(projectView(input.snapshot).sprints, projectKey(projectId, sprintId))
+  return row === undefined ? Effect.fail(refused("sprint not found")) : Effect.succeed(row)
+}
+const sprintUpdate: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.sprint.update">; const project = yield* requireProject(input, p.projectId)
+  yield* requireEndResult(input, project)
+  const sprint = yield* requireSprint(input, p.projectId, p.sprintId)
+  if (sprint.completion !== undefined) return yield* refused("completed sprint cannot be changed")
+  if (p.owner !== undefined && !member(input, p.projectId, p.owner) || p.needs !== undefined && !dependenciesValid(input, p.projectId, p.needs, p.sprintId)) return yield* refused("invalid sprint owner or dependencies")
+  const { requestId, ...fields } = p
+  return ack(requestId, [{ _tag: "project.SprintChanged", ...fields, ...(p.name === undefined ? {} : { name: yield* cleanName(input, p.name) }) }])
+})
+const sprintComplete: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.sprint.complete">; const project = yield* requireProject(input, p.projectId)
+  yield* requireEndResult(input, project)
+  const sprint = yield* requireSprint(input, p.projectId, p.sprintId)
+  if (sprint.completion !== undefined) return yield* refused("sprint is already complete")
+  const view = projectView(input.snapshot)
+  if (sprint.needs.some((id) => own(view.sprints, projectKey(p.projectId, id))?.completion === undefined)) return yield* refused("sprint dependencies are incomplete")
+  if (Object.values(view.tasks).some((task) => task.projectId === p.projectId && task.sprintId === p.sprintId && projectedTask(input.snapshot, task).state !== "done")) return yield* refused("sprint tasks are incomplete")
+  return ack(p.requestId, [{ _tag: "project.SprintCompleted", projectId: p.projectId, sprintId: p.sprintId,
+    completion: yield* cleanName(input, p.completion), evidence: p.evidence }])
+})
+const validTaskLinks = (input: Input, project: Project, task: Pick<Task, "owner" | "teamId" | "sprintId" | "worktreeId">) => {
+  const view = projectView(input.snapshot)
+  const team = own(view.teams, projectKey(project.projectId, task.teamId))
+  const sprint = own(view.sprints, projectKey(project.projectId, task.sprintId))
+  const owner = own(input.snapshot.agents, task.owner)
+  return member(input, project.projectId, task.owner) && team !== undefined && sprint !== undefined
+    && (task.owner === project.leadAgentId || owner?.groups.includes(team.group ?? projectTeamGroup(project.projectId, team.teamId)) === true)
+    && sprint.completion === undefined && team.worktreeId === task.worktreeId
+}
+const taskCreate: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.task.create">; const project = yield* requireProject(input, p.projectId)
+  yield* requireEndResult(input, project)
+  if (p.state !== "queue") yield* requireBuilding(input, project)
+  if (!validTaskLinks(input, project, p)) return yield* refused("invalid task links or completed sprint")
+  const label = p.label === undefined ? undefined : yield* cleanName(input, p.label)
+  if (label !== undefined && Object.values(projectView(input.snapshot).tasks).some((row) => row.projectId === p.projectId && row.label?.toLowerCase() === label.toLowerCase())) return yield* refused("task label already exists")
+  const taskId = fresh(TaskId); const { requestId, ...fields } = p
+  const title = yield* cleanName(input, p.title)
+  const notificationId = input.actor._tag === "owner" ? fresh(TaskNotificationId) : undefined
+  return { events: [{ _tag: "project.TaskAdded", ...fields, ...(label === undefined ? {} : { label }), taskId, title },
+    ...(notificationId === undefined ? [] : [{ _tag: "project.OwnerTaskNotificationPlanned" as const,
+      notificationId, projectId: project.projectId, taskId, targetAgentId: project.leadAgentId }])],
+    ...(notificationId === undefined ? {} : { deliveries: [{ target: project.leadAgentId, sourceId: taskNotificationSource(notificationId),
+      body: `Owner-created task ${taskId} in project ${project.projectId}.\n${JSON.stringify({ taskId, title, owner: p.owner, sprintId: p.sprintId, teamId: p.teamId })}` }] }),
+    reply: () => ({ requestId, taskId }) }
+
+})
+const requireTask = (input: Input, projectId: string, taskId: string, write: boolean, includeDeleted = false) => Effect.gen(function* () {
+  const project = yield* requireProject(input, projectId, false)
+  const view = projectView(input.snapshot), key = projectKey(projectId, taskId)
+  const task = own(view.tasks, key) ?? (includeDeleted && !write ? own(view.deletedTasks ?? {}, key) : undefined)
+  if (task === undefined || write && !canLeadProject(input.snapshot, input.actor, project)
+    && !(input.actor._tag === "agent" && input.actor.agentId === task.owner)) return yield* refused("task is unavailable to this caller")
+  return { project, task }
+})
+const taskUpdate: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.task.update">; const { project, task } = yield* requireTask(input, p.projectId, p.taskId, true)
+  if (p.state !== undefined && p.state !== "queue" && task.state === "queue") yield* requireBuilding(input, project)
+  const ownsStartedTask = input.actor._tag === "agent" && input.actor.agentId === task.owner && task.state !== "queue"
+  if ([p.title, p.owner, p.teamId, p.sprintId, p.worktreeId].some((value) => value !== undefined) || p.note !== undefined && !ownsStartedTask) yield* requireEndResult(input, project)
+  const leads = canLeadProject(input.snapshot, input.actor, project)
+  if (!leads && (p.owner !== undefined || p.teamId !== undefined || p.sprintId !== undefined || p.worktreeId !== undefined || p.title !== undefined)) return yield* refused("only a lead can change task assignments and titles")
+  const changed = { ...task, ...p }
+  if (!validTaskLinks(input, project, changed)) return yield* refused("invalid task links or completed sprint")
+  const { requestId, ...fields } = p
+  return ack(requestId, [{ _tag: "project.TaskChanged", ...fields, ...(p.title === undefined ? {} : { title: yield* cleanName(input, p.title) }) }])
+})
+const taskDelete: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.task.delete">
+  yield* requireProject(input, p.projectId)
+  const { task } = yield* requireTask(input, p.projectId, p.taskId, true)
+  if (task.history.some((entry) => entry.state !== "queue") || projectedTask(input.snapshot, task).state !== "queue") return yield* refused("Only a task that was never started can be deleted.")
+  return ack(p.requestId, [{ _tag: "project.TaskDeleted", projectId: p.projectId, taskId: p.taskId }])
+})
+const teamDelete: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.team.delete">
+  yield* requireProject(input, p.projectId)
+  const view = projectView(input.snapshot), team = own(view.teams, projectKey(p.projectId, p.teamId))
+  if (team === undefined) return yield* refused("The team is unavailable.")
+  const group = team.group ?? projectTeamGroup(p.projectId, p.teamId)
+  if (Object.values(input.snapshot.agents).some((agent) => own(view.agentProjects, agent.agentId) === p.projectId
+    && agent.groups.includes(group) && !["stopped", "crashed"].includes(agent.state._tag))) return yield* refused("Stop the team’s agents before deleting the team.")
+  if (Object.values(view.tasks).some((task) => task.projectId === p.projectId && task.teamId === p.teamId)) return yield* refused("Delete or move the team’s tasks before deleting the team.")
+  if (input.actor._tag !== "owner" && input.actor._tag !== "agent") return yield* refused()
+  const closer = input.actor
+  const closed = Object.values(boardView(input.snapshot).posts).filter((post) => post.channelId === team.channelId && post.status === "open")
+    .map((post) => ({ _tag: "board.PostClosed" as const, postId: post.postId, outcome: "withdrawn" as const, closer,
+      completionOwed: completionOwed(input.snapshot, post, closer, true) }))
+  return ack(p.requestId, [...closed, { _tag: "project.TeamDeleted", projectId: p.projectId, teamId: p.teamId },
+    ...(team.channelId === undefined ? [] : [{ _tag: "board.ChannelArchived" as const, channelId: team.channelId, displayName: team.name }])])
+})
+const taskNote: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.task.note">; const { project, task } = yield* requireTask(input, p.projectId, p.taskId, true)
+  if (!(input.actor._tag === "agent" && input.actor.agentId === task.owner && task.state !== "queue")) yield* requireEndResult(input, project)
+  return ack(p.requestId, [{ _tag: "project.TaskNoted", projectId: p.projectId, taskId: p.taskId, title: yield* cleanName(input, p.title), detail: p.detail }])
+})
+
+// Cursors are stable keys in the selected collection. Unknown cursors refuse
+// instead of silently repeating the first page. Every call rechecks access.
+const page = <T>(input: Input, raw: Record<string, unknown>, entries: ReadonlyArray<readonly [string, T]>, data = false) => Effect.gen(function* () {
+  const after = raw.after
+  const start = after === undefined ? 0 : entries.findIndex(([key]) => key === after) + 1
+  if (after !== undefined && start === 0) return yield* refused("invalid cursor")
+  const items: T[] = []
+  let next: string | undefined
+  const wrap = (reply: Record<string, unknown>) => data && input.actor._tag === "agent" ? agentReadReply(raw.requestId, reply) : reply
+  for (let i = start; i < entries.length; i++) {
+    const [key, item] = entries[i]!
+    if (items.length >= (raw.limit as number | undefined ?? 200)) break
+    const candidate = { requestId: raw.requestId, items: [...items, item], ...(i < entries.length - 1 ? { next: key } : {}) }
+    if (Buffer.byteLength(JSON.stringify(wrap(candidate)), "utf8") > 256 * 1024) {
+      if (items.length === 0) return yield* refused("record exceeds the read budget")
+      break
+    }
+    items.push(item); next = i < entries.length - 1 ? key : undefined
+  }
+  const reply = wrap({ requestId: raw.requestId, items, ...(next === undefined ? {} : { next }) })
+  if (Buffer.byteLength(JSON.stringify(reply), "utf8") > 256 * 1024) return yield* refused("record exceeds the read budget")
+  return { reply }
+})
+const goalSet: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.goal.set">; yield* requireProject(input, p.projectId)
+  return ack(p.requestId, [{ _tag: "project.GoalChanged", projectId: p.projectId, goal: p.goal }])
+})
+const deleteProject: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  if (input.actor._tag !== "owner") return yield* refused()
+  const p = raw as Payload<"project.delete">, row = yield* requireProject(input, p.projectId)
+  if (row.archivedAt === undefined || row.archiving) return yield* refused("Archive the project before deleting it.")
+  const view = projectView(input.snapshot), board = boardView(input.snapshot)
+  const agentIds = Object.values(input.snapshot.agents).filter((agent) => own(view.agentProjects, agent.agentId) === p.projectId).map((agent) => agent.agentId)
+  if (agentIds.some((id) => !["stopped", "crashed"].includes(input.snapshot.agents[id]!.state._tag))) return yield* refused("Stop every project agent before deleting the project.")
+  // Retained identifiers are barriers, not roots from which to discover owners.
+  const kept = new Set<string>([
+    ...Object.values(view.workspaces).filter((workspace) => workspace.checkout === "main"
+      || workspace.path === own(view.repositories, workspace.repoId)?.path
+      || workspace.parentId === undefined && own(view.repositories, workspace.repoId) === undefined).map((workspace) => workspace.worktreeId),
+    ...Object.values(view.projects).filter((project) => project.projectId !== p.projectId).map((project) => project.worktreeId),
+    ...Object.values(view.teams).filter((team) => team.projectId !== p.projectId).map((team) => team.worktreeId)
+  ])
+  const teams = Object.values(view.teams).filter((team) => team.projectId === p.projectId)
+  const teamIds = new Set(teams.map((team) => team.teamId).filter((id) => !Object.values(view.teams).some((team) => team.projectId !== p.projectId && team.teamId === id)))
+  const removed = new Set([row.worktreeId, ...teams.map((team) => team.worktreeId),
+    ...Object.values(view.workspaces).filter((workspace) => workspace.projectId === p.projectId
+      || workspace.teamId !== undefined && teamIds.has(workspace.teamId)).map((workspace) => workspace.worktreeId)]
+    .filter((id) => !kept.has(id)))
+  // A team below a retained project worktree still seeds its own walk.
+  // Visiting an identifier once bounds cycles, and a kept child stops a walk.
+  let added = true
+  while (added) {
+    added = false
+    for (const workspace of Object.values(view.workspaces)) if (workspace.parentId !== undefined && removed.has(workspace.parentId)
+      && !kept.has(workspace.worktreeId) && !removed.has(workspace.worktreeId)) {
+      removed.add(workspace.worktreeId); added = true
+    }
+  }
+  const worktreeIds = [...removed]
+  if (sessions(input).hasProjectTerminal(removed)) return yield* refused("Close the project terminals before deleting the project.")
+  if (Object.values(view.gitAttempts).some((attempt) => removed.has(attempt.worktreeId)
+    || attempt.caller._tag === "agent" && agentIds.includes(attempt.caller.agentId))) return yield* refused("Finish the project's Git operation before deleting it.")
+  const agents = new Set<string>(agentIds)
+  const channelIds = Object.values(board.channels).filter((channel) =>
+    (channel.anchorAgentId !== undefined && agents.has(channel.anchorAgentId)
+    || channel.manager?._tag === "agent" && agents.has(channel.manager.agentId)
+    || channel.kind === "direct" && channel.members.some((member) => member._tag === "agent" && agents.has(member.agentId)))
+    && !channel.members.some((member) => member._tag === "agent" && !agents.has(member.agentId))
+  ).map((channel) => channel.channelId)
+  const channels = new Set<string>(channelIds)
+  const deletedPosts = new Set<string>(Object.values(board.posts).filter((post) => channels.has(post.channelId)
+    || post.author._tag === "agent" && agents.has(post.author.agentId)
+  ).map((post) => post.postId))
+  const postIds = [...deletedPosts]
+  const subjectIds = new Set<string>([
+    ...agentIds, ...Object.values(view.sprints).filter((sprint) => sprint.projectId === p.projectId).map((sprint) => sprint.sprintId),
+    ...Object.values(view.gitReviews).filter((review) => review.projectId === p.projectId).map((review) => review.reviewId),
+    ...Object.values(input.snapshot.questions).filter((question) => agents.has(question.agentId) || question.projectId === p.projectId).map((question) => question.questionId),
+    ...Object.values(input.snapshot.requests).filter((request) => agents.has(request.agentId) || request.projectId === p.projectId).map((request) => request.permissionRequestId) ])
+  const alertIds = Object.values(clientView(input.snapshot.client).alerts).filter((alert) =>
+    alert.agentId !== undefined && agents.has(alert.agentId) || alert.subject !== undefined
+      && (alert.subject._tag !== "piece" || alert.subject.namespace === "project") && subjectIds.has(alert.subject.id)).map((alert) => alert.alertId)
+  return ack(p.requestId, [{ _tag: "project.Deleted", projectId: p.projectId, agentIds, channelIds, alertIds, postIds, worktreeIds }])
+})
+const restore: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.restore">; const row = yield* requireProject(input, p.projectId)
+  if (row.archiving) return yield* refused("finish archiving the project before restoring it")
+  return ack(p.requestId, row.archivedAt === undefined ? [] : [{ _tag: "project.Restored", projectId: p.projectId }])
+})
+const settings: ReadHandler = (input, raw) => Effect.gen(function* () {
+  const stored = projectView(input.snapshot).settings
+  // Report the lead permission that a new project would actually receive.
+  const leadHarness = stored?.lead === undefined ? undefined : (yield* readHarnesses(input.runtime)).find((row) => row.id === stored.lead!.harness)
+  const settings = stored?.lead === undefined || leadHarness === undefined ? stored
+    : { ...stored, lead: { ...stored.lead, permission: leadPermissionFor(leadHarness, stored.lead) } }
+  const ownerNameSuggestionValue = yield* ownerNameSuggestion(input)
+  return { reply: { requestId: raw.requestId, ...(settings === undefined ? {} : { settings }), ...(ownerNameSuggestionValue === undefined ? {} : { ownerNameSuggestion: ownerNameSuggestionValue }) } }
+})
+const repositories: ReadHandler = (input, raw) => page(input, raw, Object.entries(projectView(input.snapshot).repositories))
+const workspaces: ReadHandler = (input, raw) => page(input, raw, Object.entries(projectView(input.snapshot).workspaces).filter(([, row]) => raw.repoId === undefined || row.repoId === raw.repoId))
+const read: ReadHandler = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.read">
+  const view = projectView(input.snapshot)
+  if (p.projectId !== undefined) yield* requireProject(input, p.projectId, false)
+  if (p.collection !== "projects" && p.projectId === undefined) return yield* refused("projectId is required for this collection")
+  const allowed = (projectId: string) => (p.projectId === undefined || p.projectId === projectId) && canReadProject(input.snapshot, input.actor, projectId)
+  let entries: ReadonlyArray<readonly [string, unknown]>
+  switch (p.collection) {
+    case "projects": entries = Object.entries(view.projects).filter(([, row]) => allowed(row.projectId)); break
+    case "teams": entries = Object.entries(view.teams).filter(([, row]) => allowed(row.projectId)); break
+    case "sprints": entries = Object.entries(view.sprints).filter(([, row]) => allowed(row.projectId)); break
+    case "tasks": entries = Object.entries(view.tasks).filter(([, row]) => allowed(row.projectId)).map(([key, row]) => [key, taskMetadata(projectedTask(input.snapshot, row))] as const); break
+    case "agents": entries = projectAgents(input.snapshot, p.projectId!).map((row) => [row.agentId, row] as const); break
+  }
+  return yield* page(input, raw, entries, true)
+})
+const taskHistory: ReadHandler = (input, raw) => Effect.gen(function* () {
+  const p = raw as Payload<"project.task.history">; const { task } = yield* requireTask(input, p.projectId, p.taskId, false, true)
+  return yield* page(input, raw, decisionHistory(input.snapshot, task).map((row, index) => [String(index), row] as const), true)
+})
+export const projectPlanners = {
+  "project.permission.set": permissionSet,
+  "project.approval.grant": approvalChange(true), "project.approval.withdraw": approvalChange(false),
+  "project.settings.set": settingsSet, "project.repository.preparation.set": preparationSet, "project.repository.base.set": unpreparedBase, "project.repository.add": repositoryAdd(), "project.repository.locate": repositoryLocate(),
+  "project.review.decline": declineMainReview,
+  "project.workspace.register": workspaceRegister(), "project.rename": rename, "project.place": place,
+  "project.delete": deleteProject, "project.goal.set": goalSet, "project.restore": restore, "project.preferences.set": preferencesSet, "project.stage.set": stageSet, "project.team.create": teamCreate,
+  "project.sprint.create": sprintCreate, "project.sprint.update": sprintUpdate, "project.sprint.complete": sprintComplete,
+  "project.team.delete": teamDelete, "project.task.delete": taskDelete,
+  "project.task.create": taskCreate, "project.task.update": taskUpdate, "project.task.note": taskNote
+} satisfies Record<string, PiecePlanner>
+const abandonCreation: PiecePlanner = (input, raw) => Effect.gen(function* () {
+  if (input.actor._tag !== "owner") return yield* refused()
+  const p = raw as Payload<"project.creation.abandon">
+  if (own(projectView(input.snapshot).creations, p.creationRequestId) === undefined) return yield* refused("project creation intent is unavailable")
+  return ack(p.requestId, [{ _tag: "project.CreationFinished", creationRequestId: p.creationRequestId }])
+})
+export const creationPlanners = { "project.creation.abandon": abandonCreation }
+const creations: ReadHandler = (input, raw) => page(input, raw, Object.entries(projectView(input.snapshot).creations))
+export const projectReads = { "project.requests": projectRequests, "project.creations": creations, "project.settings": settings, "project.repositories": repositories, "project.workspaces": workspaces,
+  "project.read": read, "project.task.history": taskHistory, "project.context.search": searchContext } satisfies Record<string, ReadHandler>

@@ -1,0 +1,10 @@
+# Generates the TypeScript the website and the mock server import.
+# The output is JavaScript with type declarations, so Node, Vite and the type checker all read it as it is.
+version: v2
+clean: true
+plugins:
+  - local: protoc-gen-es
+    out: gen
+    opt:
+      - target=js+dts
+      - import_extension=js

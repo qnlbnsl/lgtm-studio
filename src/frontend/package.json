@@ -1,0 +1,28 @@
+{
+  "name": "@lgtm/frontend",
+  "version": "0.0.0",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "The website of LGTM Studio, in Preact 11, Vite and TypeScript. It reaches a server only through the contract in src/contracts.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0 --port 4179 --strictPort",
+    "build": "vite build",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "catalog:",
+    "@connectrpc/connect": "catalog:",
+    "@connectrpc/connect-web": "catalog:",
+    "@lgtm/api": "workspace:*",
+    "@lgtm/mock-server": "workspace:*",
+    "preact": "catalog:"
+  },
+  "devDependencies": {
+    "@babel/core": "catalog:",
+    "@preact/preset-vite": "catalog:",
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}
