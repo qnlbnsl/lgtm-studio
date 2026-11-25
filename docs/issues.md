@@ -665,6 +665,8 @@ stays open, as issue 192 also records.
 
 Triage (2026-11-23): waits for the owner's decision, P3, tests. A normal Cursor greeting recording is still missing; the owner must record it once the account has usage. Basis: packages/testing/fixtures has no cursor.ndjson; replay.test.ts:63 still skips "awaiting the owner's normal Cursor recording".
 
+Owner ruling (2026-11-25): Leave it open until that account has usage again.
+
 Found: 2026-11-01, by the lead, reading the `cursor.ndjson` recorded at e93bb00.
 State: open. The fixture is committed as recorded, and the owner ruled on it.
 The owner decided on 2026-11-01 to keep the out-of-usage sample as
@@ -857,6 +859,8 @@ What should happen: either remove the envelope-only path once no caller writes i
 
 Triage (2026-11-23): waits for the owner's decision, P2, client api and command line. Nothing announces that an owner alert has ended, so a client must work it out from the request's status. Basis: No alert-withdrawn event in packages/contracts; entry waits for the owner of the client API or the lead to decide.
 
+Owner ruling (2026-11-25): No event announces the end of an alert, and clients read the status. This is kept. The issue can be closed. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
+
 Found: 2026-11-01, while writing the unit 5c tests.
 State: open; the owner of the client API (piece 2) or the lead decides.
 
@@ -961,6 +965,8 @@ and the approval routing guard the state folder and the settings files (rows
 
 Triage (2026-11-23): waits for the owner's decision, P2, engine. Questions asked by a crashed agent never close; the owner must decide on a withdrawn event and the blocked-task status. Basis: Entry: owner's decision still open; unit s18-smallfix only hides the questions. No QuestionWithdrawn event in packages/contracts.
 
+Owner ruling (2026-11-25): The recommendation to show the questions as withdrawn is not taken. The open questions of a crashed agent stay open, and its transcripts stay available. The crash is reported to the project lead. The project lead decides whether to relaunch an agent and assign it those questions, or to keep them. The person may answer such a question at any time. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
+
 Found: 2026-11-01, by the unit 6c test writer.
 State: the owner’s decision on a "withdrawn" event is still open. Unit s18-smallfix keeps stored questions open and filters unavailable askers from owner reads. Their questions return when they resume. A task whose only blocker is a hidden question still shows as blocked without a visible question explaining it. The owner’s decision must cover that status as well as withdrawal.
 
@@ -994,6 +1000,8 @@ its wait call returns and repeat what the call already told it.
 ## 118. A classified pause drops the provider's error text
 
 Triage (2026-11-23): waits for the owner's decision, P3, engine. When an account pauses, the provider's own error text is dropped, so odd limit messages are hard to diagnose. Basis: Entry: "no change planned until the owner asks".
+
+Owner ruling (2026-11-25): The recommendation to keep dropping the text is not taken. A provider's own error code is not dropped. The person who uses the software is told the error that the provider gave. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
 
 Found: 2026-11-01, by engine-u6bb, building unit 6b.
 State: open; no change planned until the owner asks.
@@ -1064,6 +1072,8 @@ classified pause that lost its reset time.
 
 Triage (2026-11-23): waits for the owner's decision, P2, engine. When one agent hits a usage limit, idle agents on the same account still get work and each wastes a turn. Basis: Entry: "open question for the owner".
 
+Owner ruling (2026-11-25): When one agent hits a usage limit, the idle agents on the same account are paused too. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
+
 Found: 2026-11-01, in the focused review of unit 6b (finding C3).
 State: open question for the owner.
 
@@ -1089,6 +1099,8 @@ do the same work twice.
 ## 152. A paused agent that cannot reload after a restart has no path back except stop
 
 Triage (2026-11-23): waits for the owner's decision, P2, engine. A paused agent that cannot reload after a restart can only be stopped and started anew, leaving its queued work stuck. Basis: Entry: owner decides whether resume --fresh accepts a paused agent; unit s21-recover added only a website fallback.
+
+Owner ruling (2026-11-25): A paused agent that cannot reload may be resumed fresh from the paused state. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
 
 Found: 2026-11-01, while building unit 6d.
 State: open. Unit s21-recover adds the website's fresh fallback for states that accept resume, but the existing command contract refuses resume while paused.
@@ -1228,6 +1240,8 @@ account runs out, and the failure shows only as a crashed turn.
 
 Triage (2026-11-23): waits for the owner's decision, P2, engine. After a service kill, a prompt sent but not yet accepted is delivered to the agent twice; the owner must confirm this is acceptable. Basis: Entry's own state: allowed by the specification, a decision to confirm; no later mention in docs/issues.md.
 
+Owner ruling (2026-11-25): The recommendation to accept the repeat is not taken. A prompt that may be a repeat is marked as a possible repeat, and only when the transcript cannot prove that it was delivered. The agent must not answer twice. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
+
 Found: 2026-11-02, while writing the acceptance suite (unit 8b).
 State: open. Allowed by the specification ("may be sent twice"), so it is a
 decision to confirm, not a defect.
@@ -1245,6 +1259,8 @@ harm, for example by repeating a commit or a message to a third party.
 ## 195. The acceptance suite leaves some specification clauses to lower-level tests or to nothing
 
 Triage (2026-11-23): waits for the owner's decision, P3, tests. The acceptance suite does not itself check several specification clauses; the owner decides whether lower-level tests are enough. Basis: Entry is a coverage map ending in an owner decision; several rows still say 'not covered'.
+
+Owner ruling (2026-11-25): The acceptance suite may leave some clauses to lower-level tests. The issue can be closed. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
 
 Found: 2026-11-02, by the focused review of unit 8b (finding C1), after fix
 round 1 of that unit.
@@ -2182,6 +2198,8 @@ Why it matters: an agent can stay blocked on a request that no client can see.
 
 Triage (2026-11-23): waits for the owner's decision, P2, engine. Changing an account silently drops fields left out, and an account can be removed while agents still use it. Basis: commands/accounts.ts: set writes the supplied account whole; remove case has no running-agent check. Entry says owner has not chosen the policy.
 
+Owner ruling (2026-11-25): The recommendation to refuse the removal is not taken. An account may be removed while agents use it. A dialog first states that the active agents on it will stop. The dialog links to a list of all agents, filtered to that account. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
+
 Found: 2026-11-03, in the post-build review of commit `8ff4c9b`, finding s13 F-3.
 State: open, deferred by the owner on 2026-11-03.
 
@@ -2744,6 +2762,8 @@ Why it matters: A reader of the design would build a pairing that was dropped.
 
 Triage (2026-11-23): waits for the owner's decision, P2, board and roles. A board post cannot be deleted, so a secret posted by mistake stays in the log and receipts. Basis: Entry open: 'A purge path is not planned', 'Not decided'.
 
+Owner ruling (2026-11-25): A purge of a board post is recorded as a feature and is not built now. The owner added a direction for secrets: a vault that the server holds. An agent's tool call goes through the client to the server, and the server adds the secret. An agent can use a tool that needs a key without ever reading the key. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
+
 Found: 2026-11-03, while planning the message board plan.
 State: open.
 
@@ -2810,6 +2830,8 @@ Why it matters: Each follower may judge the same agent differently.
 
 Triage (2026-11-23): waits for the owner's decision, P3, board and roles. A board duty the engine keeps refusing is retried after each later batch, adding a refusal event each time. Basis: Entry state: open and awaiting the owner's decision, verified against the code on 2026-11-16.
 
+Owner ruling (2026-11-25): Three refusals are not enough as the only measure. The retries back off. After three refusals a background agent of a new kind, an investigation agent, is started. It is a short, quick job on the account with the lowest usage. It finds out what happened and delivers the result to the project lead, so that the project lead's own context is not filled. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
+
 Found: 2026-11-03, while planning the message board plan.
 State: open and awaiting the owner's decision, because the board reactor still retries a refused duty after each later batch that touches it, and only the refusal events themselves are ignored. Verified against the code on 2026-11-16.
 Earlier state: open.
@@ -2864,6 +2886,8 @@ Why it matters: A short outage permanently fails board wakes.
 ## 347. The recorded fixtures hold no tool call and no permission request
 
 Triage (2026-11-23): waits for the owner's decision, P2, tests. The recorded harness fixtures hold no tool call or permission request, so permission matching cannot be tested on real traffic. Basis: No tool-call or permission lines grep-matched in packages/testing/fixtures/*.ndjson; AGENTS.md: rules wait for the owner's harness recordings.
+
+Owner ruling (2026-11-25): Leave it open. A tool call and a permission request are recorded when the owner next uses those harnesses.
 
 Found: 2026-11-03, while planning the foundry roles plan.
 State: open.
@@ -2931,6 +2955,8 @@ Why it matters: One slow agent delays every other agent.
 ## 353. `isHarnessSettings` treats every path under a harness folder as a settings path
 
 Triage (2026-11-23): waits for the owner's decision, P3, security. Every file under a harness folder counts as settings, so edits in worktrees under such folders all wait for the owner. Basis: identity/ceiling.ts:417-422 still matches any path segment .claude/.codex/.gemini/.cursor/.lgtm; narrowing relaxes a protection, so owner's decision.
+
+Owner ruling (2026-11-25): The rule is narrowed to the real settings files. Because many harnesses must be supported, the settings files are named for each harness. How to keep that list for about thirty harnesses is open. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
 
 Found: 2026-11-03, while planning the foundry roles plan.
 State: open.
@@ -3029,6 +3055,8 @@ Why it matters: The foundation build's reviews are held until its end, so this w
 
 Triage (2026-11-23): waits for the owner's decision, P2, tests. The roles live check has never observed a real first stall; the owner must run it with a real account. Basis: Entry state: open for the owner's real-account execution of pnpm live-check:roles.
 
+Owner ruling (2026-11-25): Leave it open until one run of the roles live check with a real account.
+
 Found: 2026-11-05, while repairing foundation review record FR-064.
 State: open for the owner's real-account execution.
 
@@ -3047,6 +3075,8 @@ No real account or owner recording was used for this repair.
 ## 470. The roles live observer could count evidence outside the selected wave
 
 Triage (2026-11-23): waits for the owner's decision, P2, tests. The repaired roles live observer still needs the owner's real-account rerun to close the proof gap. Basis: Entry state: open for the owner's real-account execution after observer repair.
+
+Owner ruling (2026-11-25): Leave it open until the same run as issue 469.
 
 Found: 2026-11-05, while repairing foundation review record FR-125.
 State: open for the owner's real-account execution after observer repair.
@@ -3586,6 +3616,8 @@ The agent that asked is told the answer came from an agent, when it came from th
 
 Triage (2026-11-23): waits for the owner's decision, P3, website. An answered question card shows the accepted answer inside the button row; the owner wants it on its own line. Basis: Entry: owner will rework this look later, recorded and not changed. It lives only in a screen that is being rebuilt.
 
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
+
 State: open. Checked against the code on 2026-11-15. Entry says the owner will rework this look later and it is recorded unchanged; the Deny button row in design/mock service.js still holds the answer input. Kind: waits for a decision.
 
 The owner reported this on 2026-11-13.
@@ -3613,6 +3645,8 @@ The separate lead and assigned timers have no matching setting and remain empty.
 
 Triage (2026-11-23): waits for the owner's decision, P2, website. The Mocks tab is hidden for a project with no mocks, and the owner has not said whether it should always show. Basis: design/mock/js/app.js:260 still shows the tab only for the Design stage or recorded screens. It lives only in a screen that is being rebuilt.
 
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
+
 State: open. Checked against the code on 2026-11-15. Entry states whether the Mocks tab should always show is the owner decision, and no later entry records that decision. Kind: waits for a decision.
 
 The owner reported this on 2026-11-13.
@@ -3626,6 +3660,8 @@ This is not changed.
 
 Triage (2026-11-23): waits for the owner's decision, P2, website. The owner called Subscriptions and Service settings unfinished but has not yet said what is missing. Basis: Entry text: the owner did not yet say what is missing; no later entry mentions 687. It lives only in a screen that is being rebuilt.
 
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
+
 State: open. Checked against the code on 2026-11-15. Entry records the owner has not yet said what is missing on Subscriptions or Service settings, and no later entry resolves it. Kind: waits for a decision.
 
 The owner reported this on 2026-11-13.
@@ -3637,6 +3673,8 @@ The owner did not yet say what is missing on either page.
 ## 692. Default project channel names conflict with the manager's unique-name rule.
 
 Triage (2026-11-23): waits for the owner's decision, P2, board and roles. The owner cannot manually open another channel named General or Leads because channel names must be unique per manager. Basis: packages/engine/src/board/commands.ts:39-40 still refuses with 'channel name already belongs to this manager'; entry awaits owner decision.
+
+Owner ruling (2026-11-25): A channel has an identifier and a label. The identifier is unique across the service. The label is unique within one project only, so two projects may both have a channel named General. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
 
 State: open. Checked against the code on 2026-11-15. packages/engine/src/board/commands.ts line 40 still refuses a channel name that already belongs to this manager; no later entry resolves the owner decision. Kind: waits for a decision.
 
@@ -3751,6 +3789,8 @@ The editor has no revision check or conflict warning.
 
 Triage (2026-11-23): waits for the owner's decision, P3, client api and command line. Renaming a workflow changes only its display name, not its identifier or filename; the owner must decide if that is wanted. Basis: Entry: 'This is open for the owner'; no later entry resolves it.
 
+Owner ruling (2026-11-25): Renaming a workflow changes its display name only, and its identifier stays stable. This is kept. The issue can be closed. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
+
 State: open. Checked against the code on 2026-11-15. Owner decision on separate identifier rename is still pending; no later entry resolves it. Kind: waits for a decision.
 
 This is open for the owner.
@@ -3760,6 +3800,8 @@ The owner must decide whether a separate identifier rename is needed.
 ## 731. The visual editor cannot change inner steps.
 
 Triage (2026-11-23): waits for the owner's decision, P3, website. The visual workflow editor shows a block's inner steps but cannot change them; only the API and terminal can. Basis: Entry: open for the owner; workflows.js shows only a count of inner moves. It lives only in a screen that is being rebuilt.
+
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
 
 State: open. Checked against the code on 2026-11-15. design/mock/js/screens/workflows.js line 120 only shows the count of inner moves per block with no step editing control. Kind: waits for a decision.
 
@@ -3817,6 +3859,8 @@ A bounded authenticated provider update action is still required to connect thos
 
 Triage (2026-11-23): waits for the owner's decision, P2, security. Any agent in a project can read other teams' builder worktrees through the Git read requests; the owner must rule on it. Basis: Entry: policy recorded for the owner to rule on, pinned by a wire regression; no later entry changes it.
 
+Owner ruling (2026-11-25): Agents in one project may read the builder worktrees of other teams. This is accepted and is to be documented. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
+
 State: open. Checked against the code on 2026-11-15. Policy on project-wide builder Git read access is recorded for the owner to rule on and no later entry changes it. Kind: waits for a decision.
 
 The workspace mapping added in df9e486 widened the existing project Git read scope to builder worktrees under registered teams.
@@ -3831,6 +3875,8 @@ The policy is recorded for the owner to rule on and is not changed by this revie
 ## 752. Builder integration holds the source workspace operation lane.
 
 Triage (2026-11-23): waits for the owner's decision, P2, git. Merging a builder into its team holds the builder's lock, not the team's, so another team command could collide. Basis: Entry: source lane retained for the owner's ruling; no later entry changes it.
+
+Owner ruling (2026-11-25): Merging a builder into its team holds both locks. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
 
 State: open. Checked against the code on 2026-11-15. No later entry changes the lane; the entry says it was retained for the owner's ruling, and packages/engine/src/project/README.md still describes the workspace operation lane. Kind: waits for a decision.
 
@@ -3892,6 +3938,8 @@ A subprocess probe still requires readable credential sources so its output can 
 ## 775. Automatic installs do not support inherited proxy settings.
 
 Triage (2026-11-23): waits for the owner's decision, P3, harnesses and agent running. Automatic harness installs ignore proxy settings, so they can fail behind a required proxy. Basis: No proxy handling in packages/engine/src/harnesses/programs.ts; entry asks for an owner-controlled design.
+
+Owner ruling (2026-11-25): Closed as a record, until someone needs a proxy. The place in the code where proxy support would be added is marked with a note. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
 
 State: open. Checked against the code on 2026-11-15. installerEnvironment in packages/engine/src/harnesses/programs.ts:35 builds a fixed environment and no proxy setting exists; the entry itself says the matter is open. Kind: waits for a decision.
 
@@ -3976,6 +4024,8 @@ Those checks do not create a boundary against another process running as the sam
 ## 794. Gemini's real installation still needs an owner trial.
 
 Triage (2026-11-23): waits for the owner's decision, P2, harnesses and agent running. The automatic Gemini installation has never been tried for real; the owner must try it before a release. Basis: Entry: owner must try a real installation manually; tests use fake package trees; no later entry reports the trial.
+
+Owner ruling (2026-11-25): Leave it open until the owner installs Gemini once.
 
 State: open. Checked against the code on 2026-11-15. Requires an owner trial of a real Gemini installation before release; automated tests use fake package trees and no later entry reports the trial. Kind: waits for a decision.
 
@@ -4515,6 +4565,8 @@ The session-start notices remain open with issue 946.
 
 Triage (2026-11-23): waits for the owner's decision, P1, harnesses and agent running. An agent in a project reads and writes the owner's ordinary Claude Code memory and runs the owner's hooks. Basis: Status: needs an owner decision; issue text at docs/issues.md line 20700 still cites it; no isolation setting found in packages/engine/src/harnesses.
 
+Owner ruling (2026-11-25): The recommendation of a separate settings home for each agent is not taken as written. All agents have one source for their memory files, possibly a database of memories. The aim is that a change of account, and a fleet of several machines, share the same memories. The owner noted that this may be hard to build. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
+
 Found: 2026-11-14, by reading the same chat.
 Status: open. It needs a decision by the owner.
 
@@ -4950,6 +5002,8 @@ The cause of the single failure is not known.
 
 Triage (2026-11-23): waits for the owner's decision, P2, board and roles. The reviewer default settings are saved but nothing uses them; the owner must decide whether to hide the controls. Basis: grep finds reviewDefaults only in packages/engine/src/project/commands.ts storage (lines 105, 115); no consumer.
 
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
+
 State: open. The owner must decide whether to hide these controls.
 
 I read the Default reviewers and Reviewer from another vendor controls.
@@ -5015,6 +5069,8 @@ This unit does not add a screen or a route for an unassigned agent.
 
 Triage (2026-11-23): waits for the owner's decision, P2, website. The stop message promises Resume continues from the last turn, but a fresh resume loses memory and may repeat steps. Basis: design/mock/js/live/chat.js line 229 and actions.js line 147 still say "Resume continues from its last turn.".
 
+Owner ruling (2026-11-25): The honest wording that the entry proposes is used. The words must not be colloquial. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
+
 Found: 2026-11-16, while reading the round 2 review and fresh-resume path.
 State: open for the owner's wording decision.
 
@@ -5027,6 +5083,8 @@ The screen text was not changed in this unit.
 ## 1151. Restart messages still say that running agents are stopped
 
 Triage (2026-11-23): waits for the owner's decision, P2, client api and command line. Restart confirmations still say running agents are stopped, although a restart now keeps them for recovery. Basis: packages/engine/src/api/server.ts line 51 and client/serviceControl.ts line 97 still hold the old sentence.
+
+Owner ruling (2026-11-25): The wording that the entry proposes is used. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
 
 Found: 2026-11-16, while reading the round 2 review and the restart texts.
 State: open for the owner's wording decision.
@@ -5079,6 +5137,8 @@ This unit leaves that unrelated fixture unchanged.
 
 Triage (2026-11-23): waits for the owner's decision, P3, website. The thread's "requests below" indicator leaves out a held permission card that the owner can answer. Basis: State: open for the owner's presentation decision. It lives only in a screen that is being rebuilt.
 
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
+
 Found: 2026-11-16, while reviewing the round 3b visible-change list.
 State: open for the owner's presentation decision.
 
@@ -5091,6 +5151,8 @@ This round records the difference without changing that indicator.
 
 Triage (2026-11-23): waits for the owner's decision, P3, website. A collapsed team's request count includes a held permission that its expanded agent rows do not show. Basis: State: open for the owner's presentation decision. It lives only in a screen that is being rebuilt.
 
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
+
 Found: 2026-11-16, while reviewing the round 3b visible-change list.
 State: open for the owner's presentation decision.
 
@@ -5102,6 +5164,8 @@ This round records the difference without changing the expanded status words.
 ## 1171. Repository role overrides need an owner decision about trust.
 
 Triage (2026-11-23): waits for the owner's decision, P2, security. The owner must decide whether role instruction files inside a repository may be trusted to instruct agents. Basis: State open; overrides load only from the home's .lgtm/roles folder until the owner decides.
+
+Owner ruling (2026-11-25): Role files inside a repository may instruct agents only after the owner approves that repository's role files once, and again when they change. Anything inside a repository needs approval at least once. The repository agent is the part that would handle this. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
 
 State: open.
 
@@ -5134,6 +5198,8 @@ Mechanical enforcement remains future work.
 ## 1174. Two existing documents contain details that need the owner's publication decision.
 
 Triage (2026-11-23): waits for the owner's decision, P2, documents. Two documents hold private project references and owner quotations that need the owner's decision before publication. Basis: State open; names docs/specs/2026-11-05-build-loop-design.md and docs/foundry.md; passages left unchanged.
+
+Owner ruling (2026-11-25): The private references and the quotations are removed. This was done in the clean-up of 2026-11-24.
 
 State: open.
 
@@ -5343,6 +5409,8 @@ That run used the unchanged installer test and its original timing.
 ## 1264. Genuine one-character secret prefixes delay ordinary sentence endings and tools.
 
 Triage (2026-11-23): waits for the owner's decision, P2, security. Hiding the first character of a possible secret delays some sentence endings and following tool calls; the owner must decide whether to keep this. Basis: State: waits for the owner's decision; issue 1264 is cited as still standing by an earlier fixed entry.
+
+Owner ruling (2026-11-25): Hiding the first character of a possible secret is kept, at the cost of a small delay. The issue can be closed. Because the server and the client are being rewritten in Go, this ruling is an input to that design.
 
 Found: 2026-11-16, from round-two review finding M3.
 State: waits for the owner's decision.
@@ -6085,6 +6153,8 @@ The name "Design and teams" for the loop's second phase is still to be settled.
 
 Triage (2026-11-23): waits for the owner's decision, P2, website. Two screens and the sample data tie each account to one machine, although accounts are shared by all machines. Basis: Entry state: needs the owner's decision because it changes existing screens; engine accounts code names no machine. It lives only in a screen that is being rebuilt.
 
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
+
 Found: 2026-11-20, while revising the draft Usage page in `design/mock/`.
 State: Open. It needs the owner's decision, because it changes existing screens.
 
@@ -6099,6 +6169,8 @@ The Harnesses page, the Machines page and the sample data are unchanged.
 ## 1547. `design/DESIGN.md` and the mock disagree in many places
 
 Triage (2026-11-23): waits for the owner's decision, P2, website. The design document and the screens disagree in thirteen places, and each needs a decision on which side is right. Basis: Entry state: each item needs a decision; items were reported by researchers and not all re-checked. It lives only in a screen that is being rebuilt.
+
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
 
 Found: 2026-11-20, by the screen reference research in `docs/research/2026-11-20-screen-references/`.
 State: Open. Each item needs a decision on which side is right.
@@ -6125,6 +6197,8 @@ Each research file lists its own items under "What is planned and not built".
 
 Triage (2026-11-23): waits for the owner's decision, P2, website. Many screens still carry explaining sentences, which the owner ruled out, and removing them from existing screens needs his approval. Basis: Entry: e.g. the Git sentence in design/mock/js/screens/git.js; removal needs the owner's approval. It lives only in a screen that is being rebuilt.
 
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
+
 Found: 2026-11-20, by the screen reference research.
 State: Open.
 
@@ -6137,6 +6211,8 @@ These are existing screens, so removing the sentences needs the owner's approval
 ## 1549. Home opens one request at a time, against the owner's newer rule
 
 Triage (2026-11-23): waits for the owner's decision, P3, website. Home lets only one request be open at a time, against the owner's newer rule that each item opens on its own. Basis: Entry state: needs the owner's decision; design/DESIGN.md still records the one-at-a-time rule. It lives only in a screen that is being rebuilt.
+
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
 
 Found: 2026-11-20, by the screen reference research.
 State: Open. It needs the owner's decision.
@@ -6217,6 +6293,8 @@ The two documents still name the plain command.
 
 Triage (2026-11-23): waits for the owner's decision, P2, website. Git and Files content is very narrow beside the conversation and their lists, and the layout needs the owner's choice. Basis: Entry state: needs the owner's choice; the list was moved right on 2026-11-21 but the narrow content remains. It lives only in a screen that is being rebuilt.
 
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
+
 Found: 2026-11-20, by the owner, after the conversation moved to the left of every project view in `design/mock/`.
 State: Open. It needs the owner's choice.
 
@@ -6271,6 +6349,8 @@ Git has the same gap for choosing another changed file.
 
 Triage (2026-11-23): waits for the owner's decision, P3, website. Of nineteen sprint page faults, three remain: a tall phone header, faint button edges and a request not naming its blocked task. Basis: Entry state: items 2, 9 and 19 are open and each needs the owner; the rest fixed on 2026-11-22, dates of item 12 excepted. It lives only in a screen that is being rebuilt.
 
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
+
 Found: 2026-11-21, by measuring the sprint page in `design/mock/` against the rules of the UI skills.
 State: Open in part. Items 13 to 19 come from the blind review of the same day. The new layout of the sprint page, which the owner chose on 2026-11-22, fixed items 1, 3, 8, 10, 13, 14, 15, 17 and 18 in the mock. The owner asked on 2026-11-22 for all the issues to be addressed, and items 5, 6, 7, 11 and 16 were fixed that day. Item 4 was fixed the same day, after the owner said yes. Item 12 is fixed except for the dates. Items 2, 9 and 19 are open, and each needs the owner. The notes under the list say what was done.
 
@@ -6312,6 +6392,8 @@ What was done on 2026-11-22, by item:
 ## 1566. Smaller faults the blind review of the new sprint page found
 
 Triage (2026-11-23): waits for the owner's decision, P3, website. In dark mode the attention colour and the link colour look alike, and changing the approved palette needs the owner. Basis: Entry: only item 2 is open; colours come from the approved Dusk palette in design/lgtm.fig; other items fixed or closed. It lives only in a screen that is being rebuilt.
+
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
 
 Found: 2026-11-22, by a reviewer who saw only screenshots of the sprint page in `design/mock/`.
 State: Open in part. Item 2 is open. Item 4 was closed by the owner. The others were fixed on 2026-11-22.
@@ -6364,6 +6446,8 @@ The blind review of 2026-11-22 added these points. Its table is in `design/build
 ## 1569. The blind review of the row of views and the stage line found fifteen faults
 
 Triage (2026-11-23): waits for the owner's decision, P2, website. A blind review of the bars above a project found fifteen faults; several were settled, and the rest need the owner's yes. Basis: Entry: findings 1, 3, 4, 7, 8, 10, 11, 14, 15 open plus new points after the stage line removal; both bars are approved screens. It lives only in a screen that is being rebuilt.
+
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
 
 Found: 2026-11-22, by a blind review the owner asked for.
 State: Open. Both bars are approved screens, so each change needs the owner's yes.
@@ -6461,6 +6545,8 @@ Two more points concern the port itself.
 ## 1572. The owner's review of the website on 2026-11-23
 
 Triage (2026-11-23): waits for the owner's decision, P2, website. The owner's review of every screen left eleven questions awaiting his answers and eight blind review findings open in the new port. Basis: Entry: first list done in design/mock-vite; second list waits for the owner's answers; table in design/builds/review-2026-11-23.md.
+
+Owner ruling (2026-11-25): Leave it open. The rebuild of the website decides it, because it concerns a screen that is being redesigned.
 
 Found: 2026-11-23, by the owner, who read every screen of the mock.
 State: Open. The first list is done in the port, `design/mock-vite/`. The second list waits for the owner's answers.
