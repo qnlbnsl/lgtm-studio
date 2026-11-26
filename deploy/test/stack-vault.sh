@@ -8,6 +8,8 @@
 #  - a failed phase prints no "done" line for itself and no "start" line for a later phase;
 #  - the lock is taken on the canonical path of the state folder, so a symbolic link spelling shares it.
 source "$(dirname -- "${BASH_SOURCE[0]}")/stack-testlib.sh"
+export COMPOSE_ENV_FILES=$WORK/settings.env
+: >"$COMPOSE_ENV_FILES" || exit 1
 
 ASSERTIONS=(stack_starts_twice_without_changes stack_reopens_existing_vault)
 T=stack_starts_twice_without_changes
@@ -25,6 +27,10 @@ phase ready done'
 has() { grep -Fq -- "$2" <<<"$1"; }
 phases() { grep -E '^phase ' <<<"$OUT"; }
 last_line() { grep -v '^[[:space:]]*$' <<<"$OUT" | tail -n 1; }
+launch() {
+    OUT=$( cd "$root" && envrun timeout 600 deploy/up.sh --until vault 2>&1 )
+    RC=$?
+}
 launch_ok() { launch; [[ $RC -eq 0 ]]; }
 both_up() { is_healthy postgres && vault_open; }
 no_service() { [[ -z $(dc ps -q "$1" 2>/dev/null) ]]; }
@@ -117,13 +123,13 @@ stack_new
 ln -s "$STATE" "$WORK/state-link"
 (
     cd "$root" || exit 2
-    env LGTM_STACK_STATE_DIR="$STATE" COMPOSE_PROJECT_NAME="$P" timeout 600 deploy/up.sh >"$WORK/c1.out" 2>&1
+    env LGTM_STACK_STATE_DIR="$STATE" COMPOSE_PROJECT_NAME="$P" timeout 600 deploy/up.sh --until vault >"$WORK/c1.out" 2>&1
     echo $? >"$WORK/c1.rc"
 ) &
 j1=$!
 (
     cd "$root" || exit 2
-    env LGTM_STACK_STATE_DIR="$WORK/state-link" COMPOSE_PROJECT_NAME="$P" timeout 600 deploy/up.sh >"$WORK/c2.out" 2>&1
+    env LGTM_STACK_STATE_DIR="$WORK/state-link" COMPOSE_PROJECT_NAME="$P" timeout 600 deploy/up.sh --until vault >"$WORK/c2.out" 2>&1
     echo $? >"$WORK/c2.rc"
 ) &
 j2=$!

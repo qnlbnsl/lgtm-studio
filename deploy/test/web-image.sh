@@ -165,9 +165,42 @@ web_image_serves_the_built_site() {
 }
 
 web_image_fixes_the_server_address() {
-    local build='VITE_LGTM_SERVER=/[[:space:]]+pnpm[[:space:]]+--filter[[:space:]]+@lgtm/frontend[[:space:]]+build'
-    ((built)) && docker history --no-trunc --format '{{.CreatedBy}}' "$site_image" |
-        grep -E "(^|[[:space:]])$build([[:space:]]|$)" >/dev/null
+    ((built)) && [[ -n $site_url ]] || return 1
+    (cd "$root" && node - "$site_url") <<'NODE'
+const assert = require('node:assert/strict');
+const { chromium, expect } = require('@playwright/test');
+
+async function checkServedSite() {
+    const site = new URL(process.argv[2]);
+    const getServer = new URL('/lgtm.v1.SessionService/GetServer', site).href;
+    const browser = await chromium.launch();
+    try {
+        const page = await browser.newPage();
+        let requestedOwnServer = false;
+        page.on('request', request => {
+            if (request.method() === 'POST' && request.url() === getServer) {
+                requestedOwnServer = true;
+            }
+        });
+        await page.goto(site.href, { timeout: 10_000 });
+        const address = page.getByRole('textbox', { name: 'Server address' });
+        const unavailable = page.getByRole('alert').filter({
+            hasText: `No LGTM Studio server answers at ${site.host}.`,
+        });
+        await expect(unavailable.or(address)).toBeVisible({ timeout: 10_000 });
+        assert.equal(await address.count(), 0, 'The served website asks for a server address.');
+        assert.ok(requestedOwnServer, 'The served website never sent GetServer to its own origin.');
+        await expect(unavailable).toBeVisible();
+    } finally {
+        await browser.close();
+    }
+}
+
+checkServedSite().catch(error => {
+    console.error(error.message);
+    process.exitCode = 1;
+});
+NODE
 }
 
 web_image_carries_the_rules() {
