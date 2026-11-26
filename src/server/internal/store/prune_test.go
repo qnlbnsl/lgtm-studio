@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -436,4 +438,162 @@ FOR EACH ROW EXECUTE FUNCTION prune_test_gate();`)
 			}
 		})
 	}
+}
+
+func TestPruneCountsOnlyCommittedFeedBatches(t *testing.T) {
+	s, obs, raw, now := pruneFixture(t)
+	cutoff := now.Add(-24 * time.Hour)
+	old := cutoff.Add(-time.Hour)
+	tx := pruneFixtureTx(t, raw)
+	pruneSeedFeed(t, tx, pruneBatchRows+1, "expired", old, &old)
+	pruneCommit(t, tx)
+	// The second batch deletes only the last position, and its commit rejects that deletion.
+	storetest.Exec(t, obs, fmt.Sprintf(`
+CREATE FUNCTION prune_test_reject() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF OLD.position = %d THEN
+        RAISE EXCEPTION 'fixture rejected commit' USING ERRCODE = '23514';
+    END IF;
+    RETURN OLD;
+END;
+$$;
+CREATE CONSTRAINT TRIGGER prune_test_reject AFTER DELETE ON feed
+DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION prune_test_reject();`, pruneBatchRows+1))
+
+	got, err := s.pruneBefore(t.Context(), cutoff)
+	if err == nil {
+		t.Fatal("the sweep succeeded although the commit of its second batch was rejected")
+	}
+	if got.FeedRows != pruneBatchRows || got.ReceiptRows != 0 {
+		t.Fatalf("the sweep reported %+v, want only the %d rows of the committed batch", got, pruneBatchRows)
+	}
+	pruneCheckFloor(t, obs, pruneBatchRows)
+	if remaining := storetest.Scalar[int](t, obs, "SELECT count(*) FROM feed"); remaining != 1 {
+		t.Fatalf("%d feed rows remain, want the one of the rolled-back batch", remaining)
+	}
+}
+
+const (
+	pruneReplayGateID int64 = 841941100911
+	pruneDeleteGateID int64 = 841941100912
+)
+
+// TestPruneAndReplayWaitForReceiptRowLock proves the receipt row lock in both orders through the public WriteOnce.
+func TestPruneAndReplayWaitForReceiptRowLock(t *testing.T) {
+	setup := func(t *testing.T, tracer *feedTestTracer) (*Store, *pgx.Conn, Request, time.Time) {
+		s, _, obs := feedFixture(t, tracer)
+		req := receiptRequest()
+		original := []byte("original reply")
+		if reply, err := s.WriteOnce(t.Context(), req, receiptWrite("a", original)); err != nil || !bytes.Equal(reply, original) {
+			t.Fatalf("the first write failed: %v", err)
+		}
+		// A sweep with a past cutoff only records when the receipt became visible.
+		past := storetest.Scalar[time.Time](t, obs, "SELECT clock_timestamp() - interval '24 hours'")
+		if got, err := s.pruneBefore(t.Context(), past); err != nil || got.ReceiptRows != 0 {
+			t.Fatalf("the observation sweep returned %+v and %v", got, err)
+		}
+		future := storetest.Scalar[time.Time](t, obs, "SELECT clock_timestamp() + interval '1 hour'")
+		return s, obs, req, future
+	}
+
+	t.Run("replay locks first", func(t *testing.T) {
+		var armed atomic.Bool
+		tracer := &feedTestTracer{before: func(ctx context.Context, tx pgx.Tx) error {
+			if armed.Load() {
+				_, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1::bigint)", pruneReplayGateID)
+				return err
+			}
+			return nil
+		}}
+		s, obs, req, future := setup(t, tracer)
+		release := storetest.HoldAdvisoryGate(t, obs, pruneReplayGateID)
+		defer release()
+		armed.Store(true)
+		original := []byte("original reply")
+		replay := receiptStart(t, s, t.Context(), req, func(context.Context, *Tx) ([]byte, error) {
+			return []byte("unexpected callback reply"), nil
+		})
+		var replayPID int32
+		storetest.Poll(t, "the replay holding its receipt lock at the fixture gate", func() bool {
+			pids := poolBlockedPIDs(t, obs, storetest.BigintKey(pruneReplayGateID))
+			if len(pids) == 1 {
+				replayPID = pids[0]
+			}
+			return len(pids) == 1
+		})
+		sweep := storetest.Start(t, func() pruneTestResult {
+			counts, err := s.pruneBefore(t.Context(), future)
+			return pruneTestResult{counts, err}
+		})
+		pruneWaitOnHolder(t, obs, replayPID, sweep)
+		feedRequireCount(t, obs, "receipts", 1)
+		release()
+		if got := replay.Wait(t); got.err != nil || !bytes.Equal(got.reply, original) {
+			t.Fatalf("the replay returned %q and %v, want the original reply", got.reply, got.err)
+		}
+		result := sweep.Wait(t)
+		pruneCheckResult(t, result.counts, result.err, 1, 1)
+		feedRequireCount(t, obs, "receipts", 0)
+	})
+
+	t.Run("deletion locks first", func(t *testing.T) {
+		s, obs, req, future := setup(t, nil)
+		storetest.Exec(t, obs, fmt.Sprintf(`
+CREATE FUNCTION prune_test_delete_gate() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    PERFORM pg_advisory_xact_lock(%d::bigint);
+    RETURN OLD;
+END;
+$$;
+CREATE TRIGGER prune_test_delete_gate BEFORE DELETE ON receipts
+FOR EACH ROW EXECUTE FUNCTION prune_test_delete_gate();`, pruneDeleteGateID))
+		release := storetest.HoldAdvisoryGate(t, obs, pruneDeleteGateID)
+		defer release()
+		sweep := storetest.Start(t, func() pruneTestResult {
+			counts, err := s.pruneBefore(t.Context(), future)
+			return pruneTestResult{counts, err}
+		})
+		var sweepPID int32
+		storetest.Poll(t, "the deletion holding the receipt lock at the fixture gate", func() bool {
+			pids := poolBlockedPIDs(t, obs, storetest.BigintKey(pruneDeleteGateID))
+			if len(pids) == 1 {
+				sweepPID = pids[0]
+			}
+			return len(pids) == 1
+		})
+
+		var calls atomic.Int32
+		fresh := []byte("fresh reply")
+		replay := receiptStart(t, s, t.Context(), req, func(ctx context.Context, tx *Tx) ([]byte, error) {
+			calls.Add(1)
+			return fresh, feedSave(ctx, tx, "b")
+		})
+		storetest.Poll(t, "the replay waiting for the receipt row lock", func() bool {
+			select {
+			case <-replay.Done():
+				t.Fatalf("the replay returned %q and %v before the deletion committed", replay.Result().reply, replay.Result().err)
+			default:
+			}
+			return storetest.Scalar[bool](t, obs, `
+SELECT EXISTS (
+    SELECT FROM pg_stat_activity a JOIN pg_locks l ON l.pid = a.pid
+    WHERE a.datname = current_database() AND NOT l.granted AND l.locktype = 'transactionid'
+      AND $1 = ANY (pg_blocking_pids(a.pid)) AND a.pid <> $1
+)`, sweepPID)
+		})
+		feedRequireCount(t, obs, "receipts", 1)
+		release()
+		result := sweep.Wait(t)
+		pruneCheckResult(t, result.counts, result.err, 1, 1)
+		if got := replay.Wait(t); got.err != nil || !bytes.Equal(got.reply, fresh) {
+			t.Fatalf("the retry returned %q and %v, want the fresh reply", got.reply, got.err)
+		}
+		if calls.Load() != 1 {
+			t.Fatalf("the retry ran %d new mutations, want 1", calls.Load())
+		}
+		feedRequireCount(t, obs, "receipts", 1)
+		if id := storetest.Scalar[string](t, obs, "SELECT id FROM records WHERE id = 'b'"); id != "b" {
+			t.Fatalf("the new mutation left %q", id)
+		}
+	})
 }

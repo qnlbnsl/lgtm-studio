@@ -4,6 +4,7 @@ package storetest
 import (
 	"context"
 	"crypto/rand"
+	"errors"
 	"net/netip"
 	"os"
 	"regexp"
@@ -93,7 +94,9 @@ func NewDatabase(t testing.TB, schema string) *pgxpool.Config {
 
 func dropDatabase(t testing.TB, maintenance *pgx.ConnConfig, quotedDatabase string) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// A loaded host can take longer than ten seconds to finish a forced drop, for instance behind a checkpoint.
+	// The drop returns as soon as it completes, so the longer deadline only delays a real failure.
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 	conn, err := pgx.ConnectConfig(ctx, maintenance.Copy())
 	if err != nil {
@@ -102,7 +105,14 @@ func dropDatabase(t testing.TB, maintenance *pgx.ConnConfig, quotedDatabase stri
 	}
 	defer closeConnection(conn)
 	if _, err := conn.Exec(ctx, "DROP DATABASE "+quotedDatabase+" WITH (FORCE)"); err != nil {
-		t.Error("The PostgreSQL fixture database could not be dropped.")
+		reason := "the cleanup deadline passed"
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			reason = "SQLSTATE " + pgErr.Code
+		} else if ctx.Err() == nil {
+			reason = "the connection failed"
+		}
+		t.Errorf("The PostgreSQL fixture database could not be dropped (%s).", reason)
 	}
 }
 

@@ -156,11 +156,29 @@ func feedDeferGate(ctx context.Context, tx pgx.Tx) error {
 
 func feedWaitCommit(t *testing.T, obs *pgx.Conn, writer int32) {
 	t.Helper()
-	storetest.WaitForBlock(t, obs, writer, poolBackendPID(t, obs), storetest.BigintKey(feedTestGateID))
-	if !storetest.Scalar[bool](t, obs, `
-SELECT EXISTS (SELECT FROM pg_stat_activity WHERE pid = $1 AND state = 'active' AND upper(query) = 'COMMIT')`, writer) {
-		t.Fatalf("backend %d waited for the fixture gate outside COMMIT", writer)
-	}
+	key := storetest.BigintKey(feedTestGateID)
+	blocker := poolBackendPID(t, obs)
+	// One query observes both facts, so a delayed second observation cannot miss the wait.
+	storetest.Poll(t, "the writer waiting for the fixture gate inside COMMIT", func() bool {
+		return storetest.Scalar[bool](t, obs, `
+SELECT EXISTS (
+    SELECT FROM pg_stat_activity a JOIN pg_locks l ON l.pid = a.pid
+    WHERE a.pid = $1 AND a.state = 'active' AND upper(a.query) = 'COMMIT'
+      AND l.locktype = 'advisory' AND NOT l.granted
+      AND l.classid::bigint = $3 AND l.objid::bigint = $4 AND l.objsubid = $5
+      AND $2 = ANY (pg_blocking_pids(a.pid))
+)`, writer, blocker, int64(key.ClassID), int64(key.ObjectID), int16(key.SubID))
+	})
+}
+
+// feedWaitWriterEnded waits until the writer's backend neither holds nor awaits an advisory lock
+// and the pool counts no acquired connection, since the driver disposes of a cancelled connection asynchronously.
+func feedWaitWriterEnded(t *testing.T, s *Store, obs *pgx.Conn, writer int32) {
+	t.Helper()
+	storetest.Poll(t, "the ended writer returning its pool connection and leaving every advisory lock", func() bool {
+		return s.pool.Stat().AcquiredConns() == 0 && !storetest.Scalar[bool](t, obs,
+			"SELECT EXISTS (SELECT FROM pg_locks WHERE pid = $1 AND locktype = 'advisory')", writer)
+	})
 }
 
 func feedSequenceValue(t *testing.T, obs *pgx.Conn) int64 {
@@ -455,9 +473,7 @@ func TestFeedLockDoesNotBlockUnrecordedWrites(t *testing.T) {
 				feedOutcome(t, waiter.Wait(t), "55P03", OutcomeRolledBack, true)
 			}
 			poolWaitNoOpenTransaction(t, obs)
-			if s.pool.Stat().AcquiredConns() != 0 {
-				t.Fatal("the ended writer still holds a pool connection")
-			}
+			feedWaitWriterEnded(t, s, obs, pid)
 			feedRequireCount(t, obs, "records", 1)
 			feedRequireCount(t, obs, "feed", 0)
 		})
