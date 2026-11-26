@@ -9,6 +9,8 @@ package lgtm.v1;
 
 import "google/protobuf/timestamp.proto";
 
+option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1;lgtmv1";
+
 // MapService reads the codebase map of a project and asks for a new one.
 // Every call needs a session.
 service MapService {

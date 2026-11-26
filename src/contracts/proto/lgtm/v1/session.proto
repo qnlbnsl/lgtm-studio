@@ -3,6 +3,8 @@ syntax = "proto3";
 
 package lgtm.v1;
 
+option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1;lgtmv1";
+
 // SessionService is the first service a website calls.
 //
 // A session travels in a cookie that the server sets on SignIn and clears on SignOut.

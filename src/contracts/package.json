@@ -11,7 +11,7 @@
   "scripts": {
     "generate": "buf generate",
     "lint": "buf lint",
-    "check": "buf lint && buf generate && git diff --exit-code -- gen"
+    "check": "buf lint && buf generate && go test ./... && git diff --exit-code -- gen && test -z \"$(git status --porcelain --untracked-files=all -- gen)\""
   },
   "dependencies": {
     "@bufbuild/protobuf": "catalog:"

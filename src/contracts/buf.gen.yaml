@@ -1,4 +1,4 @@
-# Generates the TypeScript the website and the mock server import.
+# Generates the TypeScript the website and the mock server import, and the Go code the server and the client import.
 # The output is JavaScript with type declarations, so Node, Vite and the type checker all read it as it is.
 version: v2
 clean: true
@@ -8,3 +8,9 @@ plugins:
     opt:
       - target=js+dts
       - import_extension=js
+  - local: ["go", "tool", "protoc-gen-go"]
+    out: gen/go
+    opt: paths=source_relative
+  - local: ["go", "tool", "protoc-gen-connect-go"]
+    out: gen/go
+    opt: paths=source_relative

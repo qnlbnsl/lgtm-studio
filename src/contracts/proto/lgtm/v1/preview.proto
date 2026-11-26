@@ -4,6 +4,8 @@ package lgtm.v1;
 
 import "google/protobuf/timestamp.proto";
 
+option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1;lgtmv1";
+
 // The running product of a project, which the Browser page of the Design view shows.
 //
 // A repository also has previews. They run in its main checkout, on the base branch. Such a

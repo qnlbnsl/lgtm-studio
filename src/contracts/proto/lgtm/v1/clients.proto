@@ -8,6 +8,8 @@ package lgtm.v1;
 
 import "google/protobuf/timestamp.proto";
 
+option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1;lgtmv1";
+
 // ClientService lists the clients of a server and lets the owner add and remove them.
 // Every call needs a session.
 service ClientService {
