@@ -383,6 +383,26 @@ func TestOpenStoreRefusesUnsafeFile(t *testing.T) {
 	mustOpen(t, f, StoreOptions{}).Close()
 }
 
+func TestOpenStoreRefusesFileOfAnotherOwner(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("this test needs the superuser, to give the file to another user")
+	}
+	f, _ := newState(t)
+	s := mustCreate(t, f, StoreOptions{})
+	if _, err := s.Append([]byte("x")); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if err := os.Chown(f.Paths().Store, 65534, -1); err != nil {
+		t.Fatal(err)
+	}
+	for name, fn := range map[string]func(*state.Folder, StoreOptions) (*Store, error){"OpenStore": OpenStore, "CreateStore": CreateStore} {
+		if s, err := fn(f, StoreOptions{}); s != nil || !errors.Is(err, ErrStoreUnsafe) {
+			t.Errorf("%s on a file of another owner gave %v, %v", name, s, err)
+		}
+	}
+}
+
 func TestOpenStoreRefusesDamagedFile(t *testing.T) {
 	random := make([]byte, 64*1024)
 	rng := rand.New(rand.NewPCG(7, 11))

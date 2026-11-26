@@ -14,6 +14,10 @@ import (
 )
 
 func receiptJSON(expires time.Time, state string, result []byte) string {
+	if state == "started" && len(result) == 0 {
+		// A valid started receipt has no result field at all.
+		return fmt.Sprintf(`{"version":1,"expires_at":%q,"state":"started"}`, expires.UTC().Format(time.RFC3339))
+	}
 	return fmt.Sprintf(`{"version":1,"expires_at":%q,"state":%q,"result":%q}`,
 		expires.UTC().Format(time.RFC3339), state, base64.StdEncoding.EncodeToString(result))
 }
@@ -277,6 +281,12 @@ func TestFinishPrunesByAge(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored := readReceipts(t, f.Paths().Store)
+	// The started receipt of 48 hours ago is valid, so it must still give Interrupted.
+	s = mustOpen(t, f, StoreOptions{})
+	if d, _, err := s.Begin(Command{ID: uid(4), ExpiresAt: now.Add(time.Hour)}, now); err != nil || d != DecisionInterrupted {
+		t.Errorf("the old started receipt gave %v, %v after the prune", d, err)
+	}
+	s.Close()
 	for _, id := range []string{uid(1), uid(5)} {
 		if _, ok := stored[id]; ok {
 			t.Errorf("the finished receipt %.12s, over a day old, was kept", id)

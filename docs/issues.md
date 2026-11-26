@@ -7636,6 +7636,8 @@ Found on 2026-11-26, by the reviews after the build of the plan `go-s1-client-lo
 5. `Paths()` on a nil folder panics.
 6. `WriteAtomic` can replace the lock file.
 7. A store file that cannot be opened for permission reasons is reported as damaged.
+8. The test that `Read` copies the payload passes even when the copy is removed, so it proves nothing yet.
+9. No test checks that the store file is opened with sync at creation. The test needs a hook in the implementation.
 
 ## 1645. Small findings of the review of the built database layer
 

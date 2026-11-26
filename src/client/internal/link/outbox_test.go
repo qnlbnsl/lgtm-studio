@@ -236,3 +236,40 @@ func TestConcurrentAppendsAreUnique(t *testing.T) {
 		}
 	}
 }
+
+func TestReadPayloadsSurviveGrowth(t *testing.T) {
+	f, _ := newState(t)
+	s := mustCreate(t, f, StoreOptions{MaxEvents: 100000, MaxBytes: 1 << 30})
+	if _, err := s.Append([]byte("first payload")); err != nil {
+		t.Fatal(err)
+	}
+	early, err := s.Read(0, 1)
+	if err != nil || len(early) != 1 {
+		t.Fatalf("Read gave %v, %v", early, err)
+	}
+	// Free the page of the event and write other bytes, so that a kept bbolt slice would change.
+	if err := s.Ack(1); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 20; i++ {
+		if _, err := s.Append(bytes.Repeat([]byte{byte('A' + i)}, 13)); err != nil {
+			t.Fatal(err)
+		}
+		if err := s.Ack(uint64(i + 2)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if string(early[0].Payload) != "first payload" {
+		t.Fatalf("an earlier result changed to %q after the page was reused", early[0].Payload)
+	}
+	// Enough data to grow and remap the file several times.
+	big := bytes.Repeat([]byte{'g'}, 64*1024)
+	for i := 0; i < 200; i++ {
+		if _, err := s.Append(big); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if string(early[0].Payload) != "first payload" {
+		t.Fatalf("an earlier result changed to %q", early[0].Payload)
+	}
+}
