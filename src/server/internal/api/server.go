@@ -130,7 +130,7 @@ func NewHandler(options Options) http.Handler {
 	guard := connect.WithRequestGate(r.sessionGate)
 	if options.Session != nil {
 		_, handler := lgtmv1connect.NewSessionServiceHandler(options.Session,
-			protocol, guard, connect.WithReadMaxBytes(sessionReadMaxBytes), sessionDecoding())
+			protocol, guard, connect.WithReadMaxBytes(sessionReadMaxBytes), redactMalformedJSON(messageMalformed))
 		r.register(handler, lgtmv1connect.SessionServiceGetServerProcedure,
 			lgtmv1connect.SessionServiceSignInProcedure, lgtmv1connect.SessionServiceSignOutProcedure)
 	}
@@ -148,7 +148,14 @@ func NewHandler(options Options) http.Handler {
 	}
 	r.link = r.unsupported
 	if options.Link != nil {
-		_, handler := linkv1connect.NewLinkServiceHandler(options.Link, protocol, connect.WithReadMaxBytes(linkReadLimit))
+		joinDecoding := connect.WithConditionalHandlerOptions(func(spec connect.Spec) []connect.HandlerOption {
+			if spec.Procedure == linkv1connect.LinkServiceJoinProcedure {
+				return []connect.HandlerOption{redactMalformedJSON(messageMalformedJoin)}
+			}
+			return nil
+		})
+		_, handler := linkv1connect.NewLinkServiceHandler(options.Link,
+			protocol, connect.WithReadMaxBytes(linkReadLimit), joinDecoding)
 		r.link = transport.WithWriteDeadline(handler)
 	}
 	return r
