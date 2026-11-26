@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.lgtmstudio.client</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>@LGTM_CLIENT_BIN@</string>
+        <string>run</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>LGTM_CLIENT_STATE_DIR</key>
+        <string>@LGTM_CLIENT_STATE_DIR@</string>
+        <key>PATH</key>
+        <string>@LGTM_CLIENT_PATH@</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+    <key>StandardOutPath</key>
+    <string>@LGTM_CLIENT_LOG@</string>
+    <key>StandardErrorPath</key>
+    <string>@LGTM_CLIENT_LOG@</string>
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

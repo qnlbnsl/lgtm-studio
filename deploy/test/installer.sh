@@ -232,6 +232,13 @@ CLIENT
         exit 0
         ;;
     launchctl)
+        # Added for item 3: no login session, and a failing bootout, each steered by a variable.
+        if [[ ${1:-} == print && ${2:-} =~ ^gui/[0-9]+$ ]]; then
+            [[ -z ${SHIM_NO_GUI_SESSION:-} ]] || exit 113
+        fi
+        if [[ ${1:-} == bootout && -n ${SHIM_BOOTOUT_FAIL:-} ]]; then
+            exit 1
+        fi
         if [[ ${1:-} == print && ${2:-} == */dev.lgtmstudio.client ]]; then
             echo 'state = running'
         fi
@@ -821,8 +828,177 @@ test_usage_on_unknown_argument() {
 }
 
 # ---------------------------------------------------------------------------
+# Work item 3: the installer on macOS. These tests run with SHIM_UNAME=Darwin and SHIM_UID=501,
+# so an installer that takes the user identifier from anywhere but `id -u` fails them.
+# ---------------------------------------------------------------------------
 
-printf '1..21\n'
+LABEL=dev.lgtmstudio.client
+MAC_UID=501
+
+agent_text_equals_template() { # <state folder> <path value> <agent file>
+    local t expected
+    t=$(cat "$plist_template") || return 1
+    t=${t//@LGTM_CLIENT_BIN@/$(bin)}
+    t=${t//@LGTM_CLIENT_STATE_DIR@/$1}
+    t=${t//@LGTM_CLIENT_PATH@/$2}
+    t=${t//@LGTM_CLIENT_LOG@/$H/Library/Logs/lgtm-client.log}
+    expected=$T/expected.plist
+    printf '%s\n' "$t" >"$expected"
+    cmp -s "$expected" "$3"
+}
+
+no_manager_lines() { ! grep -qE '^(systemctl|loginctl) ' "$LOG"; }
+
+test_installs_macos_launch_agent() {
+    begin installs_macos_launch_agent
+    local first_launchctl j p bo bs en pr
+    local gui=gui/$MAC_UID
+    fresh
+    run SHIM_UNAME=Darwin SHIM_UID=$MAC_UID
+    check 'the exit code is 0' rc_is 0
+    check 'the agent file exists' test -f "$(agent)"
+    check 'the agent file equals the template with its four placeholders replaced' \
+        agent_text_equals_template "$(default_state)" "$T/shims:$T/tools" "$(agent)"
+    check 'the program exists with mode 0755' mode_is "$(bin)" 755
+    check 'no template placeholder is left in the agent file' bash -c '! grep -q "@LGTM_" "$1"' _ "$(agent)"
+    check 'the agent folder holds the agent file and nothing else' \
+        test "$(find "$H/Library/LaunchAgents" -type f 2>/dev/null | wc -l)" -eq 1
+    first_launchctl=$(grep -m1 -E '^launchctl ' "$LOG")
+    check "the first launchctl call is print $gui" test "$first_launchctl" = "launchctl print $gui"
+    j=$(line_of_re '^client join .* installed=absent$')
+    p=$(line_of "launchctl print $gui")
+    bo=$(line_of "launchctl bootout $gui/$LABEL")
+    bs=$(line_of "launchctl bootstrap $gui $(agent)")
+    en=$(line_of "launchctl enable $gui/$LABEL")
+    pr=$(grep -nxF -- "launchctl print $gui/$LABEL" "$LOG" | tail -n1 | cut -d: -f1)
+    check 'the join line ends with installed=absent' test -n "$j"
+    check 'print, then the join, then bootout, bootstrap and enable run in that order' \
+        test -n "$p" -a -n "$bo" -a -n "$bs" -a -n "$en" -a -n "$j" \
+        -a "${p:-0}" -lt "${j:-0}" -a "${j:-0}" -lt "${bo:-0}" -a "${bo:-0}" -lt "${bs:-0}" -a "${bs:-0}" -lt "${en:-0}"
+    check 'the wait reads the agent state after the bootstrap' test -n "$pr" -a "${bs:-0}" -lt "${pr:-0}"
+    check 'no systemctl and no loginctl line exists' no_manager_lines
+    check 'the output says what was built' out_has 'built lgtm-client 0.0.0-'
+    check 'the output does not hold the token' out_lacks "$TOKEN"
+    check 'no file of the test folder holds the token' \
+        bash -c '! grep -rIlF -- "$1" "$2" 2>/dev/null | grep -q .' _ "$TOKEN" "$T"
+
+    fresh
+    run SHIM_UNAME=Darwin SHIM_UID=$MAC_UID SHIM_JOIN_EXIT=1
+    check 'with a refused join the join was attempted' has_re '^client join '
+    check 'with a refused join the exit code is 1' rc_is 1
+    check 'with a refused join no agent file exists' test ! -e "$(agent)"
+    check 'with a refused join the program does not exist' test ! -e "$(bin)"
+    check 'with a refused join nothing was bootstrapped' no_re '^launchctl (bootstrap|enable) '
+
+    fresh
+    run SHIM_UNAME=Darwin SHIM_UID=$MAC_UID SHIM_NO_GUI_SESSION=1
+    check 'without a login session the exit code is 1' rc_is 1
+    check 'without a login session the output says macOS starts the client at login' \
+        out_has 'macOS starts lgtm-client at login; run install-client.sh from a logged-in session.'
+    check 'without a login session the probe was made' has_line "launchctl print $gui"
+    check 'without a login session nothing is built' no_re '^go '
+    check 'without a login session nothing is joined or asked for' no_re '^client join | exec '
+    check 'without a login session nothing is installed' nothing_installed
+    check 'without a login session nothing is bootstrapped' no_re '^launchctl (bootout|bootstrap|enable) '
+    end
+}
+
+# plist_checks <agent file> <state folder> <path value> <log file> checks the parsed agent.
+plist_checks() {
+    local file=$1
+    if command -v plutil >/dev/null 2>&1; then
+        plutil -lint "$file" >/dev/null 2>&1 || return 1
+    fi
+    command -v python3 >/dev/null 2>&1 || return 0
+    python3 -I - "$file" "$(bin)" "$2" "$3" "$4" <<'PY'
+import plistlib, sys
+path, binary, state, search, log = sys.argv[1:6]
+with open(path, "rb") as handle:
+    d = plistlib.load(handle)
+keep = d.get("KeepAlive")
+env = d.get("EnvironmentVariables")
+checks = [
+    d.get("Label") == "dev.lgtmstudio.client",
+    d.get("ProgramArguments") == [binary, "run"],
+    isinstance(env, dict) and env.get("LGTM_CLIENT_STATE_DIR") == state and env.get("PATH") == search,
+    d.get("RunAtLoad") is True,
+    isinstance(keep, dict) and keep.get("SuccessfulExit") is False and len(keep) == 1,
+    d.get("ThrottleInterval") == 5,
+    d.get("StandardOutPath") == log,
+    d.get("StandardErrorPath") == log,
+    d.get("ProcessType") == "Background",
+]
+sys.exit(0 if all(checks) else 1)
+PY
+}
+
+test_macos_agent_parses() {
+    begin macos_agent_parses
+    fresh
+    run SHIM_UNAME=Darwin SHIM_UID=$MAC_UID
+    check 'the run reached the install' rc_is 0
+    check 'the agent file exists' test -f "$(agent)"
+    if ! command -v plutil >/dev/null 2>&1 && ! command -v python3 >/dev/null 2>&1; then
+        printf 'ok %s - macos_agent_parses # SKIP no parser\n' "$TESTNO"
+        return 0
+    fi
+    check 'the rendered agent file parses with the expected keys' \
+        plist_checks "$(agent)" "$(default_state)" "$T/shims:$T/tools" "$H/Library/Logs/lgtm-client.log"
+    end
+}
+
+test_macos_remove_boots_out_agent() {
+    begin macos_remove_boots_out_agent
+    local gui=gui/$MAC_UID st before after m tool
+    fresh
+    run SHIM_UNAME=Darwin SHIM_UID=$MAC_UID
+    check 'the first run succeeds and installs the agent' test "$RC" -eq 0 -a -f "$(agent)" -a -f "$(bin)"
+    st=$(default_state)
+    before=$(snap "$st")
+    m=$(mark)
+    run SHIM_UNAME=Darwin SHIM_UID=$MAC_UID LGTM_CLIENT_STATE_DIR="$T/elsewhere" -- --remove
+    after=$(snap "$st")
+    check '--remove exits 0 and ignores the variable' rc_is 0
+    check 'launchctl bootout names the agent' test -n "$(since "$m" | grep -xF "launchctl bootout $gui/$LABEL")"
+    check 'the agent file is gone' test ! -e "$(agent)"
+    check 'the program is gone' test ! -e "$(bin)"
+    check 'the state folder and its files are unchanged' test "$before" = "$after"
+    check 'no systemctl and no loginctl line exists' no_manager_lines
+    check 'a removal builds and joins nothing' test -z "$(since "$m" | grep -E '^go |exec |^client join ')"
+
+    fresh
+    run SHIM_UNAME=Darwin SHIM_UID=$MAC_UID
+    for tool in go docker curl jq; do rm -f -- "$T/shims/$tool"; done
+    run SHIM_UNAME=Darwin SHIM_UID=$MAC_UID -- --remove
+    check '--remove without build tools exits 0' rc_is 0
+    check '--remove without build tools removes the agent file and the program' \
+        test ! -e "$(agent)" -a ! -e "$(bin)"
+
+    fresh
+    run SHIM_UNAME=Darwin SHIM_UID=$MAC_UID
+    run SHIM_UNAME=Darwin SHIM_UID=$MAC_UID SHIM_BOOTOUT_FAIL=1 -- --remove
+    check 'a failed bootout of a loaded agent exits 1' rc_is 1
+    end
+}
+
+test_refuses_unsupported_system() {
+    begin refuses_unsupported_system
+    local system
+    for system in FreeBSD MINGW64_NT-10.0 DarwinX; do
+        fresh
+        run SHIM_UNAME="$system"
+        check "[$system] the exit code is 1" rc_is 1
+        check "[$system] the output says Linux and macOS only" out_has 'Linux and macOS only'
+        check "[$system] nothing is built" no_re '^go '
+        check "[$system] no service manager is called" no_re '^(systemctl|loginctl|launchctl) '
+        check "[$system] nothing is installed" nothing_installed
+    done
+    end
+}
+
+# ---------------------------------------------------------------------------
+
+printf '1..25\n'
 test_installs_linux_user_service
 test_asks_server_for_hosts_server_token
 test_joins_before_service_starts
@@ -844,6 +1020,10 @@ test_rerun_uses_state_folder_of_installed_unit
 test_remove_stops_and_deletes_service
 test_remove_needs_no_build_tools
 test_usage_on_unknown_argument
+test_installs_macos_launch_agent
+test_macos_agent_parses
+test_macos_remove_boots_out_agent
+test_refuses_unsupported_system
 
 printf '%s passed, %s failed\n' "$PASSED" "$FAILCOUNT"
 ((FAILCOUNT == 0))
