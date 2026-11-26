@@ -53,19 +53,19 @@ type session struct {
 }
 
 func (s *session) send(msg *linkv1.OpenRequest) error {
-	return streamError(s.stream.Send(msg), false)
+	return streamError(s.stream.Send(msg))
 }
 
 func (s *session) receive() (*linkv1.OpenResponse, error) {
 	msg, err := s.stream.Receive()
-	return msg, streamError(err, true)
+	return msg, s.receiveError(err, true)
 }
 
 func (s *session) close() error {
 	s.closeOnce.Do(func() {
 		s.cancel()
-		sendErr := streamError(s.closeRequest(), false)
-		receiveErr := streamError(s.stream.CloseResponse(), false)
+		sendErr := streamError(s.closeRequest())
+		receiveErr := streamError(s.stream.CloseResponse())
 		s.closeErr = errors.Join(sendErr, receiveErr)
 	})
 	return s.closeErr
@@ -79,6 +79,9 @@ func openSession(ctx context.Context, client linkv1connect.LinkServiceClient, se
 	}
 	if len(server.MachineID) != 36 || len(server.PublicKey) != ed25519.PublicKeySize || credential == nil {
 		return nil, errInvalidCredentials
+	}
+	if err := enroll.CheckFrameDebug(); err != nil {
+		return nil, err
 	}
 
 	streamCtx, cancel := context.WithCancel(ctx)
@@ -146,14 +149,11 @@ func (s *session) exchange(ctx context.Context, msg *linkv1.OpenRequest, verifie
 	}
 	err := s.stream.Send(msg)
 	var reply *linkv1.OpenResponse
+	var receiveErr error
 	if err == nil || errors.Is(err, io.EOF) {
 		// Connect reports an early server refusal on receive, even if send
 		// is the first operation to see that the stream ended.
-		response, receiveErr := s.stream.Receive()
-		reply = response
-		if receiveErr != nil {
-			err = receiveErr
-		}
+		reply, receiveErr = s.stream.Receive()
 	}
 	if !timer.Stop() {
 		return nil, context.DeadlineExceeded
@@ -161,7 +161,10 @@ func (s *session) exchange(ctx context.Context, msg *linkv1.OpenRequest, verifie
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	return reply, streamError(err, verified)
+	if receiveErr != nil {
+		return reply, s.receiveError(receiveErr, verified)
+	}
+	return reply, streamError(err)
 }
 
 func validateWelcome(welcome *linkv1.Welcome) error {
@@ -171,17 +174,14 @@ func validateWelcome(welcome *linkv1.Welcome) error {
 		!welcome.GetServerTime().IsValid() {
 		return errInvalidWelcome
 	}
-	if welcome.GetLinkRevision() != linkRevision {
-		return terminalRefusal{Code: "link_revision_mismatch"}
-	}
 	switch state.GetApproval() {
 	case linkv1.Approval_APPROVAL_APPROVED:
 		token := welcome.GetConnectionToken()
-		if !utf8.ValidString(token) || strings.ContainsRune(token, 0) {
+		if token == "" || !utf8.ValidString(token) || strings.ContainsRune(token, 0) {
 			return errInvalidWelcome
 		}
 	case linkv1.Approval_APPROVAL_WAITING:
-		if welcome.GetConnectionToken() != "" {
+		if name != "" || welcome.GetConnectionToken() != "" {
 			return errInvalidWelcome
 		}
 	case linkv1.Approval_APPROVAL_REMOVED:
@@ -190,10 +190,27 @@ func validateWelcome(welcome *linkv1.Welcome) error {
 		state.Approval = linkv1.Approval_APPROVAL_WAITING
 		welcome.ConnectionToken = ""
 	}
+	if welcome.GetLinkRevision() != linkRevision {
+		return terminalRefusal{Code: "link_revision_mismatch"}
+	}
 	return nil
 }
 
-func streamError(err error, verified bool) error {
+func (s *session) receiveError(err error, verified bool) error {
+	if verified && connect.CodeOf(err) == connect.CodeFailedPrecondition && connect.IsWireError(err) {
+		// Connect's error metadata merges leading headers with trailing metadata.
+		reasons := s.stream.ResponseTrailer().Values("Lgtm-Link-Refusal")
+		if len(reasons) == 1 {
+			switch reasons[0] {
+			case "unknown_machine", "link_revision_mismatch":
+				return terminalRefusal{Code: reasons[0]}
+			}
+		}
+	}
+	return streamError(err)
+}
+
+func streamError(err error) error {
 	switch {
 	case err == nil:
 		return nil
@@ -210,15 +227,8 @@ func streamError(err error, verified bool) error {
 	if !errors.As(err, &remote) {
 		return errStream
 	}
-	code := remote.Code()
-	if verified && code == connect.CodeFailedPrecondition {
-		switch reason := remote.Meta().Get("Lgtm-Link-Refusal"); reason {
-		case "unknown_machine", "link_revision_mismatch":
-			return terminalRefusal{Code: reason}
-		}
-	}
 	// Preserve the status without retaining any peer text, metadata or details.
-	return connect.NewError(code, errStream)
+	return connect.NewError(remote.Code(), errStream)
 }
 
 // proofText builds the signed bytes from the label, identifier and two nonces.
