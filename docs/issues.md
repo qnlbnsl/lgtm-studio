@@ -7607,3 +7607,20 @@ If a machine's state folder is copied and both copies run, both send events unde
 The server's acknowledgement of one copy's report can then make the other copy forget a different report.
 Wave 1 does not detect this, like the restore in issue 1641.
 A later wave needs either an acknowledgement that names the report itself, or a way to detect a second copy.
+
+## 1643. Findings of the review of the built contract that wait for the freeze of the link
+
+Found on 2026-11-26, by the review after the build of sprint 0. The report is `.plans/plans/go-s0-contract/attack/post-build-review.md`. Nothing here is fixed.
+
+The link is frozen when the plans `go-s3-server-machines` and `go-s3-client-link` have cleared review. The Contract team settles these findings before that.
+
+1. **The tests hold the shape of the link and none of its rules** (major). A rule that lives in a comment can be wrong, and every contract test passes. The rules are proven by the tests of the server, of the client and of `src/linktest/` in sprint 3.
+2. **The word "final" for a code does not say what a client does, and `event_gap` is called final although a later stream continues past it** (major).
+3. `COMMAND_OUTCOME_EXPIRED` has two meanings, and the edge of the retention time can produce a false one.
+4. A pending `SetState` has no end, and a removal names no end for pending commands.
+5. The removal rule does not say whether a pending event of a removed machine is acknowledged.
+6. The value rules do not list the numeric limits that the comments of the fields give.
+7. The handshake answers about a machine before it checks the machine's signature.
+8. A machine that is approved on a live stream never gets a connection token.
+9. A lost reply to `Join` cannot be recovered after the token expired.
+10. Nothing tells the client to give up a stream that went silent.
