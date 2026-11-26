@@ -1,4 +1,3 @@
--- This file is a stub of the test writer. The builder of item 3 owns it.
 CREATE TABLE web_sessions (
     verifier bytea PRIMARY KEY CHECK (octet_length(verifier) = 32),
     created_at timestamptz NOT NULL CHECK (isfinite(created_at)),
