@@ -40,6 +40,7 @@ const (
 	lineListenAddr      = "The LGTM_LISTEN_ADDR setting is invalid."
 	linePublicURL       = "The LGTM_PUBLIC_URL setting is invalid."
 	lineOrigins         = "The LGTM_ALLOWED_ORIGINS setting is invalid."
+	lineLinkCleanup     = "The server could not clear stale link connections."
 	lineFeed            = "The server could not follow its PostgreSQL change feed."
 	lineListen          = "The server could not listen on LGTM_LISTEN_ADDR."
 )
@@ -83,24 +84,33 @@ func (e *StartupError) Lines() []string { return append([]string(nil), e.lines..
 type Server struct {
 	addr      net.Addr
 	publicKey ed25519.PublicKey
-	// identity is the validated link identity, which the later link handlers take from here.
-	identity vault.LinkIdentity
-	cancel   context.CancelCauseFunc
-	done     chan struct{}
-	err      error
+	cancel    context.CancelCauseFunc
+	done      chan struct{}
+	err       error
 }
 
 type phaseBudgets struct {
 	admission, migration, prerequisites, probe time.Duration
 }
 
+// LinkSeams lets tests observe handshake and acknowledgement phases.
+type LinkSeams struct {
+	AfterProof, AfterAdmission func(context.Context, string)
+	BeforeEventAck             func(context.Context, string, uint64)
+}
+
 // Start checks the prerequisites in order and returns a listening server, or a *StartupError.
 // The server stops when ctx ends, when it loses its instance lock or when Close is called.
 func Start(ctx context.Context, cfg config.Config, log *slog.Logger) (*Server, error) {
-	return start(ctx, cfg, log, phaseBudgets{
+	return StartWithLinkSeams(ctx, cfg, log, LinkSeams{})
+}
+
+// StartWithLinkSeams starts the server with optional link callbacks for tests.
+func StartWithLinkSeams(ctx context.Context, cfg config.Config, log *slog.Logger, seams LinkSeams) (*Server, error) {
+	return startWithLinkSeams(ctx, cfg, log, phaseBudgets{
 		admission: admissionBudget, migration: migrationBudget,
 		prerequisites: prerequisitesBudget, probe: probeBudget,
-	})
+	}, seams)
 }
 
 // startup carries the state of one start, so a failure can release what was taken in reverse order.
@@ -118,6 +128,10 @@ type startup struct {
 }
 
 func start(ctx context.Context, cfg config.Config, log *slog.Logger, budgets phaseBudgets) (*Server, error) {
+	return startWithLinkSeams(ctx, cfg, log, budgets, LinkSeams{})
+}
+
+func startWithLinkSeams(ctx context.Context, cfg config.Config, log *slog.Logger, budgets phaseBudgets, seams LinkSeams) (*Server, error) {
 	if log == nil {
 		log = slog.New(slog.DiscardHandler)
 	}
@@ -125,7 +139,7 @@ func start(ctx context.Context, cfg config.Config, log *slog.Logger, budgets pha
 	life, cancel := context.WithCancelCause(ctx)
 	st := &startup{ctx: ctx, life: life, cancel: cancel, budgets: budgets, usable: passwordErr == nil}
 
-	server, lines := st.run(cfg, password, log)
+	server, lines := st.run(cfg, password, log, seams)
 	if lines != nil {
 		st.release()
 		return nil, &StartupError{lines: lines}
@@ -134,7 +148,7 @@ func start(ctx context.Context, cfg config.Config, log *slog.Logger, budgets pha
 }
 
 // run performs the phases. It returns the diagnostic sentences of a refused start.
-func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logger) (*Server, []string) {
+func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logger, seams LinkSeams) (*Server, []string) {
 	// The database phase ends before session reconciliation, so each of its failures reports both.
 	if cfg.Postgres == nil {
 		return nil, st.unreconciled(lineDatabaseConfig)
@@ -160,7 +174,7 @@ func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logg
 	go st.watchLock()
 
 	migration, cancelMigration := context.WithTimeout(st.life, st.budgets.migration)
-	err = s.Migrate(migration, auth.Migrations(), vault.Migrations(), machines.Migrations())
+	err = s.Migrate(migration, auth.Migrations(), vault.Migrations(), machines.Migrations(), link.Migrations())
 	cancelMigration()
 	if err != nil {
 		return nil, st.unreconciled(st.interrupted(migration, lineMigrate))
@@ -210,6 +224,14 @@ func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logg
 		return nil, []string{vaultLine(err)}
 	}
 
+	registry := machines.NewRegistry()
+	hub := link.NewHub()
+	state := link.NewState(s, registry, hub)
+	if err := state.ClearConnections(prerequisites); err != nil {
+		log.Error(lineLinkCleanup)
+		return nil, []string{lineLinkCleanup}
+	}
+
 	report := func(err error) {
 		if err != nil {
 			log.Warn(storeReportMessage, "error", err.Error())
@@ -229,14 +251,21 @@ func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logg
 
 	sessions := auth.NewSessions(s, password)
 	public := identity.SigningKey.Public().(ed25519.PublicKey)
-	registry := machines.NewRegistry()
 	tokens := machines.NewTokens(s, registry, machines.Issuer{PublicURL: cfg.PublicURL, ServerKey: public})
+	streamService := link.NewStreamingService(st.life, s, tokens, registry, state, hub, identity.SigningKey, link.Options{
+		PrivateStack: cfg.AllowPrivateStack,
+		Logger:       log,
+		Seams:        link.Seams(seams),
+	})
+	st.workers.Go(func() { streamService.Run(st.life, follower) })
+	clients := machines.NewService(s, sessions, registry, tokens).
+		WithFollower(follower).WithWatchShutdown(st.life).WithLink(state)
 	handler := api.NewHandler(api.Options{
 		Sessions: sessions,
 		Origins:  origins,
 		Session:  api.NewSessionService(password, sessions),
-		Clients:  machines.NewService(s, sessions, registry, tokens).WithFollower(follower).WithWatchShutdown(st.life),
-		Link:     link.NewService(s, tokens, public),
+		Clients:  clients,
+		Link:     streamService,
 	})
 
 	// The last probe comes immediately before the listener opens.
@@ -266,7 +295,6 @@ func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logg
 	server := &Server{
 		addr:      listener.Addr(),
 		publicKey: append(ed25519.PublicKey(nil), public...),
-		identity:  identity,
 		cancel:    st.cancel,
 		done:      make(chan struct{}),
 	}

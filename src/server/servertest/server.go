@@ -32,7 +32,14 @@ import (
 type Options struct {
 	// Password is the website password the server starts with.
 	Password string
+	// Log receives application diagnostics in JavaScript Object Notation when set.
+	Log io.Writer
+	// LinkSeams lets tests observe link phases on start and after restart.
+	LinkSeams LinkSeams
 }
+
+// LinkSeams lets tests observe handshake and acknowledgement phases.
+type LinkSeams app.LinkSeams
 
 // Server is a running fixture. Its client speaks cleartext HTTP/2 and keeps its cookies across restarts.
 type Server struct {
@@ -43,10 +50,12 @@ type Server struct {
 	env       map[string]string
 	cfg       config.Config
 	transport *http.Transport
+	log       *slog.Logger
+	linkSeams LinkSeams
 	app       *app.Server
 }
 
-// clientTimeout bounds one request of the fixture's client.
+// clientTimeout bounds one request from the fixture's website client.
 const clientTimeout = 10 * time.Second
 
 // Start provisions a database and an OpenBao fixture, starts the application on a loopback port
@@ -92,12 +101,18 @@ func Start(t testing.TB, options Options) *Server {
 	if err != nil {
 		t.Fatal("The fixture could not create its cookie jar.")
 	}
+	output := options.Log
+	if output == nil {
+		output = io.Discard
+	}
 	s := &Server{
 		URL:        "http://" + listen,
 		HTTPClient: &http.Client{Transport: transport, Jar: jar, Timeout: clientTimeout},
 		env:        env,
 		cfg:        cfg,
 		transport:  transport,
+		log:        slog.New(slog.NewJSONHandler(output, nil)),
+		linkSeams:  options.LinkSeams,
 	}
 	// Registered after the database and the vault, so it runs before their cleanup.
 	t.Cleanup(func() { s.stop() })
@@ -116,9 +131,9 @@ func (s *Server) Clients(t testing.TB) lgtmv1connect.ClientServiceClient {
 	return lgtmv1connect.NewClientServiceClient(s.HTTPClient, s.URL)
 }
 
-// Link returns a machine-link client that sends no website cookies.
+// Link returns a machine-link client that sends no website cookies and uses caller deadlines.
 func (s *Server) Link() linkv1connect.LinkServiceClient {
-	client := &http.Client{Transport: s.transport, Timeout: clientTimeout}
+	client := &http.Client{Transport: s.transport}
 	return linkv1connect.NewLinkServiceClient(client, s.URL)
 }
 
@@ -143,8 +158,7 @@ func (s *Server) Environment() map[string]string {
 
 func (s *Server) launch(t testing.TB) {
 	t.Helper()
-	log := slog.New(slog.NewJSONHandler(io.Discard, nil))
-	server, err := app.Start(t.Context(), s.cfg, log)
+	server, err := app.StartWithLinkSeams(t.Context(), s.cfg, s.log, app.LinkSeams(s.linkSeams))
 	if err != nil {
 		t.Fatal("The fixture application did not start.")
 	}
