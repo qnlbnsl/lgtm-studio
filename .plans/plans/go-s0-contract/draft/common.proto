@@ -1,0 +1,34 @@
+// What every Watch call of this contract shares.
+//
+// Protocol Buffers has no generic message, so each Watch call has its own response message.
+// Every such message has the same fields, with the same names and the same numbers:
+//
+//   oneof change {
+//     <Record>List all = 1;    // Every record the caller asked for. Always the first message.
+//     <Record> saved = 2;      // One record that is new or that changed, as it is now.
+//     string removed_id = 3;   // The id of one record that is gone.
+//   }
+//   FeedPosition position = 4; // Where this message stands in the server's change feed.
+//
+// The test src/contracts/watchshape_test.go checks every Watch call against this shape.
+// WatchMap and WatchPreviews do not follow it yet. They change when their services are built,
+// and that raises the contract revision.
+//
+// A server ends a Watch call whose caller fell too far behind with the code `aborted`.
+// The caller then opens the call again and receives everything again.
+syntax = "proto3";
+
+package lgtm.v1;
+
+option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1;lgtmv1";
+
+// FeedPosition is a place in the server's change feed.
+//
+// A position only grows, and it orders every change on one server. Positions have gaps,
+// because the feed holds the changes of every kind of record. Positions of two servers, or of
+// one server whose database was replaced, cannot be compared.
+message FeedPosition {
+  // The first message of a Watch call carries the highest position that its records include.
+  // Every later message carries the position of its own change, which is higher.
+  uint64 value = 1;
+}

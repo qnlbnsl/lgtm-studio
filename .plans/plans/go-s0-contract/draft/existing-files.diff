@@ -1,0 +1,64 @@
+--- a/src/contracts/proto/lgtm/v1/clients.proto
++++ b/src/contracts/proto/lgtm/v1/clients.proto
+@@ -7,6 +7,9 @@
+ package lgtm.v1;
+ 
+ import "google/protobuf/timestamp.proto";
++import "lgtm/v1/common.proto";
++
++option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1;lgtmv1";
+ 
+ // ClientService lists the clients of a server and lets the owner add and remove them.
+ // Every call needs a session.
+@@ -24,7 +27,8 @@
+   rpc RenameClient(RenameClientRequest) returns (RenameClientResponse);
+   // ScanClientHarnesses asks an online client to look for harnesses again. The result arrives on WatchClients.
+   rpc ScanClientHarnesses(ScanClientHarnessesRequest) returns (ScanClientHarnessesResponse);
+-  // ReconnectClient asks the server to try an offline client again. The result arrives on WatchClients.
++  // ReconnectClient restarts a client that is connected. A client that is not connected is refused
++  // with `failed_precondition`, because the server never dials a machine.
+   rpc ReconnectClient(ReconnectClientRequest) returns (ReconnectClientResponse);
+   // RemoveClient disconnects a client and forgets it. It also refuses a client that waits for approval.
+   rpc RemoveClient(RemoveClientRequest) returns (RemoveClientResponse);
+@@ -91,6 +95,8 @@
+     // The id of one client that is gone.
+     string removed_id = 3;
+   }
++  // Where this message stands in the server's change feed. See common.proto.
++  FeedPosition position = 4;
+ }
+ 
+ message ClientList {
+--- a/src/contracts/proto/lgtm/v1/map.proto
++++ b/src/contracts/proto/lgtm/v1/map.proto
+@@ -9,6 +9,8 @@
+ 
+ import "google/protobuf/timestamp.proto";
+ 
++option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1;lgtmv1";
++
+ // MapService reads the codebase map of a project and asks for a new one.
+ // Every call needs a session.
+ service MapService {
+--- a/src/contracts/proto/lgtm/v1/preview.proto
++++ b/src/contracts/proto/lgtm/v1/preview.proto
+@@ -4,6 +4,8 @@
+ 
+ import "google/protobuf/timestamp.proto";
+ 
++option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1;lgtmv1";
++
+ // The running product of a project, which the Browser page of the Design view shows.
+ //
+ // A repository also has previews. They run in its main checkout, on the base branch. Such a
+--- a/src/contracts/proto/lgtm/v1/session.proto
++++ b/src/contracts/proto/lgtm/v1/session.proto
+@@ -3,6 +3,8 @@
+ 
+ package lgtm.v1;
+ 
++option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1;lgtmv1";
++
+ // SessionService is the first service a website calls.
+ //
+ // A session travels in a cookie that the server sets on SignIn and clears on SignOut.

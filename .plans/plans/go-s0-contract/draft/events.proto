@@ -1,0 +1,69 @@
+// Events and heartbeats from a machine to the server.
+//
+// An event is a report that must arrive once and in order. The machine numbers its events and
+// keeps them on disk until the server acknowledges them. A heartbeat only says that the machine
+// is there, so it is never numbered or kept.
+syntax = "proto3";
+
+package lgtm.link.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1;linkv1";
+
+// Event is one numbered report.
+message Event {
+  // 1 for the machine's first event. Each later event has a higher number than the one before.
+  // A gap means the machine dropped events it could not keep. The server applies an event only
+  // when its number is higher than the last one it applied, and drops it otherwise.
+  uint64 number = 1;
+  // When the machine made the report, by its own clock.
+  google.protobuf.Timestamp happened_at = 2;
+  oneof report {
+    Facts facts = 10;
+    HarnessesFound harnesses_found = 11;
+  }
+}
+
+// EventAck tells the machine which events it may forget.
+message EventAck {
+  // Every event up to and including this number is applied or dropped.
+  uint64 through = 1;
+}
+
+// Facts describe the machine. The machine sends them when it starts and when one changes.
+message Facts {
+  // The operating system, such as "Linux" or "macOS".
+  string os = 1;
+  uint32 cores = 2;
+  uint64 memory_bytes = 3;
+  // The version of the client program.
+  string client_version = 4;
+  // The folder that holds the machine's repositories, such as "~/projects".
+  string workspace = 5;
+  // How many agents the machine may run at once.
+  uint32 agent_limit = 6;
+}
+
+// HarnessesFound lists each harness the machine looked for.
+message HarnessesFound {
+  repeated Harness harnesses = 1;
+}
+
+message Harness {
+  // "claude", "codex", "gemini" or "cursor".
+  string name = 1;
+  // Its version. Absent when the harness is not installed.
+  optional string version = 2;
+}
+
+// Heartbeat carries the machine's load. The machine sends one every 10 seconds.
+// The server marks the machine offline after 30 seconds without one.
+message Heartbeat {
+  uint32 cpu_percent = 1;
+  uint32 memory_percent = 2;
+}
+
+// HeartbeatAck answers each heartbeat, so that a web server in front of the server sees the
+// stream move in both directions and does not cut it.
+message HeartbeatAck {}

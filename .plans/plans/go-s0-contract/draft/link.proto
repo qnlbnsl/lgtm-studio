@@ -1,0 +1,147 @@
+// What a server and a machine say to each other.
+//
+// A machine is a computer that runs the client program. It dials the server, and the server
+// never dials it. The machine joins once with a token, and from then on it keeps one two-way
+// stream open. Both ends prove themselves at the start of every stream.
+//
+// The website never calls this package. Its calls are in package lgtm.v1.
+syntax = "proto3";
+
+package lgtm.link.v1;
+
+import "google/protobuf/timestamp.proto";
+import "lgtm/link/v1/commands.proto";
+import "lgtm/link/v1/events.proto";
+
+option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1;linkv1";
+
+// LinkService is what a machine calls on the server.
+//
+// Join needs a join token. Open needs the machine's key. Neither needs a website session.
+// A later call beside the stream, such as a byte stream, presents the connection token of an
+// open stream in the header `Lgtm-Link-Token`.
+service LinkService {
+  // Join trades a join token for the server's public key, and registers the machine's public key.
+  //
+  // The same token with the same machine key returns the same reply while the token has not
+  // expired, so a client may send Join again when a reply was lost. The same token with another
+  // key is refused. A used, expired, revoked or unknown token is refused with `permission_denied`.
+  rpc Join(JoinRequest) returns (JoinResponse);
+  // Open is the stream between a machine and the server. The machine sends first.
+  //
+  // The machine sends Hello and then Proof. The server sends Challenge and then Welcome.
+  // After that, either end sends any of its other messages, in any order.
+  // A new stream of a machine replaces its older one, which ends with the code `aborted`.
+  // The server ends a stream with `deadline_exceeded` when Hello or Proof has not arrived
+  // within 10 seconds, and with `invalid_argument` when a message comes out of this order.
+  rpc Open(stream OpenRequest) returns (stream OpenResponse);
+}
+
+// JoinToken is what the owner copies from the Machines page to a new machine.
+//
+// The token's text is the prefix `lgtm1_` followed by the binary encoding of this message in
+// unpadded base64url. The server makes it, the client reads it, and the website only shows it.
+// The text is a secret: no log, board or page other than the one that made it holds it.
+message JoinToken {
+  // The id of the token. It is safe to show and to store.
+  string token_id = 1;
+  // 32 random bytes. The server stores only a verifier of them.
+  bytes secret = 2;
+  // The address the machine dials, such as "https://lgtm.example.net" or "http://127.0.0.1:8787".
+  // A client refuses an address that is neither https nor a loopback address over http, and an
+  // https address without certificate_key_sha256.
+  string address = 3;
+  // SHA-256 of the server's Ed25519 public key, which is 32 bytes.
+  bytes server_key_sha256 = 4;
+  // SHA-256 of the SubjectPublicKeyInfo of the certificate the machine must see at an https
+  // address. It is empty for a loopback address over plain HTTP/2.
+  bytes certificate_key_sha256 = 5;
+}
+
+message JoinRequest {
+  string token_id = 1;
+  bytes token_secret = 2;
+  // The machine's Ed25519 public key, 32 bytes. The private key never leaves the machine.
+  bytes machine_public_key = 3;
+  // The host name of the machine. The website shows it until the owner names the machine.
+  string host_name = 4;
+}
+
+message JoinResponse {
+  // The id the server gave the machine. The machine names itself with it in Hello.
+  string machine_id = 1;
+  // The server's Ed25519 public key, 32 bytes. Its SHA-256 equals the token's server_key_sha256,
+  // or the client refuses the server. The client keeps it and trusts no other server key.
+  bytes server_public_key = 2;
+}
+
+// OpenRequest is one message from the machine on the stream.
+message OpenRequest {
+  oneof kind {
+    // The first message.
+    Hello hello = 1;
+    // The second message.
+    Proof proof = 2;
+    Heartbeat heartbeat = 3;
+    Event event = 4;
+    CommandResult command_result = 5;
+  }
+}
+
+// OpenResponse is one message from the server on the stream.
+message OpenResponse {
+  oneof kind {
+    // The answer to Hello.
+    Challenge challenge = 1;
+    // The answer to Proof. The stream is open after it.
+    Welcome welcome = 2;
+    HeartbeatAck heartbeat_ack = 3;
+    EventAck event_ack = 4;
+    Command command = 5;
+  }
+}
+
+// Hello names the machine and gives the server a value to sign.
+message Hello {
+  string machine_id = 1;
+  // 32 random bytes, new for each stream.
+  bytes machine_nonce = 2;
+  // The revision of this package that the client speaks. A server refuses a revision it does
+  // not speak with `failed_precondition`.
+  uint32 link_revision = 3;
+}
+
+// Challenge proves the server and gives the machine a value to sign.
+message Challenge {
+  // 32 random bytes, new for each stream.
+  bytes server_nonce = 1;
+  // The server's Ed25519 signature over the server's proof text. See "The proof texts" below.
+  bytes server_signature = 2;
+}
+
+// Proof proves the machine.
+//
+// The proof texts are bytes. Each is a label, one zero byte, one byte that holds the length of
+// the machine id, the machine id in UTF-8, the machine nonce and the server nonce. The label of
+// the server's text is "lgtm-link-v1 server", and the label of the machine's text is
+// "lgtm-link-v1 machine". The file src/contracts/testdata/link-proof.json holds examples.
+message Proof {
+  // The machine's Ed25519 signature over the machine's proof text.
+  bytes machine_signature = 1;
+}
+
+// Welcome opens the stream. A machine id that the server does not know, or a signature that
+// does not verify, ends the stream with `unauthenticated` instead.
+message Welcome {
+  // A random token that only this stream's later calls present. It ends when the stream ends.
+  string connection_token = 1;
+  // The machine's standing now.
+  MachineState state = 2;
+  // The highest event number the server has applied from this machine, or 0 for none.
+  // The machine sends again every event it keeps with a higher number, in order.
+  uint64 last_event_number = 3;
+  // The server's clock, so that the machine can tell how far its own clock is off.
+  google.protobuf.Timestamp server_time = 4;
+  // The revision of this package that the server speaks.
+  uint32 link_revision = 5;
+}

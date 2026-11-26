@@ -1,0 +1,81 @@
+// Commands from the server to a machine.
+//
+// The server stores a command before it sends it. It sends a command again, with a higher
+// attempt number, after a stream ends without its result. The machine keeps a receipt of each
+// command it ran, so a command that arrives twice runs once.
+syntax = "proto3";
+
+package lgtm.link.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1;linkv1";
+
+// Command is one thing the server asks a machine to do.
+message Command {
+  // A version 7 UUID that the server makes. It names the command on every attempt.
+  string id = 1;
+  // 1 for the first send. It grows by one each time the server sends the same command again.
+  uint32 attempt = 2;
+  // The machine does not run the command after this time by its own clock. It answers
+  // COMMAND_OUTCOME_EXPIRED instead.
+  google.protobuf.Timestamp expires_at = 3;
+  oneof action {
+    // Look for installed harnesses again. The machine reports them with a HarnessesFound event.
+    ScanHarnesses scan_harnesses = 10;
+    // The owner approved, renamed or removed the machine.
+    SetState set_state = 11;
+    // End the client program, so that the service of its user starts it again.
+    // The machine sends its result before it ends.
+    Restart restart = 12;
+  }
+}
+
+// CommandResult answers one attempt of a command.
+//
+// A machine that receives a command it already ran sends the outcome it recorded, with the
+// attempt number of the copy it just received. The server ignores a result for an older attempt.
+message CommandResult {
+  string command_id = 1;
+  uint32 attempt = 2;
+  CommandOutcome outcome = 3;
+  // One sentence about a failure, for the website. Empty when the command was done.
+  string message = 4;
+}
+
+enum CommandOutcome {
+  COMMAND_OUTCOME_UNSPECIFIED = 0;
+  COMMAND_OUTCOME_DONE = 1;
+  COMMAND_OUTCOME_FAILED = 2;
+  // The command arrived after its expiry, and the machine did not run it.
+  COMMAND_OUTCOME_EXPIRED = 3;
+  // The machine does not know the command's action, because its client is older than the server.
+  COMMAND_OUTCOME_UNSUPPORTED = 4;
+}
+
+message ScanHarnesses {}
+
+message Restart {}
+
+message SetState {
+  MachineState state = 1;
+}
+
+// MachineState is the standing the owner gave a machine.
+message MachineState {
+  Approval approval = 1;
+  // The name the owner gave the machine. Empty while it waits for approval.
+  string name = 2;
+  // Grows with each change of the standing of this machine. A machine ignores a state whose
+  // revision is lower than one it already applied, so an old command sent again changes nothing.
+  uint64 revision = 3;
+}
+
+enum Approval {
+  APPROVAL_UNSPECIFIED = 0;
+  // The machine joined, and the owner has not approved it. It receives no work.
+  APPROVAL_WAITING = 1;
+  APPROVAL_APPROVED = 2;
+  // The owner removed the machine. The server forgets its key after it sends this.
+  APPROVAL_REMOVED = 3;
+}
