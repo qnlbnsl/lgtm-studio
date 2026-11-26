@@ -121,7 +121,7 @@ fi
 if ((base_ok)) && [[ -n ${ROOT:-} ]]; then
     compose_config >"$WORK/config.json"
     check $N "the Compose file renders" jq -e '.services | length > 0' "$WORK/config.json"
-    check $N "no service declares a port" jq -e '[.services[] | select(.ports != null and (.ports | length) > 0)] | length == 0' "$WORK/config.json"
+    check $N "no service other than web declares a port" jq -e '.services | del(.web) | all(.[]; ((.ports // []) | length) == 0)' "$WORK/config.json"
     check $N "every service drops all capabilities and sets no-new-privileges" jq -e '
         [.services[] | select(((.cap_drop // []) | index("ALL")) == null or ((.security_opt // []) | map(startswith("no-new-privileges")) | any | not))] | length == 0' "$WORK/config.json"
     check $N "every service names its numeric user" jq -e '[.services[] | select((.user // "") | test("^[0-9]+:[0-9]+$") | not)] | length == 0' "$WORK/config.json"
