@@ -262,3 +262,16 @@ The rules of item 2, with `timeouts /lgtm.link.v1.LinkService/Open { read_timeou
 | `/lgtm.link.v1.LinkService/Open`, `quiet-down` for 6 minutes 30 seconds | `ok`, 196 lines up. |
 
 So the handler keeps the link's route open, and every other route keeps the default limit of one minute.
+
+## Round 3 probes
+
+This probe ran on 2026-11-26 with Docker Compose 5.5.0, in a disposable folder that held a `.env` at its root with `LGTM_WEB_PORT=18888` and a `deploy/.env` with `LGTM_WEB_PORT=19999`.
+
+| How Compose was called | Port that Compose used |
+|---|---|
+| From the root, with `COMPOSE_FILE=deploy/compose.yaml` | 18888, from the root's `.env` |
+| From the root, with `-f deploy/compose.yaml` | 19999, from `deploy/.env` |
+| From `deploy/`, with `COMPOSE_FILE=compose.yaml` | 19999 |
+| From `deploy/`, with an absolute `COMPOSE_FILE` | 19999 |
+
+So Compose reads the `.env` of its working folder when the file list comes from `COMPOSE_FILE`. The launcher therefore runs from `deploy/`. The checkout had no `.env` at its root on 2026-11-26, and `.gitignore` ignores one.
