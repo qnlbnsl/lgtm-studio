@@ -176,10 +176,18 @@ func serveQuietUp(w http.ResponseWriter, control *http.ResponseController, body 
 	}
 	lines := make(chan string)
 	ended := make(chan error, 1)
+	// The signal done closes on every return, so the scanner never stays blocked on a send
+	// after a failed write has ended the handler.
+	done := make(chan struct{})
+	defer close(done)
 	go func() {
 		scanner := bufio.NewScanner(body)
 		for scanner.Scan() {
-			lines <- scanner.Text()
+			select {
+			case lines <- scanner.Text():
+			case <-done:
+				return
+			}
 		}
 		ended <- scanner.Err()
 	}()
