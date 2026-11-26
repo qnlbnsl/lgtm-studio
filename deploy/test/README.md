@@ -46,6 +46,21 @@ hook must exit zero only after establishing that removing the feed lock makes
 the feed-order test fail for the intended reason. The hook is responsible for
 isolating or restoring its changes. A missing hook makes C12 fail.
 
+## Run C12 with disposable PostgreSQL
+
+Run the check with the wrapper from the repository root.
+
+```bash
+deploy/test/with-postgres.sh -- deploy/test/checks.sh --only C12
+```
+
+The wrapper starts the pinned PostgreSQL image on a dynamically assigned
+loopback port. It sets `LGTM_TEST_POSTGRES` for the command after `--`.
+The test login owns the `lgtm_store_test` maintenance database and can create
+separate databases for tests. The wrapper returns the command's exit status
+and removes the container, storage, and password files when the command exits
+or the wrapper receives an interrupt or termination signal.
+
 ## Names and observations the checks expect
 
 Chosen names are provisional. The sprint plans can adopt them or update this
