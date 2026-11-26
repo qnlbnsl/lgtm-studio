@@ -197,3 +197,49 @@ The planner checked the plan format, the decision rows, eight acceptance observa
 The bounded assignment reserves adversarial review for the orchestrator. The attack log is ready for its findings.
 
 The Node.js private-data check's default Git child process failed with `EPERM` while still returning Git exit 0 and its complete output. A minimal `spawnSync` call reproduced the error with a piped standard input. The same call succeeded with ignored standard input. The unchanged repository checker ran with Node.js 26.13.0 and a temporary preload that set only the unused input of its Git child to ignore. The tracked-file run exited 0. A second run included the scouting and result files in the input list without staging them. The planner also read the authored text for private details.
+
+## Review round 1 evidence on 2026-11-26
+
+The review reports refer to the baseline snapshot at `attack/plan-v1.md`. The command block above remains the historical run that two reviewers reproduced. The current planner checked the Docker daemon again with `docker info --format '{{.ServerVersion}}'` and got a permission denial at the local Docker socket. The current planner ran no container.
+
+The critic and threat reports independently record the baseline proof passing and leaving no disposable resources. The logic report also tested an owning service role and a replacement key. These are reviewer observations. The narrower production-shape replay is still pending. [Critic report, task answer a](attack/round-1-critic.md#answers-to-the-attack-questions), [threat report, task answer a](attack/round-1-threat.md#answers-to-the-attack-questions), [logic report, What I ran](attack/round-1-logic.md#what-i-ran).
+
+| Image name | Observed registry digest |
+|---|---|
+| `postgres:16.16-alpine` | `sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d` |
+| `openbao/openbao:2.7.3` | `sha256:ba4b133eb9586630024e71a617e66f37f29cc3534cdd46a6233e098ceded8dc9` |
+
+The baseline proof produced these redacted result lines and exited 0.
+
+```text
+postgres_rows_before=28 postgres_rows_after=31
+initialized=true sealed=false storage=postgresql value_restored=true
+missing_key_blocks_unseal=true
+cleanup=true
+```
+
+The separate logic run reported PostgreSQL numeric user and group 70, and an OpenBao default command containing development mode. With a missing key OpenBao exited. A different 32-byte key left the same data sealed and restoring the original reopened it. The critic reported that an ownerless service role could not create the storage table and that ownership repaired startup. The threat report reproduced an unauthenticated root-generation refusal on the pinned image. These observations are tied to the cited reports.
+
+| Current source or upstream anchor | What it establishes |
+|---|---|
+| `docs/specs/2026-11-25-go-rewrite-foundation-design.md:215`, Secrets live in OpenBao, and lines 341 to 355 and 370 to 390 | The vault uses PostgreSQL and a local file, serves the stack only, and grants the server its own paths. The restart and real PostgreSQL checks remain separate. |
+| `deploy/test/checks.sh`, `check_c1`, `run_check`, `vault_ready` and `check_c13` | The script calls an executable launcher and checks OpenBao status. Its full C13 expects a signing-key fingerprint from the eventual server. The retained sprint 1 tests use the surrounding test output style. |
+| `deploy/test/README.md`, `LGTM_TEST_POSTGRES`, and `.plans/plans/go-s1-server-store/plan.md`, `NewDatabase` | The test database must be real, host reachable and allow database creation. The closest patterns for new `deploy/test/vault-testlib.sh`, `deploy/test/with-postgres.sh` and `deploy/test/vault-fixtures.sh` are `deploy/test/checks.sh` fixture names and its README. |
+| `deploy/openbao-start.sh` and `deploy/openbao.hcl`, proposed entrypoint and storage settings | The pinned image's default command starts development mode. The planned wrapper specifies the production command and reads the password file. The nearest configuration pattern is the published storage backend. [PostgreSQL backend](https://openbao.org/docs/configuration/storage/postgresql/). |
+| `deploy/postgres-init.sql`, `deploy/stack-prepare.sh`, `prepare-db` and `reconcile-db` | The Docker entrypoint only applies initialization hooks on an empty cluster. PostgreSQL chooses the first authentication rule. The repair job uses the existing administrator connection. [PostgreSQL image initialization](https://github.com/docker-library/docs/blob/master/postgres/README.md#initialization-scripts), [PostgreSQL 16 host authentication](https://www.postgresql.org/docs/16/auth-pg-hba-conf.html). |
+| `deploy/openbao-bootstrap.sh`, `deploy/test/vault-bootstrap.sh`, and `deploy/openbao-init.sh`, `bootstrap.state` and `server/openbao.json` | The initialization and health reads answer different questions. The local publication rename must stay on one mount. [OpenBao health status](https://openbao.org/docs/api/system/health/), [OpenBao initialization client](https://github.com/openbao/openbao/blob/v2.7.3/api/sys_init.go), [Linux rename errors](https://man7.org/linux/man-pages/man2/rename.2.html#ERRORS). |
+| `deploy/vault-admin.sh`, `deploy/openbao-admin.sh`, `deploy/openbao-admin-policy.hcl`, and `deploy/test/vault-admin.sh` | The proposed local identity uses named policy and AppRole endpoints. The older unauthenticated root endpoints are disabled by default. The exact absent-identifier response is to be captured by the pinned fixture before a builder implements the classification. [AppRole API](https://openbao.org/docs/api/auth/approle/), [Legacy root endpoint](https://openbao.org/docs/api/system/generate-root/), [Authenticated root endpoint](https://openbao.org/docs/api/system/generate-root-token/). |
+| `deploy/openbao-tools/Dockerfile`, `deploy/openbao-tools/.dockerignore` and `deploy/.dockerignore` | The proposed context is separate from state. Bind sources use the long form, which can forbid automatic directory creation. [Docker Compose container specification](https://docs.docker.com/reference/compose-file/container-spec/). |
+
+## Production-shape proof for work item 1
+
+Reuse the historical script's temporary directory, unique container names, PostgreSQL row count check, guarded exit trap and cleanup assertions. Apply the following fixture changes before running it. The build check records the actual commands and sanitized output. The planner or orchestrator attaches that receipt here.
+
+1. Pull both tag-and-digest references from the table above. Run `docker image inspect --format '{{.Os}}/{{.Architecture}} {{json .RepoDigests}} {{.Config.User}} {{json .Config.Entrypoint}} {{json .Config.Cmd}}'` for both. Record the platform and defaults separately from the wrapper override. Confirm PostgreSQL's effective user and group as 70.
+2. In the disposable PostgreSQL cluster, create `lgtm_bao` with login, its fixture password, and neither superuser, database creation nor role creation privilege. Create database `lgtm_bao` owned by that login. Revoke public connection to it and the other ordinary databases. Use the production host and local password settings. Connect OpenBao with `lgtm_bao` rather than `postgres`. Query the storage row count as the service owner. Check the table begins absent and OpenBao creates it.
+3. Adapt `start_bao` to run as `10002:10002`. Use a temporary copy of the production wrapper contract, `/bin/sh /openbao-start.sh server`, and supply the mounted password file. Mount configuration at `/openbao/config/lgtm.hcl` and the raw key inside a disposable mounted key directory at `/run/lgtm-bao/unseal.key`. Set the fixture key owner and group to 10002 with mode `0400` using a short-lived root container. Use `sslmode=disable`, the production listener on the container interfaces, and an internal network without host ports. The wrapper explicitly bypasses the image's default entrypoint to load the file credential and avoid the development command.
+4. From a disposable HTTP client on the fixture network, send `PUT /v1/sys/init` with `{"recovery_shares":1,"recovery_threshold":1}`. Save the response in the private temporary directory. Read readiness from `GET /v1/sys/health` and then assert the same secret round-trip and restart as the historical proof. Keep fixture tokens and response bodies off the console.
+5. Recreate the process with the key file removed from the mounted directory. Observe its diagnostic and absence of health. Replace it with a different correctly owned 32-byte file and verify the absence of health again without expecting an exit. Verify the existing PostgreSQL row count in each case. Restore the original key and assert the original sample value. Check unauthenticated root generation is refused both before and after explicitly revoking the original root token.
+6. Stop and remove the disposable containers, volume, network and temporary files. Emit the five assertion results, image observations, the row counts and `cleanup=true`. A single failed assertion or incomplete teardown stops the implementation queue.
+
+The proof fixture can use the exact tools image contents described in work item 4, built in the disposable directory for the HTTP client. Record the package versions selected for the fixture. Production image verification and clean-host startup remain post-build checks, because the Compose file and wrappers do not yet exist at the reviewed commit.
