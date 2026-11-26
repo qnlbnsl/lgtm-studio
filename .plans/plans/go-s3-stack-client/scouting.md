@@ -165,3 +165,19 @@ It is not a code that the Go runtime uses for a crash, which is 2.
 | `.plans/plans/go-s2-stack-web/plan.md`, items 1, 4, 5 and 7 | The image's `/usr/local/bin/lgtm-server` as user 10001, `LGTM_PUBLIC_URL` equal to `http://127.0.0.1:${LGTM_WEB_PORT:-8787}`, the launcher's use of `COMPOSE_FILE`, and the stream test of the link's route. |
 | `deploy/compose.yaml`, line 1 | The project is named `lgtm`, so `docker compose port web 8080` finds the stack without `-p`. |
 | `deploy/test/checks.sh`, lines 219 and 233, and `deploy/test/README.md`, the row "Client state folder" at line 81 | The two lines and the row that still name `XDG_STATE_HOME`. |
+
+## Sources checked for the fold of round 1 on 2026-11-26
+
+| File and anchor | What it establishes |
+|---|---|
+| `.plans/plans/go-s3-server-machines/plan.md`, lines 139 to 153 | `Issuer` has only `PublicURL` and `ServerKey`. `TokenOptions` has `Address` and `HostsServer`. `NewToken` has `ID`, `Text`, `Address` and `ExpiresAt`. |
+| `.plans/plans/go-s3-server-machines/plan.md`, line 251 | An `https` address returns `ErrNoCertificatePin` in wave 1. |
+| `.plans/plans/go-s3-server-machines/plan.md`, line 585 | `servertest.Server` gains `Clients(t)` and `Link()`, and `Environment()` gives a second program the settings. |
+| `.plans/plans/go-s2-server-signin/plan.md`, lines 418 to 428 | `vault.Client` declares no close method. |
+| `src/server/internal/store/pool.go`, line 35 | `ConnectionPolicy` has one field, `AllowPrivateStackPostgres`. |
+| `src/client/internal/state/folder.go`, lines 15 to 22 | The client's lock file is `lock`, and its temporary names start with `.tmp-`. |
+| `deploy/test/checks.sh`, lines 45 to 63 | `get_server` uses `curl --silent --noproxy '*' --max-time 5` and requires status 200, `product` equal to `lgtm-studio`, a positive `contract` and `sample` other than true. |
+| `deploy/test/checks.sh`, lines 82 to 86 | `signin` passes the password to `jq` as an argument, which threat-r1 7 names. |
+| `.plans/plans/go-s3-client-link/plan.md`, line 24 | The owner settles whether the client also reads a token from standard input. |
+| `.plans/plans/go-s3-client-link/plan.md`, line 108 | `identity.json` holds `address`, which the installer compares with the selected stack. |
+| A Bash probe by three reviewers | `${SHIM_WEB_PORT:-8787}` gives 8787 for an empty value, while `${SHIM_WEB_PORT-8787}` gives an empty string. |
