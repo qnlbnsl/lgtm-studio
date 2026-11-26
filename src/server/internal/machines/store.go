@@ -10,6 +10,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+	"google.golang.org/protobuf/proto"
+
+	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1"
 
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/store"
 )
@@ -218,4 +221,74 @@ func nameWriteError(err error) error {
 
 func recordMachineChange(tx *store.Tx, id string, change store.Change) error {
 	return tx.Record(store.ChangeRef{Topic: "machines", Key: id, Change: change})
+}
+
+// Lock serializes machine changes for the remainder of the write.
+func (r *Registry) Lock(ctx context.Context, tx *store.Tx, id string) (Machine, error) {
+	return lockMachine(ctx, tx, id, ` FOR NO KEY UPDATE`)
+}
+
+// TryLock returns a retryable store error if another write holds the machine.
+func (r *Registry) TryLock(ctx context.Context, tx *store.Tx, id string) (Machine, error) {
+	return lockMachine(ctx, tx, id, ` FOR NO KEY UPDATE NOWAIT`)
+}
+
+func lockMachine(ctx context.Context, tx *store.Tx, id, lock string) (Machine, error) {
+	m, err := scanMachine(tx.QueryRow(ctx, `SELECT `+machineColumns+` FROM machines WHERE id = $1`+lock, id))
+	if err == pgx.ErrNoRows {
+		return Machine{}, ErrNoMachine
+	}
+	return m, err
+}
+
+// ApplyFacts stores the declared facts of a validated report.
+func (r *Registry) ApplyFacts(ctx context.Context, tx *store.Tx, id string, facts *linkv1.Facts) error {
+	data, err := proto.Marshal(&linkv1.Facts{
+		Os: facts.GetOs(), Cores: facts.GetCores(), MemoryBytes: facts.GetMemoryBytes(),
+		ClientVersion: facts.GetClientVersion(), Workspace: facts.GetWorkspace(), AgentLimit: facts.GetAgentLimit(),
+	})
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE machines SET facts = $2 WHERE id = $1`, id, data)
+	return err
+}
+
+// ApplyHarnesses stores a validated inventory and marks even an empty scan as complete.
+func (r *Registry) ApplyHarnesses(ctx context.Context, tx *store.Tx, id string, report *linkv1.HarnessesFound) error {
+	inventory := &linkv1.HarnessesFound{}
+	for _, harness := range report.GetHarnesses() {
+		entry := &linkv1.Harness{Name: harness.GetName()}
+		if harness != nil && harness.Version != nil {
+			entry.Version = proto.String(harness.GetVersion())
+		}
+		inventory.Harnesses = append(inventory.Harnesses, entry)
+	}
+	data, err := proto.Marshal(inventory)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE machines SET harnesses = $2, harnesses_scanned = true WHERE id = $1`, id, data)
+	return err
+}
+
+// NoteSeen saves the last contact of a disconnected stream on the machine.
+func (r *Registry) NoteSeen(ctx context.Context, tx *store.Tx, id string, at time.Time, address string) error {
+	_, err := tx.Exec(ctx, `UPDATE machines SET last_seen_at = $2, last_address = $3 WHERE id = $1`, id, at, address)
+	return err
+}
+
+// Touch records a saved reference after a set of changes to one machine.
+func (r *Registry) Touch(_ context.Context, tx *store.Tx, id string) error {
+	return recordMachineChange(tx, id, store.Saved)
+}
+
+// Standing returns the link's view of the machine's stored approval and revision.
+func Standing(machine Machine) *linkv1.MachineState {
+	standing := &linkv1.MachineState{Approval: linkv1.Approval_APPROVAL_WAITING, Revision: uint64(machine.StateRevision)}
+	if machine.Approval == ApprovalApproved {
+		standing.Approval = linkv1.Approval_APPROVAL_APPROVED
+		standing.Name = machine.Name
+	}
+	return standing
 }
