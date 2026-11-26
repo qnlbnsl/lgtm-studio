@@ -149,6 +149,7 @@ func (s *Store) deleteFeed(ctx context.Context, cutoff time.Time) (int64, bool, 
 	var deleted int64
 	for {
 		var done, blocked bool
+		var count int64
 		err := s.withMaintenance(ctx, func(ctx context.Context, tx pgx.Tx) error {
 			floor, err := lockFeedRetention(ctx, tx)
 			if err != nil {
@@ -205,12 +206,13 @@ UPDATE feed_retention SET pruned_through = greatest(pruned_through, $1) WHERE si
 			if err != nil {
 				return err
 			}
-			deleted += tag.RowsAffected()
+			count = tag.RowsAffected()
 			return nil
 		})
 		if err != nil {
 			return deleted, false, err
 		}
+		deleted += count
 		if done {
 			return deleted, blocked, nil
 		}
