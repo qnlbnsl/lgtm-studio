@@ -322,8 +322,9 @@ running_machine() {
 }
 
 psql_in_stack() {
-    compose exec -T postgres psql --no-psqlrc --quiet --tuples-only --no-align \
-        -U "${POSTGRES_USER:-lgtm}" -d "${POSTGRES_DB:-lgtm}" --set ON_ERROR_STOP=1 "$@"
+    compose exec -T --user 70:70 postgres sh -c '
+        PGPASSWORD=$(cat /run/lgtm-db/postgres-app.password) exec psql -w --no-psqlrc --quiet --tuples-only --no-align \
+            -h 127.0.0.1 -U lgtm_app -d lgtm_app --set ON_ERROR_STOP=1 "$@"' sh "$@"
 }
 
 log_has() {

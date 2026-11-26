@@ -67,8 +67,8 @@ if [[ $a_ok -eq 1 ]]; then
         "select string_agg(datname || ':' || pg_get_userbyid(datdba), ',' order by datname) from pg_database where datname in ('lgtm_app','lgtm_bao')")" \
         = "lgtm_app:lgtm_app,lgtm_bao:lgtm_bao"
     check $A "neither login is a superuser or may create databases or roles" test "$(pgq postgres postgres \
-        "select string_agg(rolname || ':' || rolsuper || rolcreatedb || rolcreaterole || rolcanlogin, ',' order by rolname) from pg_roles where rolname in ('lgtm_app','lgtm_bao')")" \
-        = "lgtm_app:ffft,lgtm_bao:ffft"
+        "select string_agg(rolname || ':' || rolsuper::int || rolcreatedb::int || rolcreaterole::int || rolcanlogin::int, ',' order by rolname) from pg_roles where rolname in ('lgtm_app','lgtm_bao')")" \
+        = "lgtm_app:0001,lgtm_bao:0001"
     check $A "the file rules hold only valid SCRAM rules" test "$(pgq postgres postgres \
         "select count(*) filter (where error is not null or auth_method is distinct from 'scram-sha-256') || '/' || count(*) from pg_hba_file_rules")" = "0/$(pgq postgres postgres 'select count(*) from pg_hba_file_rules')"
     check $A "the file rules are not empty" test "$(pgq postgres postgres 'select count(*) from pg_hba_file_rules')" -gt 0
@@ -120,6 +120,7 @@ if [[ $a_ok -eq 1 ]]; then
             psql_in_stack "$@"
         )
     }
+    export -f driver
     check $D "the driver function reads the application user and database" test \
         "$(printf '%s' "select current_user || ':' || current_database();" | driver)" = "lgtm_app:lgtm_app"
     check $D "bound arguments and standard input still reach psql" test \

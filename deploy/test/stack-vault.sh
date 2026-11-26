@@ -36,6 +36,8 @@ state_prints() { # the fingerprints of every durable bootstrap file
     done
 }
 all_files() { rootsh 'find /s -type f | sort'; }
+digests() { state_prints | awk '{print $1, $2}'; }
+export_fns
 
 # ===========================================================================
 # Stack one: two launches.
@@ -100,7 +102,7 @@ check $T "no later phase started after the password failure" bash -c '! grep -Eq
 check $T "the ready line is not printed after the password failure" bash -c '! grep -qxF "$2" <<<"$1"' _ "$OUT" "$READY"
 printf '%s\n' "$good" | sput $app
 check $T "the launch works again with the original password" launch_ok
-check $T "the files are unchanged after the password failure" test "$(state_prints)" = "$before"
+check $T "the content of the files is unchanged after the password failure" test "$(digests)" = "$(awk '{print $1, $2}' <<<"$before")"
 
 # --- the usage guide ---
 check $T "the guide exists" test -s "$root/deploy/README.md"

@@ -213,7 +213,15 @@ up_db() {
         await 120 is_healthy postgres
 }
 
-kv_rows() { pgq lgtm_bao lgtm_bao 'select count(*) from public.openbao_kv_store' | tr -d ' \n'; }
+kv_rows() {
+    local there
+    there=$(pgq lgtm_bao lgtm_bao "select to_regclass('public.openbao_kv_store') is not null" | tr -d ' \n')
+    if [[ $there == t ]]; then
+        pgq lgtm_bao lgtm_bao 'select count(*) from public.openbao_kv_store' | tr -d ' \n'
+    else
+        echo 0
+    fi
+}
 
 # ---------------------------------------------------------------------------
 # OpenBao
@@ -234,7 +242,8 @@ bao_in() {
     BAO_TOKEN=$tok dc exec -T ${tok:+-e BAO_TOKEN} openbao bao "$@"
 }
 
-bao_status() { dc exec -T openbao bao status -format=json 2>/dev/null; }
+# bao status exits 2 for a sealed vault but still prints its JSON, so the status is dropped here.
+bao_status() { dc exec -T openbao bao status -format=json 2>/dev/null || true; }
 vault_open() { bao_status | jq -e '.initialized == true and .sealed == false' >/dev/null 2>&1; }
 vault_sealed() { bao_status | jq -e '.initialized == true and .sealed == true' >/dev/null 2>&1; }
 vault_uninitialized() { bao_status | jq -e '.initialized == false' >/dev/null 2>&1; }
@@ -305,4 +314,5 @@ compose_config() { dc --profile '*' config --format json 2>/dev/null; }
 neg() { ! "$@"; }
 
 export root PGIMG BAOIMG WORK P STATE
-export -f $(declare -F | awk '{print $3}')
+export_fns() { export -f $(declare -F | awk '{print $3}'); }
+export_fns

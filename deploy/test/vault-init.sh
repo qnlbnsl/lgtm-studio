@@ -33,6 +33,7 @@ sec_free() { # <text> <secret>...
 # ===========================================================================
 # Stack one: the normal first start.
 # ===========================================================================
+export_fns
 stack_new
 S1=$P
 if check $V "the vault is up and uninitialized" vault_up; then

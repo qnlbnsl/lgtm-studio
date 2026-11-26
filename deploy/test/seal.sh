@@ -26,6 +26,7 @@ never_open() { # <seconds>
 }
 has() { grep -Fq -- "$2" <<<"$1"; }
 
+export_fns
 stack_new
 base_ok=1
 check $C "the database part succeeds" up_db || base_ok=0
@@ -86,7 +87,7 @@ if ((base_ok)) && [[ -n ${ROOT:-} ]]; then
     check $G "the different key is not the original" test "$(sfp $KEY | head -n 1)" != "$(echo "$k1" | head -n 1)"
     dc up -d openbao >/dev/null 2>&1
     check $G "the vault stays sealed with a different key" never_open 30
-    check $G "the vault is still initialized" bao_status
+    check $G "the vault is still initialized and sealed" vault_sealed
     check $G "the rows are preserved with a different key" test "$(kv_rows)" = "$rows"
     dc stop -t 30 openbao >/dev/null 2>&1
     smv bao/aside.key $KEY
