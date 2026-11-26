@@ -1,3 +1,164 @@
-# Stub of the test writer. The builder of item 2 replaces this file.
 name: lgtm
-services: {}
+
+x-postgres-image: &postgres-image postgres:16.16-alpine@sha256:f2f98726820d0342055351c6e9d36e705f5bfffb3dd53ff556325114b08afb6d
+x-openbao-image: &openbao-image openbao/openbao:2.7.3@sha256:ba4b133eb9586630024e71a617e66f37f29cc3534cdd46a6233e098ceded8dc9
+
+services:
+  postgres:
+    image: *postgres-image
+    user: "70:70"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256 --auth-local=scram-sha-256
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_PASSWORD_FILE: /run/lgtm-db/postgres-admin.password
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - type: bind
+        source: ${LGTM_STACK_STATE_DIR:-./.state}/admin/postgres-admin.password
+        target: /run/lgtm-db/postgres-admin.password
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LGTM_STACK_STATE_DIR:-./.state}/server/postgres-app.password
+        target: /run/lgtm-db/postgres-app.password
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LGTM_STACK_STATE_DIR:-./.state}/bao/postgres-bao.password
+        target: /run/lgtm-db/postgres-bao.password
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [data]
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          probe() {
+            PGPASSWORD="$$(cat "/run/lgtm-db/postgres-$$1.password")" \
+              psql -Xw -h 127.0.0.1 -U "$$2" -d "$$2" -v ON_ERROR_STOP=1 -Atqc 'SELECT 1';
+          };
+          probe app lgtm_app && probe bao lgtm_bao
+      interval: 2s
+      timeout: 5s
+      retries: 3
+
+  openbao:
+    image: *openbao-image
+    user: "10002:10002"
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/openbao-start.sh", "server"]
+    command: []
+    environment:
+      BAO_ADDR: http://127.0.0.1:8200
+      BAO_API_ADDR: http://openbao:8200
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: ./openbao.hcl
+        target: /openbao/config/lgtm.hcl
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./openbao-start.sh
+        target: /openbao-start.sh
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LGTM_STACK_STATE_DIR:-./.state}/bao/postgres-bao.password
+        target: /run/lgtm-db/postgres-bao.password
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LGTM_STACK_STATE_DIR:-./.state}/bao/unseal.key
+        target: /run/lgtm-bao/unseal.key
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [data, vault]
+    healthcheck:
+      test: ["CMD", "bao", "status"]
+      interval: 2s
+      timeout: 5s
+      retries: 3
+
+  openbao-init:
+    image: *openbao-image
+    profiles: [setup]
+    user: "0:0"
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE]
+    security_opt: [no-new-privileges:true]
+    entrypoint: ["/bin/sh", "/openbao-init.sh"]
+    command: []
+    configs:
+      - source: openbao-init-script
+        target: /openbao-init.sh
+    environment:
+      BAO_ADDR: http://openbao:8200
+    volumes:
+      - type: bind
+        source: ${LGTM_STACK_STATE_DIR:-./.state}/admin
+        target: /admin
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LGTM_STACK_STATE_DIR:-./.state}/server
+        target: /server
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ./openbao-server-policy.hcl
+        target: /openbao-server-policy.hcl
+        read_only: true
+        bind:
+          create_host_path: false
+    networks: [vault]
+
+  prepare:
+    image: *postgres-image
+    profiles: [setup]
+    user: "0:0"
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
+    security_opt: [no-new-privileges:true]
+    network_mode: none
+    entrypoint: ["/bin/sh", "/stack-prepare.sh"]
+    configs:
+      - source: prepare-script
+        target: /stack-prepare.sh
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - type: bind
+        source: ${LGTM_STACK_STATE_DIR:-./.state}
+        target: /state
+        bind:
+          create_host_path: false
+
+configs:
+  prepare-script:
+    file: ./stack-prepare.sh
+  openbao-init-script:
+    file: ./openbao-init.sh
+
+networks:
+  data:
+    internal: true
+  vault:
+    internal: true
+
+volumes:
+  pgdata:
