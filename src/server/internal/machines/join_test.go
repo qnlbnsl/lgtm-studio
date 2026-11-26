@@ -134,6 +134,10 @@ func waitForWaiters(t *testing.T, tx pgx.Tx, n int64) {
 	t.Helper()
 	storetest.Poll(t, "the uses to wait on the token's row", func() bool {
 		var waiting int64
+		// Inside a transaction PostgreSQL keeps one activity snapshot, so clear it on every poll.
+		if _, err := tx.Exec(t.Context(), `SELECT pg_stat_clear_snapshot()`); err != nil {
+			return false
+		}
 		err := tx.QueryRow(t.Context(), `
 SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'`).Scan(&waiting)
 		return err == nil && waiting >= n
