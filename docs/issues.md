@@ -7785,6 +7785,8 @@ Found on 2026-11-26, when the Machines page was opened in a browser against the 
 
 A person who follows the dialog cannot add a machine. A change to what the dialog shows needs the owner's approval.
 
+Update of 2026-11-26: the owner approved the change, and commit `fce76a10` made it. Step 2 now shows `lgtm-client join <address> <token>` with the address that the server put in the token. Step 1 shows a `go build` command that needs a checkout of the repository, because the Go client has no installer for another machine yet. Step 1 stays open until such an installer exists.
+
 ## 1662. The website shows sample repositories and agents beside the real Machines page
 
 Found on 2026-11-26 in the same look. After sign-in against the Go server, the Machines page shows real data, which is no machine at first. The sidebar and the Home page still show the sample repositories, teams, agents and seven waiting requests of the website's built-in sample data. Wave 1 of the Go server answers only the calls of sign-in and machines. A person cannot tell which parts of the page are real. Whether the website hides the parts that the server does not answer yet is a choice about what the page shows.
