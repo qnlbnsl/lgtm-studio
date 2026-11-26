@@ -10,6 +10,7 @@
 import type { GenEnum, GenFile, GenMessage, GenService } from "@bufbuild/protobuf/codegenv2";
 import type { Message } from "@bufbuild/protobuf";
 import type { Timestamp } from "@bufbuild/protobuf/wkt";
+import type { FeedPosition } from "./common_pb.js";
 
 /**
  * Describes the file lgtm/v1/clients.proto.
@@ -38,14 +39,16 @@ export declare type Client = Message<"lgtm.v1.Client"> & {
   state: ClientState;
 
   /**
-   * True for the client on the machine that runs the server.
+   * True for the client on the machine that runs the server. The server sets it when the client
+   * joined with a token from its own command on that machine, and never from what a client says.
    *
    * @generated from field: bool hosts_server = 4;
    */
   hostsServer: boolean;
 
   /**
-   * Where the server reaches it, such as "192.168.1.24".
+   * The network address that the client's connection came from, such as "192.168.1.24", for
+   * showing only. Empty when the server cannot tell. The server never dials it.
    *
    * @generated from field: string address = 5;
    */
@@ -210,6 +213,13 @@ export declare type WatchClientsResponse = Message<"lgtm.v1.WatchClientsResponse
     value: string;
     case: "removedId";
   } | { case: undefined; value?: undefined };
+
+  /**
+   * Where this message stands in the server's change feed. See common.proto.
+   *
+   * @generated from field: lgtm.v1.FeedPosition position = 4;
+   */
+  position?: FeedPosition | undefined;
 };
 
 /**
@@ -258,16 +268,27 @@ export declare type CreateClientTokenResponse = Message<"lgtm.v1.CreateClientTok
   tokenId: string;
 
   /**
-   * The secret a client presents once. The server shows it only in this reply.
+   * From a Go server, the text of a join token as lgtm.link.v1.JoinToken describes it. It is a
+   * secret, and the server shows it only in this reply. A sample server may return other text.
    *
    * @generated from field: string token = 2;
    */
   token: string;
 
   /**
+   * 15 minutes after the token was made.
+   *
    * @generated from field: google.protobuf.Timestamp expires_at = 3;
    */
   expiresAt?: Timestamp | undefined;
+
+  /**
+   * The address inside the token, which is the address the machine dials. A sample server may
+   * leave it empty.
+   *
+   * @generated from field: string address = 4;
+   */
+  address: string;
 };
 
 /**
@@ -521,6 +542,8 @@ export declare const ClientService: GenService<{
   /**
    * CreateClientToken makes a token that one new client uses once to join this server.
    * The server's own command `lgtm client add` makes the same kind of token.
+   * A call that carries `Lgtm-Request-Key` is refused with `invalid_argument` before any token is
+   * made. Every other call makes a new token, and a token whose reply was lost ends at expires_at.
    *
    * @generated from rpc lgtm.v1.ClientService.CreateClientToken
    */
@@ -530,7 +553,8 @@ export declare const ClientService: GenService<{
     output: typeof CreateClientTokenResponseSchema;
   },
   /**
-   * RevokeClientToken ends a token that no client has used.
+   * RevokeClientToken ends a token. A client that used the token and still waits for approval is
+   * removed with it. A client that was approved keeps working.
    *
    * @generated from rpc lgtm.v1.ClientService.RevokeClientToken
    */
@@ -570,7 +594,8 @@ export declare const ClientService: GenService<{
     output: typeof ScanClientHarnessesResponseSchema;
   },
   /**
-   * ReconnectClient asks the server to try an offline client again. The result arrives on WatchClients.
+   * ReconnectClient restarts a client that is connected. A client that is not connected is refused
+   * with `failed_precondition`, because the server never dials a machine.
    *
    * @generated from rpc lgtm.v1.ClientService.ReconnectClient
    */

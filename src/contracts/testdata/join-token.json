@@ -1,0 +1,9 @@
+{
+  "token_id": "0193a2b4-0000-7000-8000-000000000001",
+  "secret": "3333333333333333333333333333333333333333333333333333333333333333",
+  "address": "http://127.0.0.1:8787",
+  "server_public_key": "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c",
+  "server_key_sha256": "34750f98bd59fcfc946da45aaabe933be154a4b5094e1c4abf42866505f3c97e",
+  "certificate_key_sha256": "",
+  "text": "lgtm1_CiQwMTkzYTJiNC0wMDAwLTcwMDAtODAwMC0wMDAwMDAwMDAwMDESIDMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzGhVodHRwOi8vMTI3LjAuMC4xOjg3ODciIDR1D5i9Wfz8lG2kWqq-kzvhVKS1CU4cSr9ChmUF88l-"
+}

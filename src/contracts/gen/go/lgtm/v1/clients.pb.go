@@ -90,9 +90,11 @@ type Client struct {
 	// The name the owner gave it. A client that waits for approval has the name of its host here.
 	Name  string      `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	State ClientState `protobuf:"varint,3,opt,name=state,proto3,enum=lgtm.v1.ClientState" json:"state,omitempty"`
-	// True for the client on the machine that runs the server.
+	// True for the client on the machine that runs the server. The server sets it when the client
+	// joined with a token from its own command on that machine, and never from what a client says.
 	HostsServer bool `protobuf:"varint,4,opt,name=hosts_server,json=hostsServer,proto3" json:"hosts_server,omitempty"`
-	// Where the server reaches it, such as "192.168.1.24".
+	// The network address that the client's connection came from, such as "192.168.1.24", for
+	// showing only. Empty when the server cannot tell. The server never dials it.
 	Address string `protobuf:"bytes,5,opt,name=address,proto3" json:"address,omitempty"`
 	// The folder that holds its repositories, such as "~/projects".
 	Workspace string `protobuf:"bytes,6,opt,name=workspace,proto3" json:"workspace,omitempty"`
@@ -373,7 +375,9 @@ type WatchClientsResponse struct {
 	//	*WatchClientsResponse_All
 	//	*WatchClientsResponse_Saved
 	//	*WatchClientsResponse_RemovedId
-	Change        isWatchClientsResponse_Change `protobuf_oneof:"change"`
+	Change isWatchClientsResponse_Change `protobuf_oneof:"change"`
+	// Where this message stands in the server's change feed. See common.proto.
+	Position      *FeedPosition `protobuf:"bytes,4,opt,name=position,proto3" json:"position,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -440,6 +444,13 @@ func (x *WatchClientsResponse) GetRemovedId() string {
 		}
 	}
 	return ""
+}
+
+func (x *WatchClientsResponse) GetPosition() *FeedPosition {
+	if x != nil {
+		return x.Position
+	}
+	return nil
 }
 
 type isWatchClientsResponse_Change interface {
@@ -551,9 +562,14 @@ type CreateClientTokenResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// The token's id. It is safe to show and to store.
 	TokenId string `protobuf:"bytes,1,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"`
-	// The secret a client presents once. The server shows it only in this reply.
-	Token         string                 `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// From a Go server, the text of a join token as lgtm.link.v1.JoinToken describes it. It is a
+	// secret, and the server shows it only in this reply. A sample server may return other text.
+	Token string `protobuf:"bytes,2,opt,name=token,proto3" json:"token,omitempty"`
+	// 15 minutes after the token was made.
+	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// The address inside the token, which is the address the machine dials. A sample server may
+	// leave it empty.
+	Address       string `protobuf:"bytes,4,opt,name=address,proto3" json:"address,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -607,6 +623,13 @@ func (x *CreateClientTokenResponse) GetExpiresAt() *timestamppb.Timestamp {
 		return x.ExpiresAt
 	}
 	return nil
+}
+
+func (x *CreateClientTokenResponse) GetAddress() string {
+	if x != nil {
+		return x.Address
+	}
+	return ""
 }
 
 type RevokeClientTokenRequest struct {
@@ -1119,7 +1142,7 @@ var File_lgtm_v1_clients_proto protoreflect.FileDescriptor
 
 const file_lgtm_v1_clients_proto_rawDesc = "" +
 	"\n" +
-	"\x15lgtm/v1/clients.proto\x12\algtm.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xad\x05\n" +
+	"\x15lgtm/v1/clients.proto\x12\algtm.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14lgtm/v1/common.proto\"\xad\x05\n" +
 	"\x06Client\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12*\n" +
@@ -1149,22 +1172,24 @@ const file_lgtm_v1_clients_proto_rawDesc = "" +
 	"\aversion\x18\x02 \x01(\tH\x00R\aversion\x88\x01\x01B\n" +
 	"\n" +
 	"\b_version\"\x15\n" +
-	"\x13WatchClientsRequest\"\x93\x01\n" +
+	"\x13WatchClientsRequest\"\xc6\x01\n" +
 	"\x14WatchClientsResponse\x12'\n" +
 	"\x03all\x18\x01 \x01(\v2\x13.lgtm.v1.ClientListH\x00R\x03all\x12'\n" +
 	"\x05saved\x18\x02 \x01(\v2\x0f.lgtm.v1.ClientH\x00R\x05saved\x12\x1f\n" +
 	"\n" +
-	"removed_id\x18\x03 \x01(\tH\x00R\tremovedIdB\b\n" +
+	"removed_id\x18\x03 \x01(\tH\x00R\tremovedId\x121\n" +
+	"\bposition\x18\x04 \x01(\v2\x15.lgtm.v1.FeedPositionR\bpositionB\b\n" +
 	"\x06change\"7\n" +
 	"\n" +
 	"ClientList\x12)\n" +
 	"\aclients\x18\x01 \x03(\v2\x0f.lgtm.v1.ClientR\aclients\"\x1a\n" +
-	"\x18CreateClientTokenRequest\"\x87\x01\n" +
+	"\x18CreateClientTokenRequest\"\xa1\x01\n" +
 	"\x19CreateClientTokenResponse\x12\x19\n" +
 	"\btoken_id\x18\x01 \x01(\tR\atokenId\x12\x14\n" +
 	"\x05token\x18\x02 \x01(\tR\x05token\x129\n" +
 	"\n" +
-	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"5\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x18\n" +
+	"\aaddress\x18\x04 \x01(\tR\aaddress\"5\n" +
 	"\x18RevokeClientTokenRequest\x12\x19\n" +
 	"\btoken_id\x18\x01 \x01(\tR\atokenId\"\x1b\n" +
 	"\x19RevokeClientTokenResponse\":\n" +
@@ -1238,6 +1263,7 @@ var file_lgtm_v1_clients_proto_goTypes = []any{
 	(*RemoveClientRequest)(nil),         // 18: lgtm.v1.RemoveClientRequest
 	(*RemoveClientResponse)(nil),        // 19: lgtm.v1.RemoveClientResponse
 	(*timestamppb.Timestamp)(nil),       // 20: google.protobuf.Timestamp
+	(*FeedPosition)(nil),                // 21: lgtm.v1.FeedPosition
 }
 var file_lgtm_v1_clients_proto_depIdxs = []int32{
 	0,  // 0: lgtm.v1.Client.state:type_name -> lgtm.v1.ClientState
@@ -1246,30 +1272,31 @@ var file_lgtm_v1_clients_proto_depIdxs = []int32{
 	2,  // 3: lgtm.v1.Client.harnesses:type_name -> lgtm.v1.InstalledHarness
 	5,  // 4: lgtm.v1.WatchClientsResponse.all:type_name -> lgtm.v1.ClientList
 	1,  // 5: lgtm.v1.WatchClientsResponse.saved:type_name -> lgtm.v1.Client
-	1,  // 6: lgtm.v1.ClientList.clients:type_name -> lgtm.v1.Client
-	20, // 7: lgtm.v1.CreateClientTokenResponse.expires_at:type_name -> google.protobuf.Timestamp
-	1,  // 8: lgtm.v1.ApproveClientResponse.client:type_name -> lgtm.v1.Client
-	3,  // 9: lgtm.v1.ClientService.WatchClients:input_type -> lgtm.v1.WatchClientsRequest
-	6,  // 10: lgtm.v1.ClientService.CreateClientToken:input_type -> lgtm.v1.CreateClientTokenRequest
-	8,  // 11: lgtm.v1.ClientService.RevokeClientToken:input_type -> lgtm.v1.RevokeClientTokenRequest
-	10, // 12: lgtm.v1.ClientService.ApproveClient:input_type -> lgtm.v1.ApproveClientRequest
-	12, // 13: lgtm.v1.ClientService.RenameClient:input_type -> lgtm.v1.RenameClientRequest
-	14, // 14: lgtm.v1.ClientService.ScanClientHarnesses:input_type -> lgtm.v1.ScanClientHarnessesRequest
-	16, // 15: lgtm.v1.ClientService.ReconnectClient:input_type -> lgtm.v1.ReconnectClientRequest
-	18, // 16: lgtm.v1.ClientService.RemoveClient:input_type -> lgtm.v1.RemoveClientRequest
-	4,  // 17: lgtm.v1.ClientService.WatchClients:output_type -> lgtm.v1.WatchClientsResponse
-	7,  // 18: lgtm.v1.ClientService.CreateClientToken:output_type -> lgtm.v1.CreateClientTokenResponse
-	9,  // 19: lgtm.v1.ClientService.RevokeClientToken:output_type -> lgtm.v1.RevokeClientTokenResponse
-	11, // 20: lgtm.v1.ClientService.ApproveClient:output_type -> lgtm.v1.ApproveClientResponse
-	13, // 21: lgtm.v1.ClientService.RenameClient:output_type -> lgtm.v1.RenameClientResponse
-	15, // 22: lgtm.v1.ClientService.ScanClientHarnesses:output_type -> lgtm.v1.ScanClientHarnessesResponse
-	17, // 23: lgtm.v1.ClientService.ReconnectClient:output_type -> lgtm.v1.ReconnectClientResponse
-	19, // 24: lgtm.v1.ClientService.RemoveClient:output_type -> lgtm.v1.RemoveClientResponse
-	17, // [17:25] is the sub-list for method output_type
-	9,  // [9:17] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	21, // 6: lgtm.v1.WatchClientsResponse.position:type_name -> lgtm.v1.FeedPosition
+	1,  // 7: lgtm.v1.ClientList.clients:type_name -> lgtm.v1.Client
+	20, // 8: lgtm.v1.CreateClientTokenResponse.expires_at:type_name -> google.protobuf.Timestamp
+	1,  // 9: lgtm.v1.ApproveClientResponse.client:type_name -> lgtm.v1.Client
+	3,  // 10: lgtm.v1.ClientService.WatchClients:input_type -> lgtm.v1.WatchClientsRequest
+	6,  // 11: lgtm.v1.ClientService.CreateClientToken:input_type -> lgtm.v1.CreateClientTokenRequest
+	8,  // 12: lgtm.v1.ClientService.RevokeClientToken:input_type -> lgtm.v1.RevokeClientTokenRequest
+	10, // 13: lgtm.v1.ClientService.ApproveClient:input_type -> lgtm.v1.ApproveClientRequest
+	12, // 14: lgtm.v1.ClientService.RenameClient:input_type -> lgtm.v1.RenameClientRequest
+	14, // 15: lgtm.v1.ClientService.ScanClientHarnesses:input_type -> lgtm.v1.ScanClientHarnessesRequest
+	16, // 16: lgtm.v1.ClientService.ReconnectClient:input_type -> lgtm.v1.ReconnectClientRequest
+	18, // 17: lgtm.v1.ClientService.RemoveClient:input_type -> lgtm.v1.RemoveClientRequest
+	4,  // 18: lgtm.v1.ClientService.WatchClients:output_type -> lgtm.v1.WatchClientsResponse
+	7,  // 19: lgtm.v1.ClientService.CreateClientToken:output_type -> lgtm.v1.CreateClientTokenResponse
+	9,  // 20: lgtm.v1.ClientService.RevokeClientToken:output_type -> lgtm.v1.RevokeClientTokenResponse
+	11, // 21: lgtm.v1.ClientService.ApproveClient:output_type -> lgtm.v1.ApproveClientResponse
+	13, // 22: lgtm.v1.ClientService.RenameClient:output_type -> lgtm.v1.RenameClientResponse
+	15, // 23: lgtm.v1.ClientService.ScanClientHarnesses:output_type -> lgtm.v1.ScanClientHarnessesResponse
+	17, // 24: lgtm.v1.ClientService.ReconnectClient:output_type -> lgtm.v1.ReconnectClientResponse
+	19, // 25: lgtm.v1.ClientService.RemoveClient:output_type -> lgtm.v1.RemoveClientResponse
+	18, // [18:26] is the sub-list for method output_type
+	10, // [10:18] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_lgtm_v1_clients_proto_init() }
@@ -1277,6 +1304,7 @@ func file_lgtm_v1_clients_proto_init() {
 	if File_lgtm_v1_clients_proto != nil {
 		return
 	}
+	file_lgtm_v1_common_proto_init()
 	file_lgtm_v1_clients_proto_msgTypes[0].OneofWrappers = []any{}
 	file_lgtm_v1_clients_proto_msgTypes[1].OneofWrappers = []any{}
 	file_lgtm_v1_clients_proto_msgTypes[3].OneofWrappers = []any{

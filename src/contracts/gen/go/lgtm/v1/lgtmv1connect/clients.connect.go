@@ -70,8 +70,11 @@ type ClientServiceClient interface {
 	WatchClients(context.Context, *connect.Request[v1.WatchClientsRequest]) (*connect.ServerStreamForClient[v1.WatchClientsResponse], error)
 	// CreateClientToken makes a token that one new client uses once to join this server.
 	// The server's own command `lgtm client add` makes the same kind of token.
+	// A call that carries `Lgtm-Request-Key` is refused with `invalid_argument` before any token is
+	// made. Every other call makes a new token, and a token whose reply was lost ends at expires_at.
 	CreateClientToken(context.Context, *connect.Request[v1.CreateClientTokenRequest]) (*connect.Response[v1.CreateClientTokenResponse], error)
-	// RevokeClientToken ends a token that no client has used.
+	// RevokeClientToken ends a token. A client that used the token and still waits for approval is
+	// removed with it. A client that was approved keeps working.
 	RevokeClientToken(context.Context, *connect.Request[v1.RevokeClientTokenRequest]) (*connect.Response[v1.RevokeClientTokenResponse], error)
 	// ApproveClient lets a client that joined with a token start work, under the name the owner gives it.
 	ApproveClient(context.Context, *connect.Request[v1.ApproveClientRequest]) (*connect.Response[v1.ApproveClientResponse], error)
@@ -79,7 +82,8 @@ type ClientServiceClient interface {
 	RenameClient(context.Context, *connect.Request[v1.RenameClientRequest]) (*connect.Response[v1.RenameClientResponse], error)
 	// ScanClientHarnesses asks an online client to look for harnesses again. The result arrives on WatchClients.
 	ScanClientHarnesses(context.Context, *connect.Request[v1.ScanClientHarnessesRequest]) (*connect.Response[v1.ScanClientHarnessesResponse], error)
-	// ReconnectClient asks the server to try an offline client again. The result arrives on WatchClients.
+	// ReconnectClient restarts a client that is connected. A client that is not connected is refused
+	// with `failed_precondition`, because the server never dials a machine.
 	ReconnectClient(context.Context, *connect.Request[v1.ReconnectClientRequest]) (*connect.Response[v1.ReconnectClientResponse], error)
 	// RemoveClient disconnects a client and forgets it. It also refuses a client that waits for approval.
 	RemoveClient(context.Context, *connect.Request[v1.RemoveClientRequest]) (*connect.Response[v1.RemoveClientResponse], error)
@@ -205,8 +209,11 @@ type ClientServiceHandler interface {
 	WatchClients(context.Context, *connect.Request[v1.WatchClientsRequest], *connect.ServerStream[v1.WatchClientsResponse]) error
 	// CreateClientToken makes a token that one new client uses once to join this server.
 	// The server's own command `lgtm client add` makes the same kind of token.
+	// A call that carries `Lgtm-Request-Key` is refused with `invalid_argument` before any token is
+	// made. Every other call makes a new token, and a token whose reply was lost ends at expires_at.
 	CreateClientToken(context.Context, *connect.Request[v1.CreateClientTokenRequest]) (*connect.Response[v1.CreateClientTokenResponse], error)
-	// RevokeClientToken ends a token that no client has used.
+	// RevokeClientToken ends a token. A client that used the token and still waits for approval is
+	// removed with it. A client that was approved keeps working.
 	RevokeClientToken(context.Context, *connect.Request[v1.RevokeClientTokenRequest]) (*connect.Response[v1.RevokeClientTokenResponse], error)
 	// ApproveClient lets a client that joined with a token start work, under the name the owner gives it.
 	ApproveClient(context.Context, *connect.Request[v1.ApproveClientRequest]) (*connect.Response[v1.ApproveClientResponse], error)
@@ -214,7 +221,8 @@ type ClientServiceHandler interface {
 	RenameClient(context.Context, *connect.Request[v1.RenameClientRequest]) (*connect.Response[v1.RenameClientResponse], error)
 	// ScanClientHarnesses asks an online client to look for harnesses again. The result arrives on WatchClients.
 	ScanClientHarnesses(context.Context, *connect.Request[v1.ScanClientHarnessesRequest]) (*connect.Response[v1.ScanClientHarnessesResponse], error)
-	// ReconnectClient asks the server to try an offline client again. The result arrives on WatchClients.
+	// ReconnectClient restarts a client that is connected. A client that is not connected is refused
+	// with `failed_precondition`, because the server never dials a machine.
 	ReconnectClient(context.Context, *connect.Request[v1.ReconnectClientRequest]) (*connect.Response[v1.ReconnectClientResponse], error)
 	// RemoveClient disconnects a client and forgets it. It also refuses a client that waits for approval.
 	RemoveClient(context.Context, *connect.Request[v1.RemoveClientRequest]) (*connect.Response[v1.RemoveClientResponse], error)
