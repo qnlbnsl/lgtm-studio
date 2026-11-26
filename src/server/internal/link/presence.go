@@ -86,17 +86,22 @@ ON CONFLICT (machine_id) DO UPDATE SET
 func (s *State) CheckCurrent(ctx context.Context, machineID, streamID string) (machines.Approval, error) {
 	var approval machines.Approval
 	err := s.store.Read(ctx, func(ctx context.Context, tx *store.ReadTx) error {
-		var current bool
-		err := tx.QueryRow(ctx, `
-SELECT m.approval, EXISTS(SELECT FROM link_connections c WHERE c.machine_id = m.id AND c.stream_id = $2)
-FROM machines m WHERE m.id = $1`, machineID, streamID).Scan(&approval, &current)
-		if err == pgx.ErrNoRows {
+		machine, err := s.registry.Get(ctx, tx, machineID)
+		if err == machines.ErrNoMachine {
 			return ErrUnknownMachine
 		}
-		if err == nil && !current {
+		if err != nil {
+			return err
+		}
+		var current bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT FROM link_connections WHERE machine_id = $1 AND stream_id = $2)`, machineID, streamID).Scan(&current); err != nil {
+			return err
+		}
+		if !current {
 			return ErrNotCurrent
 		}
-		return err
+		approval = machine.Approval
+		return nil
 	})
 	if err != nil {
 		return "", err

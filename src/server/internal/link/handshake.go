@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"io"
+	"sync/atomic"
 	"time"
 
 	"connectrpc.com/connect"
@@ -35,9 +36,15 @@ var (
 )
 
 type receivedFrame struct {
-	request *linkv1.OpenRequest
-	err     error
-	at      time.Time
+	request     *linkv1.OpenRequest
+	err         error
+	at          time.Time
+	interrupted bool
+}
+
+type handshakeReceive struct {
+	result      chan receivedFrame
+	closingRead atomic.Bool
 }
 
 func ServerProofText(machineID string, machineNonce, serverNonce []byte) []byte {
@@ -62,7 +69,7 @@ type openHandshake struct {
 	controls   handshakeControls
 	steady     streamControls
 	watchdog   *streamWatchdog
-	phases     chan chan receivedFrame
+	phases     chan *handshakeReceive
 	frames     chan receivedFrame
 	readerDone chan struct{}
 	machineID  string
@@ -75,7 +82,7 @@ func (s *Service) open(ctx context.Context, stream *connect.BidiStream[linkv1.Op
 	controls := openControls(ctx)
 	entered := controls.now()
 	h := &openHandshake{
-		stream: stream, controls: controls, steady: steadyControls(ctx), phases: make(chan chan receivedFrame, 1),
+		stream: stream, controls: controls, steady: steadyControls(ctx), phases: make(chan *handshakeReceive, 1),
 		frames: make(chan receivedFrame, openQueueSize), readerDone: make(chan struct{}),
 	}
 	ctx, cancel := s.streamContext(ctx)
@@ -95,6 +102,15 @@ func (s *Service) open(ctx context.Context, stream *connect.BidiStream[linkv1.Op
 	}
 	if err == nil {
 		err = errLinkFinished
+	}
+	if h.handle != nil && errors.Is(err, ErrUnknownMachine) {
+		// A registry miss can arrive before the admission that displaced this stream is published.
+		leave, gateErr := link.hub.enter(h.handle)
+		if gateErr != nil {
+			err = gateErr
+		} else {
+			leave()
+		}
 	}
 	cancel(err)
 	cause := context.Cause(ctx)
@@ -237,21 +253,19 @@ func (h *openHandshake) read(ctx context.Context) {
 	if h.steady.readerDone != nil {
 		defer h.steady.readerDone()
 	}
-	receive := func() receivedFrame {
-		request, err := h.stream.Receive()
-		at := h.controls.now()
-		if h.controls.afterReceive != nil {
-			h.controls.afterReceive(request, err, at)
-		}
-		return receivedFrame{request: request, err: err, at: at}
-	}
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case result, ok := <-h.phases:
+		case phase, ok := <-h.phases:
 			if ok {
-				result <- receive()
+				request, err := h.stream.Receive()
+				interrupted := phase.closingRead.Load()
+				at := h.controls.now()
+				if h.controls.afterReceive != nil {
+					h.controls.afterReceive(request, err, at)
+				}
+				phase.result <- receivedFrame{request: request, err: err, at: at, interrupted: interrupted}
 				continue
 			}
 		}
@@ -281,30 +295,28 @@ func (h *openHandshake) receivePhase(ctx context.Context, start time.Time) (*lin
 	cutoff := start.Add(HandshakeTimeout)
 	timer, stop := h.controls.timer(cutoff.Sub(h.controls.now()))
 	defer stop()
-	result := make(chan receivedFrame, 1)
+	phase := &handshakeReceive{result: make(chan receivedFrame, 1)}
 	select {
-	case h.phases <- result:
+	case h.phases <- phase:
 	case <-ctx.Done():
 		return nil, context.Cause(ctx)
 	}
 
 	var frame receivedFrame
 	select {
-	case frame = <-result:
+	case frame = <-phase.result:
 	case <-ctx.Done():
 		return nil, context.Cause(ctx)
 	case <-timer:
 		select {
-		case frame = <-result:
+		case frame = <-phase.result:
 		default:
+			phase.closingRead.Store(true)
 			_ = transport.CloseLinkRead(ctx)
 			select {
-			case frame = <-result:
+			case frame = <-phase.result:
 			case <-ctx.Done():
 				return nil, context.Cause(ctx)
-			}
-			if frame.err != nil && !malformedOpenFrame(frame.err) {
-				return nil, errHandshakeDeadline
 			}
 		}
 	}
@@ -314,6 +326,9 @@ func (h *openHandshake) receivePhase(ctx context.Context, start time.Time) (*lin
 	if frame.err != nil {
 		if malformedOpenFrame(frame.err) {
 			return nil, ErrInvalidMessage
+		}
+		if frame.interrupted {
+			return nil, errHandshakeDeadline
 		}
 		return nil, frame.err
 	}

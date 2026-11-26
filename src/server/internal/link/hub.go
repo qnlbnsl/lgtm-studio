@@ -20,6 +20,7 @@ type hubMachine struct {
 	handles    map[*Handle]struct{}
 	current    *Handle
 	generation int64
+	admitting  bool
 	removed    bool
 }
 
@@ -99,11 +100,18 @@ func (h *Hub) Admit(handle *Handle, commit func() (int64, bool, error)) error {
 		return err
 	}
 	defer leave()
+	m := handle.machine
+	h.mu.Lock()
+	m.admitting = true
+	h.mu.Unlock()
 	generation, unknown, err := commit()
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	m := handle.machine
+	defer func() {
+		m.admitting = false
+		m.cancelRemoved()
+	}()
 	if unknown {
 		if m.current != nil {
 			m.current.cancel(errDatabaseUnavailable)
@@ -153,9 +161,7 @@ func (h *Hub) FinishWelcome(handle *Handle) {
 	m := handle.machine
 	if m.current == handle && handle.started {
 		handle.finished = true
-		if m.removed {
-			handle.cancel(ErrUnknownMachine)
-		}
+		m.cancelRemoved()
 	}
 }
 
@@ -177,7 +183,8 @@ func (h *Hub) Holds(machineID, streamID string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	m := h.machines[machineID]
-	return m != nil && m.current != nil && m.current.streamID == streamID &&
+	// The published handle may already be displaced while the commit is in flight.
+	return m != nil && !m.admitting && m.current != nil && m.current.streamID == streamID &&
 		m.current.ctx.Err() == nil && m.current.finished && !m.removed
 }
 
@@ -211,9 +218,13 @@ func (h *Hub) EndRemoved(machineID string) {
 	defer h.mu.Unlock()
 	if m := h.machines[machineID]; m != nil {
 		m.removed = true
-		if m.current != nil && m.current.finished {
-			m.current.cancel(ErrUnknownMachine)
-		}
+		m.cancelRemoved()
+	}
+}
+
+func (m *hubMachine) cancelRemoved() {
+	if m.removed && !m.admitting && m.current != nil && m.current.finished {
+		m.current.cancel(ErrUnknownMachine)
 	}
 }
 
