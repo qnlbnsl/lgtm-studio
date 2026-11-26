@@ -127,6 +127,7 @@ They meet only in the contract, which sprint 0 writes.
 
 The link between a server and a machine is frozen when the plan `go-s3-client-link` has cleared its review and the findings of the review of the built contract (issue 1643) and the requests of the other plans are settled, which is before either team builds against it.
 The plans `go-s3-server-stream` and `go-s3-server-commands` are written against the frozen link. A change after the freeze needs a new revision of the contract.
+The link was frozen at revision 1 on 2026-11-26, in commit fcfa96c3. Its wire did not change.
 (Changed on 2026-11-26: the plan `go-s3-server-machines` was cut in three after it did not clear its fourth review round with fifteen work items, and the freeze no longer waits for the server end of the stream.)
 The orchestrator decided this on 2026-11-26, because the reviews of the contract kept finding disagreements with plans that were not yet reviewed.
 Until then, a change to the link files is an ordinary work item of the Contract team. After it, a change goes back to phase 3.
@@ -145,8 +146,8 @@ The work items are listed in the brief of each plan.
 
 | Order | Plan slug | What it delivers | State | Commit |
 |---|---|---|---|---|
-| 1 | go-s0-contract | The Go module, Go code generated from the contract, the shared `Watch` shape, and the link contract. | linked | 667ede94 |
-| 2 | go-s1-server-store | The server's database layer: transactions, numbered database changes, the change feed, safe retries and `Watch` streams. | linked | |
+| 1 | go-s0-contract | The Go module, Go code generated from the contract, the shared `Watch` shape, and the link contract. | linked | 667ede94, and fcfa96c3 for the freeze of the link |
+| 2 | go-s1-server-store | The server's database layer: transactions, numbered database changes, the change feed, safe retries and `Watch` streams. | linked | 89d3f656 |
 | 3 | go-s1-client-local | What the client does on its own machine: its key, its facts, the harness scan, and the two records it keeps on disk. | linked | dd0c8cba |
 | 4 | go-s1-stack-vault | The compose stack with PostgreSQL and OpenBao, where OpenBao opens by itself after a restart. | linked | f072231a |
 | 5 | go-s2-server-signin | The server program: settings, request handling, sign-in, web sessions, and the vault client. | linked | |
