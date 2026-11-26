@@ -150,8 +150,8 @@ The work items are listed in the brief of each plan.
 | 2 | go-s1-server-store | The server's database layer: transactions, numbered database changes, the change feed, safe retries and `Watch` streams. | linked | 89d3f656 |
 | 3 | go-s1-client-local | What the client does on its own machine: its key, its facts, the harness scan, and the two records it keeps on disk. | linked | dd0c8cba |
 | 4 | go-s1-stack-vault | The compose stack with PostgreSQL and OpenBao, where OpenBao opens by itself after a restart. | linked | f072231a |
-| 5 | go-s2-server-signin | The server program: settings, request handling, sign-in, web sessions, and the vault client. | linked | |
-| 6 | go-s2-stack-web | The images of the server and the website, and one command that starts everything. | linked | |
+| 5 | go-s2-server-signin | The server program: settings, request handling, sign-in, web sessions, and the vault client. | linked | f3d461e4 |
+| 6 | go-s2-stack-web | The images of the server and the website, and one command that starts everything. | linked | 9a4dacf4 |
 | 7 | go-s3-server-machines | The machine registry, join tokens, and the Machines page's calls that need no stream: a machine can join, wait, be approved and be listed. | linked | |
 | 8 | go-s3-client-link | The `join` and `run` commands, and the client end of the link. | linked | |
 | 9 | go-s3-stack-client | The installer of the client, and the server's own command that makes a join token. | linked | |
