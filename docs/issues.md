@@ -7586,3 +7586,14 @@ Found on 2026-11-26, while the plans of sprint 1 were written. Nothing here is f
 Two Codex planners reported that their sandbox refused the Docker socket, so neither ran a database or the vault.
 The design tests against a real PostgreSQL, so a Codex builder needs the network of its own machine to run its tests.
 The builders of this run are started with network access inside the workspace sandbox, and the run log records it.
+
+## 1641. Wave 1 does not handle a database or a state folder that was restored to an earlier state
+
+Found on 2026-11-26, in the review rounds of the plans of the Go rewrite. Nothing here is fixed.
+
+The design does not promise that a restore works, and the plans of wave 1 name it as outside their scope.
+
+1. **The server's database is restored to an earlier state.** A machine's event numbers then run ahead of the number the server remembers. The server refuses that machine with one code, and the client stops and reports. A machine that was removed after the restored state is known again.
+2. **A client's state folder is restored to an earlier state.** Its event numbers and its command receipts then go back, so an event number can be used twice and a command can run twice.
+
+Until a later wave handles it, the owner removes the machine and joins it again after a restore.

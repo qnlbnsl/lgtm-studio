@@ -2655,3 +2655,10 @@ Found on 2026-11-26, while the contract of the Go rewrite was planned.
 After sprint 0 the contract is frozen, because two teams build against it.
 The contract check could run `buf breaking` against the commit that merged sprint 0, and fail on a change that breaks a reader.
 It is not part of sprint 0, because adding `go_package` to the existing files itself counts as a breaking change under the strictest rule set.
+
+## Replacing the server's credential for the vault
+
+Found on 2026-11-26, in the review of the plan for the vault.
+
+Wave 1 gives the server one credential for OpenBao at the first start, and nothing replaces it.
+A later wave could replace it on a schedule or on request, with a role for an operator that cannot read the stored secrets.
