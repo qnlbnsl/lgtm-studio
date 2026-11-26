@@ -44,13 +44,17 @@ trap 'rm -rf -- "$scratch"' EXIT
 out=$scratch/out
 err=$scratch/err
 
+# The proof labels every resource with lgtm.s1v.fixture=<its project>, and its project name is
+# lgtm-s1v-proof-<random>. Only resources of such a project that appear during this run count, so the
+# stacks of other agents (lgtm-s1v-test-*, lgtm-s1v-<hex>) never change the result.
 leftovers() {
     {
-        docker ps -a --format '{{.Names}}'
-        docker volume ls --format '{{.Name}}'
-        docker network ls --format '{{.Name}}'
-    } 2>/dev/null | grep -E '^lgtm-(s1v|proof)' || true
+        docker ps -a --filter 'label=lgtm.s1v.fixture' --format '{{.Names}}'
+        docker volume ls --filter 'label=lgtm.s1v.fixture' --format '{{.Name}}'
+        docker network ls --filter 'label=lgtm.s1v.fixture' --format '{{.Name}}'
+    } 2>/dev/null | grep -E '^lgtm-s1v-proof-' | sort || true
 }
+new_leftovers() { comm -13 <(printf '%s\n' "$1") <(printf '%s\n' "$2"); }
 
 before=$(leftovers)
 status=0
@@ -71,7 +75,7 @@ for name in "${assertions[@]}"; do
 done
 
 expect "the output ends with cleanup=true" test "$(tail -n 1 "$out")" = "cleanup=true"
-expect "no container, volume or network of the proof remains" test "$before" = "$after"
+expect "no container, volume or network of the proof remains" test -z "$(new_leftovers "$before" "$after")"
 
 expect "the PostgreSQL image is pinned by the exact digest" \
     grep -Eq "^image postgres .*postgres.*@$pg_digest" "$out"

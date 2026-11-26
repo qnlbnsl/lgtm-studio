@@ -9,11 +9,12 @@
 #  - local bootstrap evidence means the file admin/init-response.json or server/openbao.json.
 source "$(dirname -- "${BASH_SOURCE[0]}")/stack-testlib.sh"
 
-ASSERTIONS=(seal_key_is_created_once missing_key_preserves_existing_vault wrong_key_preserves_existing_vault vault_has_no_host_port)
+ASSERTIONS=(seal_key_is_created_once missing_key_preserves_existing_vault wrong_key_preserves_existing_vault vault_has_no_host_port seal_stops_when_storage_cannot_be_checked)
 C=seal_key_is_created_once
 M=missing_key_preserves_existing_vault
 G=wrong_key_preserves_existing_vault
 N=vault_has_no_host_port
+D=seal_stops_when_storage_cannot_be_checked
 KEY=bao/unseal.key
 
 never_open() { # <seconds>
@@ -66,11 +67,11 @@ if ((base_ok)) && [[ -n ${ROOT:-} ]]; then
     check $M "seal refuses without the key" test "$RC" -ne 0
     check $M "seal names the missing key of an existing vault" has "$OUT" 'seal key missing for existing vault'
     check $M "no new key was created" neg sexists $KEY
-    check $M "the moved key is untouched" test "$(sfp bao/aside.key | head -n 1)" = "$(echo "$k1" | head -n 1)"
+    check $M "the moved key is untouched" test "$(sfp1 bao/aside.key)" = "$(echo "$k1" | head -n 1)"
     check $M "the rows are preserved" test "$(kv_rows)" = "$rows"
     check $M "the original key is put back" smv bao/aside.key $KEY
     check $M "seal accepts the original key" sp_ok seal
-    check $M "the key bytes are unchanged" test "$(sfp $KEY | head -n 1)" = "$(echo "$k1" | head -n 1)"
+    check $M "the key bytes are unchanged" test "$(sfp1 $KEY)" = "$(echo "$k1" | head -n 1)"
     dc up -d openbao >/dev/null 2>&1
     check $M "the original key opens the record again" await 90 vault_open
     check $M "the original record reads back" test "$(get_sample)" = orig
@@ -84,7 +85,7 @@ if ((base_ok)) && [[ -n ${ROOT:-} ]]; then
     sown $KEY 10002:10002 400
     sp seal
     check $G "seal does not replace a key of valid length" test "$(ssize $KEY)" = 32
-    check $G "the different key is not the original" test "$(sfp $KEY | head -n 1)" != "$(echo "$k1" | head -n 1)"
+    check $G "the different key is not the original" test "$(sfp1 $KEY)" != "$(echo "$k1" | head -n 1)"
     dc up -d openbao >/dev/null 2>&1
     check $G "the vault stays sealed with a different key" never_open 30
     check $G "the vault is still initialized and sealed" vault_sealed
@@ -110,7 +111,7 @@ if ((base_ok)) && [[ -n ${ROOT:-} ]]; then
     check $G "seal refuses a symbolic link as the key" test "$RC" -ne 0
     check $G "seal reports an invalid key for the link" has "$OUT" 'seal key invalid'
     rootsh 'rm -f /s/bao/unseal.key; mv /s/bao/aside2.key /s/bao/unseal.key; true'
-    check $G "the original key is restored" test "$(sfp $KEY | head -n 1)" = "$(echo "$k1" | head -n 1)"
+    check $G "the original key is restored" test "$(sfp1 $KEY)" = "$(echo "$k1" | head -n 1)"
     dc up -d openbao >/dev/null 2>&1
     check $G "the original key opens the vault after the malformed run" await 90 vault_open
     check $G "the original record still reads back" test "$(get_sample)" = orig
@@ -155,9 +156,10 @@ if ((base_ok)) && [[ -n ${ROOT:-} ]]; then
            $(proc_status openbao CapEff) == 0000000000000000 && $(proc_status openbao NoNewPrivs) == 1 ]]'
     check $N "the daemon uses PostgreSQL storage" bash -c 'bao_status | jq -e ".storage_type == \"postgresql\""'
     check $N "the daemon uses the static seal and not development mode" bash -c 'bao_status | jq -e ".type == \"static\""'
-    check $N "no host listener of the daemon is reachable from the host" bash -c '
-        pid=$(docker inspect -f "{{.State.Pid}}" "$(cid_of openbao)"); [[ $pid -gt 0 ]] || exit 1
-        ! ss -ltnH 2>/dev/null | awk "{print \$4}" | grep -Eq ":8200$"'
+    check $N "the daemon container publishes no port in its configuration" bash -c '
+        jq -e "(.[0].HostConfig.PortBindings // {}) | length == 0" <(inspect_json openbao)'
+    check $N "Docker reports no published port of the daemon container" bash -c '
+        [[ -n $(cid_of openbao) && -z $(docker port "$(cid_of openbao)") ]]'
     check $N "the database daemon publishes no port in its configuration" bash -c '
         jq -e "(.[0].HostConfig.PortBindings // {}) | length == 0" <(inspect_json postgres)'
     check $N "the key does not appear in the configuration of the daemon" bash -c '
@@ -168,7 +170,7 @@ fi
 for ev in admin/init-response.json server/openbao.json; do
     stack_new
     if check $M "[$ev] the database part succeeds" up_db && check $M "[$ev] the first seal succeeds" sp_ok seal; then
-        ksum=$(sfp $KEY | head -n 1)
+        ksum=$(sfp1 $KEY)
         check $M "[$ev] the table of the vault holds no rows" test "$(kv_rows)" = 0
         printf '{"root_token":"placeholder"}\n' | sput "$ev"
         smv $KEY bao/aside.key
@@ -179,7 +181,7 @@ for ev in admin/init-response.json server/openbao.json; do
         check $M "[$ev] the evidence file is untouched" test "$(scat "$ev")" = '{"root_token":"placeholder"}'
         smv bao/aside.key $KEY
         check $M "[$ev] the original key is accepted afterwards" sp_ok seal
-        check $M "[$ev] the key bytes are unchanged" test "$(sfp $KEY | head -n 1)" = "$ksum"
+        check $M "[$ev] the key bytes are unchanged" test "$(sfp1 $KEY)" = "$ksum"
     fi
 done
 
@@ -189,6 +191,30 @@ if check $C "[fresh] the database part succeeds" up_db && check $C "[fresh] the 
     smv $KEY bao/aside.key
     check $C "[fresh] a fresh installation creates a new key" sp_ok seal
     check $C "[fresh] the new key has the right owner, mode and size" bash -c '[[ $(sstat bao/unseal.key) == "10002:10002 400" && $(ssize bao/unseal.key) == 32 ]]'
+fi
+
+# --- fourth stack: a failed probe of the storage must stop seal and must not write a key ---
+# The key is missing and no bootstrap evidence exists, so only the probe tells an old vault from a new one.
+stack_new
+if check $D "the database part succeeds" up_db && check $D "the first seal succeeds" sp_ok seal; then
+    srm $KEY
+    dc stop -t 30 postgres >/dev/null 2>&1
+    sp seal
+    check $D "[database stopped] seal refuses" test "$RC" -ne 0
+    check $D "[database stopped] seal names the storage check" has "$OUT" 'Could not check OpenBao storage in PostgreSQL.'
+    check $D "[database stopped] no key was written" neg sexists $KEY
+    dc up -d postgres >/dev/null 2>&1
+    check $D "the database returns to health" await 120 is_healthy postgres
+    scat bao/postgres-bao.password >"$WORK/bao-pw.orig"
+    hex64 | sput bao/postgres-bao.password
+    sp seal
+    check $D "[wrong password] seal refuses" test "$RC" -ne 0
+    check $D "[wrong password] seal names the storage check" has "$OUT" 'Could not check OpenBao storage in PostgreSQL.'
+    check $D "[wrong password] no key was written" neg sexists $KEY
+    sput bao/postgres-bao.password <"$WORK/bao-pw.orig"
+    check $D "the original password is restored" test "$(scat bao/postgres-bao.password)" = "$(cat "$WORK/bao-pw.orig")"
+    check $D "with the database asked again, a fresh installation gets its key" sp_ok seal
+    check $D "the new key has the right owner, mode and size" bash -c '[[ $(sstat bao/unseal.key) == "10002:10002 400" && $(ssize bao/unseal.key) == 32 ]]'
 fi
 
 finish

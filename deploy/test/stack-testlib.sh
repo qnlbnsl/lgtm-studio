@@ -164,6 +164,8 @@ sexists() { rootsh 'test -e "/s/$1"' "$1"; }
 scat() { rootsh 'cat "/s/$1"' "$1"; }
 ssize() { rootsh 'wc -c < "/s/$1"' "$1" | tr -d ' \n'; }
 # sfp prints a fingerprint of a file: its digest and its modification time.
+# sfp1 prints only the digest line of sfp. Reading the whole output avoids a broken pipe in the container client.
+sfp1() { local o; o=$(sfp "$1") || return 1; printf '%s\n' "${o%%$'\n'*}"; }
 sfp() { rootsh 'sha256sum "/s/$1" | cut -d" " -f1; stat -c %y "/s/$1"' "$1"; }
 # sput writes standard input into a file in place. A new file gets owner and mode from the arguments.
 sput() { rootsh 'cat > "/s/$1"' "$1"; }
