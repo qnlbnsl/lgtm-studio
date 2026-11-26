@@ -36,16 +36,30 @@ func withCookieMode(ctx context.Context, mode auth.CookieMode) context.Context {
 	return context.WithValue(ctx, cookieModeKey{}, mode)
 }
 
+// sessionGate verifies the session of a protected procedure inside the protocol deadline.
+// It stores only the verified digest in the context of the call.
+func (r *router) sessionGate(ctx context.Context, spec connect.Spec, _ connect.Peer, header http.Header) (context.Context, error) {
+	if publicProcedures[spec.Procedure] {
+		return nil, nil
+	}
+	mode, _ := cookieMode(ctx)
+	verifier, err := r.checkSession(ctx, header, mode)
+	if err != nil {
+		return nil, err
+	}
+	return withVerifier(ctx, verifier), nil
+}
+
 // checkSession reads the cookie of the selected mode and verifies its session.
-func (r *router) checkSession(req *http.Request, mode auth.CookieMode) (auth.Verifier, *connect.Error) {
-	verifier, ok := cookieVerifier(req, mode)
+func (r *router) checkSession(ctx context.Context, header http.Header, mode auth.CookieMode) (auth.Verifier, *connect.Error) {
+	verifier, ok := cookieVerifier(&http.Request{Header: header}, mode)
 	if !ok {
 		return auth.Verifier{}, publicError(auth.ErrNoSession)
 	}
 	if r.sessions == nil {
 		return auth.Verifier{}, connect.NewError(connect.CodeUnavailable, errors.New(messageUnavailable))
 	}
-	if err := r.sessions.Check(req.Context(), verifier); err != nil {
+	if err := r.sessions.Check(ctx, verifier); err != nil {
 		return auth.Verifier{}, publicError(err)
 	}
 	return verifier, nil

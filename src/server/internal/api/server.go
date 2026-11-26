@@ -122,14 +122,16 @@ func NewHandler(options Options) http.Handler {
 		r.writeError(w, req, connect.NewError(connect.CodeUnimplemented, errors.New(notImplemented)))
 	})
 
+	// The session gate runs after Connect starts the protocol deadline and before it reads a message.
+	guard := connect.WithRequestGate(r.sessionGate)
 	if options.Session != nil {
 		_, handler := lgtmv1connect.NewSessionServiceHandler(options.Session,
-			protocol, connect.WithReadMaxBytes(sessionReadMaxBytes))
+			protocol, guard, connect.WithReadMaxBytes(sessionReadMaxBytes), sessionDecoding())
 		r.register(handler, lgtmv1connect.SessionServiceGetServerProcedure,
 			lgtmv1connect.SessionServiceSignInProcedure, lgtmv1connect.SessionServiceSignOutProcedure)
 	}
 	if options.Clients != nil {
-		_, handler := lgtmv1connect.NewClientServiceHandler(options.Clients, protocol)
+		_, handler := lgtmv1connect.NewClientServiceHandler(options.Clients, protocol, guard)
 		r.register(handler,
 			lgtmv1connect.ClientServiceWatchClientsProcedure,
 			lgtmv1connect.ClientServiceCreateClientTokenProcedure,
@@ -266,7 +268,8 @@ func allowOrigin(header http.Header, req *http.Request) {
 	header.Set("Access-Control-Allow-Credentials", "true")
 }
 
-// serveWeb applies the origin gate and the session guard before any service reads the request.
+// serveWeb applies the origin gate before any service reads the request.
+// A registered service checks the session in its request gate, and the fallback checks it here.
 func (r *router) serveWeb(w http.ResponseWriter, req *http.Request, procedure string) {
 	mode, err := r.origins.Check(req)
 	if err != nil {
@@ -283,21 +286,19 @@ func (r *router) serveWeb(w http.ResponseWriter, req *http.Request, procedure st
 	}
 
 	ctx := withCookieMode(req.Context(), mode)
+	if handler, ok := r.web[procedure]; ok {
+		handler.ServeHTTP(w, req.WithContext(ctx))
+		return
+	}
 	if !publicProcedures[procedure] {
-		verifier, err := r.checkSession(req, mode)
+		verifier, err := r.checkSession(ctx, req.Header, mode)
 		if err != nil {
 			r.writeError(w, req, err)
 			return
 		}
 		ctx = withVerifier(ctx, verifier)
 	}
-	req = req.WithContext(ctx)
-
-	if handler, ok := r.web[procedure]; ok {
-		handler.ServeHTTP(w, req)
-		return
-	}
-	r.unsupported.ServeHTTP(w, req)
+	r.unsupported.ServeHTTP(w, req.WithContext(ctx))
 }
 
 // writeError writes a protocol error, or only its status when the request uses no known protocol.
