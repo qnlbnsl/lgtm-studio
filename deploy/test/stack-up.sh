@@ -403,15 +403,101 @@ up_keeps_the_password_out_of_its_output() {
         ! grep -q '^phase ' "$output" && [[ $(<"$output") != *"$marker"* && ! -s $WEB_TEST_COMPOSE_CALLS ]]
 }
 
-up_keeps_changed_settings_password_out_of_its_output() {
-    setup && safe_model && restrict_to_vault || return 1
-    local lock_fd marker=synthetic-lock-wait-test-marker status=0 deadline
+up_uses_the_working_folder_settings_with_compose_file() {
+    setup || return 1
+    trap 'rm -rf -- "$web_folder"' EXIT
+    local deployment=$web_folder/deploy working=$web_folder/working
+    local other_project other_port other_password expected published
+    other_project=lgtm-s2w-$(web_fixture_random 4) || return 1
+    other_port=$((web_port == 39999 ? 39998 : web_port + 1))
+    other_password=$(web_fixture_random 16) || return 1
+    [[ $other_project != "$web_project" && $other_password != "$web_password" ]] || return 1
+    mkdir -- "$deployment" "$working" "$web_folder/bin" || return 1
+    cp -- "$web_root"/deploy/{up.sh,stack-prepare.sh,compose.yaml,postgres-init.sql} "$deployment/" || return 1
+    (
+        umask 077
+        printf 'COMPOSE_PROJECT_NAME=%s\nLGTM_WEB_PORT=%s\nLGTM_WEB_PASSWORD=%s\n' \
+            "$web_project" "$web_port" "$web_password" >"$working/.env" &&
+        printf 'COMPOSE_PROJECT_NAME=%s\nLGTM_WEB_PORT=%s\nLGTM_WEB_PASSWORD=%s\n' \
+            "$other_project" "$other_port" "$other_password" >"$deployment/.env"
+    ) || return 1
+    launcher=$deployment/up.sh launch_dir=$working
+    export COMPOSE_FILE=../deploy/compose.yaml
+    unset COMPOSE_ENV_FILES COMPOSE_PROJECT_NAME
+
+    export WEB_TEST_DOCKER WEB_TEST_MODEL_FILTER WEB_TEST_COMPOSE_CALLS WEB_TEST_EXPECTED_PASSWORD
+    WEB_TEST_DOCKER=$(command -v docker) || return 1
+    WEB_TEST_MODEL_FILTER=$web_folder/model.jq
+    WEB_TEST_COMPOSE_CALLS=$web_folder/compose-calls
+    WEB_TEST_EXPECTED_PASSWORD=$web_password
+    cat >"$WEB_TEST_MODEL_FILTER" <<'EOF_JQ'
+[.name, .services.web.ports[0].published,
+    (.services.server.environment.LGTM_WEB_PASSWORD == env.WEB_TEST_EXPECTED_PASSWORD)] | @tsv
+EOF_JQ
+    expected=$(printf '%s\t%s\ttrue' "$web_project" "$web_port")
+    if [[ $(cd -- "$working" && dc config --format json 2>/dev/null |
+        jq -erf "$WEB_TEST_MODEL_FILTER" 2>/dev/null) != "$expected" ]]; then
+        printf '  Direct Compose configuration did not select the working folder settings.\n' >&2
+        return 1
+    fi
+
+    # Render the real model for every call. Simulate operations that would need a Docker daemon.
+    cat >"$web_folder/bin/docker" <<'EOF_DOCKER'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ $1 == inspect ]]; then
+    printf 'healthy\n'
+    exit
+fi
+[[ $1 == compose ]] || exit 77
+shift
+options=()
+while [[ ${1:-} == -* ]]; do
+    case $1 in
+        -f|--file|-p|--project-name|--project-directory|--env-file|--profile)
+            options+=("$1" "$2")
+            shift 2
+            ;;
+        *=*) options+=("$1"); shift ;;
+        *) exit 77 ;;
+    esac
+done
+model=$("$WEB_TEST_DOCKER" compose "${options[@]}" config --format json </dev/null |
+    jq -erf "$WEB_TEST_MODEL_FILTER")
+printf '%s\n' "$model" >>"$WEB_TEST_COMPOSE_CALLS"
+case $1 in
+    config) exec "$WEB_TEST_DOCKER" compose "${options[@]}" "$@" ;;
+    ps) printf 'fixture-container\n' ;;
+    exec) printf 'f\n' ;;
+    port) IFS=$'\t' read -r project port password_matches <<<"$model"; printf '127.0.0.1:%s\n' "$port" ;;
+    build|up|run) ;;
+    *) exit 77 ;;
+esac
+EOF_DOCKER
+    chmod +x "$web_folder/bin/docker" || return 1
+    export PATH=$web_folder/bin:$PATH
+
+    if ! run_up || ((rc != 0)) || ! completed_phases "${full_phases[@]}"; then
+        printf '  The launcher did not complete its phases with the Compose stand-in.\n' >&2
+        return 1
+    fi
+    published=$(cd -- "$working" && dc port web 8080 2>>"$output") || return 1
+    if [[ ! -s $WEB_TEST_COMPOSE_CALLS ]] || grep -Fvxq -- "$expected" "$WEB_TEST_COMPOSE_CALLS"; then
+        printf '  A launcher or port lookup Compose call selected different settings from direct Compose configuration.\n' >&2
+        return 1
+    fi
+    [[ $published == "127.0.0.1:$web_port" ]] && website_line
+}
+
+start_up_waiting_for_state_lock() {
+    local deadline
     mkdir -m 0700 -- "$LGTM_STACK_STATE_DIR" || return 1
+    mkdir -m 0700 -- "$web_folder/launcher-tmp" || return 1
     exec {lock_fd}<"$LGTM_STACK_STATE_DIR" || return 1
     flock --exclusive "$lock_fd" || return 1
 
     # Close the fixture's lock descriptor in the launcher so it holds only its own lock.
-    (cd -- "$launch_dir" && exec timeout --kill-after=5 180 "$launcher" --until vault) \
+    (cd -- "$launch_dir" && TMPDIR=$web_folder/launcher-tmp exec timeout --kill-after=5 180 "$launcher" --until vault) \
         {lock_fd}<&- >"$output" 2>&1 &
     vault_launcher_pid=$!
     deadline=$((SECONDS + 30))
@@ -427,31 +513,76 @@ up_keeps_changed_settings_password_out_of_its_output() {
         fi
         sleep 0.05
     done
+}
 
+up_cleans_up_settings_when_terminated_while_waiting_for_the_lock() {
+    setup && restrict_to_vault || return 1
+    local lock_fd launcher_pid snapshot deadline
+    start_up_waiting_for_state_lock || return 1
+    launcher_pid=$(ps --ppid "$vault_launcher_pid" -o pid= | awk '{print $1}') || return 1
+    [[ $launcher_pid =~ ^[1-9][0-9]*$ ]] || return 1
+    snapshot=$(find "$web_folder/launcher-tmp" -type f \
+        -exec grep -lFx -- "LGTM_WEB_PASSWORD=$web_password" {} +) || return 1
+    if [[ -z $snapshot ]]; then
+        printf '  The fixture found no private password copy before sending the termination signal.\n' >&2
+        return 1
+    fi
+
+    # Signal only the launcher. The fixture still holds the state lock.
+    kill -TERM "$launcher_pid" || return 1
+    deadline=$((SECONDS + 5))
+    while kill -0 "$launcher_pid" 2>/dev/null; do
+        if ((SECONDS >= deadline)); then
+            printf '  The launcher did not exit after process-only termination while the fixture held the state lock.\n' >&2
+            return 1
+        fi
+        sleep 0.05
+    done
+    wait "$vault_launcher_pid" || true
+    vault_launcher_pid=''
+    if [[ -e $snapshot || -n $(find "$web_folder/launcher-tmp" -mindepth 1 -print -quit) ]]; then
+        printf '  The launcher left its private settings copy after termination.\n' >&2
+        return 1
+    fi
+    exec {lock_fd}<&-
+}
+
+up_keeps_changed_settings_password_out_of_its_output() {
+    setup && safe_model && restrict_to_vault || return 1
+    local lock_fd marker status=0
+    marker=$(web_fixture_random 16) || return 1
+    start_up_waiting_for_state_lock || return 1
     printf 'LGTM_WEB_PORT=%s\nLGTM_WEB_PASSWORD="%s\n' "$web_port" "$marker" >"$COMPOSE_ENV_FILES" || return 1
     flock --unlock "$lock_fd" || return 1
     exec {lock_fd}<&-
     wait "$vault_launcher_pid" || status=$?
     vault_launcher_pid=''
-    if ((status >= 124)); then
-        printf '  The launcher did not finish normally after the fixture released the lock.\n' >&2
-        return 1
-    fi
     if [[ $(<"$output") == *"$marker"* ]]; then
         printf '  The launcher exposed the password from settings changed during the lock wait.\n' >&2
         return 1
     fi
+    if ((status != 0)); then
+        printf '  The launcher exited with status %d after the fixture released the lock. Expected status 0.\n' "$status" >&2
+        return 1
+    fi
+    if [[ $(last_line) != 'postgres and openbao are healthy' ]]; then
+        printf '  The launcher did not print the vault-ready line after the settings edit.\n' >&2
+        return 1
+    fi
 }
 
+settings_assertions=(up_uses_the_working_folder_settings_with_compose_file
+    up_cleans_up_settings_when_terminated_while_waiting_for_the_lock
+    up_keeps_changed_settings_password_out_of_its_output)
 assertions=(up_until_vault_needs_no_web_settings up_starts_everything_in_order
     up_starts_no_server_before_the_vault up_waits_for_a_slow_server up_stops_on_a_failed_server
     up_names_a_taken_port up_is_idempotent up_password_removal_ends_sessions up_keeps_the_password_out_of_its_output
-    up_keeps_changed_settings_password_out_of_its_output)
+    "${settings_assertions[@]}")
 
 if [[ $* == --stand-ins ]]; then
     assertions=(up_until_vault_needs_no_web_settings up_starts_no_server_before_the_vault
         up_waits_for_a_slow_server up_stops_on_a_failed_server up_names_a_taken_port
-        up_keeps_the_password_out_of_its_output up_keeps_changed_settings_password_out_of_its_output)
+        up_keeps_the_password_out_of_its_output "${settings_assertions[@]}")
 elif (($#)); then
     printf 'Usage: %s [--stand-ins]\n' "$0" >&2
     exit 2
