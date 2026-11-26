@@ -1,6 +1,6 @@
 ---
 topic: go-s2-server-signin
-status: attack
+status: done
 tier: M
 created: 2026-11-25
 updated: 2026-11-26
