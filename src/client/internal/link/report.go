@@ -49,7 +49,7 @@ type reporter struct {
 	settings config.Settings
 	version  string
 	options  harness.ScanOptions
-	append   func([]byte) (uint64, error)
+	append   func(context.Context, []byte) (uint64, error)
 	logger   *slog.Logger
 	probes   reportProbes
 	order    atomic.Uint64
@@ -63,6 +63,12 @@ type reporter struct {
 var errReadFacts = errors.New("link: could not read machine facts")
 
 func newReporter(settings config.Settings, version string, options harness.ScanOptions, appendReport func([]byte) (uint64, error), logger *slog.Logger, probes reportProbes) *reporter {
+	return newReporterWithContextAppend(settings, version, options, func(_ context.Context, payload []byte) (uint64, error) {
+		return appendReport(payload)
+	}, logger, probes)
+}
+
+func newReporterWithContextAppend(settings config.Settings, version string, options harness.ScanOptions, appendReport func(context.Context, []byte) (uint64, error), logger *slog.Logger, probes reportProbes) *reporter {
 	if probes.now == nil {
 		probes.now = time.Now
 	}
@@ -173,7 +179,10 @@ func (r *reporter) publish(ctx context.Context, kind reportKind, order uint64, e
 		return false, nil
 	}
 	candidate := snapshot{order: order, payload: payload}
-	committed, err := r.appendSnapshot(queue, candidate)
+	committed, err := r.appendSnapshot(ctx, queue, candidate)
+	if err == context.Canceled || err == context.DeadlineExceeded {
+		return false, nil
+	}
 	if !committed && err == nil && !requested && order > queue.pending.order {
 		queue.pending = candidate
 	}
@@ -192,7 +201,7 @@ func (r *reporter) flush() error {
 	}
 	for _, queue := range []*reportQueue{first, second} {
 		if queue.pending.order != 0 {
-			if _, err := r.appendSnapshot(queue, queue.pending); err != nil {
+			if _, err := r.appendSnapshot(context.Background(), queue, queue.pending); err != nil {
 				return err
 			}
 		}
@@ -200,12 +209,18 @@ func (r *reporter) flush() error {
 	return nil
 }
 
-func (r *reporter) appendSnapshot(queue *reportQueue, candidate snapshot) (bool, error) {
-	sequence, err := r.append(candidate.payload)
+func (r *reporter) appendSnapshot(ctx context.Context, queue *reportQueue, candidate snapshot) (bool, error) {
+	sequence, err := r.append(ctx, candidate.payload)
 	if errors.Is(err, ErrOutboxFull) {
 		return false, nil
 	}
 	if err != nil {
+		if err == context.Canceled || err == context.DeadlineExceeded {
+			return false, err
+		}
+		if errors.Is(err, ErrStoreFailed) {
+			err = ErrStoreFailed
+		}
 		// A failed transaction may have reached disk. Fence further appends.
 		r.fault = err
 		return false, err

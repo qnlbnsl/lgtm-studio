@@ -2,6 +2,7 @@
 package link
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
@@ -384,7 +385,22 @@ func (s *Store) ready() error {
 }
 
 func (s *Store) update(fn func(*bolt.Tx) error) error {
-	if err := commit(s.db, fn); err != nil {
+	return s.updateContext(context.Background(), fn)
+}
+
+func (s *Store) updateContext(ctx context.Context, fn func(*bolt.Tx) error) error {
+	var refused error
+	if err := commit(s.db, func(tx *bolt.Tx) error {
+		// The store lock is held. Check cancellation before admitting the write.
+		refused = ctx.Err()
+		if refused != nil {
+			return refused
+		}
+		return fn(tx)
+	}); err != nil {
+		if refused != nil && err == refused {
+			return refused
+		}
 		s.failed = fmt.Errorf("%s: %w: %w", state.StoreFile, ErrStoreFailed, err)
 		return s.failed
 	}

@@ -2,6 +2,7 @@ package link
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"math"
 
@@ -16,9 +17,16 @@ type Event struct {
 
 // Append stores a payload and returns its number after the commit.
 func (s *Store) Append(payload []byte) (uint64, error) {
+	return s.appendContext(context.Background(), payload)
+}
+
+func (s *Store) appendContext(ctx context.Context, payload []byte) (uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ready(); err != nil {
+		return 0, err
+	}
+	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
 	if len(payload) > s.opts.MaxEventBytes {
@@ -33,7 +41,7 @@ func (s *Store) Append(payload []byte) (uint64, error) {
 		return 0, ErrOutboxFull
 	}
 	key, next := numberKey(n), numberKey(n+1)
-	if err := s.update(func(tx *bolt.Tx) error {
+	if err := s.updateContext(ctx, func(tx *bolt.Tx) error {
 		if err := tx.Bucket(eventsBucket).Put(key[:], payload); err != nil {
 			return err
 		}

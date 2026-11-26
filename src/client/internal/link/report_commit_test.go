@@ -61,7 +61,7 @@ func TestCommandScanCancellationAtReportCommit(t *testing.T) {
 					}
 					return err
 				})
-				r := newReporter(config.Settings{}, "v", harness.ScanOptions{}, store.Append, log.logger(), fixtureReportProbes())
+				r := newReporterWithContextAppend(config.Settings{}, "v", harness.ScanOptions{}, store.appendContext, log.logger(), fixtureReportProbes())
 				f := newCommandFixture(t, store, r.scanHarnesses, nil, log.logger())
 				cmd := scanCommand(1, 1, tNow.Add(time.Minute))
 				if stop, err := f.handler.handle(ctx, cmd); stop || err != nil {
