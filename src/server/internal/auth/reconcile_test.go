@@ -451,3 +451,27 @@ $$`, hex.EncodeToString(live2[:])))
 	requireStored(t, f.obs, "after the committed purge")
 	requireRemovalsSince(t, f.obs, head, "after the committed purge", expired, live1, live2)
 }
+
+// A stale expired row must not decide the fate of the live rows (post-a 6).
+func TestReconcileIgnoresExpiredRowsWhenComparingBindings(t *testing.T) {
+	one := mustPassword(t, "reconcile expired one")
+	old := mustPassword(t, "reconcile expired old")
+	T := fixtureNow
+	f := newSessionFixture(t, T)
+	var (
+		live1   = verifierOf(0x31)
+		live2   = verifierOf(0x32)
+		expired = verifierOf(0x33)
+		tooNew  = verifierOf(0x34)
+	)
+	insertRow(t, f.obs, validRow(t, one, live1, T.Add(-time.Hour)))
+	insertRow(t, f.obs, validRow(t, one, live2, T.Add(-2*time.Hour)))
+	insertRow(t, f.obs, validRow(t, old, expired, T.Add(-sessionLifetime-time.Hour)))
+	insertRow(t, f.obs, junkRow(t, tooNew, T.Add(time.Hour)))
+	head := feedHead(t, f.obs)
+	if err := Reconcile(t.Context(), f.s, &one); err != nil {
+		t.Fatalf("Reconcile failed: %v", err)
+	}
+	requireStored(t, f.obs, "after reconciling with an old expired row", live1, live2)
+	requireRemovalsSince(t, f.obs, head, "after reconciling with an old expired row", expired, tooNew)
+}
