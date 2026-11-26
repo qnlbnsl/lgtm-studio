@@ -132,6 +132,49 @@ func TestAckRefusesAhead(t *testing.T) {
 	if err := s.Ack(4); !errors.Is(err, ErrAckAhead) {
 		t.Errorf("Ack(4) on an empty outbox gave %v", err)
 	}
+
+	// At the wire limit the last number is still readable and acknowledgeable, also
+	// after a reopen, and the number above it is refused as ahead.
+	const last = uint64(math.MaxInt64)
+	f2, _ := newState(t)
+	s2 := mustCreate(t, f2, StoreOptions{})
+	if err := s2.Close(); err != nil {
+		t.Fatal(err)
+	}
+	setNext(t, f2.Paths().Store, last)
+	s2 = mustOpen(t, f2, StoreOptions{})
+	if n, err := s2.Append([]byte("last")); err != nil || n != last {
+		t.Fatalf("the last legal Append gave %d, %v", n, err)
+	}
+	for _, n := range []uint64{last + 1, last + 2, math.MaxUint64} {
+		if err := s2.Ack(n); !errors.Is(err, ErrAckAhead) {
+			t.Errorf("Ack(%d) after the last number gave %v", n, err)
+		}
+	}
+	if s2.Len() != 1 {
+		t.Fatalf("a refused Ack removed the last event: length %d", s2.Len())
+	}
+	s2 = reopen(t, f2, s2, StoreOptions{})
+	events, err := s2.Read(last, 10)
+	if err != nil || len(events) != 1 || events[0].Seq != last || string(events[0].Payload) != "last" {
+		t.Fatalf("after reopen the last event reads as %v, %v", events, err)
+	}
+	if _, err := s2.Append([]byte("x")); !errors.Is(err, ErrSequenceExhausted) {
+		t.Fatalf("Append after reopen gave %v", err)
+	}
+	if err := s2.Ack(last + 1); !errors.Is(err, ErrAckAhead) {
+		t.Errorf("Ack(%d) after reopen gave %v", last+1, err)
+	}
+	if err := s2.Ack(last); err != nil || s2.Len() != 0 || s2.Bytes() != 0 {
+		t.Fatalf("Ack(%d) after reopen gave %v with length %d, bytes %d", last, err, s2.Len(), s2.Bytes())
+	}
+	s2 = reopen(t, f2, s2, StoreOptions{})
+	if _, err := s2.Append([]byte("x")); !errors.Is(err, ErrSequenceExhausted) {
+		t.Fatalf("Append after the last event was acknowledged gave %v", err)
+	}
+	if err := s2.Ack(last + 1); !errors.Is(err, ErrAckAhead) {
+		t.Errorf("Ack(%d) on the empty exhausted outbox gave %v", last+1, err)
+	}
 }
 
 func TestAppendRefusesWhenFull(t *testing.T) {
@@ -167,11 +210,17 @@ func TestAppendRefusesWhenFull(t *testing.T) {
 		t.Fatal("a full outbox failed the store")
 	}
 
-	// The numbers run out before they wrap around.
+	// The numbers stop at the wire limit of 2^63 - 1, long before they wrap around.
 	for _, c := range []struct {
 		start    uint64
 		accepted int
-	}{{math.MaxUint64, 0}, {math.MaxUint64 - 1, 1}} {
+	}{
+		{math.MaxUint64, 0},
+		{math.MaxInt64 + 2, 0},
+		{math.MaxInt64 + 1, 0},
+		{math.MaxInt64, 1},
+		{math.MaxInt64 - 1, 2},
+	} {
 		f2, _ := newState(t)
 		s2 := mustCreate(t, f2, StoreOptions{})
 		if err := s2.Close(); err != nil {
@@ -184,13 +233,29 @@ func TestAppendRefusesWhenFull(t *testing.T) {
 				t.Fatalf("start %d: Append gave %d, %v", c.start, n, err)
 			}
 		}
+		before, err := s2.Read(0, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next, size := s2.Next(), s2.Bytes()
 		for i := 0; i < 2; i++ {
 			if _, err := s2.Append([]byte("x")); !errors.Is(err, ErrSequenceExhausted) {
 				t.Fatalf("start %d: the next Append gave %v", c.start, err)
 			}
 		}
-		if s2.Len() != c.accepted {
-			t.Fatalf("start %d: length %d", c.start, s2.Len())
+		if s2.Len() != c.accepted || s2.Next() != next || s2.Bytes() != size {
+			t.Fatalf("start %d: a refused Append changed the outbox: length %d, next %d, bytes %d",
+				c.start, s2.Len(), s2.Next(), s2.Bytes())
+		}
+		if after, err := s2.Read(0, 10); err != nil || len(after) != len(before) {
+			t.Fatalf("start %d: Read after the refusals gave %v, %v", c.start, after, err)
+		}
+		s2 = reopen(t, f2, s2, StoreOptions{})
+		if _, err := s2.Append([]byte("x")); !errors.Is(err, ErrSequenceExhausted) {
+			t.Fatalf("start %d: Append after a reopen gave %v", c.start, err)
+		}
+		if s2.Len() != c.accepted || s2.Next() != next {
+			t.Fatalf("start %d: after a reopen length %d, next %d", c.start, s2.Len(), s2.Next())
 		}
 	}
 }
