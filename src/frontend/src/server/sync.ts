@@ -114,10 +114,11 @@ export async function signOut(): Promise<void> {
 }
 
 // ---- the clients of the server, which the website calls machines ---------------------
-export interface ClientToken { id: string; secret: string; expiresAt: number }
+// `address` is the address inside the token, which the machine dials. A sample server leaves it empty.
+export interface ClientToken { id: string; secret: string; expiresAt: number; address: string }
 export async function createClientToken(): Promise<ClientToken> {
   const t = await api().clients.createClientToken({});
-  return { id: t.tokenId, secret: t.token, expiresAt: t.expiresAt ? timestampMs(t.expiresAt) : Date.now() };
+  return { id: t.tokenId, secret: t.token, expiresAt: t.expiresAt ? timestampMs(t.expiresAt) : Date.now(), address: t.address };
 }
 export const revokeClientToken = (tokenId: string) => api().clients.revokeClientToken({ tokenId }).then(() => {}, () => {});
 export const approveClient = (id: string, name: string) => api().clients.approveClient({ id, name }).then(() => {});

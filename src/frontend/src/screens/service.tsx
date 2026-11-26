@@ -400,14 +400,16 @@ function PairMachine({ s }: ScreenProps) {
     <ol class="svc-steps">
       <li class="done">
         <span class="n">1</span>
-        <div><b>Install LGTM Studio on the other machine.</b><Command text="npm install -g lgtm" /></div>
+        <div><b>Install LGTM Studio on the other machine.</b>
+          {/* The Go client has no published installer yet. It is built from a checkout of the repository. */}
+          <Command text="go build -o ~/.local/bin/lgtm-client ./src/client/cmd/lgtm-client" /></div>
       </li>
       <li class={step > 0 ? 'done' : 'now'}>
         <span class="n">2</span>
         <div>
           <b>Run this command there.</b>
-          {/* The sample inside the page has no address a client could reach, so it shows an example. */}
-          <Command text={`lgtm client join ${s.server.address === 'sample' ? 'workstation.lan:8787' : s.server.label} --token ${code}`} />
+          {/* A sample server gives no address a client could reach, so the page shows an example. */}
+          <Command text={`lgtm-client join ${token?.address || 'https://workstation.lan:8787'} ${code}`} />
         </div>
       </li>
       <li class={step > 0 ? 'now' : ''}>
