@@ -78,3 +78,15 @@ The starting plan matched `attack/plan-v3.md` at checkout `1512d6de`. The two ne
 | Stack fixture | Item 8 of [the Stack vault plan](../go-s1-stack-vault/plan.md) supplies `lgtm_store_test` and `CREATEDB`. Its connection format and capacity require comparison with item 1's fixture before building. |
 | Cross-sprint names | [The sign-in plan](../go-s2-server-signin/plan.md) consumes `store.Migrations`, `store.ReadTx` and both database fixtures. Its item 9 writes `store/instance.go` and names the instance advisory key. [The Machines plan](../go-s3-server-machines/plan.md) consumes the migrated fixture and Watch helper. The Store plan now reserves the startup key and identifies its later reader. |
 | Follower and retention | The approved design's Positions must follow commit order and How every Watch call works sections require forward positions and fresh snapshots. It defines neither a database-restore procedure nor overdue receipt alerts. The round 3 backlog request records the restore boundary. |
+
+## Round 4 final-fold evidence
+
+The editable plan matched `attack/plan-v4.md` at checkout `0c332aac`. The round 4 logic report describes its disposable PostgreSQL 16 test. In the PostgreSQL 16 source, `finish_xact_command` disables the statement timer before invoking `CommitTransactionCommand`. `CommitTransaction` calls `AfterTriggerFireDeferred`. [Command completion](https://raw.githubusercontent.com/postgres/postgres/REL_16_STABLE/src/backend/tcop/postgres.c) and [deferred trigger execution](https://raw.githubusercontent.com/postgres/postgres/REL_16_STABLE/src/backend/access/transam/xact.c).
+
+| Finding area | Anchor and observation |
+|---|---|
+| Fixture capacity | [Stack item 8](../go-s1-stack-vault/plan.md) is marked done and names the disposable database and its loopback publication. It specifies no connection limit. `deploy/test/checks.sh`, `check_c12`, calls `go test -count=1 ./...` and inherits its Go environment. Local Go 1.26.0 help confirms `-p` controls package concurrency and `-parallel` defaults to `GOMAXPROCS`. |
+| Restore boundary | The approved design's Positions must follow commit order describes increasing positions. Item 7's `feedPage` contains a pruning floor and rows. Its startup head is separate. Item 8 now has one cursor behavior during steady reading. |
+| Driver ownership | The epic's The teams, and what each may edit section assigns planned dependencies to the builder with the first import. The design's Facts checked section names `github.com/jackc/pgx/v5 v5.13.0`. Item 1 is its first importer. |
+
+A later checkout at `9000d89f` had the sprint 0 root module and the Stack test writer's `deploy/test/with-postgres.sh` stub, which exits with status 1. The Store directory was absent. The post-build checks require the real wrapper and implementation.

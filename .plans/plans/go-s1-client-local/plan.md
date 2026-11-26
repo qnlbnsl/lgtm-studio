@@ -1,6 +1,6 @@
 ---
 topic: go-s1-client-local
-status: attack
+status: done
 tier: M
 created: 2026-11-25
 updated: 2026-11-26
