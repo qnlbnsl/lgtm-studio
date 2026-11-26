@@ -41,7 +41,7 @@ Its decisions table starts at line 26, so D1 is line 26 and D23 is line 48.
 | `.plans/plans/go-s2-server-signin/plan.md`, a brief | Item 1 names `src/server/cmd/lgtm-server/main.go` and `src/server/internal/config/config.go`. Item 8 is the vault client and the signing key. |
 | `.plans/plans/go-s0-contract/plan.md`, "Public names that other teams build against" and item 5 | The token's text is `lgtm1_` and the unpadded base64url of `JoinToken`. `JoinToken` has `token_id`, `secret`, `address`, `server_key_sha256` and `certificate_key_sha256`. `JoinRequest` has `token_id`, `token_secret`, `machine_public_key` and `host_name`. A refused token gets `permission_denied`. A client refuses an address that is neither `https` nor loopback over `http`. |
 | `.plans/plans/go-s0-contract/attack/round-1-architect.md`, the finding on `Client.address` and `hosts_server` | A reviewer proposed that the server's own token marks the machine of the server. Decision 10 adopts that. |
-| `.plans/plans/go-s1-client-local/plan.md`, "The layout of the state folder" and item 1 | The folder is `LGTM_CLIENT_STATE_DIR`, then `$XDG_STATE_HOME/lgtm-client`, then `$HOME/.local/state/lgtm-client`. It holds `machine.key` and `server.json`. One client holds a lock on the folder. `main.version` is set with `-ldflags "-X main.version=<v>"`. |
+| `.plans/plans/go-s1-client-local/plan.md`, "The layout of the state folder" and item 1, at the time of planning | The folder was `LGTM_CLIENT_STATE_DIR`, then `$XDG_STATE_HOME/lgtm-client`, then `$HOME/.local/state/lgtm-client`. It holds `machine.key` and `server.json`. One client holds a lock on the folder. `main.version` is set with `-ldflags "-X main.version=<v>"`. |
 | `.plans/plans/go-s1-client-local/plan.md`, item 4, `DefaultScanOptions` | The harness scan reads `PATH` from the environment, which is why decision 16 copies it into the service. |
 | `.plans/plans/go-s1-stack-vault/plan.md`, items 2, 6 and "Contract for sprint 2" | The Compose project is `lgtm`, the state folder is `deploy/.state` or `LGTM_STACK_STATE_DIR`, and the launcher is `deploy/up.sh`. The databases and their owners are `lgtm_app` and `lgtm_bao`, the administrator is `postgres`, and every connection needs a password, also on the socket. The server container runs as user 10001. |
 | `.plans/plans/go-s1-server-store/plan.md`, rollout step 3 | The Stack team owns `deploy/test/mutate-feed-lock.sh` for C12 in sprint 1. It is the only hook file of the user-flow script. |
@@ -66,13 +66,11 @@ Its decisions table starts at line 26, so D1 is line 26 and D23 is line 48.
 | `deploy/dev.lgtmstudio.client.plist` | The launchd manual `launchd.plist(5)`: `KeepAlive` as a dictionary with `SuccessfulExit` false restarts a job after an exit that is not zero. `launchctl bootstrap gui/<uid> <file>` and `launchctl bootout gui/<uid>/<label>` load and unload an agent of the user's session. Read from documentation, not run, because no Mac was available. |
 | `deploy/test/installer.sh`, `run_test` | `deploy/test/checks.sh`, `run_check`, for one TAP (Test Anything Protocol) line per test. |
 | `deploy/test/installer-live.sh`, `after_reboot` | `deploy/test/checks.sh`, `signin`, `open_watch` and `read_frame`, for a session and the first `WatchClients` message. |
-| `deploy/test/linkecho/main.go`, `serve` and `dial` | The trial program below. |
-| `deploy/test/linkecho.compose.yaml`, service `server` | `deploy/test/checks.sh`, `check_c2`, which feeds an override to `docker compose -f - up`. |
-| `deploy/test/link-proxy.sh`, `run_test` | `deploy/test/checks.sh`, `run_check`. |
-| `deploy/Caddyfile`, option `protocols` and the route `/lgtm.link.v1.*` | The trial's Caddyfile below. |
 | `deploy/README.md`, section "Installing the client" | `deploy/README.md` of plan `go-s1-stack-vault`, item 6. |
 
 ## A two-way stream through Caddy on 2026-11-26
+
+This trial backed the link check of the first version. Decision 31 removed that check, because plan `go-s2-stack-web`, item 7, now tests the same route. The record stays as evidence.
 
 This trial answers point 4 of issue 1633 for the loopback case.
 It ran in a scratch folder outside the checkout, with Go 1.26.0 and the image `caddy:2.11.9-alpine`.
@@ -131,6 +129,8 @@ The kept test of work item 2 therefore runs under a Compose project of its own a
 
 ## The database probe of check C5 on 2026-11-26
 
+Plan `go-s1-stack-vault`, item 2, now owns `psql_in_stack`, so this probe is evidence for that plan (decision 35).
+
 A disposable container of `postgres:16.16-alpine` ran with the account and database `lgtm_app` and with password authentication on both the network and the socket, as plan `go-s1-stack-vault` sets it.
 The password sat in a mounted file, as that plan mounts it.
 
@@ -143,3 +143,25 @@ The password sat in a mounted file, as that plan mounts it.
 
 Code 75 is `EX_TEMPFAIL` in the list of exit codes of `sysexits.h`, which means "try again later".
 It is not a code that the Go runtime uses for a crash, which is 2.
+
+## Sources read for the reconcile of 2026-11-26
+
+| File and anchor | What it establishes |
+|---|---|
+| `.foundry/go-rewrite/tasks/reconcile-go-s3-stack-client.md` | The requests to carry out, the limit of 700 lines, and the rule that a program's own rules sit in its plan. |
+| `requests-from-contract-r3.md`, "Requests to other plans" | This plan fills in the address, treats a failing `join` as a failure, restarts `run` by its statuses, and takes over the contract's checks of exit statuses and of the installer. |
+| `requests-from-contract-r4.md` | No name changed. `Lgtm-Join-Refusal` travels in the error's metadata. Nothing is addressed to this plan. |
+| `requests-from-client-r4.md`, ruling 5 | `identity.json` in place of `server.json`, one setting `LGTM_CLIENT_STATE_DIR`, and the lines of `deploy/test/checks.sh`. |
+| `.foundry/go-rewrite/results/fold-go-s2-stack-web-r2.md`, request P1 | The installer reads the port from Compose, as the Stack guide's "The port in other tools" says. |
+| `.plans/epics/go-rewrite/epic.md`, lines 132 and 133 | A module is added in the same change as its first import. |
+| `docs/issues.md`, issues 1641 and 1642 | A restore and two live copies of one state are outside wave 1. After a restore, the owner removes the machine and joins it again. |
+| `.plans/plans/go-s0-contract/plan.md`, lines 66, 194, 350, 476 and 753 | The contract states facts of the wire only. Exit statuses, the installer's address and the checks of a service belong to the programs' plans. |
+| `.plans/plans/go-s0-contract/attack/plan-v3.md`, post-build checks 12 and 14 | The text of the two checks that move to this plan. |
+| `.plans/plans/go-s1-client-local/plan.md`, "The layout of the state folder" | `LGTM_CLIENT_STATE_DIR` when set and absolute, otherwise `$HOME/.local/state/lgtm-client`. The folder holds `identity.json`, written last in a join, and `machine.key`. |
+| `.plans/plans/go-s3-client-link/plan.md`, item 9 | `run` exits 0 on cancellation or a stop for good, 75 for an accepted restart and 1 for a failure. `join` exits 0 or 1. A usage error exits 2. `TestRunCommandExitStatus` proves them. |
+| `.plans/plans/go-s2-server-signin/plan.md`, items 1, 8 and 9 | `config.Load(lookup)`, `vault.Open`, `vault.LoadLinkIdentity` with `allowInitialize` false, the dispatcher `run(ctx, args, lookup, stdout, stderr) int` with a placeholder entry `join-token`, and `servertest.Server.Environment()`. |
+| `.plans/plans/go-s1-server-store/plan.md`, line 126 | `store.Open(ctx, config, policy)`. |
+| `.plans/plans/go-s3-server-machines/plan.md`, items 3, 12 and 14, and its request 12 | `machines.NewTokens`, `Tokens.Create` with an empty address taking `PublicURL`, `ErrAddressMismatch`, `ErrNoCertificatePin`, `client_join_tokens`, `CreateClientToken` without the mark, and the helpers `Clients(t)`, `Link()` and `Settings()` of `servertest`. |
+| `.plans/plans/go-s2-stack-web/plan.md`, items 1, 4, 5 and 7 | The image's `/usr/local/bin/lgtm-server` as user 10001, `LGTM_PUBLIC_URL` equal to `http://127.0.0.1:${LGTM_WEB_PORT:-8787}`, the launcher's use of `COMPOSE_FILE`, and the stream test of the link's route. |
+| `deploy/compose.yaml`, line 1 | The project is named `lgtm`, so `docker compose port web 8080` finds the stack without `-p`. |
+| `deploy/test/checks.sh`, lines 219 and 233, and `deploy/test/README.md`, the row "Client state folder" at line 81 | The two lines and the row that still name `XDG_STATE_HOME`. |

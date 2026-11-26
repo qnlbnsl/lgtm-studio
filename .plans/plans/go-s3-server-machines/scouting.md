@@ -17,9 +17,12 @@ For each target, the nearest pattern is a file of an earlier plan or a file of t
 - `draft/link.proto`: `service LinkService` with `rpc Join(JoinRequest) returns (JoinResponse)` and `rpc Open(stream OpenRequest) returns (stream OpenResponse)`. The messages are `JoinToken`, `JoinRequest`, `JoinResponse`, `OpenRequest`, `OpenResponse`, `Hello`, `Challenge`, `Proof` and `Welcome`.
 - `draft/commands.proto`: `Command` with `id`, `attempt`, `expires_at` and the oneof `action` holding `scan_harnesses`, `set_state` and `restart`. `CommandResult` with `command_id`, `attempt`, `outcome` and `message`. The enums `CommandOutcome` and `Approval`, and `MachineState` with `approval`, `name` and `revision`.
 - `draft/events.proto`: `Event` with `number`, `happened_at` and the oneof `report` holding `facts` and `harnesses_found`. `EventAck.through`, `Facts`, `HarnessesFound`, `Harness`, `Heartbeat` and `HeartbeatAck`.
-- `draft/existing-files.diff`: `WatchClientsResponse.position` as field 4, of type `lgtm.v1.FeedPosition`, and the new comments of `ReconnectClient`, `RevokeClientToken`, `Client.hosts_server`, `Client.address` and `CreateClientTokenResponse`.
+- `draft/existing-files.diff`: `CreateClientTokenResponse.address` as field 4, `WatchClientsResponse.position` as field 4, of type `lgtm.v1.FeedPosition`, and the new comments of `ReconnectClient`, `RevokeClientToken`, `Client.hosts_server`, `Client.address` and `CreateClientTokenResponse`.
 - The proof texts and their worked examples: the contract plan's item 6, `src/contracts/testdata/link-proof.json` (target). The token example: item 5, `src/contracts/testdata/join-token.json` (target).
 - The orchestrator told this planner on 2026-11-26 that round 2 of the contract removes `Hello.acked_event_number`. The server alone decides what was applied. Restoring the server's database to an earlier state is outside wave 1.
+- Read again on 2026-11-26 after rounds 3 and 4 of the contract. `draft/link.proto`, the comment of `LinkService`: the table of codes, the keys `Lgtm-Join-Refusal` and `Lgtm-Link-Refusal` in the metadata of the error, the order of decisions after `Challenge`, the moment of admission, and removal. `draft/events.proto`, the header comment: the table that decides each event. `draft/commands.proto`: `SetState` stays pending, and `CommandResult` reserves field 4.
+- The contract plan, the fold "Post-build checks", rows 10, 16, 17, 21, 22 and 23, name the scenarios that this plan's seams and tests serve.
+- `.foundry/go-rewrite/requests-from-contract-r3.md` and `requests-from-contract-r4.md`, the sections for this plan.
 
 ## S3. The website's contract as it is today
 
@@ -46,7 +49,7 @@ For each target, the nearest pattern is a file of an earlier plan or a file of t
 - `Store.WriteOnce` with `store.Request{Key, ReceiptSafe, Caller, Procedure, FingerprintVersion, Fingerprints}` and `store.RequestKeyHeader`.
 - `store.StartFollower`, `Follower.Subscribe`, `Subscription.Start`, `Next`, `Ack`, `Context` and `Close`, `store.ErrWatchLagged` and `store.ErrFeedUnavailable`.
 - `store.NewID`, which returns a version 7 universally unique identifier.
-- `watch.Serve`, `watch.Source[T]` with `Topic`, `Scope`, `Authorize`, `Snapshot` and `Load`, `watch.Message[T]` with `Position`, `Snapshot`, `Saved` and `RemovedKey`, and `watch.ErrWatchUnauthorized`.
+- `watch.Serve`, `watch.Source[T]` with `Topic`, `Scope`, `Authorize`, `Snapshot` and `Load`, `watch.Message[T]` with `Position`, `Snapshot`, `Saved` and `RemovedKey`, and `watch.ErrWatchUnauthorized` and `watch.ErrAuthorizationUnavailable`, which the Machines adapter maps to `unavailable`.
 - `storetest/migrated.NewStore(t, schema, parts...)` for part tests, and `storetest.NewDatabase`.
 - The store reserves advisory lock keys `841941100001`, `841941100002` and the namespace `1279743053`. This plan uses row locks only.
 - Both `*store.ReadTx` and `*store.Tx` have the methods `Query` and `QueryRow` with the same signatures, so a Go interface of the two methods accepts both.
@@ -57,21 +60,24 @@ For each target, the nearest pattern is a file of an earlier plan or a file of t
 - `auth.Sessions.CheckInRead(ctx, tx *store.ReadTx, verifier auth.Verifier) error`, `auth.ErrNoSession`, and the constant principal `owner` for keyed calls of the website.
 - `api.Options` with `Sessions`, `Origins`, `Session`, `Clients` and `Link`, `api.NewHandler`, and `api.SessionVerifier(ctx)`. The two link paths are mounted outside the session guard.
 - `config.Config` with `ListenAddr`, `PublicURL`, `AllowedOrigins`, `Password`, `Postgres`, `AllowPrivateStack`, `OpenBaoAddr` and `OpenBaoCredentialFile`. It has no setting for the certificate.
-- `app.Start`, `Server.SigningPublicKey`, and the in-memory signing key from `vault.Client.LinkSigningKey`.
-- `servertest.Start(t, Options{Password})`, with `URL`, `HTTPClient`, `SigningPublicKey`, `Stop` and `Restart`. Its text says that the later machine work plugs its handlers and migrations into the same application.
+- `app.Start`, `Server.SigningPublicKey`, and the in-memory signing key in `vault.LinkIdentity.SigningKey` from `vault.LoadLinkIdentity`.
+- Item 9: `store.AcquireServerInstance` takes an instance lock before the migrations, so one server process runs against a database. The command table registers `join-token` for `go-s3-stack-client`.
+- `servertest.Start(t, Options{Password})`, with `URL`, `HTTPClient`, `SigningPublicKey`, `Stop`, `Restart` and `Environment`. Its text says that the later machine work plugs its handlers and migrations into the same application.
 
 ## S7. The plans of the stack
 
-- `.plans/plans/go-s2-stack-web/decisions.md`, rows 9 and 23 to 25: encryption ends at the web server, which passes calls to the server as cleartext HTTP/2. The server reads the public certificate from `LGTM_TLS_CERT_FILE`, which is `/run/lgtm-tls/tls.crt` in public mode and empty in loopback mode.
+- `.plans/plans/go-s2-stack-web/decisions.md`, row 27: wave 1 has no public encrypted address and no certificate. Rows 9, 23 and 25 are replaced.
+- `.plans/plans/go-s2-stack-web/plan.md`, the settings of `server`: `LGTM_PUBLIC_URL` is `http://127.0.0.1:${LGTM_WEB_PORT:-8787}`, `LGTM_ALLOW_PRIVATE_STACK` is `true`, and `LGTM_TLS_CERT_FILE` is absent.
 - `.plans/plans/go-s2-stack-web/plan.md`, the web server rules: `reverse_proxy h2c://server:8080 { flush_interval -1 }` for `/lgtm.link.v1.*`.
 - `.plans/plans/go-s3-stack-client/plan.md`, item 1: `lgtm-server join-token --address <address> [--hosts-server]` in `src/server/cmd/lgtm-server/join_token.go`, with the function `joinTokenCommand`. Its result file asks this plan for a token function with an address and a mark of the server's machine.
 
 ## S8. The client plans
 
 - `.plans/plans/go-s3-client-link/plan.md`, as it stood on 2026-11-26, at status `self-check`.
-- The client reads the response header `Lgtm-Join-Refusal` on `permission_denied` from `Join`, and maps the values `token_used` and `token_expired`.
+- The client reads the reason of a refusal from the metadata of the error, by round 4 of the contract.
 - The client sends an immediate heartbeat after `Welcome`, and every 10 seconds after that. While waiting, it sends heartbeats without load and no events. It sends its facts and all four harness entries after approval.
-- An `unauthenticated` rejection after a verified `Challenge` stops the client as an unknown machine.
+- `failed_precondition` with `unknown_machine` after a verified `Challenge` stops the client as a removed machine, by round 3 of the contract.
+- `src/client/clienttest/clienttest.go` gives `Options`, `Join` and `Run` for the orchestrator's tests.
 
 ## S9. The user-flow script
 
@@ -96,7 +102,7 @@ For each target, the nearest pattern is a file of an earlier plan or a file of t
 
 | Target | Nearest pattern |
 |---|---|
-| `src/server/internal/machines/store.go`, `Registry` | `src/server/internal/auth/sessions.go`, `Sessions`, of plan `go-s2-server-signin`, item 4. |
+| `src/server/internal/machines/store.go`, `Registry.Lock` | `src/server/internal/auth/sessions.go`, `Sessions`, of plan `go-s2-server-signin`, item 4. |
 | `src/server/internal/machines/migrations/0001_machines.sql` | `src/server/internal/auth/migrations/0001_web_sessions.sql` of the same plan, item 3. |
 | `src/server/internal/machines/tokens.go`, `Tokens.Create` | `src/mock-server/src/engine.ts`, `createClientToken`, and the token example of `go-s0-contract`, item 5. |
 | `src/server/internal/machines/join.go`, `Tokens.Redeem` | `src/server/internal/auth/sessions.go`, `Sessions.Issue`, for one transaction that checks and writes. |
