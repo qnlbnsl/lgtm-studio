@@ -1,6 +1,6 @@
 # Scouting the client link and its acceptance checks
 
-This is the planning evidence from 2026-11-26. The Sprint 0 and Sprint 1 plans were still in review. Their planned interfaces are identified below. The second-round instruction of 2026-11-26 supersedes the old client-supplied event mark.
+This is the planning and prerequisite reconciliation evidence from 2026-11-26. The Sprint 0 and Sprint 1 plans are under review. Their current planned interfaces are identified below.
 
 ## Requirements and existing repository anchors
 
@@ -14,8 +14,8 @@ This is the planning evidence from 2026-11-26. The Sprint 0 and Sprint 1 plans w
 | `docs/issues.md` | Issues 1632 through 1640 at lines 7501 through 7589. They record encryption termination, in-process testing, size, command copy, address, host role, key rotation and runner access. |
 | `.plans/plans/go-s0-contract/plan.md` | Public names and work items 4 to 6, including the two golden fixtures and both proof strings. Read the contract result's Client team requests and the first-round fold. |
 | `.plans/plans/go-s0-contract/draft/link.proto` | `LinkService`, `JoinToken`, `JoinRequest`, `JoinResponse`, `Hello`, `Challenge`, `Proof` and `Welcome`. The later draft removes the client acknowledgement, leaves token expiry to the server, changes the terminal refusal and has `Welcome.server_time` at field 4. |
-| `.plans/plans/go-s0-contract/draft/events.proto` and `commands.proto` | `Event`, `EventAck`, `Facts`, `HarnessesFound`, `Heartbeat`, `Command`, `CommandResult` and `MachineState`. The producer timestamp is display data. The command draft specifies the elapsed time calculation from the welcome sample. |
-| `.plans/plans/go-s1-client-local/plan.md` | "The layout of the state folder", items 1 through 7 and "What plan go-s3-client-link must do". The later plan has `state.Folder.Paths()`, `IdentityFile`, `StoreFile` and `link.OpenStore`. Its `MarkSent`, `Reconcile`, `Begin` and `Finish` methods govern replay. The caller prose still mentions the client-supplied mark removed by the later instruction. |
+| `.plans/plans/go-s0-contract/draft/events.proto` and `commands.proto` | `EventAck.through` is the server's mark and `Event.happened_at` is display data. `CommandResult` has three fields. `SetState` uses revisions and applies through expiry. The contract supplies the welcome time sample. |
+| `.plans/plans/go-s1-client-local/plan.md` | Items 1 to 6 fix the state setting, private folder, credential and store interfaces. The caller fold in round 4 names `CreateStore`, `OpenStore`, `Read`, `Ack`, `Begin` and `Finish`. Finished receipts age by the machine's wall clock. |
 | `.plans/plans/go-s3-server-machines/plan.md` and `.plans/plans/go-s3-stack-client/plan.md` | The Server brief assigns the matching proof, event and command handling. The Stack plan's exit-code agreement and `live_reconnect_restarts_service` supply the service observation. |
 | `deploy/test/README.md` and `deploy/test/checks.sh` | Read the script and assumed names. `client_join` and `start_client` set `XDG_STATE_HOME`. `refused_join` and `wait_refusal` read fixed messages. `check_c10` changes `identity.json`. `client_sequences`, `server_sequences` and `check_c11` compare at least three outage sequences in order. |
 | `src/frontend/src/screens/service.tsx` | The `Add a machine` dialog near line 410 shows the previous installer and command. The machine action near line 351 offers `ReconnectClient` only if offline. |
@@ -30,12 +30,12 @@ There is no `src/client/` or `src/server/` implementation directory in this chec
 | Item | File and planned anchor | Nearest pattern or dependency |
 |---|---|---|
 | 1 | `src/client/internal/transport/transport.go`, `ParseOrigin`, `NewHTTPClient` | Sprint 0 `draft/link.proto`, `JoinToken.address` and `certificate_key_sha256`. The cached Go 1.26 source has `http.Protocols.SetHTTP2` and `SetUnencryptedHTTP2`. |
-| 2 | `src/client/internal/enroll/join.go`, `Join`, `LoadServer` | `floorplan/plan.json`, "Joining a server". Sprint 1 `Credential`, `Folder.Paths()`, `WriteAtomic` and `SyncDir`. `deploy/test/checks.sh`, `check_c10`, fixes the identity names. |
+| 2 | `src/client/internal/enroll/join.go`, `Join`, `SaveServer`, `LoadServer` | `floorplan/plan.json`, "Joining a server". Sprint 1 `Credential`, `Folder.Paths()`, `WriteAtomic` and `SyncDir`. `deploy/test/checks.sh`, `check_c10`, fixes the identity names. |
 | 3 | `src/client/internal/link/conn.go`, `openSession`, `proofText` | Sprint 0 `draft/link.proto`, `LinkService.Open` and `Proof`. The proof tests will use the contract fixture `src/contracts/testdata/link-proof.json` once generated. |
-| 4 | `src/client/internal/link/replay.go`, `replay` | Sprint 1 `src/client/internal/link/outbox.go` target with `Store.Read`, `Store.MarkSent`, `Store.Ack` and `Store.Reconcile`. `deploy/test/checks.sh`, `client_sequences`, reads the durable observation. |
+| 4 | `src/client/internal/link/replay.go`, `replay` | Sprint 1 `src/client/internal/link/outbox.go` target with `Store.Read`, `Store.Ack`, `Store.Next` and `Store.Changed`. `deploy/test/checks.sh`, `client_sequences`, reads the durable observation. |
 | 5 | `src/client/internal/link/report.go`, `reporter`, `captureFacts`, `scanHarnesses` | Sprint 1 `sysinfo.ReadFacts`, `sysinfo.ReadLoad` and `harness.Scan`. Sprint 0 `draft/events.proto`, `Facts` and `HarnessesFound`. |
 | 6 | `src/client/internal/link/commands.go`, `commandHandler`, `serverClock` | Sprint 0 `draft/commands.proto`, `Command`, `CommandResult` and `MachineState`. Sprint 1 `Store.Begin` and `Store.Finish` in the receipt item. |
-| 7 | `src/client/internal/link/retry.go` and `session.go`, `Run), `RunOptions` | `floorplan/plan.json`, "Connection to the server". Sprint 0 `draft/link.proto`, `LinkService` code table and `Open` timeout comments. |
+| 7 | `src/client/internal/link/retry.go` and `session.go`, `Run`, `RunOptions` | `floorplan/plan.json`, "Connection to the server". Sprint 0 `draft/link.proto`, `LinkService` code table and `Open` timeout comments. |
 | 8 | `src/client/internal/app/client.go`, `Join`, `Run` | Sprint 1 `config.StateDir`, `state.Open` and the package main `run` stub. Stack Client's plan names the service outcomes. |
 | 9 | `src/client/cmd/lgtm-client/main.go`, `runContext`. `src/client/clienttest/clienttest.go`, `Options`, `Join` and `Run`. | Sprint 1 package main's `run` and `version`. Issue 1634 and the epic's in-process test rule supply the package boundary. |
 
@@ -63,3 +63,15 @@ There is no `src/client/` or `src/server/` implementation directory in this chec
 | Format and linkage | The frontmatter, four top-level sections, divider, five folds and linked epic row passed. The epic remains active. |
 
 The stock Node invocation hit `spawnSync git EPERM` while creating an unused standard-input pipe for Git in this runner. A probe showed that Git ran successfully with standard input ignored. The same privacy checker ran with only that subprocess option adjusted at runtime. A second scan applied the same rules to the four deliverables, including the untracked files. The deliverables were also read for full sentences, expanded terms, relative paths and dated decisions.
+
+## Prerequisite reconciliation
+
+| Read | Anchor |
+|---|---|
+| The Contract round 3 and Client Local round 4 requests | The Client Local ruling supersedes the request for a server-time lower bound on receipt pruning. The round 3 contract draft still promises the full retention window. |
+| Sprint 1 server store and vault | The server store classifies an indeterminate transaction as unavailable. The vault gives the signing key to the server. The client uses the generated link for both proofs. |
+| Sprint 2 server sign-in and Stack Web | Sign-in item 8 supplies `servertest.Start`, its bound endpoint and restart fixture. The stack uses cleartext HTTP/2 on loopback and reserves a public encrypted endpoint for later. |
+| Sprint 3 Stack Client and the wave 1 script | The service policy restarts nonzero run exits. The installer still names `server.json`, and `client_join` and `start_client` still export the superseded state setting. The result carries both requests. |
+| The epic and issues 1641 and 1642 | The Sprint 3 link plans share the freeze gate. The first importer owns a module change. Restored state and live copies are outside wave 1. |
+
+The elapsed-clock targets are `src/client/internal/link/clock_linux.go` and `clock_darwin.go`. The dependency provides `unix.ClockGettime` on both platforms. Linux `CLOCK_BOOTTIME` counts suspend time, and Apple uses its continuous clock for `CLOCK_MONOTONIC_RAW`. The planned sign-in dependency selects the same module version used here. [Linux clock documentation](https://www.man7.org/linux/man-pages/man3/clock_gettime.3.html), [Apple clock implementation](https://github.com/apple-oss-distributions/Libc/blob/main/gen/clock_gettime.c), [Go cryptography module requirements](https://github.com/golang/crypto/blob/v0.59.0/go.mod).
