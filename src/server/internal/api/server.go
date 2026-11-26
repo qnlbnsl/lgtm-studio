@@ -135,13 +135,8 @@ func NewHandler(options Options) http.Handler {
 			lgtmv1connect.SessionServiceSignInProcedure, lgtmv1connect.SessionServiceSignOutProcedure)
 	}
 	if options.Clients != nil {
-		recordDecoding := connect.WithConditionalHandlerOptions(func(spec connect.Spec) []connect.HandlerOption {
-			if spec.StreamType == connect.StreamTypeUnary {
-				return []connect.HandlerOption{redactMalformedJSON(messageMalformed)}
-			}
-			return nil
-		})
-		_, handler := lgtmv1connect.NewClientServiceHandler(options.Clients, protocol, guard, recordDecoding)
+		_, handler := lgtmv1connect.NewClientServiceHandler(redactingClientService{options.Clients},
+			protocol, guard, redactMalformedJSON(messageMalformed))
 		r.register(transport.WithWriteDeadline(handler),
 			lgtmv1connect.ClientServiceWatchClientsProcedure,
 			lgtmv1connect.ClientServiceCreateClientTokenProcedure,

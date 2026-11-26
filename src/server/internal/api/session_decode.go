@@ -10,6 +10,9 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
+
+	lgtmv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1"
+	"github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1/lgtmv1connect"
 )
 
 const messageMalformed = "The request body is invalid."
@@ -19,8 +22,8 @@ const messageMalformedJoin = "The link message broke a rule of the contract."
 // JSON decoding discards unknown fields, so a decoded JSON body never carries it.
 var malformedMark = protowire.AppendBytes(protowire.AppendTag(nil, protowire.MaxValidNumber, protowire.BytesType), nil)
 
-// redactMalformedJSON hides the cause of a malformed unary JSON body, because the cause can repeat what was submitted.
-// Connect prefixes every codec error, so the codec marks the message and an interceptor writes the fixed sentence.
+// redactMalformedJSON hides the cause of a malformed JSON body, because the cause can repeat what was submitted.
+// The codec marks the message so unary interceptors and stream handlers can return a fixed sentence.
 // Connect checks the read bound before decoding, so the size error keeps its own message.
 func redactMalformedJSON(message string) connect.HandlerOption {
 	publicError := errors.New(message)
@@ -38,6 +41,17 @@ func redactMalformedJSON(message string) connect.HandlerOption {
 	)
 }
 
+type redactingClientService struct {
+	lgtmv1connect.ClientServiceHandler
+}
+
+func (s redactingClientService) WatchClients(ctx context.Context, req *connect.Request[lgtmv1.WatchClientsRequest], stream *connect.ServerStream[lgtmv1.WatchClientsResponse]) error {
+	if isMalformedJSON(req) {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New(messageMalformed))
+	}
+	return s.ClientServiceHandler.WatchClients(ctx, req, stream)
+}
+
 func isMalformedJSON(req connect.AnyRequest) bool {
 	msg, ok := req.Any().(proto.Message)
 	if !ok || string(msg.ProtoReflect().GetUnknown()) != string(malformedMark) {
@@ -46,7 +60,7 @@ func isMalformedJSON(req connect.AnyRequest) bool {
 	// A valid binary Protocol Buffers request may carry the same unknown field.
 	mediaType, _, _ := mime.ParseMediaType(req.Header().Get("Content-Type"))
 	switch mediaType {
-	case "application/json", "application/grpc+json", "application/grpc-web+json":
+	case "application/json", "application/connect+json", "application/grpc+json", "application/grpc-web+json":
 		return true
 	default:
 		return false
