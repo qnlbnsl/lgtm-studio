@@ -7745,3 +7745,13 @@ Found on 2026-11-26, by the review after the repair of two findings in work item
 
 1. A call to a procedure without a registered handler still looks up the session without the time limit of the call. The call then answers `unimplemented` late instead of timing out.
 2. No test fails when the router reads the body of a request before it checks the origin. The built router does not read it.
+
+## 1657. Small findings of the review of the frozen link
+
+Found on 2026-11-26, by the review after the build of the amendment that freezes the link at revision 1 (plan `go-s0-contract`, items F1 to F5). The report is `.plans/plans/go-s0-contract/attack/post-build-f.md`. Its verdict was to ship, and it confirmed that the wire did not change. These minor findings are open.
+
+1. The test of the table of codes holds the columns of the table. It accepts a row whose prose says the opposite, such as "stop" in a row that means "dial again".
+2. The check of the history trusts the commit it is given as the baseline. A branch that passes its own tip as the baseline can rewrite revision 1 unseen.
+3. A new revision must be written on its own line with a leading comma. Neither the guide nor the error text says so.
+4. Check 3 of the contract plan still says that a gap in the events stops the client, and the amendment says the client dials again.
+5. The cases of an encrypted join with a self-signed certificate were moved out of wave 1, and no issue records them. They are: a join over `https` with a self-signed certificate, and the refusal of a wrong pin.
