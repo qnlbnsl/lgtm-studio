@@ -115,7 +115,7 @@ Waves 2 and 3 of the design get their sprints when sprint 3 is in review.
 
 The server and the client are separate teams.
 Neither edits the other's folder.
-They meet only in the contract, which sprint 0 writes and then freezes.
+They meet only in the contract, which sprint 0 writes.
 
 | Team | May edit | Reads only |
 |---|---|---|
@@ -124,7 +124,9 @@ They meet only in the contract, which sprint 0 writes and then freezes.
 | Client | `src/client/` | `src/contracts/`, the design |
 | Stack | `deploy/` | `src/server/cmd/`, `src/client/cmd/`, `src/frontend/`, the design |
 
-A change to the contract after sprint 0 goes back to phase 3, because two teams build against it.
+The link between a server and a machine is frozen when the plans `go-s3-server-machines` and `go-s3-client-link` have both cleared their reviews, which is before either team builds against it.
+The orchestrator decided this on 2026-11-26, because the reviews of the contract kept finding disagreements with plans that were not yet reviewed.
+Until then, a change to the link files is an ordinary work item of the Contract team. After it, a change goes back to phase 3.
 
 From sprint 1 on, no team edits `go.mod` or `go.sum`.
 A plan lists each module and version it needs.
