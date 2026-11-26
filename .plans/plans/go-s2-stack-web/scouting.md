@@ -75,8 +75,8 @@ The digest is that of the multi-platform index.
 | `golang:1.26.11-alpine` | `sha256:ecb67f987aa1a57794c91d19ade7ae0209f2f0f5496aaef9e6ae85ddf92d02ab` | 2026-11-10 | `GOLANG_VERSION=1.26.11`, the newest 1.26 patch. |
 | `gcr.io/distroless/static-debian12:nonroot` | `sha256:afa5c872c891853ca7fcf1f12c3edb23f7eeef36189728842dd51042ff57f7ab` | not read | Read with an empty Docker settings folder, because the machine's credential helper for that registry was signed out. |
 | `node:26.13.0-alpine` | `sha256:8996bb5821d62a8fd9bb27c1cb07462f3fdce6e47d640c6a881ead0b064ce216` | 2026-11-05 | The version the repository's tools use. It ships no `corepack`, so pnpm is installed with `npm`. |
-| `caddy:2.11.9-alpine` | `sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0` | 2026-11-05 | `CADDY_VERSION=v2.11.9`. The binary `/usr/bin/caddy` carries `cap_net_bind_service=p`, permitted only. |
-| `caddy:2.10.2-alpine` | `sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d` | 2026-02-11 | `CADDY_VERSION=v2.10.2`, built with Go 1.25.0. The plan pins this one (decisions row 26). The binary carries `cap_net_bind_service=ep`, so the stock image refuses to start with `cap_drop ALL` and `no-new-privileges`, with `exec /usr/bin/caddy: operation not permitted`. A copy of the binary made in a build step carries no capability and starts. |
+| `caddy:2.11.9-alpine` | `sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0` | 2026-11-05 | `CADDY_VERSION=v2.11.9`, built with Go 1.27.3 and `golang.org/x/net` 0.60.0. The binary `/usr/bin/caddy` carries `cap_net_bind_service=p`, permitted only, and starts as user 10003 with `cap_drop ALL` and `no-new-privileges`. The plan pins this one (decisions row 32). |
+| `caddy:2.10.2-alpine` | `sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d` | 2026-02-11 | `CADDY_VERSION=v2.10.2`, built with Go 1.25.0. Round 1 dropped it for 2.11.9 with `read_body_idle 10m` (decisions row 32). Its `golang.org/x/net` is version 0.42.0. The binary carries `cap_net_bind_service=ep`, so the stock image refuses to start with `cap_drop ALL` and `no-new-privileges`, with `exec /usr/bin/caddy: operation not permitted`. A copy of the binary made in a build step carries no capability and starts. |
 
 ## Probes
 
@@ -190,4 +190,44 @@ A soak on Caddy 2.10.2 ran both shapes of the plan's soak test at the same time.
 |---|---|
 | Messages both ways for 4 seconds, then both directions silent for 6 minutes and 10 seconds | Passed: `ok stream lasted 6m14s with 4 messages each way and trailer 4`. |
 | The server sends a tick every 2 seconds, and the machine is silent for 6 minutes and 30 seconds | Passed: `ok quiet-up lasted 6m30s with 195 ticks down and one line up; trailer up-closed`. |
+
+## Round 1 probes
+
+The fold of review round 1 ran these probes on 2026-11-26, with Docker Compose 5.5.0.
+
+### The setting that removes the cut
+
+Caddy 2.11.9 has the timeout `read_body_idle`, which the earlier runs did not try.
+
+| Variant on Caddy 2.11.9 | Shape | Result |
+|---|---|---|
+| Default rules | The server sends, the machine is silent for 80 seconds | Cut at 60 seconds, after 29 ticks. |
+| `timeouts { read_body_idle 0 }` | The same | Cut at 60 seconds, so 0 keeps the default. |
+| `timeouts { read_body_idle 10m }` | The same | Passed with 40 ticks and the trailer `up-closed`. |
+| `timeouts { read_body_idle 10m }` | Both directions silent for 75 seconds | Passed: `ok stream lasted 1m19s with 4 messages each way and trailer 4`. |
+| `timeouts { read_body_idle 10m }` | Both directions silent for 6 minutes and 10 seconds | Passed: `ok stream lasted 6m14s with 4 messages each way and trailer 4`. |
+| `timeouts { read_body_idle 10m }` | The machine silent for 6 minutes and 30 seconds | Passed: `ok quiet-up lasted 6m30s with 195 ticks down and one line up; trailer up-closed`. |
+| `timeouts { read_body_idle 10m }` | The server silent for 6 minutes and 30 seconds | Passed: `ok quiet-down lasted 6m30s, 196 lines up, none down until the end`. |
+
+### The web server rules in one file
+
+The exact rules of work item 2, in one `Caddyfile`, ran on Caddy 2.11.9 as user 10003 with `--read-only`, `--cap-drop ALL` and `no-new-privileges`, in front of a stub server.
+`GET /` served the page.
+`GetServer` reached the stub over HTTP/2 with `host=127.0.0.1` and `xfp=http`, although the request sent `X-Forwarded-Proto: https`.
+`Join` reached the stub over HTTP/2.
+`SignOut` kept the stub's 401.
+`Host: lgtm.test:8787` got 421, and `Host: localhost:8787` got 200.
+`/frames/x` and `/lgtm.v2.X` got 404.
+The health listener answered inside the container and refused a connection from the stub's container.
+
+### Compose and Docker behaviour
+
+| Probe | Result |
+|---|---|
+| `LGTM_PUBLIC_URL: http://127.0.0.1:${LGTM_WEB_PORT:-8787}` | With no port set, the value is `http://127.0.0.1:8787`. With `LGTM_WEB_PORT=18787`, it is `http://127.0.0.1:18787`, and the published port follows. |
+| `LGTM_WEB_PORT` of `web`, `65536` or `-1` | `docker compose config` fails with `invalid hostPort`. |
+| `LGTM_WEB_PORT=0` | Compose accepts it, and Docker publishes a random port. The guide says that 0 is not supported. |
+| A port that another process holds | `docker compose up` fails with `failed to bind host port 127.0.0.1:<port>/tcp: address already in use`. |
+| `COMPOSE_ENV_FILES=<file>` | Compose reads that file in place of `deploy/.env`, and a value in the shell still wins. |
+| `docker compose up -d --wait` of a service that exits 1 at once, with `restart: unless-stopped` and `start_period: 8m` | The command failed after 3 seconds with `container ... is unhealthy` and exit status 1. |
 
