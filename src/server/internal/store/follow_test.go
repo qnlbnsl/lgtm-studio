@@ -638,3 +638,48 @@ func TestFollowerEndsStaleStreams(t *testing.T) {
 		requireRefusal(t, h)
 	})
 }
+
+// TestFollowerStoredLagOfALateStart proves that a subscriber that starts behind keeps the rows it already owes.
+func TestFollowerStoredLagOfALateStart(t *testing.T) {
+	h := flStart(t)
+	h.seed(2000, "records")
+	late := h.started(0)
+	h.seed(47, "records")
+	flRequireOpen(t, "the subscriber at lag 2047", late)
+	h.seed(1, "records")
+	flRequireEnded(t, "the subscriber at lag 2048 after a late start", late, ErrWatchLagged)
+}
+
+// TestFollowerProductionStalenessTimer runs the follower with the production clock, which starts the
+// staleness timer. No page is ever accepted, so only the timer can end the stream after ten seconds.
+func TestFollowerProductionStalenessTimer(t *testing.T) {
+	s, _, _ := feedFixture(t, nil)
+	reports := make(chan error, 4)
+	// Nothing sends a poll, the listener is off, and the follower has no injected clock.
+	options := feedReaderOptions{ticks: make(chan time.Time), disableListener: true}
+	f, err := startFollower(t.Context(), s, func(err error) { reports <- err }, options)
+	if err != nil {
+		t.Fatalf("starting the follower failed: %v", err)
+	}
+	t.Cleanup(f.Close)
+	sub, err := f.Subscribe(t.Context())
+	if err != nil {
+		t.Fatalf("subscribing failed: %v", err)
+	}
+	t.Cleanup(sub.Close)
+	if err := sub.Start(0); err != nil {
+		t.Fatalf("starting failed: %v", err)
+	}
+	flRequireOpen(t, "the stream before the deadline", sub)
+
+	storetest.Poll(t, "the stream ended by the staleness timer", func() bool { return sub.Context().Err() != nil })
+	if cause := context.Cause(sub.Context()); !errors.Is(cause, ErrFeedUnavailable) {
+		t.Fatalf("the stream ended with %v, want ErrFeedUnavailable", cause)
+	}
+	if report := storetest.Receive(t, "the outage report", reports); !errors.Is(report, ErrFeedUnavailable) {
+		t.Fatalf("the outage report is %v, want ErrFeedUnavailable", report)
+	}
+	if _, err := f.Subscribe(t.Context()); !errors.Is(err, ErrFeedUnavailable) {
+		t.Fatalf("Subscribe during the outage returned %v, want ErrFeedUnavailable", err)
+	}
+}

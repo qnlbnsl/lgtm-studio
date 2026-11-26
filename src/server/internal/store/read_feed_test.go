@@ -207,6 +207,23 @@ func TestFeedReaderNotificationAndPolling(t *testing.T) {
 	}
 }
 
+// TestFeedReaderNotificationWakesAnIdleReader proves the notification path. The registration wake has been
+// consumed before the row is written, and no poll is ever sent.
+func TestFeedReaderNotificationWakesAnIdleReader(t *testing.T) {
+	s, _ := rfFixture(t)
+	h := rfStart(t, s, 0, nil)
+	storetest.Receive(t, "the listener registration", h.listening)
+	// The registration wakes the reader once. Its page on the empty feed shows that the reader is idle again.
+	if page := storetest.Receive(t, "the page of the registration wake", h.pages); len(page.Rows) != 0 {
+		t.Fatalf("the page of the registration wake holds %d rows, want none", len(page.Rows))
+	}
+	feedWrite(t, s, "n")
+	rows := h.waitRows("a row delivered by the notification alone", 1)
+	if rows[0].Key != "n" {
+		t.Fatalf("the notified row is %+v, want record n", rows[0])
+	}
+}
+
 func TestFeedReaderCatchupAndRetry(t *testing.T) {
 	s, cfg, obs := feedFixture(t, nil)
 	const total = 1100
