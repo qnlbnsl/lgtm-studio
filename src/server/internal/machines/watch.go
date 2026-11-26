@@ -22,6 +22,8 @@ func (s *Service) WatchClients(
 	_ *connect.Request[lgtmv1.WatchClientsRequest],
 	stream *connect.ServerStream[lgtmv1.WatchClientsResponse],
 ) error {
+	defer transport.BoundLinkEnd(ctx, transport.SendTimeout)
+
 	verifier, ok := api.SessionVerifier(ctx)
 	if !ok {
 		return watchError(watch.ErrWatchUnauthorized)
