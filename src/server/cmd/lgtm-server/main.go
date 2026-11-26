@@ -26,8 +26,7 @@ const (
 	defaultListenAddr = "127.0.0.1:8080"
 	healthTimeout     = 2 * time.Second
 
-	lineUsage     = "Usage: lgtm-server [health]"
-	lineJoinToken = "The join-token command is unavailable in this build."
+	lineUsage = "Usage: lgtm-server [health]"
 )
 
 // retiredSettings are names that earlier builds read. The command warns about them by name only.
@@ -49,8 +48,7 @@ func run(ctx context.Context, args []string, lookup func(string) (string, bool),
 	case args[0] == "health" && len(args) == 1:
 		return health(ctx, lookup)
 	case args[0] == "join-token":
-		fmt.Fprintln(stderr, lineJoinToken)
-		return exitUsage
+		return joinTokenCommand(ctx, args[1:], lookup, stdout, stderr)
 	default:
 		fmt.Fprintln(stderr, lineUsage)
 		return exitUsage
