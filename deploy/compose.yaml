@@ -148,6 +148,87 @@ services:
         bind:
           create_host_path: false
 
+  server:
+    build:
+      context: ..
+      dockerfile: deploy/server.Dockerfile
+      target: runtime
+    image: lgtm-server:${LGTM_IMAGE_TAG:-local}
+    user: "10001:10001"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    # A mapping, so that an override can remove one key with !reset.
+    environment:
+      LGTM_WEB_PASSWORD: ${LGTM_WEB_PASSWORD:-}
+      LGTM_LISTEN_ADDR: ":8080"
+      LGTM_PUBLIC_URL: http://127.0.0.1:${LGTM_WEB_PORT:-8787}
+      LGTM_POSTGRES_HOST: postgres
+      LGTM_POSTGRES_PORT: "5432"
+      LGTM_POSTGRES_DATABASE: lgtm_app
+      LGTM_POSTGRES_USER: lgtm_app
+      LGTM_POSTGRES_PASSWORD_FILE: /run/lgtm/postgres.password
+      LGTM_ALLOW_PRIVATE_STACK: "true"
+      LGTM_OPENBAO_ADDR: http://openbao:8200
+      LGTM_OPENBAO_CREDENTIAL_FILE: /run/lgtm/openbao.json
+    depends_on:
+      postgres:
+        condition: service_healthy
+      openbao:
+        condition: service_healthy
+    volumes:
+      - type: bind
+        source: ${LGTM_STACK_STATE_DIR:-./.state}/server/openbao.json
+        target: /run/lgtm/openbao.json
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${LGTM_STACK_STATE_DIR:-./.state}/server/postgres-app.password
+        target: /run/lgtm/postgres.password
+        read_only: true
+        bind:
+          create_host_path: false
+    # The server publishes no port. The web server reaches it on the internal network app.
+    networks: [app, data, vault]
+    # The start period covers a first start that migrates the database.
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/lgtm-server", "health"]
+      start_period: 8m
+      start_interval: 2s
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/website.Dockerfile
+      target: runtime
+    image: lgtm-web:${LGTM_IMAGE_TAG:-local}
+    user: "10003:10003"
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+    depends_on:
+      server:
+        condition: service_healthy
+    # The address is written here and not taken from a setting, so the port stays on loopback.
+    ports:
+      - "127.0.0.1:${LGTM_WEB_PORT:-8787}:8080"
+    networks: [edge, app]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/healthz"]
+      start_period: 30s
+      start_interval: 1s
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
 configs:
   prepare-script:
     file: ./stack-prepare.sh
@@ -155,6 +236,11 @@ configs:
     file: ./openbao-init.sh
 
 networks:
+  # The web server's network to the host's published port.
+  edge: {}
+  # The web server reaches the server here, with no route out.
+  app:
+    internal: true
   data:
     internal: true
   vault:
