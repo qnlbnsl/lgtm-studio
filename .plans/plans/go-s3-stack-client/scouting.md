@@ -203,3 +203,12 @@ It is not a code that the Go runtime uses for a crash, which is 2.
 | `.plans/plans/go-s3-server-machines/plan.md`, line 343 | The server sets `connected_at` from the database's wall clock at each admission, so it shows only the latest connection. |
 | `src/frontend/src/server/sync.ts`, line 117 | The website's token adapter drops the `address` of `CreateClientTokenResponse`. |
 | Round 3 report threat-r3 06 | Docker Compose repeats a value of a malformed settings file on standard error when `port` fails. |
+
+## Sources checked for the last fold, of round 4, on 2026-11-26
+
+| File and anchor | What it establishes |
+|---|---|
+| `src/client/internal/config/config.go`, line 14 | The built client reads its state folder from `LGTM_CLIENT_STATE_DIR`. |
+| `src/client/internal/state/folder.go`, lines 18 and 19 | The built client names its files `machine.key` and `identity.json`. The field `machineId` of `identity.json` is not built yet, and plan `go-s3-client-link`, item 8, writes it. |
+| `deploy/test/checks.sh`, `configure_web` at line 32 | The script sets `web_url` from `LGTM_WEB_PORT` once. Each check runs in its own subshell at lines 654 and 659, so a value set inside one check does not reach the next. |
+| `src/contracts/proto/lgtm/v1/clients.proto`, line 123 | `CreateClientTokenResponse.address` is a field of the contract, which the sample server may leave empty. |
