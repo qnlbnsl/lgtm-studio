@@ -125,7 +125,9 @@ They meet only in the contract, which sprint 0 writes.
 | Client | `src/client/` | `src/contracts/`, the design |
 | Stack | `deploy/` | `src/server/cmd/`, `src/client/cmd/`, `src/frontend/`, the design |
 
-The link between a server and a machine is frozen when the plans `go-s3-server-machines` and `go-s3-client-link` have both cleared their reviews, which is before either team builds against it.
+The link between a server and a machine is frozen when the plan `go-s3-client-link` has cleared its review and the findings of the review of the built contract (issue 1643) and the requests of the other plans are settled, which is before either team builds against it.
+The plans `go-s3-server-stream` and `go-s3-server-commands` are written against the frozen link. A change after the freeze needs a new revision of the contract.
+(Changed on 2026-11-26: the plan `go-s3-server-machines` was cut in three after it did not clear its fourth review round with fifteen work items, and the freeze no longer waits for the server end of the stream.)
 The orchestrator decided this on 2026-11-26, because the reviews of the contract kept finding disagreements with plans that were not yet reviewed.
 Until then, a change to the link files is an ordinary work item of the Contract team. After it, a change goes back to phase 3.
 
@@ -149,9 +151,11 @@ The work items are listed in the brief of each plan.
 | 4 | go-s1-stack-vault | The compose stack with PostgreSQL and OpenBao, where OpenBao opens by itself after a restart. | linked | f072231a |
 | 5 | go-s2-server-signin | The server program: settings, request handling, sign-in, web sessions, and the vault client. | linked | |
 | 6 | go-s2-stack-web | The images of the server and the website, and one command that starts everything. | linked | |
-| 7 | go-s3-server-machines | The machine registry, join tokens, the Machines page's calls, and the server end of the link. | linked | |
+| 7 | go-s3-server-machines | The machine registry, join tokens, and the Machines page's calls that need no stream: a machine can join, wait, be approved and be listed. | linked | |
 | 8 | go-s3-client-link | The `join` and `run` commands, and the client end of the link. | linked | |
 | 9 | go-s3-stack-client | The installer of the client, and the server's own command that makes a join token. | linked | |
+| 10 | go-s3-server-stream | The server end of the link: admission of a stream, presence, and the events a machine sends. Written after plan 7 and the server program of plan 5 are built. | planned | |
+| 11 | go-s3-server-commands | Stored commands and the calls of the Machines page that send one. Written after plan 10. | planned | |
 
 `planned` — named slice, no `.plans/plans/<slug>/plan.md` yet.
 `linked` — that plan exists and its `epic:` is this slug.
