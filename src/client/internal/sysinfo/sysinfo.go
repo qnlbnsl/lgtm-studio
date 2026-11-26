@@ -1,6 +1,11 @@
 // Package sysinfo reads the facts and the load of the machine the client runs on.
 package sysinfo
 
+import (
+	"os"
+	"runtime"
+)
+
 // The names of the operating systems, as the contract spells them.
 const (
 	OSLinux = "Linux"
@@ -21,4 +26,19 @@ type Facts struct {
 type Load struct {
 	CPUPercent    uint32
 	MemoryPercent uint32
+}
+
+func machineFacts(system, clientVersion string, memoryBytes uint64) (Facts, error) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return Facts{}, err
+	}
+	return Facts{
+		Hostname:      hostname,
+		OS:            system,
+		Arch:          runtime.GOARCH,
+		Cores:         uint32(runtime.NumCPU()),
+		MemoryBytes:   memoryBytes,
+		ClientVersion: clientVersion,
+	}, nil
 }
