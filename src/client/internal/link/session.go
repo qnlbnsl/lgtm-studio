@@ -50,12 +50,12 @@ var (
 )
 
 var newRunLinkClient = func(server enroll.Server) (linkv1connect.LinkServiceClient, func(), error) {
-	httpClient, err := transport.NewHTTPClient(server.Address, server.CertificateKeySHA256)
+	httpClient, retire, err := transport.NewStreamHTTPClient(server.Address, server.CertificateKeySHA256)
 	if err != nil {
 		return nil, nil, err
 	}
 	client := linkv1connect.NewLinkServiceClient(httpClient, server.Address, connect.WithReadMaxBytes(64<<10))
-	return client, httpClient.CloseIdleConnections, nil
+	return client, retire, nil
 }
 
 var runReportProbes reportProbes
@@ -97,9 +97,6 @@ func Run(ctx context.Context, opts RunOptions) (RunOutcome, error) {
 	outageErr := r.stopOutage()
 	_, scanErr := r.commands.settleScan(r.commands.stopScan())
 	closeErr := store.Close()
-	if r.closeClient != nil {
-		r.closeClient()
-	}
 	if err := errors.Join(r.fault, outageErr, scanErr, closeErr); err != nil {
 		return stopForStore(logger, err)
 	}
@@ -120,8 +117,6 @@ type clientRun struct {
 	reports  *reporter
 	commands *commandHandler
 
-	client      linkv1connect.LinkServiceClient
-	closeClient func()
 	live        *liveSession
 	endOutage   func() error
 	lastReason  string
@@ -134,23 +129,18 @@ func (r *clientRun) attempt(ctx context.Context, welcomed func()) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	if r.client == nil {
-		client, closeClient, err := newRunLinkClient(r.opts.Server)
-		if err != nil {
-			if r.ctx.Err() == nil {
-				r.reportFailure("transport_setup")
-			}
-			return errStream
-		}
-		r.client, r.closeClient = client, closeClient
-	}
-	s, err := openSession(ctx, r.client, r.opts.Server, r.opts.Credential)
+	client, retire, err := newRunLinkClient(r.opts.Server)
 	if err != nil {
-		// The HTTP transport can keep dialing for a request that already
-		// returned. Retire those dials before the supervisor retries.
-		if r.closeClient != nil {
-			r.closeClient()
+		if r.ctx.Err() == nil {
+			r.reportFailure("transport_setup")
 		}
+		return errStream
+	}
+	if retire != nil {
+		defer retire()
+	}
+	s, err := openSession(ctx, client, r.opts.Server, r.opts.Credential)
+	if err != nil {
 		if r.ctx.Err() == nil {
 			r.reportFailure(linkFailureCode(err))
 		}
@@ -158,27 +148,9 @@ func (r *clientRun) attempt(ctx context.Context, welcomed func()) error {
 	}
 	defer s.close()
 	welcomed()
-	if err := r.stopOutage(); err != nil {
-		r.stopLocal(err)
-		return err
-	}
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
 
-	cursor, err := newReplay(r.store, s.welcome.GetLastEventNumber())
-	if err != nil {
-		r.stopLocal(err)
-		return err
-	}
-	if r.lastReason != "" {
-		r.logger.Info("link_recovered")
-		r.lastReason = ""
-	}
-
-	live := &liveSession{run: r, replay: cursor}
+	live := &liveSession{run: r}
 	r.live = live
-	r.commands.setSession(s)
 	restart, err := live.serve(ctx, s)
 	r.commands.setSession(nil)
 	r.live = nil
@@ -379,9 +351,44 @@ func (l *liveSession) serve(ctx context.Context, s *session) (_ bool, err error)
 
 	var workers sync.WaitGroup
 	reportFailed := make(chan error, 1)
+	var sendErr error
+	var timingMu sync.Mutex
+	deadline := s.welcomedAt.Add(streamSilence)
+	var transportEnded time.Time
+	var expired bool
+	var silence *time.Timer
+	timingMu.Lock()
+	silence = time.AfterFunc(time.Until(deadline), func() {
+		timingMu.Lock()
+		defer timingMu.Unlock()
+		if ctx.Err() != nil || !transportEnded.IsZero() {
+			return
+		}
+		if remaining := time.Until(deadline); remaining > 0 {
+			silence.Reset(remaining)
+			return
+		}
+		transportEnded, expired = deadline, true
+		cancel()
+		s.cancel()
+	})
+	timingMu.Unlock()
+
 	defer func() {
 		l.ended = time.Now()
+		timingMu.Lock()
+		if !transportEnded.IsZero() && transportEnded.Before(l.ended) {
+			l.ended = transportEnded
+		}
+		if expired && errors.Is(err, context.Canceled) {
+			err = errSilentStream
+			if sendErr != nil {
+				err = sendErr
+			}
+		}
 		cancel()
+		silence.Stop()
+		timingMu.Unlock()
 		_ = s.close()
 		workers.Wait()
 		s.welcome.ConnectionToken = ""
@@ -412,6 +419,20 @@ func (l *liveSession) serve(ctx context.Context, s *session) (_ bool, err error)
 	workers.Go(func() {
 		for ctx.Err() == nil {
 			frame, err := wire.receive()
+			receivedAt := time.Now()
+			// Account for the frame before handing it to the owner, who may
+			// be blocked on a local read or write.
+			timingMu.Lock()
+			if ctx.Err() != nil || !receivedAt.Before(deadline) {
+				timingMu.Unlock()
+				return
+			}
+			if err == nil {
+				deadline = receivedAt.Add(streamSilence)
+			} else {
+				transportEnded = receivedAt
+			}
+			timingMu.Unlock()
 			select {
 			case replies <- streamReply{frame, err}:
 			case <-ctx.Done():
@@ -423,11 +444,34 @@ func (l *liveSession) serve(ctx context.Context, s *session) (_ bool, err error)
 		}
 	})
 
+	if err := l.run.stopOutage(); err != nil {
+		return false, storeFault{err}
+	}
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+	cursor, err := newReplay(l.run.store, s.welcome.GetLastEventNumber())
+	if err != nil {
+		return false, storeFault{err}
+	}
+	if ctx.Err() != nil {
+		return false, ctx.Err()
+	}
+	l.replay = cursor
+	if l.run.lastReason != "" {
+		l.run.logger.Info("link_recovered")
+		l.run.lastReason = ""
+	}
+	l.run.commands.setSession(s)
+
 	var cancelInventory context.CancelFunc
 	freshReports := func() error {
 		l.run.sawApproval = true
 		if err := l.run.captureFacts(); err != nil {
 			return storeFault{err}
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
 		}
 		scanCtx, stop := context.WithCancel(ctx)
 		cancelInventory = stop
@@ -461,22 +505,21 @@ func (l *liveSession) serve(ctx context.Context, s *session) (_ bool, err error)
 	nextBeat := started
 	heartbeats := time.NewTicker(reportInterval)
 	defer heartbeats.Stop()
-	silence := time.NewTimer(streamSilence)
-	defer silence.Stop()
 	ready := make(chan struct{})
 	close(ready)
 	var restartDeadline <-chan time.Time
 
 	busy, haveEvents := false, true
-	var sendErr error
 	handle := func(reply streamReply) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if reply.err != nil {
 			return reply.err
 		}
 		if sendErr != nil || restartDeadline != nil {
 			return nil
 		}
-		silence.Reset(streamSilence)
 		wasApproved := l.approved()
 		restart, err := l.receive(reply.frame)
 		if err != nil {
@@ -509,11 +552,6 @@ func (l *liveSession) serve(ctx context.Context, s *session) (_ bool, err error)
 			return restarting, ctx.Err()
 		case <-restartDeadline:
 			return true, nil
-		case <-silence.C:
-			if sendErr != nil {
-				return restarting, sendErr
-			}
-			return restarting, errSilentStream
 		case <-heartbeats.C:
 		case <-l.run.store.Changed():
 			haveEvents = true

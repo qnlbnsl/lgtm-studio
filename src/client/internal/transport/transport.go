@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 )
@@ -102,6 +103,21 @@ func validHostName(host string) bool {
 // NewHTTPClient returns a client for the given origin. The caller closes its idle
 // connections when it finishes with the client.
 func NewHTTPClient(origin string, certificateKeySHA256 []byte) (*http.Client, error) {
+	return newHTTPClient(origin, certificateKeySHA256, nil)
+}
+
+// NewStreamHTTPClient binds a single connection to the stream's request context.
+// After canceling the request, the caller must retire the connection.
+func NewStreamHTTPClient(origin string, certificateKeySHA256 []byte) (*http.Client, func(), error) {
+	stream := new(streamConnection)
+	client, err := newHTTPClient(origin, certificateKeySHA256, stream)
+	if err != nil {
+		return nil, nil, err
+	}
+	return client, stream.retire, nil
+}
+
+func newHTTPClient(origin string, certificateKeySHA256 []byte, stream *streamConnection) (*http.Client, error) {
 	parsed, err := parseOrigin(origin)
 	if err != nil {
 		return nil, err
@@ -136,7 +152,7 @@ func NewHTTPClient(origin string, certificateKeySHA256 []byte) (*http.Client, er
 		}
 	}
 	return &http.Client{
-		Transport: &originTransport{transport: transport, origin: parsed.String()},
+		Transport: &originTransport{transport: transport, origin: parsed.String(), stream: stream},
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -146,18 +162,77 @@ func NewHTTPClient(origin string, certificateKeySHA256 []byte) (*http.Client, er
 type originTransport struct {
 	transport *http.Transport
 	origin    string
+	stream    *streamConnection
 }
 
 func (t *originTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if req.URL != nil && req.URL.Opaque == "" && req.URL.User == nil &&
 		t.matches(req.URL.Scheme, req.URL.Host) &&
 		(req.Host == "" || req.Host == req.URL.Host || t.matches(req.URL.Scheme, req.Host)) {
+		if t.stream != nil {
+			return t.roundTripStream(req)
+		}
 		return t.transport.RoundTrip(req)
 	}
 	if req.Body != nil {
 		_ = req.Body.Close()
 	}
 	return nil, errors.New("transport: request must use the client's server origin")
+}
+
+func (t *originTransport) roundTripStream(req *http.Request) (_ *http.Response, err error) {
+	defer func() {
+		if err != nil && req.Body != nil {
+			_ = req.Body.Close()
+		}
+	}()
+
+	conn, err := t.stream.dial(t.transport, req)
+	if err != nil {
+		return nil, err
+	}
+	return conn.RoundTrip(req)
+}
+
+type streamConnection struct {
+	mu       sync.Mutex
+	dialDone chan struct{}
+	retired  bool
+	conn     *http.ClientConn
+}
+
+func (s *streamConnection) dial(t *http.Transport, req *http.Request) (*http.ClientConn, error) {
+	s.mu.Lock()
+	if s.retired || s.dialDone != nil {
+		s.mu.Unlock()
+		return nil, errors.New("transport: stream connection already used")
+	}
+	done := make(chan struct{})
+	s.dialDone = done
+	s.mu.Unlock()
+	// Signal retirement only after the TCP dial and TLS handshake have returned.
+	defer close(done)
+	if err := req.Context().Err(); err != nil {
+		return nil, err
+	}
+	address := net.JoinHostPort(req.URL.Hostname(), req.URL.Port())
+	conn, err := t.NewClientConn(req.Context(), req.URL.Scheme, address)
+	s.conn = conn
+	return conn, err
+}
+
+func (s *streamConnection) retire() {
+	s.mu.Lock()
+	s.retired = true
+	done := s.dialDone
+	s.mu.Unlock()
+	if done == nil {
+		return
+	}
+	<-done
+	if s.conn != nil {
+		_ = s.conn.Close()
+	}
 }
 
 func (t *originTransport) matches(scheme, host string) bool {

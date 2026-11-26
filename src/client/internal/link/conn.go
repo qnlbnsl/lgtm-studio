@@ -47,6 +47,7 @@ type session struct {
 	stream       *connect.BidiStreamForClient[linkv1.OpenRequest, linkv1.OpenResponse]
 	cancel       context.CancelFunc
 	welcome      *linkv1.Welcome
+	welcomedAt   time.Time
 	closeRequest func() error
 
 	// sentAt is the elapsed time sampled immediately before sending the proof.
@@ -133,6 +134,7 @@ func openSession(ctx context.Context, client linkv1connect.LinkServiceClient, se
 	if err != nil {
 		return nil, err
 	}
+	s.welcomedAt = time.Now()
 	welcome := second.GetWelcome()
 	if err := validateWelcome(welcome); err != nil {
 		return nil, err
