@@ -12,6 +12,7 @@ import (
 	"github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1/linkv1connect"
 	"github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1/lgtmv1connect"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/auth"
+	"github.com/qnlbnsl/lgtm-studio/src/server/internal/transport"
 )
 
 // Options names the parts that the request handler serves.
@@ -26,6 +27,9 @@ type Options struct {
 
 // sessionReadMaxBytes bounds every message that the Session service reads, after decompression.
 const sessionReadMaxBytes = 32 << 10
+
+// linkReadLimit bounds each incoming Link message after decompression.
+const linkReadLimit = 64 << 10
 
 const healthPath = "/healthz"
 
@@ -132,7 +136,7 @@ func NewHandler(options Options) http.Handler {
 	}
 	if options.Clients != nil {
 		_, handler := lgtmv1connect.NewClientServiceHandler(options.Clients, protocol, guard)
-		r.register(handler,
+		r.register(transport.WithWriteDeadline(handler),
 			lgtmv1connect.ClientServiceWatchClientsProcedure,
 			lgtmv1connect.ClientServiceCreateClientTokenProcedure,
 			lgtmv1connect.ClientServiceRevokeClientTokenProcedure,
@@ -144,7 +148,8 @@ func NewHandler(options Options) http.Handler {
 	}
 	r.link = r.unsupported
 	if options.Link != nil {
-		_, r.link = linkv1connect.NewLinkServiceHandler(options.Link, protocol)
+		_, handler := linkv1connect.NewLinkServiceHandler(options.Link, protocol, connect.WithReadMaxBytes(linkReadLimit))
+		r.link = transport.WithWriteDeadline(handler)
 	}
 	return r
 }
