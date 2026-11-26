@@ -1,0 +1,28 @@
+{
+ "id": "client/backend",
+ "domain": "client",
+ "work_area": "backend",
+ "source": "CLAUDE.md",
+ "summary": "Builds the Go client that runs on each machine: its key, its local records, and the client end of the link.",
+ "edit": [
+  "src/client/**"
+ ],
+ "read_only": [
+  "src/contracts/**",
+  "go.mod",
+  "go.sum",
+  "docs/specs/**",
+  ".plans/**",
+  "AGENTS.md"
+ ],
+ "sections": [
+  {
+   "heading": "(preamble)",
+   "hash": "918b1c905593",
+   "words": 1,
+   "worker": true,
+   "lead": true,
+   "why": "Kept: binds this scope."
+  }
+ ]
+}

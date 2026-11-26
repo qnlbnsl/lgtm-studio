@@ -1,0 +1,29 @@
+{
+ "id": "stack/infra",
+ "domain": "stack",
+ "work_area": "infra",
+ "source": "CLAUDE.md",
+ "summary": "Builds the compose stack and its scripts: PostgreSQL, OpenBao, the images of the server and the website, and the installer of the client.",
+ "edit": [
+  "deploy/**"
+ ],
+ "read_only": [
+  "src/server/cmd/**",
+  "src/client/cmd/**",
+  "src/frontend/**",
+  "src/contracts/**",
+  "docs/specs/**",
+  ".plans/**",
+  "AGENTS.md"
+ ],
+ "sections": [
+  {
+   "heading": "(preamble)",
+   "hash": "918b1c905593",
+   "words": 1,
+   "worker": true,
+   "lead": true,
+   "why": "Kept: binds this scope."
+  }
+ ]
+}
