@@ -12,6 +12,11 @@ import (
 
 // Project converts a durable machine record to the Machines page's contract.
 func Project(machine Machine) *lgtmv1.Client {
+	return ProjectWithPresence(machine, nil)
+}
+
+// ProjectWithPresence adds contact times, connection state and load from a held stream.
+func ProjectWithPresence(machine Machine, presence *Presence) *lgtmv1.Client {
 	client := &lgtmv1.Client{
 		Id:               machine.ID,
 		Name:             machine.Name,
@@ -27,6 +32,19 @@ func Project(machine Machine) *lgtmv1.Client {
 	}
 	if machine.LastSeenAt != nil {
 		client.LastSeen = timestamppb.New(*machine.LastSeenAt)
+	}
+	if presence != nil && presence.Held {
+		client.Address = presence.Address
+		client.ConnectedAt = timestamppb.New(presence.ConnectedAt)
+		client.LastSeen = timestamppb.New(presence.LastHeardAt)
+		if machine.Approval == ApprovalApproved {
+			client.State = lgtmv1.ClientState_CLIENT_STATE_JOINING
+			if presence.FactsReceived && presence.HarnessesReceived {
+				client.State = lgtmv1.ClientState_CLIENT_STATE_ONLINE
+				client.CpuPercent = presence.CPUPercent
+				client.MemoryPercent = presence.MemoryPercent
+			}
+		}
 	}
 
 	var facts linkv1.Facts

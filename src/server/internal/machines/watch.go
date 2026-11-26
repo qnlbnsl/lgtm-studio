@@ -14,6 +14,8 @@ import (
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/watch"
 )
 
+var errServerStopping = errors.New("The server is stopping.")
+
 // WatchClients streams the machine snapshot and subsequent changes for a live session.
 func (s *Service) WatchClients(
 	ctx context.Context,
@@ -23,6 +25,16 @@ func (s *Service) WatchClients(
 	verifier, ok := api.SessionVerifier(ctx)
 	if !ok {
 		return watchError(watch.ErrWatchUnauthorized)
+	}
+	if s.watchShutdown != nil {
+		if s.watchShutdown.Err() != nil {
+			return watchError(errServerStopping)
+		}
+		var cancel context.CancelCauseFunc
+		ctx, cancel = context.WithCancelCause(ctx)
+		defer cancel(nil)
+		stop := context.AfterFunc(s.watchShutdown, func() { cancel(errServerStopping) })
+		defer stop()
 	}
 
 	follower := s.follower
@@ -36,7 +48,7 @@ func (s *Service) WatchClients(
 		defer follower.Close()
 	}
 
-	source := watch.Source[Machine]{
+	source := watch.Source[*lgtmv1.Client]{
 		Topic: "machines",
 		Authorize: func(ctx context.Context, tx *store.ReadTx) error {
 			err := s.sessions.CheckInRead(ctx, tx, verifier)
@@ -45,18 +57,39 @@ func (s *Service) WatchClients(
 			}
 			return err
 		},
-		Snapshot: func(ctx context.Context, tx *store.ReadTx) ([]Machine, error) {
-			return s.registry.List(ctx, tx)
+		Snapshot: func(ctx context.Context, tx *store.ReadTx) ([]*lgtmv1.Client, error) {
+			machines, err := s.registry.List(ctx, tx)
+			if err != nil {
+				return nil, err
+			}
+			ids := make([]string, 0, len(machines))
+			for _, machine := range machines {
+				ids = append(ids, machine.ID)
+			}
+			rows, err := s.loadPresence(ctx, tx, ids)
+			if err != nil {
+				return nil, err
+			}
+			clients := make([]*lgtmv1.Client, 0, len(machines))
+			for _, machine := range machines {
+				presence := rows[machine.ID]
+				clients = append(clients, ProjectWithPresence(machine, &presence))
+			}
+			return clients, nil
 		},
-		Load: func(ctx context.Context, tx *store.ReadTx, id string) (Machine, bool, error) {
+		Load: func(ctx context.Context, tx *store.ReadTx, id string) (*lgtmv1.Client, bool, error) {
 			machine, err := s.registry.Get(ctx, tx, id)
 			if errors.Is(err, ErrNoMachine) {
-				return Machine{}, false, nil
+				return nil, false, nil
 			}
-			return machine, err == nil, err
+			if err != nil {
+				return nil, false, err
+			}
+			client, err := s.projectOne(ctx, tx, machine)
+			return client, err == nil, err
 		},
 	}
-	err := watch.Serve(ctx, s.store, follower, source, func(ctx context.Context, message watch.Message[Machine]) error {
+	err := watch.Serve(ctx, s.store, follower, source, func(ctx context.Context, message watch.Message[*lgtmv1.Client]) error {
 		return transport.Send(ctx, func() error {
 			return stream.Send(watchResponse(message))
 		})
@@ -64,19 +97,15 @@ func (s *Service) WatchClients(
 	return watchError(err)
 }
 
-func watchResponse(message watch.Message[Machine]) *lgtmv1.WatchClientsResponse {
+func watchResponse(message watch.Message[*lgtmv1.Client]) *lgtmv1.WatchClientsResponse {
 	response := &lgtmv1.WatchClientsResponse{
 		Position: &lgtmv1.FeedPosition{Value: uint64(message.Position)},
 	}
 	switch {
 	case message.Snapshot != nil:
-		clients := make([]*lgtmv1.Client, 0, len(message.Snapshot.Records))
-		for _, machine := range message.Snapshot.Records {
-			clients = append(clients, Project(machine))
-		}
-		response.Change = &lgtmv1.WatchClientsResponse_All{All: &lgtmv1.ClientList{Clients: clients}}
+		response.Change = &lgtmv1.WatchClientsResponse_All{All: &lgtmv1.ClientList{Clients: message.Snapshot.Records}}
 	case message.Saved != nil:
-		response.Change = &lgtmv1.WatchClientsResponse_Saved{Saved: Project(*message.Saved)}
+		response.Change = &lgtmv1.WatchClientsResponse_Saved{Saved: *message.Saved}
 	default:
 		response.Change = &lgtmv1.WatchClientsResponse_RemovedId{RemovedId: message.RemovedKey}
 	}
@@ -96,6 +125,8 @@ func watchError(err error) error {
 		return connect.NewError(connect.CodeAborted, store.ErrWatchLagged)
 	case errors.Is(err, store.ErrFeedUnavailable):
 		return connect.NewError(connect.CodeUnavailable, store.ErrFeedUnavailable)
+	case errors.Is(err, errServerStopping):
+		return connect.NewError(connect.CodeUnavailable, errServerStopping)
 	case errors.Is(err, context.Canceled):
 		return connect.NewError(connect.CodeCanceled, errors.New("The request was canceled."))
 	case errors.Is(err, context.DeadlineExceeded):

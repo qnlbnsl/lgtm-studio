@@ -46,8 +46,11 @@ func (s *Service) RevokeClientToken(ctx context.Context, req *connect.Request[lg
 		if err != nil || machineID == "" {
 			return err
 		}
-		_, err = s.registry.DeleteWaiting(ctx, tx, machineID)
-		return err
+		deleted, err := s.registry.DeleteWaiting(ctx, tx, machineID)
+		if err != nil || !deleted || s.link == nil {
+			return err
+		}
+		return s.link.Forget(ctx, tx, machineID)
 	})
 	if err != nil {
 		return nil, err
@@ -60,7 +63,13 @@ func (s *Service) RemoveClient(ctx context.Context, req *connect.Request[lgtmv1.
 	id := req.Msg.GetId()
 	write := recordRequest(req.Header(), lgtmv1connect.ClientServiceRemoveClientProcedure, id)
 	err := s.writeRecordChange(ctx, write, func(ctx context.Context, tx *store.Tx) error {
-		return s.registry.Delete(ctx, tx, id)
+		if err := s.registry.Delete(ctx, tx, id); err != nil {
+			return err
+		}
+		if s.link != nil {
+			return s.link.Forget(ctx, tx, id)
+		}
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -84,7 +93,11 @@ func (s *Service) ApproveClient(ctx context.Context, req *connect.Request[lgtmv1
 		if err != nil {
 			return nil, err
 		}
-		return proto.Marshal(&lgtmv1.ApproveClientResponse{Client: Project(machine)})
+		client, err := s.projectOne(ctx, tx, machine)
+		if err != nil {
+			return nil, err
+		}
+		return proto.Marshal(&lgtmv1.ApproveClientResponse{Client: client})
 	})
 	if err != nil {
 		return nil, recordError(err)
