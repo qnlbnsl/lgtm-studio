@@ -2662,3 +2662,11 @@ Found on 2026-11-26, in the review of the plan for the vault.
 
 Wave 1 gives the server one credential for OpenBao at the first start, and nothing replaces it.
 A later wave could replace it on a schedule or on request, with a role for an operator that cannot read the stored secrets.
+
+## The automatic-review permission mode in the Go rewrite
+
+Recorded on 2026-11-26, when the owner asked whether the rewrite supports the automatic permission mode.
+
+The old TypeScript engine has five permission levels: read only, ask, edit, automatic and full. The level `auto` maps to the harness's own automatic-review mode, in which the harness checks each action itself and asks only for the risky ones. A harness without such a mode uses its edit mode for `auto`, and the settings say so. The code is in `packages/contracts/src/permission.ts` and `packages/contracts/src/harnesses.ts`. The website already shows the five levels in the agent's permission menu, as "Automatic review".
+
+The Go server and the Go client do not have this yet. Waves 0 and 1 cover sign-in, machines and the link, and they start no agent. The wave that starts agents through the Agent Client Protocol must carry the five levels, the mapping of `auto` for each harness, and the default of `auto` for a new agent.
