@@ -5,6 +5,7 @@ export LC_ALL=C
 
 source "$(dirname -- "${BASH_SOURCE[0]}")/web-testlib.sh"
 web_passed=0 web_failed=0
+vault_launcher_pid=''
 vault_phases=(database seal vault ready)
 full_phases=(database seal vault images server web ready)
 service_path=/lgtm.v1.SessionService
@@ -33,6 +34,10 @@ setup() {
 }
 
 cleanup() {
+    if [[ -n ${vault_launcher_pid:-} ]]; then
+        kill "$vault_launcher_pid" 2>/dev/null || true
+        wait "$vault_launcher_pid" 2>/dev/null || true
+    fi
     if [[ -n ${blocker:-} ]]; then
         docker rm -fv "$blocker" >/dev/null 2>&1 || true
     fi
@@ -398,14 +403,55 @@ up_keeps_the_password_out_of_its_output() {
         ! grep -q '^phase ' "$output" && [[ $(<"$output") != *"$marker"* && ! -s $WEB_TEST_COMPOSE_CALLS ]]
 }
 
+up_keeps_changed_settings_password_out_of_its_output() {
+    setup && safe_model && restrict_to_vault || return 1
+    local lock_fd marker=synthetic-lock-wait-test-marker status=0 deadline
+    mkdir -m 0700 -- "$LGTM_STACK_STATE_DIR" || return 1
+    exec {lock_fd}<"$LGTM_STACK_STATE_DIR" || return 1
+    flock --exclusive "$lock_fd" || return 1
+
+    # Close the fixture's lock descriptor in the launcher so it holds only its own lock.
+    (cd -- "$launch_dir" && exec timeout --kill-after=5 180 "$launcher" --until vault) \
+        {lock_fd}<&- >"$output" 2>&1 &
+    vault_launcher_pid=$!
+    deadline=$((SECONDS + 30))
+    # The timeout process owns the launcher's process group. The kernel reports a blocked flock.
+    until ps -e -o pgid=,comm=,wchan= |
+        awk -v group="$vault_launcher_pid" '
+            $1 == group && $2 == "flock" && $3 ~ /lock.*wait/ { waiting = 1 }
+            END { exit !waiting }
+        '; do
+        if ((SECONDS >= deadline)) || ! kill -0 "$vault_launcher_pid" 2>/dev/null; then
+            printf '  The launcher did not wait for the fixture state lock.\n' >&2
+            return 1
+        fi
+        sleep 0.05
+    done
+
+    printf 'LGTM_WEB_PORT=%s\nLGTM_WEB_PASSWORD="%s\n' "$web_port" "$marker" >"$COMPOSE_ENV_FILES" || return 1
+    flock --unlock "$lock_fd" || return 1
+    exec {lock_fd}<&-
+    wait "$vault_launcher_pid" || status=$?
+    vault_launcher_pid=''
+    if ((status >= 124)); then
+        printf '  The launcher did not finish normally after the fixture released the lock.\n' >&2
+        return 1
+    fi
+    if [[ $(<"$output") == *"$marker"* ]]; then
+        printf '  The launcher exposed the password from settings changed during the lock wait.\n' >&2
+        return 1
+    fi
+}
+
 assertions=(up_until_vault_needs_no_web_settings up_starts_everything_in_order
     up_starts_no_server_before_the_vault up_waits_for_a_slow_server up_stops_on_a_failed_server
-    up_names_a_taken_port up_is_idempotent up_password_removal_ends_sessions up_keeps_the_password_out_of_its_output)
+    up_names_a_taken_port up_is_idempotent up_password_removal_ends_sessions up_keeps_the_password_out_of_its_output
+    up_keeps_changed_settings_password_out_of_its_output)
 
 if [[ $* == --stand-ins ]]; then
     assertions=(up_until_vault_needs_no_web_settings up_starts_no_server_before_the_vault
         up_waits_for_a_slow_server up_stops_on_a_failed_server up_names_a_taken_port
-        up_keeps_the_password_out_of_its_output)
+        up_keeps_the_password_out_of_its_output up_keeps_changed_settings_password_out_of_its_output)
 elif (($#)); then
     printf 'Usage: %s [--stand-ins]\n' "$0" >&2
     exit 2

@@ -93,6 +93,43 @@ server_image_leaves_out_state() {
     done <<<"$layers"
 }
 
+server_image_adds_only_the_server_program() {
+    ((built)) || return 1
+    local base_layers runtime_layers added_layers layer entries
+    local paths='' archive=$work/runtime-layers.tar
+    if ! docker image inspect "$distroless" >/dev/null 2>&1; then
+        docker pull "$distroless" >/dev/null || return 1
+    fi
+    base_layers=$(docker image inspect --format '{{json .RootFS.Layers}}' "$distroless") || return 1
+    runtime_layers=$(docker image inspect --format '{{json .RootFS.Layers}}' "$server_image") || return 1
+    if ! jq -e --argjson base "$base_layers" '
+        ($base | length) > 0 and .[0:($base | length)] == $base
+    ' <<<"$runtime_layers" >/dev/null; then
+        printf '  The runtime image does not start with the pinned base layers.\n' >&2
+        return 1
+    fi
+
+    docker save -o "$archive" "$server_image" || return 1
+    added_layers=$(tar -xOf "$archive" manifest.json |
+        jq -r --argjson base "$base_layers" '.[0].Layers[($base | length):][]') || return 1
+    while IFS= read -r layer; do
+        [[ -n $layer ]] || continue
+        tar -xOf "$archive" -- "$layer" >"$work/runtime-layer.tar" || return 1
+        # A copy may create parent directories. Every other entry counts, including deletions.
+        entries=$(tar -tvf "$work/runtime-layer.tar" --numeric-owner --quoting-style=escape |
+            awk '
+                $1 ~ /^d/ { next }
+                $1 ~ /^-/ && NF == 6 { sub(/^\.\//, "", $6); print $6; next }
+                { print "<unexpected archive entry>" }
+            ') || return 1
+        [[ -z $entries ]] || paths+="$entries"$'\n'
+    done <<<"$added_layers"
+    if [[ $paths != $'usr/local/bin/lgtm-server\n' ]]; then
+        printf '  The server program must be the only file added to the pinned base.\n' >&2
+        return 1
+    fi
+}
+
 server_image_runs_unprivileged() {
     ((built)) && docker image inspect "$server_image" |
         jq -e '.[0].Config |
@@ -127,6 +164,7 @@ else
     done
 fi
 web_check server_image_leaves_out_state
+web_check server_image_adds_only_the_server_program
 web_check server_image_runs_unprivileged
 web_check server_image_has_no_shell
 web_check server_image_refuses_without_password
