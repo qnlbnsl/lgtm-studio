@@ -116,3 +116,28 @@ These were read in the source of the installed Go toolchain on 2026-11-26.
 | `src/client/internal/sysinfo/*.go` | The fields of message `Client` in `src/contracts/proto/lgtm/v1/clients.proto`. |
 | `src/client/internal/harness/registry.go`, `scan.go` | `packages/engine/src/harnesses/programs.ts`, function `makeHarnessPrograms`, inner function `inspect`. |
 | `src/client/internal/link/eventfile.go`, `outbox.go`, `receipts.go` | The design's sections "Commands go down" and "Events come up". |
+
+## Facts checked for the fold of review round 1
+
+These were checked on 2026-11-26, at commit `3ef69e50`, while the findings of round 1 were folded.
+
+| Check | Result | Used for |
+|---|---|---|
+| `ls -la .plans/scopes/client/backend/scope.json` | The file exists, with 537 bytes. | architect-r1 11. The sizing fold now says the scope file exists. |
+| A fake script that runs `exec sleep 30` with an empty `PATH` | It fails with `exec: sleep: not found` and exits with 127 at once. A test of the time limit built that way passes without testing the limit. | architect-r1 9, critic-r1 8, logic-r1 9. The fakes now name `sleep` by an absolute path. |
+| `command -v sleep` on the development machine | `/usr/bin/sleep`. The tests find the path with `exec.LookPath` and do not hard-code it. | The same findings. |
+| `.plans/plans/go-s0-contract/draft/commands.proto`, enum `CommandOutcome` | It has `UNSPECIFIED`, `DONE`, `FAILED`, `EXPIRED` and `UNSUPPORTED`. It has no `INTERRUPTED`. | logic2-r1 3. The result file asks the Contract team for the outcome. |
+| `.plans/plans/go-s0-contract/draft/link.proto`, message `Welcome`, field `last_event_number = 3` | The server tells the client one number, with no name of the outbox it belongs to. | architect-r1 3 and the others of that group. The result file asks for an epoch beside it. |
+| `.plans/plans/go-s0-contract/draft/events.proto`, message `EventAck`, field `through = 1` | The acknowledgement is cumulative. | Decision 40. |
+| `deploy/test/checks.sh`, function `machines` | It builds `./src/client/cmd/lgtm-client` with `go build -o`, and the user-flow test starts the client with `XDG_STATE_HOME` set. | critic-r1 12, the pattern of task 1.2. The rule for the state folder already reads `XDG_STATE_HOME`. |
+| `packages/engine/src/workflows/store.ts`, class `WorkflowStore` | Its save opens a temporary file with `O_EXCL` and `O_NOFOLLOW`, syncs it, and links it for a new record or renames it over an old one. | critic-r1 12, the pattern of task 2.2. |
+| `go build -o <file> ./src/client/...` with more than one package | Go refuses to write several packages to one file, so the old cross build test could never pass. | architect-r1 10. |
+
+## New target paths of round 1 and their nearest pattern
+
+| Target path | Nearest existing pattern |
+|---|---|
+| `src/client/internal/state/testhook.go`, `SetSyncFolderForTest` | The unexported variable `syncFolder` in `src/client/internal/state/atomic.go` of the same item. |
+| `src/client/internal/harness/trust.go`, `trustedProgram` | `Open` in `src/client/internal/state/folder.go`, which applies the same rule to folders. |
+| `src/client/internal/sysinfo/sysinfo_darwin_test.go`, `TestReadLoadOnMacMatchesSystem` | `src/client/internal/sysinfo/sysinfo_linux_test.go`, `TestReadLoadOnLinux`. |
+| `src/client/internal/sysinfo/testdata/meminfo`, `testdata/loadavg` | The Linux files `/proc/meminfo` and `/proc/loadavg`. |
