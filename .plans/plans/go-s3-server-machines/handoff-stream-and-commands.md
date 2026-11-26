@@ -29,7 +29,7 @@ The numbers are rows of `decisions.md`.
 - **One declaration per item (ruling 1 of round 3).** It was replaced by the split. Each future plan gives each item the names it declares (rows 77 and 88).
 - **Locking.** Every write of one machine first locks the machine's row, and a token's row is locked before a machine's row (row 40).
 - **Presence.** A connection row exists only for a current stream, and no wall clock decides presence (rows 41 and 65). A server that starts clears every row under the instance lock (row 41).
-- **A waiting machine on the link.** It can connect and do nothing else (row 11).
+- **A waiting machine on the link.** UNREVIEWED FIX: the contract's part "Waiting" of `Open` in `link.proto`, the block on a machine that waits for approval, decides what it may send, including the `Facts` that the waiting record shows. Part B follows that comment and does not restate it (row 11, requests-from-contract-r5 logic-r5 07).
 - **Events.** Each event is decided by the contract's table, and its effect and its number commit together (rows 20 and 44). A number above 2^63 − 1 gives `ErrInvalidMessage` (row 86). The server stores no report time (row 68) and only the declared fields of a report (row 69).
 - **The handshake.** The codes after `Challenge`, and the reason in the error's metadata (rows 42 and 43). No connection token is stored (row 45).
 - **The stream's lifetime.** A silent or blocked stream ends within 30 seconds (row 55). Shutdown reaches a stream that has not registered (row 67). The first terminal cause wins (row 81). A lost reply of an admission's commit leads to a retried `Disconnect` of that stream (row 80).
@@ -52,6 +52,15 @@ Each is open, and none was folded. The register is `attack/round-4-findings.md`.
   - logic-r4 05, major, R6: a claimed command can still be sent after the sweep finalized it.
 - **Post-build checks that the reviewers proposed** for the stream are in the sections "Post-build checks" of `attack/round-4-architect.md` and `attack/round-4-logic.md`.
 - **The skeleton's leftovers of architect-r4 01 and logic-r4 01** (the service's lifetime context, the handoff of cleanup before `Run` exists, and the typed signature of `NewState`) apply to part B's own items.
+
+## Requests of the contract's round 5
+
+UNREVIEWED FIX: each line points to the contract's comment, now in `.plans/plans/go-s0-contract/draft/` until the freeze, and the future plan follows that comment without restating it (`.foundry/go-rewrite/requests-from-contract-r5.md`).
+
+- **Part B, logic-r5 02:** the start of an older stream's `Welcome` after a newer admission follows the part on admission of `Open` in `link.proto`.
+- **Part B, logic-r5 04:** the range of `Event.number` and where the value rules of a report are checked follow the value rules of `link.proto` and the decisions of `events.proto`.
+- **Part B, logic-r5 07:** what a waiting machine's events do follows the part "Waiting" of `Open` in `link.proto`.
+- **Part C, logic-r5 06:** the send window of 23 hours and the storing of a matching result follow the life of a command in `commands.proto`.
 
 ## Requests to other plans
 

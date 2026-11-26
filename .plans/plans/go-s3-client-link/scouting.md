@@ -121,3 +121,12 @@ The Contract round 4 result, drafts and post-build checks 16, 18 to 20 and 24 an
 | `src/client/internal/link/receipts.go:78` and `:98` | A finished receipt is read before admission expiry is considered. A missing receipt at equality returns `DecisionExpired` without writing. The planned `Store.Decline` owns the finished write for a new expired scan. |
 | `src/server/internal/store/storetest/postgres.go:24` | `NewDatabase` reads `LGTM_TEST_POSTGRES` and skips if absent. The installed impossible-mark check uses an intact disposable fixture. |
 | `deploy/test/checks.sh:330`, `:344` and `:506`, and Stack Client plan's service outcomes, installer step 17 and `live_removed_machine_stays_stopped` | `log_has` reads `msg` and `code`, and C10 reads the existing removal and mismatch codes. The installer is planned at `deploy/install-client.sh`, with the existing check script as a log-reading pattern. The Stack Client plan's current journal hint covers startup timeout. Its existing live stop check covers removal. The result requests the final guidance and a live assertion for `impossible_ack`. |
+
+## Link freeze amendment anchors (UNREVIEWED FIX)
+
+| Anchor | Observation |
+|---|---|
+| Contract decision rows 82 and 95 and `src/client/cmd/lgtm-client/main.go` and `main_test.go` | Item 9 adds the reader to the built `run` entry and updates its existing test callers. |
+| [commands.proto](../go-s0-contract/draft/commands.proto), `MachineState` and `APPROVAL_REMOVED`, and [link.proto](../go-s0-contract/draft/link.proto), `LinkService.Open` | Items 6 and 7b follow these comments and contract post-build check 30 for removal. |
+| [link.proto](../go-s0-contract/draft/link.proto), the package string rule, `JoinRequest.host_name` and the `LinkService` code table | Items 2 and 5 use the value rules. Items 2, 3, 7a and 7b use the table and the fixture produced by contract item F4. |
+| `src/client/internal/link/outbox.go:28` and `outbox_test.go:121` and `:174` | Item 1b changes the guard in `Store.Append` and the boundary cases in `TestAckRefusesAhead` and `TestAppendRefusesWhenFull`. The frozen [events.proto](../go-s0-contract/draft/events.proto) gives the limit at `Event.number`. |
