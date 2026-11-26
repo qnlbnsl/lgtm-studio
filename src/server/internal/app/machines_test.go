@@ -60,7 +60,7 @@ func TestServerServesMachines(t *testing.T) {
 		}
 	})
 
-	t.Run("open is still unimplemented", func(t *testing.T) {
+	t.Run("open refuses an empty first frame", func(t *testing.T) {
 		client := linkv1connect.NewLinkServiceClient(unsigned, s.URL, connect.WithGRPC())
 		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 		defer cancel()
@@ -72,9 +72,7 @@ func TestServerServesMachines(t *testing.T) {
 		if err := stream.CloseRequest(); err != nil && !errors.Is(err, io.EOF) {
 			t.Fatalf("Closing the request side of Open failed: %v", err)
 		}
-		if _, err := stream.Receive(); connect.CodeOf(err) != connect.CodeUnimplemented {
-			t.Errorf("Open returned %v, want unimplemented.", err)
-		}
+		requireAppOpenStatus(t, stream, connect.CodeInvalidArgument, "The link message broke a rule of the contract.")
 	})
 
 	t.Run("the website issues a token and the machine joins without a cookie", func(t *testing.T) {
