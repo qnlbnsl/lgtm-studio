@@ -162,7 +162,15 @@ func NewHandler(options Options) http.Handler {
 		})
 		_, handler := linkv1connect.NewLinkServiceHandler(options.Link,
 			protocol, connect.WithReadMaxBytes(linkReadLimit), joinDecoding)
-		r.link = transport.WithWriteDeadline(handler)
+		timed := transport.WithWriteDeadline(handler)
+		open := transport.WithLinkStream(timed, linkReadLimit)
+		r.link = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if req.URL.Path == linkv1connect.LinkServiceOpenProcedure {
+				open.ServeHTTP(w, req)
+				return
+			}
+			timed.ServeHTTP(w, req)
+		})
 	}
 	return r
 }
