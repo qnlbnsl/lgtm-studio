@@ -52,3 +52,17 @@ Read the five round 1 reports and compared their frozen `attack/plan-v1.md` with
 | Feed read and Watch | The approved design's Following the feed and How every Watch call works require fallback polling and one snapshot transaction. `.plans/plans/go-s0-contract/draft/common.proto` defines `all`, `saved`, `removed_id`, `FeedPosition.value` and `aborted`. `src/frontend/src/server/sync.ts`, `watch`, reconnects except on `unauthenticated`. Target seams are `read_feed.go`, `feedReaderOptions`; `follow.go`, `startFollower` and `ErrFeedUnavailable`; and `watch.go`, `Source.Authorize` and `ErrWatchUnauthorized`. The session basis is the design's Sign-in and web sessions section. |
 
 The PostgreSQL ordering, cutoff, migration and transport checks still need the implemented Store. The fold did not start a container or run Go integration tests. Privacy and plan probes apply to the document changes.
+
+## Round 2 findings and verified counterparts
+
+Read the three round 2 reports and compared `attack/plan-v2.md` with the editable plan. The only starting difference was the item 1 dependency cell. The checkout was `715e1daf`. Neither `go.mod` nor `src/server/` existed.
+
+| Finding area | Anchor and observation |
+|---|---|
+| Integration ownership | `deploy/test/checks.sh`, `check_c12`, requires `LGTM_TEST_POSTGRES`, runs the root suite and invokes the hook with no arguments. Item 8 of [the Stack vault plan](../go-s1-stack-vault/plan.md) writes the wrapper and passes the same setting and exit status. It has no maintenance database name yet. The fold assignment gives dependency file edits to the orchestrator. The approved foundation design's Facts checked section pins the driver. |
+| Connection and errors | Item 1, `src/server/internal/store/pool.go`, adds the named outcome and safe domain sentinel constructor. The target tests exercise the driver and privacy boundary. The [driver configuration](https://pkg.go.dev/github.com/jackc/pgx/v5@v5.13.0/pgconn#Config) exposes dial and lookup hooks. [Go's address classifier](https://pkg.go.dev/net/netip#Addr.IsPrivate) distinguishes private addresses from loopback. |
+| Migration and maintenance | `migrate.go`, `Migrate`, and `prune.go`, `Prune`, use separate transaction budgets. [The PostgreSQL connection defaults](https://www.postgresql.org/docs/16/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-STATEMENT) describe the per-statement and lock settings. The retention tests use the real database and the fixture cutoff. |
+| Feed ordering and retention | Item 4, `feed.go` and `check-feed-lock.sh`, own the marker and the archived mutation. The nearest driver is `deploy/test/checks.sh`, `check_c12`. Item 6 owns the feed maintenance path and raw fixture SQL. The design's Positions must follow commit order and Safe retries sections are the invariants. |
+| Downstream adapters | Items 4 and 9 of [the sign-in plan](../go-s2-server-signin/plan.md) consume the session read, connection policy and Store startup APIs. Its two-minute prerequisite budget and its `ErrNoSession` declaration need to agree with the new migration budget and safe sentinel rules. The approved design requires [the Machines plan](../go-s3-server-machines/plan.md) to use the Store and shared Watch helper. The Contract draft `common.proto` names `aborted` for lag. |
+
+These are plan checks. The Go, PostgreSQL and transport acceptance commands require the implementation.
