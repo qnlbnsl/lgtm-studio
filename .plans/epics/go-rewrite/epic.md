@@ -126,6 +126,13 @@ They meet only in the contract, which sprint 0 writes and then freezes.
 
 A change to the contract after sprint 0 goes back to phase 3, because two teams build against it.
 
+From sprint 1 on, no team edits `go.mod` or `go.sum`.
+A plan lists each module and version it needs.
+The orchestrator adds them right before the first work item that imports them.
+
+The hook `deploy/test/mutate-feed-lock.sh`, which check 12 calls, is a wrapper that the Stack team owns.
+The Server team writes the mutation that the wrapper calls, inside `src/server/`.
+
 ## Plans
 
 Each plan is small on purpose: three to nine work items, each one sized low, medium or high.
