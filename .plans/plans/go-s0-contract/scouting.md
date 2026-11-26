@@ -30,7 +30,12 @@ The experiments ran in throwaway copies outside the repository, and nothing in t
 | `src/contracts/README.md` | section "Not here yet" | It says the calls between the server and the client are not written. |
 | `src/contracts/proto/lgtm/v1/clients.proto` | `message WatchClientsResponse`, `oneof change` with `all = 1`, `saved = 2`, `removed_id = 3` | The only `Watch` reply that already has the shared shape, without a position. |
 | `src/contracts/proto/lgtm/v1/clients.proto` | `rpc ReconnectClient`, comment "asks the server to try an offline client again" | The comment that decision D16 makes wrong. |
-| `src/contracts/proto/lgtm/v1/clients.proto` | `message Client`, fields 5 `address`, 6 `workspace`, 7 `os`, 10 `cores`, 11 `memory_gigabytes` | What the server fills from the link's facts. |
+| `src/contracts/proto/lgtm/v1/clients.proto` | `message Client`, fields 6 `workspace`, 7 `os`, 10 `cores`, 11 `memory_gigabytes` | What the server fills from the link's facts. Field 5 `address` does not come from `Facts`: since round 1 it is the address of the connection, for showing only (architect-r1 11). |
+| `src/contracts/proto/lgtm/v1/clients.proto` | `Client.hosts_server` (4), `CreateClientTokenResponse.token` (2) | The website reads `hosts_server` for the role of a machine. The token's comment said "the secret", which round 1 changed to the text of a `JoinToken`. |
+| `src/frontend/src/screens/service.tsx` | the item `Try to reconnect`, guarded by `off &&`; the pairing dialog's effect that revokes its token on close | The page offers the call only for an offline machine. Closing the dialog revokes its token. |
+| `src/mock-server/src/engine.ts` | `reconnectClient` (refuses a client that is not offline), `revokeClientToken` (removes a client that used the token and still waits) | The sample server's behaviour that round 1 compared with the Go rules. |
+| `src/frontend/src/server/sync.ts` | `toJoining` | A waiting machine shows its address, operating system, cores and memory, which is why point 3 for the owner matters. |
+| `.plans/plans/go-s1-client-local/plan.md` | `Append`, `Ack`, `OpenReceipts`, `Prune`, `DefaultReceiptKeep` | A full outbox refuses before it takes a number. `Ack` beyond `Next()` raises `next`. Receipts last 24 hours past their latest time, and a half-finished one is recovered as `interrupted`. |
 | `src/contracts/proto/lgtm/v1/map.proto` | `message WatchMapResponse { CodebaseMap map = 1; }` | Not the shared shape yet. The design says it changes later and raises the revision. |
 | `src/contracts/proto/lgtm/v1/preview.proto` | `message WatchPreviewsResponse { repeated Preview previews = 1; }` | Not the shared shape yet, for the same reason. |
 | `src/mock-server/src/engine.ts` | `export const CONTRACT = 1;` (line 47), `watchClients` (line 164) yields `{ change }` | The mock server builds replies as init shapes, in which every message field is optional. |
@@ -70,3 +75,13 @@ All runs used the installed Go 1.23.3, which switched itself to the cached Go 1.
 14. The sample server, started with `LGTM_MOCK_PORT=4199` from `src/mock-server`, answered `GetServer` with `{"product":"lgtm-studio","version":"0.9.0-sample","contract":1,"sample":true}` and `SignIn` with the password `sample` with `{"result":"SIGN_IN_RESULT_SIGNED_IN"}`. The plan's check uses the default port 4180.
 15. `src/frontend/README.md`, lines 45 to 52: the website runs at `https://127.0.0.1:4179/`, the address `/` passes calls on to `http://127.0.0.1:4180`, and the sample server accepts any password except `wrong`.
 16. In a module with the two `tool` lines and no package, `go build ./...` exited 0 with a warning, `go vet ./...` and `go test ./...` exited 1 with "no packages to vet" and "no packages to test", and `go mod tidy -diff` exited 1 because `go.sum` lacked the hashes of `github.com/google/go-cmp v0.7.0`.
+
+## What was run on 2026-11-26 for review round 1
+
+The runs used new folders made with `mktemp -d` in the session's scratch folder, and nothing in the repository was changed by them.
+
+17. The drafts after round 1, with the four existing files changed as `draft/existing-files.diff` says, passed `buf lint`, generated Go and TypeScript, and passed `go build ./...`, `go vet ./...` and `go mod tidy -diff`. `git apply --check` accepted the diff at the current commit.
+18. The description program printed `1 cpu_percent uint32 optional`, `2 memory_percent uint32 optional`, `5 COMMAND_OUTCOME_INTERRUPTED` and `4 acked_event_number uint64`, which are the changed lines of the three golden files in the plan. Every other line is as before.
+19. A prototype of `TestEveryLinkRuleIsWritten` passed on the drafts. With the comment above `Restart restart = 12;` removed, it failed with `commands.proto:42 has no comment above it: Restart restart = 12;`.
+20. In a Git copy that was generated and committed first, the contract check exited 0 on the clean copy. With the valid untracked `probe.proto` it exited 1, and without its last step it exited 0. `git status` listed `probe.pb.go`, `probe_pb.d.ts` and `probe_pb.js` as new.
+21. A first try of run 20 on a copy whose generated files were stale exited 1 both with and without the guard. The probe therefore needs a clean, committed baseline, which item 2 now requires.

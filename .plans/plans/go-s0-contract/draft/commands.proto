@@ -1,8 +1,21 @@
 // Commands from the server to a machine.
 //
-// The server stores a command before it sends it. It sends a command again, with a higher
-// attempt number, after a stream ends without its result. The machine keeps a receipt of each
-// command it ran, so a command that arrives twice runs once.
+// The life of a command:
+// - The server stores a command before it sends it, with its id, attempt 1 and its expiry.
+//   The expiry never changes. The server stores each higher attempt before it sends it.
+// - The server sends a pending command on each new current stream of its machine, with the next
+//   attempt number, until it holds a final result. An attempt after expires_at only collects a
+//   recorded result, because a machine never starts a command after its expiry. When the server
+//   holds no final result 24 hours after expires_at, it records COMMAND_OUTCOME_EXPIRED itself.
+// - Every outcome except COMMAND_OUTCOME_UNSPECIFIED is final. The server never sends a command
+//   again once it holds a final result for it.
+// - The machine writes a receipt of a command to disk before it starts the work, and it keeps
+//   the receipt at least 24 hours after expires_at. A command that arrives twice runs once.
+// - The server's clock decides expiry. The server reads Welcome.server_time after Proof verified.
+//   The machine counts the server's time as Welcome.server_time plus the time its monotonic clock
+//   measured since it sent Proof. This count is never behind the server's clock.
+// - A machine that holds no receipt of a command and counts the server's time at or after
+//   expires_at does not run it, and answers COMMAND_OUTCOME_EXPIRED.
 syntax = "proto3";
 
 package lgtm.link.v1;
@@ -15,67 +28,103 @@ option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/li
 message Command {
   // A version 7 UUID that the server makes. It names the command on every attempt.
   string id = 1;
-  // 1 for the first send. It grows by one each time the server sends the same command again.
+  // 1 for the first send. It grows by one each time the server sends the same command again,
+  // and it never wraps.
   uint32 attempt = 2;
-  // The machine does not run the command after this time by its own clock. It answers
-  // COMMAND_OUTCOME_EXPIRED instead.
+  // The time after which the command does not start. The same on every attempt.
   google.protobuf.Timestamp expires_at = 3;
+  // What the machine does.
   oneof action {
-    // Look for installed harnesses again. The machine reports them with a HarnessesFound event.
+    // Look for installed harnesses again.
     ScanHarnesses scan_harnesses = 10;
     // The owner approved, renamed or removed the machine.
     SetState set_state = 11;
     // End the client program, so that the service of its user starts it again.
-    // The machine sends its result before it ends.
     Restart restart = 12;
   }
 }
 
 // CommandResult answers one attempt of a command.
 //
-// A machine that receives a command it already ran sends the outcome it recorded, with the
-// attempt number of the copy it just received. The server ignores a result for an older attempt.
+// - The machine sends a result under the newest attempt it received for that command. A command
+//   that is still running when a newer attempt arrives sends its result under the newer attempt.
+// - A machine that receives a command it holds a final receipt for sends the recorded result
+//   under the new attempt, also after expires_at, and does not run the command again.
+// - The server accepts a result only from the current stream of the command's machine, and only
+//   for the attempt it sent last. It ignores a copy of a result it already stored, a result for
+//   an older attempt and a result for a later attempt.
+// - The server stores COMMAND_OUTCOME_UNSPECIFIED, and an outcome it does not know, as
+//   COMMAND_OUTCOME_FAILED.
 message CommandResult {
+  // The id of the command this result answers.
   string command_id = 1;
+  // The attempt this result answers.
   uint32 attempt = 2;
+  // How the command ended.
   CommandOutcome outcome = 3;
-  // One sentence about a failure, for the website. Empty when the command was done.
+  // One sentence about a failure for the website, at most 200 bytes. The client writes it from
+  // its own fixed sentences and never copies the output of another program into it. Empty when
+  // the command was done.
   string message = 4;
 }
 
+// CommandOutcome is how one command ended.
 enum CommandOutcome {
   COMMAND_OUTCOME_UNSPECIFIED = 0;
+  // The machine did the command.
   COMMAND_OUTCOME_DONE = 1;
+  // The machine tried the command, and it failed.
   COMMAND_OUTCOME_FAILED = 2;
   // The command arrived after its expiry, and the machine did not run it.
   COMMAND_OUTCOME_EXPIRED = 3;
   // The machine does not know the command's action, because its client is older than the server.
   COMMAND_OUTCOME_UNSUPPORTED = 4;
+  // The machine started the command and stopped before it recorded how the command ended, so the
+  // effect is unknown. The machine does not run it again, and a new action needs a new command.
+  COMMAND_OUTCOME_INTERRUPTED = 5;
 }
 
+// ScanHarnesses asks the machine to look for installed harnesses again. The machine answers
+// COMMAND_OUTCOME_DONE only after its HarnessesFound event is on disk, and
+// COMMAND_OUTCOME_FAILED when its buffer refused the event.
 message ScanHarnesses {}
 
+// Restart asks the machine to end its client program, so that the service of its user starts it
+// again. The machine writes its receipt with COMMAND_OUTCOME_DONE to disk, then sends the result,
+// and then ends. The outcome means that the machine accepted the restart. The new process shows
+// itself with a new stream.
 message Restart {}
 
+// SetState gives the machine its new standing.
 message SetState {
+  // The new standing.
   MachineState state = 1;
 }
 
 // MachineState is the standing the owner gave a machine.
+//
+// A machine applies a state only when its revision is higher than the revision it applied last.
+// A state with the same revision and the same content changes nothing. A state with the same
+// revision and other content is a fault of the server: the machine keeps the state it holds and
+// logs one sentence. The machine applies Welcome.state before any command of the same stream.
 message MachineState {
+  // A machine treats APPROVAL_UNSPECIFIED, a value it does not know and a missing state as
+  // APPROVAL_WAITING.
   Approval approval = 1;
   // The name the owner gave the machine. Empty while it waits for approval.
   string name = 2;
-  // Grows with each change of the standing of this machine. A machine ignores a state whose
-  // revision is lower than one it already applied, so an old command sent again changes nothing.
+  // 1 for the first standing of a machine id. It grows with each change, and it never wraps.
   uint64 revision = 3;
 }
 
+// Approval is whether the owner let the machine work.
 enum Approval {
   APPROVAL_UNSPECIFIED = 0;
   // The machine joined, and the owner has not approved it. It receives no work.
   APPROVAL_WAITING = 1;
+  // The owner approved the machine.
   APPROVAL_APPROVED = 2;
-  // The owner removed the machine. The server forgets its key after it sends this.
+  // The owner removed the machine. The server may send this on the current stream before it
+  // ends it, and nothing waits for its delivery. See LinkService.Open.
   APPROVAL_REMOVED = 3;
 }

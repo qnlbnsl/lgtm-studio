@@ -10,7 +10,20 @@
  
  // ClientService lists the clients of a server and lets the owner add and remove them.
  // Every call needs a session.
-@@ -24,7 +27,8 @@
+@@ -15,8 +18,11 @@
+   rpc WatchClients(WatchClientsRequest) returns (stream WatchClientsResponse);
+   // CreateClientToken makes a token that one new client uses once to join this server.
+   // The server's own command `lgtm client add` makes the same kind of token.
++  // The server keeps no copy of the reply, so it does not replay it for `Lgtm-Request-Key`: every
++  // call makes a new token. A token that the website no longer needs is revoked.
+   rpc CreateClientToken(CreateClientTokenRequest) returns (CreateClientTokenResponse);
+-  // RevokeClientToken ends a token that no client has used.
++  // RevokeClientToken ends a token. A client that used the token and still waits for approval is
++  // removed with it. A client that was approved keeps working.
+   rpc RevokeClientToken(RevokeClientTokenRequest) returns (RevokeClientTokenResponse);
+   // ApproveClient lets a client that joined with a token start work, under the name the owner gives it.
+   rpc ApproveClient(ApproveClientRequest) returns (ApproveClientResponse);
+@@ -24,7 +30,8 @@
    rpc RenameClient(RenameClientRequest) returns (RenameClientResponse);
    // ScanClientHarnesses asks an online client to look for harnesses again. The result arrives on WatchClients.
    rpc ScanClientHarnesses(ScanClientHarnessesRequest) returns (ScanClientHarnessesResponse);
@@ -20,7 +33,21 @@
    rpc ReconnectClient(ReconnectClientRequest) returns (ReconnectClientResponse);
    // RemoveClient disconnects a client and forgets it. It also refuses a client that waits for approval.
    rpc RemoveClient(RemoveClientRequest) returns (RemoveClientResponse);
-@@ -91,6 +95,8 @@
+@@ -35,9 +42,11 @@
+   // The name the owner gave it. A client that waits for approval has the name of its host here.
+   string name = 2;
+   ClientState state = 3;
+-  // True for the client on the machine that runs the server.
++  // True for the client on the machine that runs the server. The server sets it when the client
++  // joined with a token from its own command on that machine, and never from what a client says.
+   bool hosts_server = 4;
+-  // Where the server reaches it, such as "192.168.1.24".
++  // The network address that the client's connection came from, such as "192.168.1.24", for
++  // showing only. Empty when the server cannot tell. The server never dials it.
+   string address = 5;
+   // The folder that holds its repositories, such as "~/projects".
+   string workspace = 6;
+@@ -91,6 +100,8 @@
      // The id of one client that is gone.
      string removed_id = 3;
    }
@@ -29,6 +56,18 @@
  }
  
  message ClientList {
+@@ -102,8 +113,10 @@
+ message CreateClientTokenResponse {
+   // The token's id. It is safe to show and to store.
+   string token_id = 1;
+-  // The secret a client presents once. The server shows it only in this reply.
++  // The text of a join token, as lgtm.link.v1.JoinToken describes it. It is a secret, and the
++  // server shows it only in this reply.
+   string token = 2;
++  // 15 minutes after the token was made.
+   google.protobuf.Timestamp expires_at = 3;
+ }
+ 
 --- a/src/contracts/proto/lgtm/v1/map.proto
 +++ b/src/contracts/proto/lgtm/v1/map.proto
 @@ -9,6 +9,8 @@

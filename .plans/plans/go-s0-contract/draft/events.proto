@@ -3,6 +3,26 @@
 // An event is a report that must arrive once and in order. The machine numbers its events and
 // keeps them on disk until the server acknowledges them. A heartbeat only says that the machine
 // is there, so it is never numbered or kept.
+//
+// The order of events:
+// - One sender on the machine sends events on the current stream in ascending number. It sends
+//   first every kept event above Welcome.last_event_number, and then each new event.
+// - A machine never skips or reuses a number. It keeps the highest number it used, also when it
+//   keeps no event. Its next number is one more than that, and higher than
+//   Welcome.last_event_number.
+// - A full buffer refuses a new event before the event takes a number. The machine then sends
+//   its newest Facts or HarnessesFound again once there is room.
+// - The server's mark is the highest event number it consumed from the machine, or 0.
+// - The server applies an event only when its number is the mark plus one. It commits the
+//   event's effect and the new mark in one transaction, and only then sends EventAck.
+// - An event at or below the mark is a copy. The server applies nothing and sends its mark.
+// - An event above the mark plus one ends the stream with `out_of_range`, and the mark stays.
+// - An event with no report, or with a report this server does not know because a newer client
+//   sent it, is consumed: the mark moves past it, and nothing else changes.
+// - An event whose report breaks a rule of this file ends the stream with `invalid_argument`,
+//   and the mark stays.
+// - After every Welcome in which it may send events, the machine sends its current Facts and
+//   HarnessesFound as new events, so a server that lost rows gets them back.
 syntax = "proto3";
 
 package lgtm.link.v1;
@@ -13,57 +33,73 @@ option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/li
 
 // Event is one numbered report.
 message Event {
-  // 1 for the machine's first event. Each later event has a higher number than the one before.
-  // A gap means the machine dropped events it could not keep. The server applies an event only
-  // when its number is higher than the last one it applied, and drops it otherwise.
+  // 1 for the machine's first event, and one more for each event after it.
   uint64 number = 1;
-  // When the machine made the report, by its own clock.
+  // When the machine made the report, by its own clock. The server shows it and orders nothing by it.
   google.protobuf.Timestamp happened_at = 2;
+  // What the event reports.
   oneof report {
+    // The machine's facts as they are now.
     Facts facts = 10;
+    // The harnesses the machine found in its latest scan.
     HarnessesFound harnesses_found = 11;
   }
 }
 
 // EventAck tells the machine which events it may forget.
+//
+// The server sends it on the stream that sent the events, after the transaction that moved
+// its mark has committed.
 message EventAck {
-  // Every event up to and including this number is applied or dropped.
+  // The server's committed mark. It is the same value that Welcome.last_event_number gives.
   uint64 through = 1;
 }
 
-// Facts describe the machine. The machine sends them when it starts and when one changes.
+// Facts describe the machine, as the machine reports them. The server shows them and trusts
+// nothing in them.
 message Facts {
-  // The operating system, such as "Linux" or "macOS".
+  // The operating system, such as "Linux" or "macOS". At most 64 bytes.
   string os = 1;
+  // The number of processor cores, at least 1.
   uint32 cores = 2;
+  // The memory of the machine in bytes. The website shows it in gigabytes of 2^30 bytes,
+  // rounded to the nearest whole number.
   uint64 memory_bytes = 3;
-  // The version of the client program.
+  // The version of the client program. At most 64 bytes.
   string client_version = 4;
-  // The folder that holds the machine's repositories, such as "~/projects".
+  // The folder that holds the machine's repositories, such as "~/projects". At most 256 bytes.
   string workspace = 5;
   // How many agents the machine may run at once.
   uint32 agent_limit = 6;
 }
 
-// HarnessesFound lists each harness the machine looked for.
+// HarnessesFound lists each harness the machine looked for. The server counts the machine's
+// harnesses as scanned once it holds one.
 message HarnessesFound {
+  // At most 16 harnesses.
   repeated Harness harnesses = 1;
 }
 
+// Harness is one harness the machine looked for.
 message Harness {
-  // "claude", "codex", "gemini" or "cursor".
+  // "claude", "codex", "gemini" or "cursor". At most 32 bytes.
   string name = 1;
-  // Its version. Absent when the harness is not installed.
+  // Its version, at most 64 bytes. Absent when the harness is not installed, or when its
+  // version could not be read.
   optional string version = 2;
 }
 
-// Heartbeat carries the machine's load. The machine sends one every 10 seconds.
-// The server marks the machine offline after 30 seconds without one.
+// Heartbeat says that the machine is there, with its load. The machine sends one every 10
+// seconds on the current stream. The server marks the machine offline and ends the stream after
+// 30 seconds without one, measured by the server's monotonic clock.
 message Heartbeat {
-  uint32 cpu_percent = 1;
-  uint32 memory_percent = 2;
+  // The load of the processor, from 0 to 100. Absent when the machine could not measure it.
+  // A heartbeat without load still shows that the machine is there.
+  optional uint32 cpu_percent = 1;
+  // The memory in use, from 0 to 100. Absent when the machine could not measure it.
+  optional uint32 memory_percent = 2;
 }
 
-// HeartbeatAck answers each heartbeat, so that a web server in front of the server sees the
-// stream move in both directions and does not cut it.
+// HeartbeatAck answers each heartbeat of the current stream, so that traffic moves both ways
+// and a web server in front of the server does not cut the stream.
 message HeartbeatAck {}

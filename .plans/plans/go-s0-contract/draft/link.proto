@@ -5,6 +5,17 @@
 // stream open. Both ends prove themselves at the start of every stream.
 //
 // The website never calls this package. Its calls are in package lgtm.v1.
+//
+// Values that every message of this package keeps. A message that breaks one is refused with
+// `invalid_argument`.
+// - The id of a machine, a command or a token is a UUID in its canonical form: 36 characters of
+//   lowercase hexadecimal digits and hyphens.
+// - A nonce is exactly 32 bytes, a public key exactly 32 bytes, a signature exactly 64 bytes, and
+//   a SHA-256 exactly 32 bytes. certificate_key_sha256 may also be empty.
+// - link_revision is 1.
+// - Command.attempt, Event.number and MachineState.revision are at least 1.
+// - Command.expires_at, Welcome.state and Welcome.server_time are present.
+// - A string is valid UTF-8 and keeps the limit its comment gives.
 syntax = "proto3";
 
 package lgtm.link.v1;
@@ -17,23 +28,79 @@ option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/li
 
 // LinkService is what a machine calls on the server.
 //
-// Join needs a join token. Open needs the machine's key. Neither needs a website session.
-// A later call beside the stream, such as a byte stream, presents the connection token of an
-// open stream in the header `Lgtm-Link-Token`.
+// Join needs a join token. Open needs the machine's key. Neither needs a website session, and
+// the session rule of package lgtm.v1 does not apply to them. A later call beside the stream,
+// such as a byte stream, presents the connection token of the current stream in the header
+// `Lgtm-Link-Token`.
+//
+// What a client does with each code. To retry is to keep the key and every file, and to try
+// again within 15 seconds. To stop is to log one sentence for the owner, try no more, and exit.
+//
+//   Join  permission_denied    Stop: "The server refused this join token. Make a new one."
+//   Join  invalid_argument     Stop.
+//   Join  any other code       Retry with the same key until the token expires.
+//   Open  unauthenticated      Stop when it follows a Challenge that verified: "The server does
+//                              not know this machine. Join it again." Retry otherwise.
+//   Open  failed_precondition  Stop: "The server speaks another revision of the link."
+//   Open  aborted              Retry, and log that another process may use this machine's key.
+//   Open  any other code       Retry. This covers invalid_argument, out_of_range,
+//                              deadline_exceeded, permission_denied, unavailable, and a
+//                              connection that broke.
+//
+// A server that cannot read its database answers `unavailable`, never `unauthenticated` and
+// never `permission_denied`.
 service LinkService {
   // Join trades a join token for the server's public key, and registers the machine's public key.
   //
-  // The same token with the same machine key returns the same reply while the token has not
-  // expired, so a client may send Join again when a reply was lost. The same token with another
-  // key is refused. A used, expired, revoked or unknown token is refused with `permission_denied`.
+  // - The server checks the secret against its verifier, uses up the token, binds the token to
+  //   the machine's key and creates the waiting machine, all in one transaction. A failure
+  //   before the commit changes nothing and returns `unavailable`.
+  // - A replay returns the first reply and creates nothing. A replay has the same token id, a
+  //   secret that verifies and the same machine key. It arrives before the token expires, and the
+  //   machine that the token created still exists. The host name of a replay is not read.
+  // - Every other request is refused with `permission_denied`. The server checks, in this order,
+  //   for an unknown token, an expired token, a revoked token, a token bound to another key, and
+  //   a token whose machine was removed.
+  // - Revoking a used token removes its machine while the machine still waits for approval. It
+  //   changes nothing for an approved machine.
+  // - The client stores its key before its first Join and sends the same key on every retry.
   rpc Join(JoinRequest) returns (JoinResponse);
   // Open is the stream between a machine and the server. The machine sends first.
   //
-  // The machine sends Hello and then Proof. The server sends Challenge and then Welcome.
-  // After that, either end sends any of its other messages, in any order.
-  // A new stream of a machine replaces its older one, which ends with the code `aborted`.
-  // The server ends a stream with `deadline_exceeded` when Hello or Proof has not arrived
-  // within 10 seconds, and with `invalid_argument` when a message comes out of this order.
+  // The handshake:
+  // - The machine sends Hello. The server answers with Challenge. The machine sends Proof. The
+  //   server answers with Welcome.
+  // - The server answers every well-formed Hello with a Challenge before it looks the machine up.
+  //   It then ends the stream with `unauthenticated` when the machine id is unknown or removed,
+  //   and when the machine's signature does not verify.
+  // - Before Welcome, a message of another kind, an empty message, or a message that breaks a rule
+  //   of this package ends the stream with `invalid_argument`.
+  // - The server ends the stream with `deadline_exceeded` when Hello is not there 10 seconds after
+  //   the stream opened, or Proof 10 seconds after it sent Challenge.
+  // - The machine ends the stream and retries when Challenge is not there 10 seconds after it
+  //   sent Hello, when Welcome is not there 10 seconds after it sent Proof, and when the server's
+  //   signature does not verify.
+  //
+  // After Welcome:
+  // - Either end may send any of its other messages, in any order, except that events keep the
+  //   order that events.proto gives.
+  // - A receiver ignores a message of a kind it does not know, because wave 2 adds kinds with
+  //   numbers not used yet.
+  // - The machine ends the stream and dials again when it hears nothing for 30 seconds.
+  //
+  // The current stream:
+  // - A stream becomes its machine's current stream only after its Proof verified and the server
+  //   read the machine's record again. The older stream then ends with `aborted`.
+  // - Only the current stream changes what the server stores about its machine: its presence,
+  //   its events, its command results and its connection token. A stream that is no longer
+  //   current changes nothing, also when it ends.
+  // - Welcome marks the machine online. The end of the current stream, and 30 seconds without a
+  //   heartbeat on it, mark the machine offline.
+  //
+  // Removal:
+  // - When the removal of a machine commits, its key is gone, so no new stream of it verifies.
+  // - The server then ends the machine's current stream, and with it the connection token. It may
+  //   send SetState with APPROVAL_REMOVED first, and nothing waits for its delivery.
   rpc Open(stream OpenRequest) returns (stream OpenResponse);
 }
 
@@ -42,80 +109,104 @@ service LinkService {
 // The token's text is the prefix `lgtm1_` followed by the binary encoding of this message in
 // unpadded base64url. The server makes it, the client reads it, and the website only shows it.
 // The text is a secret: no log, board or page other than the one that made it holds it.
+// The server makes every token from one configured address and certificate pin, whether the
+// Machines page or the server's own command asks for it.
 message JoinToken {
   // The id of the token. It is safe to show and to store.
   string token_id = 1;
   // 32 random bytes. The server stores only a verifier of them.
   bytes secret = 2;
-  // The address the machine dials, such as "https://lgtm.example.net" or "http://127.0.0.1:8787".
-  // A client refuses an address that is neither https nor a loopback address over http, and an
-  // https address without certificate_key_sha256.
+  // The address the machine dials, such as "https://lgtm.example.net" or "http://127.0.0.1:8787":
+  // a scheme, a host and an optional port, with no path. It is the only address the client
+  // dials. A client refuses an address on its command line that differs from it, after both are
+  // written in lowercase without the default port. A client refuses an address that is neither
+  // https nor a loopback address over http, and an https address without
+  // certificate_key_sha256. It follows no redirect.
   string address = 3;
-  // SHA-256 of the server's Ed25519 public key, which is 32 bytes.
+  // SHA-256 of the server's Ed25519 public key.
   bytes server_key_sha256 = 4;
   // SHA-256 of the SubjectPublicKeyInfo of the certificate the machine must see at an https
-  // address. It is empty for a loopback address over plain HTTP/2.
+  // address. Empty for a loopback address over plain HTTP/2. The client checks it before it sends
+  // the secret, and again on every stream. A server refuses to make an https token without it.
   bytes certificate_key_sha256 = 5;
 }
 
+// JoinRequest is what a new machine sends once, or again when the reply was lost.
 message JoinRequest {
+  // The token's id, from JoinToken.token_id.
   string token_id = 1;
+  // The token's secret, from JoinToken.secret.
   bytes token_secret = 2;
-  // The machine's Ed25519 public key, 32 bytes. The private key never leaves the machine.
+  // The machine's Ed25519 public key. The private key never leaves the machine.
   bytes machine_public_key = 3;
-  // The host name of the machine. The website shows it until the owner names the machine.
+  // The host name of the machine, at most 255 bytes. The website shows it until the owner names
+  // the machine.
   string host_name = 4;
 }
 
+// JoinResponse tells a new machine who it is and which server key to trust.
 message JoinResponse {
   // The id the server gave the machine. The machine names itself with it in Hello.
   string machine_id = 1;
-  // The server's Ed25519 public key, 32 bytes. Its SHA-256 equals the token's server_key_sha256,
-  // or the client refuses the server. The client keeps it and trusts no other server key.
+  // The server's Ed25519 public key. Its SHA-256 equals the token's server_key_sha256, or the
+  // client refuses the server. The client keeps it and trusts no other server key.
   bytes server_public_key = 2;
 }
 
 // OpenRequest is one message from the machine on the stream.
 message OpenRequest {
+  // What the machine says.
   oneof kind {
     // The first message.
     Hello hello = 1;
     // The second message.
     Proof proof = 2;
+    // That the machine is there, after Welcome.
     Heartbeat heartbeat = 3;
+    // One numbered report, after Welcome.
     Event event = 4;
+    // The answer to one attempt of a command, after Welcome.
     CommandResult command_result = 5;
   }
 }
 
 // OpenResponse is one message from the server on the stream.
 message OpenResponse {
+  // What the server says.
   oneof kind {
     // The answer to Hello.
     Challenge challenge = 1;
     // The answer to Proof. The stream is open after it.
     Welcome welcome = 2;
+    // The answer to a heartbeat.
     HeartbeatAck heartbeat_ack = 3;
+    // The server's committed event mark.
     EventAck event_ack = 4;
+    // One attempt of a command.
     Command command = 5;
   }
 }
 
 // Hello names the machine and gives the server a value to sign.
 message Hello {
+  // The id from JoinResponse.machine_id.
   string machine_id = 1;
   // 32 random bytes, new for each stream.
   bytes machine_nonce = 2;
   // The revision of this package that the client speaks. A server refuses a revision it does
   // not speak with `failed_precondition`.
   uint32 link_revision = 3;
+  // The highest event number a server acknowledged to this machine, or 0. A server whose mark is
+  // lower, because its database was restored, raises its mark to this number before it sends
+  // Welcome, so that the machine's next event is not a gap.
+  uint64 acked_event_number = 4;
 }
 
 // Challenge proves the server and gives the machine a value to sign.
 message Challenge {
   // 32 random bytes, new for each stream.
   bytes server_nonce = 1;
-  // The server's Ed25519 signature over the server's proof text. See "The proof texts" below.
+  // The server's Ed25519 signature over the server's proof text. See Proof.
   bytes server_signature = 2;
 }
 
@@ -130,17 +221,19 @@ message Proof {
   bytes machine_signature = 1;
 }
 
-// Welcome opens the stream. A machine id that the server does not know, or a signature that
-// does not verify, ends the stream with `unauthenticated` instead.
+// Welcome opens the stream, and makes it the machine's current stream.
 message Welcome {
-  // A random token that only this stream's later calls present. It ends when the stream ends.
+  // A random token that only this stream's later calls present. It ends when the stream ends or
+  // stops being current.
   string connection_token = 1;
-  // The machine's standing now.
+  // The machine's standing now. The machine applies it before any command of this stream.
   MachineState state = 2;
-  // The highest event number the server has applied from this machine, or 0 for none.
-  // The machine sends again every event it keeps with a higher number, in order.
+  // The server's committed event mark for this machine, or 0 for none. It is the same value that
+  // EventAck.through gives. When it is higher than the machine's highest number, the machine
+  // forgets its kept events up to it, and its next event is one higher.
   uint64 last_event_number = 3;
-  // The server's clock, so that the machine can tell how far its own clock is off.
+  // The server's clock, read after Proof verified and before Welcome was sent. Commands.proto
+  // says how the machine uses it.
   google.protobuf.Timestamp server_time = 4;
   // The revision of this package that the server speaks.
   uint32 link_revision = 5;

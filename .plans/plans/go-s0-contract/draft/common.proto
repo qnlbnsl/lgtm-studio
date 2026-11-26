@@ -28,7 +28,10 @@ option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1
 // because the feed holds the changes of every kind of record. Positions of two servers, or of
 // one server whose database was replaced, cannot be compared.
 message FeedPosition {
-  // The first message of a Watch call carries the highest position that its records include.
-  // Every later message carries the position of its own change, which is higher.
+  // The first message of a Watch call carries the highest position that its records include, or
+  // 0 when no change is visible to it yet. Every later message carries the position of its own
+  // change, which is higher than every position before it on the same call. A server of this
+  // repository sets the position on every message. An absent position comes from an older
+  // server or from the sample server.
   uint64 value = 1;
 }
