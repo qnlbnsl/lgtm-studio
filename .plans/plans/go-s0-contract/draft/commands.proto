@@ -4,13 +4,24 @@
 // - The server stores a command before it sends it, with its id, attempt 1 and its expiry.
 //   The expiry never changes. The server stores each higher attempt before it sends it.
 // - The server sends a pending command on each new current stream of its machine, with the next
-//   attempt number, until it holds a final result. When the server holds no final result 24 hours
-//   after expires_at, it records COMMAND_OUTCOME_EXPIRED itself. SetState is the exception: it
-//   stays pending until it has a result, whatever its expires_at.
+//   attempt number, until it holds a final result. It sends a command other than SetState at most
+//   until 23 hours after expires_at, and never later.
+// - The server stores a matching result for a pending command until it records
+//   COMMAND_OUTCOME_EXPIRED itself, which is no earlier than 24 hours after expires_at, when it
+//   holds no final result. That outcome then means that no result arrived and the effect of the
+//   command is unknown. SetState is the exception: it stays pending until it has a result,
+//   whatever its expires_at.
+// - A removal of the machine ends every pending command of it, SetState included.
+// - The first final outcome that the server stores is final. A later result changes nothing.
 // - Every outcome except COMMAND_OUTCOME_UNSPECIFIED is final. The server never sends a command
 //   again once it holds a final result for it.
 // - A command that arrives twice runs once. A machine answers every attempt of a command it
-//   started with the result it recorded, until 24 hours after expires_at.
+//   started with the result it recorded, until 24 hours after expires_at by its own clock. The
+//   hour between the server's last attempt and that time is the margin for the two clocks.
+// - At most once holds while the machine's clock is within one hour of the server's. A machine
+//   whose clock runs more than one hour fast may answer COMMAND_OUTCOME_EXPIRED for a command it
+//   ran, and one more than a day fast may run a command again after its record was removed. Wave
+//   1 accepts that limit.
 // - The server's clock decides expiry, and Welcome.server_time gives it. A command starts only
 //   before expires_at. A machine that has not started a command answers COMMAND_OUTCOME_EXPIRED
 //   when it cannot establish that it starts before expires_at. The promise that no command starts
@@ -75,8 +86,9 @@ enum CommandOutcome {
   COMMAND_OUTCOME_DONE = 1;
   // The machine tried the command, and it failed.
   COMMAND_OUTCOME_FAILED = 2;
-  // The machine did not start the command, because it could not establish that it would start
-  // before the command's expiry. The machine never starts it later.
+  // From a machine: it did not start the command, because it could not establish that it would
+  // start before the command's expiry, and it never starts it later. Recorded by the server
+  // itself: no result arrived within 24 hours after the expiry, and the effect is unknown.
   COMMAND_OUTCOME_EXPIRED = 3;
   // The machine does not know the command's action, because its client is older than the server.
   COMMAND_OUTCOME_UNSUPPORTED = 4;
@@ -124,6 +136,8 @@ enum Approval {
   // The owner approved the machine.
   APPROVAL_APPROVED = 2;
   // The owner removed the machine. The server may send this on the current stream before it
-  // ends it, and nothing waits for its delivery. See LinkService.Open.
+  // ends it, and nothing waits for its delivery. A machine treats it as APPROVAL_WAITING and
+  // keeps its stream, because only the refusal after a verified Challenge proves a removal. See
+  // LinkService.Open.
   APPROVAL_REMOVED = 3;
 }

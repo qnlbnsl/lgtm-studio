@@ -1,6 +1,6 @@
 ---
 topic: go-s0-contract
-status: done
+status: attack
 tier: M
 created: 2026-11-25
 updated: 2026-11-26
@@ -155,6 +155,122 @@ The design writes `lgtm-client join <address> <token>`, and the shell's history 
 
 ---
 <!-- ⛔ implementation details and gate evidence below; owner overview is complete -->
+
+## Amendment: the freeze of the link
+
+The orchestrator decided on 2026-11-26 that the link is frozen once plan `go-s3-client-link` has cleared review and the findings of issue 1643 and the requests of the other plans are settled. That plan cleared its fourth round on 2026-11-26. This amendment settles both lists and then freezes the link at revision 1. After the freeze, a change to a file of the link needs revision 2. One reviewer of the other vendor reads the amendment before it is built.
+
+Almost every change is a comment. The wire keeps every message, field, number and code: `buf build --exclude-source-info` gives the same bytes before and after. Two value rules become stricter, and the "Changes to built code" below names what they cost.
+
+The text of `link.proto`, `events.proto` and `commands.proto` after the amendment is in `draft/`. It passed `buf lint`, `buf generate` and every test of `src/contracts/`, including the new tests of items F4 and F5, in a scratch copy on 2026-11-26.
+
+### Rulings and owner defaults that hold
+
+- The admission of a stream is one commit of the database. It both replaces the older stream and lets the server send the new stream's first frame. (decision 75)
+- The client trusts its own clock to drop its records of commands. A clock more than an hour fast is an accepted limit of wave 1. (decision 74)
+- A restore of the server's database and two live copies of one machine's state are outside wave 1, as issues 1641 and 1642 record.
+- The signed challenge is the proof of a machine in wave 1. The hop behind the web server stays inside one compose stack, which settles point 2 for the owner at option A and issue 1633 for wave 1. (decision 83)
+- The server has one user with one password. This is why the handshake may answer about a machine id before the signature verified. (decision 77)
+- Owner default: a waiting machine may send heartbeats and `Facts` only, which is option B of point 3. (decision 81)
+- Owner default: the join token is accepted as an argument and on standard input, which is option C of point 4. The contract does not change for it. (decision 82)
+- Point 1 for the owner, the Machines page and `ReconnectClient`, does not touch a file of the link and stays open.
+
+### Every finding and request
+
+| Source | What it asks | Outcome |
+|---|---|---|
+| Issue 1643, finding 1 | The tests hold the shape of the link and none of its rules. | New tests in `src/contracts/`, items F4 and F5. The rules that only built programs can prove are listed below with their owners. |
+| Issue 1643, finding 2 | "Final" does not say what a machine does, and `event_gap` is called final. | Changed in a comment. The table of codes gains a column, "stop" or "dial again", and `event_gap` is "dial again". `testdata/link-codes.json` holds the table as data. |
+| Issue 1643, finding 3 | `COMMAND_OUTCOME_EXPIRED` has two meanings, and the edge of the 24 hours has no margin. | Changed in a comment. The enumeration names both meanings, and the server sends a command at most until 23 hours after its expiry, an hour before the machine drops its record. |
+| Issue 1643, finding 4 | A pending `SetState` has no end, and `APPROVAL_REMOVED` has no rule. | Changed in a comment. A removal ends every pending command. A machine treats `APPROVAL_REMOVED` as waiting and keeps its stream, and `Welcome.state` is never `APPROVAL_REMOVED`. |
+| Issue 1643, finding 5 | An event of a removed machine may or may not be acknowledged. | Changed in a comment. The server sends no `EventAck` after the removal commits. |
+| Issue 1643, finding 6 | The value rules do not list the numeric limits. | Changed in a comment, as a value rule: the limits of `Facts.cores`, the harnesses, the load and `Event.number`, a heartbeat that breaks one, and the value rules of `Join` before its refusals. |
+| Issue 1643, finding 7 | The handshake answers about a machine before its signature. | Changed in a comment, which accepts the answer for wave 1 with its reasons. Moving the answer after the signature would leave a client unable to tell a removal from a bad key. |
+| Issue 1643, finding 8 | A machine approved on a live stream never gets a connection token. | Changed in a comment. It gets one on its next stream, and no call of wave 1 presents it. A call of wave 2 that needs the token needs revision 2 or a new stream. |
+| Issue 1643, finding 9 | A lost `Join` reply cannot be recovered after the token expired. | Changed in a comment. The order stays, and the comment names the recovery: a new token, and the owner removes the waiting machine. The owner's options on that record stay with decision 79 of `go-s1-client-local`. |
+| Issue 1643, finding 10 | Nothing tells a machine to give up a silent stream. | Changed in a comment. A machine that hears nothing for 30 seconds ends the stream and dials again, as item 7b of `go-s3-client-link` already does. |
+| `go-s3-server-machines` rounds 1 and 2: the host name holds no zero byte | PostgreSQL text holds no zero byte. | Changed on the wire, as a value rule for every string. |
+| `go-s3-server-machines` rounds 1 to 3: `Event.happened_at` | The server does not keep it. | Changed in a comment: the server need not keep it. |
+| `go-s3-server-machines` round 1: `CreateClientToken` and `RemoveClient` | Name the real command, and say that a waiting machine can be removed. | Changed in a comment of `clients.proto`, item F3. |
+| `go-s3-server-machines` rounds 2 and 3: the moment of admission | Name the commit of admission, with the exact sentence of round 3. | Changed in a comment, with that sentence. |
+| `go-s3-server-machines` rounds 2 and 3, `go-s3-client-link` round 1, `go-s1-client-local` round 4: the clock of the machine | State the limit of "a command runs once" for a fast clock. | Changed in a comment of `commands.proto`. |
+| `go-s3-server-machines` rounds 2 and 3: the largest event number | 2^63 − 1, and a higher number is refused. | Changed on the wire, as a value rule, refused with `invalid_argument`. |
+| `go-s3-server-machines` round 3: the 23 hours and the first outcome | The server sends a retry only until 23 hours after the expiry, and the first stored outcome wins. | Changed in a comment of `commands.proto`. |
+| `go-s3-server-machines` round 3: the encrypted cases | Move them out of the combined acceptance of wave 1. | Outside wave 1: the `https` part of post-build check 2 moves out, and the result file asks for an issue in `docs/issues.md`. A server of wave 1 makes loopback tokens only. |
+| `go-s3-client-link` round 1: the list of names to align | Keep the names of `Join`, `Open`, the reasons, the marks and `CommandResult`. | No change: the contract already holds every name the present plan reads. |
+| `go-s3-client-link` round 2: bounds of the connection token and the name | Write the planned bounds into the contract. | Rejected: the plan withdrew the request in its round 3, and the combined test checks the server's real replies. |
+| `go-s1-client-local` round 4: retention by count | Change the comment of retention. | Rejected: the plan withdrew it, because its ruling 1 keeps the 24 hours. |
+| `go-s3-client-link` round 1, `go-s1-client-local` round 4: `SetState` and expiry | Apply `SetState` whatever its expiry, and keep it pending. | No change: the contract already says so. |
+| `go-s3-stack-client` rounds 1 to 4 | None to the contract. | No change. |
+| `go-s3-server-machines` round 4, request 1: a stream admitted before a newer admission | It receives no `Welcome` once the newer stream is admitted, and ends with `aborted`. | Changed in a comment of `Open`, with the plan's sentence, and in post-build check 23. |
+| `go-s3-server-machines` round 4, request 2: the encrypted join | The combined acceptance uses the loopback route only, and the client's own pin tests stay. | Outside wave 1, with the plan's sentence in the introduction of the post-build checks and in check 2. |
+| `go-s3-server-machines` round 4, request 3: the send window | Only commands other than `SetState` stop at 23 hours; a result is stored until the server records the expiry, no earlier than 24 hours. | Changed in a comment of `commands.proto`, and check 11 retries at 22 hours and 30 minutes. The check under the server's lock is the server's own, by ruling 2 of round 3. |
+| `go-s3-server-machines` round 4, requests 4 to 6: the clock, the ceiling and `Event.happened_at` | The plan's exact sentences. | Changed in comments of `commands.proto` and `events.proto`, with those sentences. |
+
+### Which rules have a test in `src/contracts/`
+
+A test in `src/contracts/` can read the text of the rules, not run them. Item F4 tests the rules that a reader can mistake, and the two ends prove the behaviour.
+
+| Rule | Proven by |
+|---|---|
+| The table of codes, its column "stop" or "dial again", and the key of each reason | `TestLinkCodesAreWritten` against `testdata/link-codes.json`. Plan `go-s3-client-link` reads the same file in `TestRetryCodeTable`, and plan `go-s3-server-stream` reads it in its tests of `Open`. |
+| The order of the refusals of `Join`, and the six decisions after `Challenge` | `TestJoinRefusalOrderIsWritten` and `TestHandshakeOrderIsWritten`. |
+| The numbers: 10 seconds, 30 seconds, 23 and 24 hours, 2^63 − 1, 0 to 100, 16 harnesses | `TestLinkNumbersAreWritten`. |
+| The order of the proof text and its two labels | `TestProofCommentMatchesTheExample`, against the rule that `TestProofExamplesHoldTogether` builds. |
+| The link has not changed since revision 1 | `TestLinkIsFrozenAtItsRevision` and `scripts/check-link-frozen.sh`, item F5. |
+| The table of events, the acknowledgement after the commit, and a gap | Plans `go-s3-server-stream` and `go-s3-client-link`, item 4, and post-build checks 3, 17 and 24 in `src/linktest/`. |
+| The admission, the current stream, and a removal against a `Welcome` in transit | Plan `go-s3-server-stream`, and post-build checks 10, 16 and 23. |
+| The claim, the replay and the races of `Join` | Plans `go-s3-server-machines` and `go-s3-client-link`, item 2, and post-build checks 1, 12 and 25. |
+| The life of a command, its expiry, `SetState` and the records of the machine | Plans `go-s3-server-commands` and `go-s3-client-link`, item 6, and post-build checks 6, 11, 19 and 20. |
+| The four states of the website | Plans `go-s3-server-stream` and `go-s3-server-machines`, and post-build checks 4, 13 and 22. |
+| The reasons in the metadata of the error, through the web server | Plans `go-s3-server-stream`, `go-s3-client-link`, item 3, and `go-s2-stack-web`, and post-build check 18. |
+
+### Changes to built code
+
+- `Event.number` is at most 2^63 − 1. In `src/client/internal/link/outbox.go`, `Append` returns `ErrSequenceExhausted` when the next number would pass `math.MaxInt64`, in place of `math.MaxUint64`. The tests at `outbox_test.go:121` and `outbox_test.go:174` take the new edge. The Client team makes this change, because the Contract team may not edit `src/client/`, and the result file asks for it.
+- A string holds no zero byte. The client's reports and its host name must leave zero bytes out. No built client code sends a string yet.
+- The Go and TypeScript code that `buf generate` makes changes in its comments only. Each of items F1 to F3 regenerates it and commits it.
+
+### Work items
+
+Every item regenerates `src/contracts/gen/` and passes `pnpm --filter ./src/contracts check` and `scripts/check-go.sh`. Each item runs after the one before it.
+
+**Item F1. The comments of `link.proto`.**
+- **Files:** `src/contracts/proto/lgtm/link/v1/link.proto` becomes `draft/link.proto`. `gen/` follows.
+- **What changes:** the value rules, the table of codes with its column, a stream that a newer admission overtakes before its `Welcome`, the value rules of `Join` first, the lost reply, the accepted answer before the signature, the admission as one commit, the silence of 30 seconds, the token after approval, a waiting machine's `Facts`, the removal with the sentence of `go-s3-server-machines` round 3, and `Welcome.state`. (issue 1643, findings 2 and 4 to 10)
+- **Done when:** `cmp draft/link.proto src/contracts/proto/lgtm/link/v1/link.proto` exits 0, and `buf build --exclude-source-info` gives the same md5 as before the item.
+
+**Item F2. The comments of `commands.proto` and `events.proto`.**
+- **Files:** both files become their copies in `draft/`. `gen/` follows.
+- **What changes:** the 23 hours for commands other than `SetState`, the storing of a result until the server records the expiry, the meaning of an outcome the server records itself, the limit of the machine's clock, the ceiling of event numbers, the end of pending commands at a removal, the first outcome, the margin of the clocks, `APPROVAL_REMOVED`, `Event.happened_at` and the silence on `HeartbeatAck`. (findings 3, 4 and 10)
+- **Done when:** `cmp` exits 0 for both files, and the md5 of `buf build --exclude-source-info` is unchanged.
+
+**Item F3. Two comments of `clients.proto`.**
+- **Files:** `src/contracts/proto/lgtm/v1/clients.proto`, and `gen/` for Go and TypeScript.
+- **What changes:** "The server's own command `lgtm client add` makes the same kind of token." becomes "The server's own command `lgtm-server join-token` makes the same kind of token." The comment of `RemoveClient` becomes "RemoveClient disconnects a client and forgets it. It removes a client that waits for approval in the same way."
+- **Done when:** `grep -c 'lgtm client add' src/contracts/proto/lgtm/v1/clients.proto` prints 0, and `pnpm --filter ./src/frontend typecheck` exits 0.
+
+**Item F4. Tests of the rules as text.**
+- **Files:** new `src/contracts/rules_test.go` and `src/contracts/testdata/link-codes.json`.
+- **`link-codes.json`:** an array of nine objects in the order of the table, each with `call`, `code`, `action` ("stop" or "dial again"), and where it applies `key`, `reasons` and `after_verified_challenge`. Its rows: `Join permission_denied stop`, `Join invalid_argument stop`, `Open failed_precondition stop` with `unknown_machine` and `link_revision_mismatch`, `Open failed_precondition dial again` with `event_gap`, then `unauthenticated`, `aborted`, `invalid_argument` and `deadline_exceeded` on `Open`, and `both unavailable`, all "dial again".
+- **Tests written first:** `TestLinkCodesAreWritten` and `TestLinkNumbersAreWritten` fail on the built files of sprint 0 and pass on the drafts. The other three hold already, and guard rules that the reviewers showed could change unseen.
+
+| Test | What it checks |
+|---|---|
+| `TestLinkCodesAreWritten` | The table in the `LinkService` comment has one row per object, in order, with the same call, code and action, and each row's text names its key and its reasons. |
+| `TestJoinRefusalOrderIsWritten` | The five reasons of `Join` appear as `//   - <reason>:` in their order. |
+| `TestHandshakeOrderIsWritten` | The six decisions after `Challenge` appear in their order, as exact lines. |
+| `TestLinkNumbersAreWritten` | Exact phrases: the 10 seconds of `Hello` and `Proof`, the 30 seconds of both ends, 2^63 − 1, 0 to 100, 16 harnesses, the 23 and the 24 hours, and both labels. |
+| `TestProofCommentMatchesTheExample` | The comment of `Proof` gives the label, the zero byte, the length, the machine id, the machine nonce and the server nonce in that order, and names both labels. |
+
+- **Done when:** `go test ./src/contracts/ -run 'Codes|Order|Numbers|ProofComment' -v` passes all five. Moving the line of `unauthenticated` above `unavailable` in the scratch copy makes `TestHandshakeOrderIsWritten` fail.
+
+**Item F5. The freeze at revision 1.**
+- **Files:** new `src/contracts/testdata/link-frozen.json`, `src/contracts/freeze_test.go` and `scripts/check-link-frozen.sh`. `scripts/check-go.sh` calls the script after `go test ./...`. `src/contracts/README.md` gains, above the line on revision 1: "The link `lgtm.link.v1` is frozen at revision 1. A change to `link.proto`, `commands.proto` or `events.proto` needs the next revision and a new entry in `testdata/link-frozen.json`."
+- **`link-frozen.json`:** an array with one object per revision, each on one line: `revision` and `files`, the SHA-256 of each of the three files of the link. The first entry is revision 1, written after items F1 and F2.
+- **`TestLinkIsFrozenAtItsRevision`:** the revisions run 1, 2 and so on. The last entry names every file of `proto/lgtm/link/v1/`, and each file's SHA-256 equals it. `link.proto` says "which is N" for the client's and the server's revision, and the README says "is frozen at revision N", where N is the last revision.
+- **`scripts/check-link-frozen.sh`:** it reads the record at the base, `LGTM_LINK_BASE` or `git merge-base HEAD master`. Every line with `"revision"` there must be unchanged, in the same place, in the present record. A base without a record passes.
+- **Done when:** `scripts/check-go.sh` exits 0. Adding one line to `events.proto` makes `TestLinkIsFrozenAtItsRevision` fail. Changing a hash of revision 1 in a scratch repository whose `master` holds the record makes the script exit 1.
 
 <details><summary><b>Implementation details (gates 2, 3, 5, 6, 8)</b></summary>
 
@@ -750,12 +866,12 @@ The contract writes only facts of the wire, by ruling 2 of round 3. Each row nam
 
 <details><summary><b>Post-build checks</b></summary>
 
-These checks need built programs, so they run after sprint 3 in the orchestrator's combined link test, `src/linktest/`, against a real PostgreSQL. Each one names its scenario and the result that must be seen on the wire or in the database. A check of a program's exit status, its service or an installer belongs to the plan of that program, and the result file of the fold of round 3 hands each one over. (ruling 2 of round 3, architect-r3 12)
+These checks need built programs, so they run after sprint 3 in the orchestrator's combined link test, `src/linktest/`, against a real PostgreSQL. The combined acceptance of wave 1 joins and connects through the loopback route of the stack's web server only. The `https` join with a self-signed certificate and the refusal of a wrong pin move to the gate of the later proxy work, and the client's own test of a pinned listener and the pin fields stay. (`go-s3-server-machines` round 4) Each one names its scenario and the result that must be seen on the wire or in the database. A check of a program's exit status, its service or an installer belongs to the plan of that program, and the result file of the fold of round 3 hands each one over. (ruling 2 of round 3, architect-r3 12)
 
 | # | Scenario | Expected result | From |
 |---|---|---|---|
 | 1 | Commit `Join`, drop its reply, and retry with the key the client saved. Then send `Join` with the same token and another key, with an expired token, with a revoked token, and after the machine was removed. | The retry gets the first machine id, and exactly one waiting machine exists. Each of the four other requests gets `permission_denied`. | architect-r1 P1, critic-r1 check 2, logic-r1, threat-r1 T2 |
-| 2 | Join and connect through the real web server in front, over loopback and over an `https` address with a self-signed certificate. Keep the stream idle except for heartbeats for ten minutes. Then try a token whose pin does not match. | The stored pin works after a client restart, and the stream stays open for the ten minutes. The wrong pin fails before the client sends the secret. | architect-r1 P2, logic2-r1 check 8, threat-r1 T1 |
+| 2 | Join and connect through the real web server in front, over loopback. Keep the stream idle except for heartbeats for ten minutes. The `https` case with a pinned certificate is outside wave 1, by the amendment of the freeze. | The machine joins, and the stream stays open for the ten minutes. | architect-r1 P2, logic2-r1 check 8, threat-r1 T1 |
 | 3 | Keep events 41 and 42 on the machine, sent on a stream that drops before either commits, and produce 43 during the reconnection while the server's number is 40. Stop the server once before and once after the commit of 41, before its acknowledgement. Send a repeat of 39 when the number is 42. Send an event with a gap, an event of an unknown kind, and an event whose report breaks a rule followed by a valid one. Restore the server's database to an older copy while a machine is connected. | Each committed event is applied once, in order, under its own number, and no two reports share a number. The repeat gets `EventAck` with 42. The gap ends the stream with `failed_precondition` and `event_gap`, and nothing is lost. The unknown event and the broken one are consumed, set no readiness, and the valid event behind them is applied on the same stream. After the restore, the machine's next event is a gap, and the server refuses it with the final code. | architect-r1 P3, critic-r1 check 3, logic-r1, logic2-r1 checks 3 and 4, threat-r1 T5, logic-r3 01, logic-r3 04, threat-r3 08 |
 | 4 | Open stream B while the server still holds stream A, let B deliver a valid `Facts` and `HarnessesFound`, and let A end 50 milliseconds after B's `Welcome`, with a late heartbeat and a late result on A. Separately, hold B's reports after its `Welcome`. Then let a proxy stop passing bytes on B without closing it. | With both reports applied on B, the machine shows online on B, and nothing from A changes the record. With B's reports held, the machine shows joining. On the silent B, the server shows the machine offline within 30 seconds. | critic-r1 check 3, logic-r1, logic2-r1 checks 2 and 6, threat-r1 T4, architect-r3 07, logic-r3 10 |
 | 5 | Remove a machine while it is offline, then let it dial. Remove another while it is connected, and drop the `SetState` notice on the way. Interrupt only the network of a third machine. | The first two get a `Challenge` whose signature verifies and then `failed_precondition` with `Lgtm-Link-Refusal: unknown_machine`, and neither appears in the list. The third machine connects again with its key and no new join. | architect-r1 P4, critic-r1 check 5, threat-r1 T4, logic-r3 03, threat-r3 06 |
@@ -764,7 +880,7 @@ These checks need built programs, so they run after sprint 3 in the orchestrator
 | 8 | On a clean checkout of the sprint's merge commit, generate twice, then add the valid untracked probe of item 2 and run the check with and without its guard. Decode a `WatchClients` reply with and without `position` using the website's old generated code. | The second generation changes nothing. The check fails with the guard and passes without it. The old code reads the same saved machine from both replies. | architect-r1 P6, critic-r1 check 1 |
 | 9 | Make and use join tokens with a marked fake secret, then search the database's request-key receipts, the server's and the client's logs, and the client's process list. Connect a waiting machine, try the actions that point 3 for the owner refuses it, and try an owner call with a machine's connection token. | The marked secret appears in none of those places, except the process list if point 4 keeps the argument. The waiting machine gets only what point 3 allows, and the connection token opens no owner call. | threat-r1 T2 and T3 |
 | 10 | Through the test seams of `go-s3-server-machines`, hold stream B of a machine once after its `Proof` verified and before its admission commits, and once after the admission and before its `Welcome` is sent. Hold an event and a result of stream A before their commit. Remove the machine while each is held, then release them. Repeat with the revocation of a used token of a waiting machine, and with an approval racing that revocation. | B never receives `Welcome`, and gets `failed_precondition` with `unknown_machine`. Neither held write changes the database or a `Watch` reply. In the race of approval and revocation, B gets the refusal only when the revocation removed the machine; when the approval committed first, the machine stays and B may receive `Welcome`. Plan `go-s3-server-machines` owns the order that makes this true. UNREVIEWED FIX. | architect-r2 P2, logic-r2 L2-P1, threat-r2 T2, logic-r3 05, logic-r3 11, architect-r3 04, architect-r3 12, architect-r4 01 |
-| 11 | Send a command that the machine started and recorded, drop its result, and send it again at its expiry plus 23 hours and 59 minutes by the server's clock, with `Welcome` delayed by 8 seconds. | The machine answers with the recorded result, not `COMMAND_OUTCOME_EXPIRED`. | architect-r2 P4, logic-r2 L2-P3, threat-r2 T6, architect-r3 06, logic-r3 08, threat-r3 07 |
+| 11 | Send a command that the machine started and recorded, drop its result, and send it again at its expiry plus 22 hours and 30 minutes by the server's clock, with `Welcome` delayed by 8 seconds. Then hold another pending command past 23 hours after its expiry. | The machine answers with the recorded result, not `COMMAND_OUTCOME_EXPIRED`, and the server stores it. The second command is never sent after 23 hours. Delivery at 23 hours and 59 minutes is a test of plan `go-s3-client-link`. | architect-r2 P4, logic-r2 L2-P3, threat-r2 T6, architect-r3 06, logic-r3 08, threat-r3 07, `go-s3-server-machines` round 4 |
 | 12 | Join with a wrong secret on a known token id, with an unknown id, and with a used token and the first key but a wrong secret. Run two identical first uses at once, and two first uses with two keys at once. | The three refusals are the same `token_unknown` in `Lgtm-Join-Refusal`, and none returns a reply or changes a row. The identical pair both get the same machine id. Of the pair with two keys, one gets a machine and the other `token_used`. | architect-r3 01, logic-r3 11, threat-r3 05 |
 | 13 | Connect a waiting machine, then approve it on that same stream. | The machine shows joining, then online with its facts and harnesses within 30 seconds, with no new stream. | architect-r2 P5, logic2-r2 check 3, threat-r2 T5 |
 | 14 | Call `CreateClientToken` with a request key, and without one, against the Go server. | The keyed call is refused with `invalid_argument` and makes no token. The other reply carries `address` equal to the address inside its token. | architect-r2 P6, logic-r2 L2-P5, threat-r2 T7, architect-r3 10 |
@@ -776,7 +892,7 @@ These checks need built programs, so they run after sprint 3 in the orchestrator
 | 20 | Send an unstarted command whose expiry is one second after the server's time at the moment it arrives, with the hop delays before and after the sample of `Welcome.server_time` varied. Then send one whose start a recorded result already exists for. | No command starts at or after its expiry by the server's clock. A declined command answers `COMMAND_OUTCOME_EXPIRED` and never starts later. The recorded result is answered whatever the expiry. UNREVIEWED FIX. | architect-r4 05, logic-r4 05 |
 | 21 | Send a `Hello` from a removed machine with an unsupported revision, from a known machine with an unsupported revision and a bad signature, and from a known machine that sends no `Proof`. Make the server's lookup fail once. | `unknown_machine`, then `link_revision_mismatch`, then `deadline_exceeded`, and `unavailable` for the failed lookup, each after `Challenge` and each the same on a second try. UNREVIEWED FIX. | architect-r4 06 |
 | 22 | Approve a machine while it is offline and has never reported, open its stream, apply one valid report, then both, then close the stream. | `WatchClients` shows offline, joining, joining, online and offline, in that order. UNREVIEWED FIX. | architect-r4 07 |
-| 23 | Hold stream A's event 41 against the admission of stream B with the mark at 40, once on each side of B's admission. | When A's event commits first, B's `Welcome.last_event_number` is 41. When B is admitted first, A's event changes nothing and the mark stays 40 until B sends 41. UNREVIEWED FIX. | logic-r4 01 |
+| 23 | Hold stream A's event 41 against the admission of stream B with the mark at 40, once on each side of B's admission. Separately, admit A, hold its `Welcome` before it is sent, and admit B. | When A's event commits first, B's `Welcome.last_event_number` is 41. When B is admitted first, A's event changes nothing and the mark stays 40 until B sends 41. In the separate case, A receives no `Welcome` and ends with `aborted`. UNREVIEWED FIX. | logic-r4 01, `go-s3-server-machines` round 4 |
 | 24 | End a stream on a gap at the mark 40 with event 42, then open a new stream that sends 41 and 42. | The new stream applies 41 and 42, and no refusal repeats. UNREVIEWED FIX. | logic-r4 07 |
 | 25 | Let one first use of a token commit just before its expiry, and let a second request with the same key reach its decision just after it. Repeat with a revocation that commits between the two. | One machine exists. The second request gets `token_expired`, or `token_revoked`, by the order of refusals at its own decision. UNREVIEWED FIX. | logic-r4 08 |
 
@@ -859,6 +975,7 @@ Source universe:
 | Ruling 3 of round 3, a sprint-3 plan that disagrees fixes itself | Result file of the fold of round 3 | covered; each disagreement is listed there |
 | Ruling 4 of round 3, the contract's own defects | Items 4 and 5 | covered: no two reports share a number, and `Join` checks the secret first |
 | Review round 4, 15 findings | `attack/round-4-findings.md`; post-build checks 10 and 16 to 25 | every finding has one outcome; every changed place is marked UNREVIEWED FIX |
+| Amendment: the freeze of the link, issue 1643 and the requests of plans `go-s3-client-link`, `go-s3-server-machines`, `go-s3-stack-client` and `go-s1-client-local` | Section "Amendment: the freeze of the link"; items F1 to F5; `decisions.md` rows 71 to 85 | every finding and request has one outcome |
 | `decisions.md` rows 69 and 70 | Items 4 to 6; public names; post-build checks 16 to 25 | closed |
 | Ruling 1 of round 2, the server alone decides what was applied | Item 4, rules of events; public names | covered; `Hello.acked_event_number` removed |
 | Ruling 2 of round 2, a restore is outside wave 1 | Item 4, rules of events; item 6, the handshake and removal; risks | covered; the issue is requested in the result file |

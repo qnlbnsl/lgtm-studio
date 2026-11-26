@@ -39,9 +39,11 @@ option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/li
 
 // Event is one numbered report.
 message Event {
-  // 1 for the machine's first event, and one more for each event after it.
+  // 1 for the machine's first event, and one more for each event after it. An event number above
+  // 2^63 - 1 is refused with `invalid_argument`, and a client never sends one.
   uint64 number = 1;
-  // When the machine made the report, by its own clock. The server shows it and orders nothing by it.
+  // When the machine made the report, by its own clock. The server orders nothing by it, and it
+  // does not store or show it in wave 1.
   google.protobuf.Timestamp happened_at = 2;
   // What the event reports.
   oneof report {
@@ -108,4 +110,5 @@ message Heartbeat {
 
 // HeartbeatAck answers each heartbeat of the current stream, so that traffic moves both ways
 // and a web server in front of the server does not cut the stream.
+// A machine that hears nothing from the server for 30 seconds ends the stream and dials again.
 message HeartbeatAck {}
