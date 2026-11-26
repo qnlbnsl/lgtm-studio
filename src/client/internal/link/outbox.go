@@ -25,7 +25,7 @@ func (s *Store) Append(payload []byte) (uint64, error) {
 		return 0, ErrEventTooLarge
 	}
 	n := s.events.next
-	if n == math.MaxUint64 {
+	if n > math.MaxInt64 {
 		return 0, ErrSequenceExhausted
 	}
 	size := int64(len(payload))
