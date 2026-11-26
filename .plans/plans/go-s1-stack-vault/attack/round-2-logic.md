@@ -66,7 +66,7 @@ Top finding: the test that is meant to guard against the round 1 blocker, a rena
 ### logic-r2 8. MINOR. The identity and capabilities of the reconciler are not stated
 
 - Tied statement: D4.
-- Evidence: `plan.md:147` sets `postgres-admin.password` to owner 70, group 70, mode 0400 and says "PostgreSQL and the reconciler read". `plan.md:143` drops all capabilities and adds back only "file setup and user-switch capabilities". `plan.md:140` runs `reconcile-db` as the authenticated administrator but names no container user.
+- Evidence: `plan.md:147` sets `postgres-admin.password` to user 70, group 70 and mode 0400, and states that PostgreSQL and the reconciler read it. `plan.md:143` drops all capabilities and adds back only "file setup and user-switch capabilities". `plan.md:140` runs `reconcile-db` as the authenticated administrator but names no container user.
 - Failure scenario: the reconciler runs as root with no capability to override file permissions. It cannot open a 0400 file owned by user 70, and the first clean run fails. Granting the override capability to fix it widens the privilege that `plan.md:143` limits. Running as user 70 fixes it with no capability.
 - Prescribed fix: state that the reconciler runs as user 70, and add the user to the capability inspection in `stack_services_have_no_egress_and_no_net_raw`.
 
