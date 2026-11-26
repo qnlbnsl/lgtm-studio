@@ -1,10 +1,49 @@
-# Stub of the test writer. It listens without serving the website or proxying requests.
+# The web server rules of the stack. Caddy serves the built website as static files and passes
+# the contract's calls on to the server over cleartext HTTP/2 (h2c), so the browser sees one address.
+# No access log is written, because requests carry the session cookie.
 {
 	admin off
 	auto_https off
 	persist_config off
+	grace_period 5s
+	servers {
+		protocols h1 h2 h2c
+	}
 }
 
+# The rules for a request whose host name is a loopback name.
+(app) {
+	# Only the link's long stream may stay silent for ten minutes. Every other request keeps
+	# Caddy's default body limit of one minute. Caddy marks this handler experimental, so the
+	# image is pinned by digest and the stream test guards it.
+	timeouts /lgtm.link.v1.LinkService/Open {
+		read_timeout 10m
+	}
+
+	@server path /lgtm.v1.* /lgtm.link.v1.*
+	handle @server {
+		reverse_proxy h2c://server:8080 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		root * /srv/site
+		file_server
+	}
+}
+
+# The health address answers only inside the container.
+http://:8081 {
+	bind 127.0.0.1
+	respond /healthz 200
+}
+
+http://127.0.0.1:8080, http://localhost:8080, http://[::1]:8080 {
+	import app
+}
+
+# Any other host name is refused before the server sees the request.
 http://:8080 {
-	respond 503
+	respond 421
 }
