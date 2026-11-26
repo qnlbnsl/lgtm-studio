@@ -7597,3 +7597,13 @@ The design does not promise that a restore works, and the plans of wave 1 name i
 2. **A client's state folder is restored to an earlier state.** Its event numbers and its command receipts then go back, so an event number can be used twice and a command can run twice.
 
 Until a later wave handles it, the owner removes the machine and joins it again after a restore.
+
+## 1642. Two live copies of one machine's state confuse the server
+
+Found on 2026-11-26, in the third review round of the contract plan of the Go rewrite. Nothing here is fixed.
+
+The contract states that one machine has one outbox.
+If a machine's state folder is copied and both copies run, both send events under the same numbers.
+The server's acknowledgement of one copy's report can then make the other copy forget a different report.
+Wave 1 does not detect this, like the restore in issue 1641.
+A later wave needs either an acknowledgement that names the report itself, or a way to detect a second copy.
