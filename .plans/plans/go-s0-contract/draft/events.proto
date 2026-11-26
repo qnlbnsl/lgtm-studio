@@ -10,14 +10,20 @@
 //   the same transaction as the event's effect, and it sends EventAck only after the commit.
 // - Welcome.last_event_number carries that number. The machine forgets its events at or below it
 //   and sends the rest from the next one, in order.
-// - The server checks each event in this order. An event without a number breaks a value rule.
-//   A number at or below the last applied is a repeat: the server applies nothing and sends
-//   EventAck with the last applied number. A number above the next one is a gap: the server ends
-//   the stream with `failed_precondition` and the reason event_gap. Only the next number reaches
-//   its report.
-// - At the next number, the server consumes an event that holds no report, a report it does not
-//   know, or a report that breaks a rule of this file. The number counts as applied, and the
-//   report has no effect.
+// - Only the current stream's events count. The server ignores an event of another stream.
+// - The server decides each event of the current stream by this table, which comes before the
+//   value rules of link.proto. A message that cannot be decoded ends the stream with
+//   `invalid_argument`. For a decoded event, the server reads only the number, until the last
+//   step:
+//   - A number of 0 ends the stream with `invalid_argument`.
+//   - A number at or below the last applied is a repeat: the server applies nothing and sends
+//     EventAck with the last applied number, whatever the report holds.
+//   - A number above the next one is a gap: the server ends this stream with
+//     `failed_precondition` and the reason event_gap, whatever the report holds. A later stream
+//     that sends the missing number goes on.
+//   - At the next number, the server applies a valid report. It consumes an event that holds no
+//     report, a report it does not know, or a report that breaks a rule of this file: the number
+//     counts as applied, and the report has no effect.
 // - One machine id has one outbox. A server number at or above the machine's next number, or
 //   below one the server acknowledged before, comes from a restore or a copy of the server's or
 //   the machine's state, which wave 1 does not cover.

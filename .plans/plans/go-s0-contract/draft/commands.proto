@@ -4,17 +4,20 @@
 // - The server stores a command before it sends it, with its id, attempt 1 and its expiry.
 //   The expiry never changes. The server stores each higher attempt before it sends it.
 // - The server sends a pending command on each new current stream of its machine, with the next
-//   attempt number, until it holds a final result. An attempt after expires_at only collects a
-//   recorded result, because a machine never starts a command after its expiry. When the server
-//   holds no final result 24 hours after expires_at, it records COMMAND_OUTCOME_EXPIRED itself.
+//   attempt number, until it holds a final result. When the server holds no final result 24 hours
+//   after expires_at, it records COMMAND_OUTCOME_EXPIRED itself. SetState is the exception: it
+//   stays pending until it has a result, whatever its expires_at.
 // - Every outcome except COMMAND_OUTCOME_UNSPECIFIED is final. The server never sends a command
 //   again once it holds a final result for it.
 // - A command that arrives twice runs once. A machine answers every attempt of a command it
 //   started with the result it recorded, until 24 hours after expires_at.
-// - The server's clock decides expiry, and Welcome.server_time gives it. A machine does not start
-//   a command after expires_at by the server's clock, and answers COMMAND_OUTCOME_EXPIRED.
-// - SetState is the one exception: a machine applies it whatever its expires_at, because a
-//   higher revision is always safe to apply.
+// - The server's clock decides expiry, and Welcome.server_time gives it. A command starts only
+//   before expires_at. A machine that has not started a command answers COMMAND_OUTCOME_EXPIRED
+//   when it cannot establish that it starts before expires_at. The promise that no command starts
+//   late holds while the server's clock runs without a jump after Welcome.server_time was read.
+// - A recorded result comes before every rule of expiry: an attempt that finds one gets it.
+// - A machine answers every SetState with COMMAND_OUTCOME_DONE, whatever its expires_at, once it
+//   has applied the state or found that its revision is not higher than the one it holds.
 syntax = "proto3";
 
 package lgtm.link.v1;
@@ -72,7 +75,8 @@ enum CommandOutcome {
   COMMAND_OUTCOME_DONE = 1;
   // The machine tried the command, and it failed.
   COMMAND_OUTCOME_FAILED = 2;
-  // The command arrived after its expiry, and the machine did not run it.
+  // The machine did not start the command, because it could not establish that it would start
+  // before the command's expiry. The machine never starts it later.
   COMMAND_OUTCOME_EXPIRED = 3;
   // The machine does not know the command's action, because its client is older than the server.
   COMMAND_OUTCOME_UNSUPPORTED = 4;
