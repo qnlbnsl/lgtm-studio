@@ -7696,3 +7696,12 @@ Found on 2026-11-26, by the review after the build of work item 2 of the plan `g
 4. The search path of the service keeps empty and relative entries.
 5. The messages about the state folder and its comparison are too coarse.
 6. A relative `COMPOSE_FILE` is read from another folder than the launcher uses.
+
+## 1651. Small findings of the review of the built sign-in parts of the server
+
+Found on 2026-11-26, by the review after the build of work items 1 to 5 of the plan `go-s2-server-signin`. The report is `.plans/plans/go-s2-server-signin/attack/post-build-a.md`. It found no fault in the code that a user can reach. Its one major finding is a gap in the tests: no test forbids a loopback alias as a browser origin when the public origin uses HTTPS. That gap and the other test gaps went to a test writer on the same day. These minor findings in the code are open.
+
+1. The settings loader refuses `PGSERVICE` and lets other driver settings of the process environment reach the pool, such as `PGOPTIONS` and `PGAPPNAME`.
+2. The password file of the standalone mode is read without a size limit.
+3. The cookie reader accepts a value in double quotes, because the standard parser removes them.
+4. The plan has no register with the heading "Not reviewed before the build". Its unreviewed places are marked in the plan itself.
