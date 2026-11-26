@@ -73,7 +73,17 @@ func storeTestOpen(t *testing.T, cfg *pgxpool.Config) *Store {
 
 func feedFixture(t *testing.T, tracer *feedTestTracer) (*Store, *pgxpool.Config, *pgx.Conn) {
 	t.Helper()
+	return feedFixtureSized(t, tracer, 0)
+}
+
+// feedFixtureSized sets the exact size of the main pool when size is above zero. The fixture's default is a
+// minimum of eight connections, and the driver's default grows with the number of processors.
+func feedFixtureSized(t *testing.T, tracer *feedTestTracer, size int32) (*Store, *pgxpool.Config, *pgx.Conn) {
+	t.Helper()
 	cfg := storetest.NewDatabase(t, "store_fixture")
+	if size > 0 {
+		cfg.MaxConns = size
+	}
 	if tracer != nil {
 		cfg.ConnConfig.Tracer = tracer
 	}

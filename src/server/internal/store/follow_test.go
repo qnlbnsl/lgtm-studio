@@ -343,12 +343,18 @@ func TestFollowerPrunedCursor(t *testing.T) {
 		if err := below.Start(marker - 1); !errors.Is(err, ErrWatchLagged) {
 			t.Fatalf("starting one below the marker returned %v, want ErrWatchLagged", err)
 		}
+		// The marker passes the history check, and the full ring still leaves 2,048 rows above it.
 		equal := h.subscribe()
-		if err := equal.Start(marker); err != nil {
-			t.Fatalf("starting at the marker failed: %v", err)
+		if err := equal.Start(marker); !errors.Is(err, ErrWatchLagged) {
+			t.Fatalf("starting at the marker of a full ring returned %v, want ErrWatchLagged", err)
 		}
-		if got, err := flNext(t, equal); err != nil || got.Position != marker+1 {
-			t.Fatalf("the first row at the marker is %+v (%v), want position %d", got, err, marker+1)
+		flRequireEnded(t, "the subscriber at the marker of a full ring", equal, ErrWatchLagged)
+		inside := h.subscribe()
+		if err := inside.Start(marker + 1); err != nil {
+			t.Fatalf("starting one above the marker failed: %v", err)
+		}
+		if got, err := flNext(t, inside); err != nil || got.Position != marker+2 {
+			t.Fatalf("the first row above the marker is %+v (%v), want position %d", got, err, marker+2)
 		}
 		flRequireOpen(t, "the subscriber with a row in flight", x)
 		if err := x.Ack(head); err != nil {
@@ -373,6 +379,14 @@ func TestFollowerPrunedCursor(t *testing.T) {
 		flRequireEnded(t, "the subscriber with a row in flight behind the floor", x, ErrWatchLagged)
 		flRequireOpen(t, "the subscriber ahead of the floor", z)
 		flRequireOpen(t, "the subscriber at the floor", v)
+		// Equality with the floor is usable: it passes the history check, and fewer than 2,048 rows lie above it.
+		equal := h.subscribe()
+		if err := equal.Start(10); err != nil {
+			t.Fatalf("starting at the floor failed: %v", err)
+		}
+		if row, err := flNext(t, equal); err != nil || row.Position != 11 {
+			t.Fatalf("the first row at the floor is %+v (%v), want position 11", row, err)
+		}
 		stale := h.subscribe()
 		if err := stale.Start(5); !errors.Is(err, ErrWatchLagged) {
 			t.Fatalf("starting below the floor returned %v, want ErrWatchLagged", err)

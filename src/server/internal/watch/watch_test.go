@@ -43,6 +43,7 @@ type wFix struct {
 	authMode atomic.Int32
 
 	mu          sync.Mutex
+	beforeAuth  func()
 	beforeLoad  func()
 	afterFirst  func()
 	probeReadOn string
@@ -173,6 +174,12 @@ func (x *wFix) authorize(ctx context.Context, tx *store.ReadTx) error {
 		return ctx.Err()
 	case authPanic:
 		panic(secretPanic)
+	}
+	x.mu.Lock()
+	beforeAuth := x.beforeAuth
+	x.mu.Unlock()
+	if beforeAuth != nil {
+		beforeAuth()
 	}
 	var active int
 	if err := tx.QueryRow(ctx, "SELECT count(*) FROM sessions WHERE id = 's1' AND active").Scan(&active); err != nil {
@@ -360,6 +367,9 @@ func TestWatchSnapshotUsesOneTransaction(t *testing.T) {
 		name string
 		set  func(x *wFix, hook func())
 	}{
+		// The authorization query fixes the view of a repeatable-read transaction, so a write before it
+		// separates a snapshot that shares one transaction from one that reads the head on its own.
+		{"write before the first authorization query", func(x *wFix, hook func()) { x.beforeAuth = hook }},
 		{"write before the first loader query", func(x *wFix, hook func()) { x.beforeLoad = hook }},
 		{"write after the first loader query", func(x *wFix, hook func()) { x.afterFirst = hook }},
 	} {
@@ -454,6 +464,7 @@ func TestWatchCanRestartAfterLag(t *testing.T) {
 	}
 	r := x.serve(x.source("p1"), nil, hold)
 	// The held first send proves that the subscription is active before writes begin.
+	storetest.Poll(t, "the held first send", func() bool { return r.sends.Load() >= 1 })
 	for batch := 0; batch < 12; batch++ {
 		select {
 		case <-r.task.Done():
@@ -483,6 +494,7 @@ func TestWatchCanRestartAfterLag(t *testing.T) {
 
 	// Caller cancellation ends the stream with the caller's error.
 	blocked := x.serve(x.source("p1"), nil, hold)
+	storetest.Poll(t, "the sender's entry", func() bool { return blocked.sends.Load() >= 1 })
 	blocked.cancel()
 	if err := blocked.wait(t, "a canceled caller"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Serve returned %v after cancellation, want context.Canceled", err)

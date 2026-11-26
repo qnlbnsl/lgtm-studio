@@ -417,13 +417,14 @@ func TestSnapshotReadsHeadBeforeLoad(t *testing.T) {
 }
 
 func TestFollowerProgressesUnderReadSaturation(t *testing.T) {
-	s, cfg, _ := feedFixture(t, nil)
+	const connections = 8
+	// The pool has exactly eight connections whatever the number of processors.
+	s, cfg, _ := feedFixtureSized(t, nil, connections)
 	writer := storeTestOpen(t, cfg.Copy())
 
 	// Hold every connection of the main pool with an ordinary read.
 	hold, release := storetest.Signal(t)
 	var started sync.WaitGroup
-	const connections = 8
 	started.Add(connections)
 	for range connections {
 		storetest.Start(t, func() error {

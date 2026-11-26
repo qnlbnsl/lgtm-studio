@@ -104,7 +104,19 @@ func dropDatabase(t testing.TB, maintenance *pgx.ConnConfig, quotedDatabase stri
 		return
 	}
 	defer closeConnection(conn)
-	if _, err := conn.Exec(ctx, "DROP DATABASE "+quotedDatabase+" WITH (FORCE)"); err != nil {
+	// A forced drop signals every backend of the database and fails with SQLSTATE 42501 when one of them
+	// belongs to another role, for instance an autovacuum worker that is attached for a moment. The worker
+	// leaves soon, so the drop is repeated until the deadline instead of failing a test that is not at fault.
+	var dropErr error
+	for {
+		_, dropErr = conn.Exec(ctx, "DROP DATABASE "+quotedDatabase+" WITH (FORCE)")
+		var pgErr *pgconn.PgError
+		if dropErr == nil || !errors.As(dropErr, &pgErr) || pgErr.Code != "42501" || ctx.Err() != nil {
+			break
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	if err := dropErr; err != nil {
 		reason := "the cleanup deadline passed"
 		var pgErr *pgconn.PgError
 		if errors.As(err, &pgErr) {
