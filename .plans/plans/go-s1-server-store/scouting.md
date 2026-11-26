@@ -66,3 +66,15 @@ Read the three round 2 reports and compared `attack/plan-v2.md` with the editabl
 | Downstream adapters | Items 4 and 9 of [the sign-in plan](../go-s2-server-signin/plan.md) consume the session read, connection policy and Store startup APIs. Its two-minute prerequisite budget and its `ErrNoSession` declaration need to agree with the new migration budget and safe sentinel rules. The approved design requires [the Machines plan](../go-s3-server-machines/plan.md) to use the Store and shared Watch helper. The Contract draft `common.proto` names `aborted` for lag. |
 
 These are plan checks. The Go, PostgreSQL and transport acceptance commands require the implementation.
+
+## Round 3 contract and test evidence
+
+The starting plan matched `attack/plan-v3.md` at checkout `1512d6de`. The two new reports cover the changes folded in round 2. The checkout still had no root Go module or Server implementation. The local Go tool reports 1.23.3. Building the plan requires the approved Go toolchain.
+
+| Finding area | Anchor and observation |
+|---|---|
+| Commit ordering and hook | `deploy/test/checks.sh`, `check_c12`, runs the working-tree test suite and discards the mutation hook output. Item 4 must prove the ordering assertion in the archive and the lead must record the checkout commit. PostgreSQL changes test constraint timing within a transaction, and its activity view reports the active command used for the commit gate. [Constraint timing](https://www.postgresql.org/docs/16/sql-set-constraints.html), [activity monitoring](https://www.postgresql.org/docs/16/monitoring-stats.html#MONITORING-PG-STAT-ACTIVITY-VIEW) and [the driver’s commit rollback sentinel](https://pkg.go.dev/github.com/jackc/pgx/v5#ErrTxCommitRollback). |
+| Gate ownership and tests | Item 1 now owns `src/server/internal/store/storetest/gate.go` and its two key formats. The migration, feed and receipt tests observe PostgreSQL locks. Item 3 checks live migration settings and the caller deadline. [PostgreSQL statement and lock limits](https://www.postgresql.org/docs/16/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-STATEMENT). |
+| Stack fixture | Item 8 of [the Stack vault plan](../go-s1-stack-vault/plan.md) supplies `lgtm_store_test` and `CREATEDB`. Its connection format and capacity require comparison with item 1's fixture before building. |
+| Cross-sprint names | [The sign-in plan](../go-s2-server-signin/plan.md) consumes `store.Migrations`, `store.ReadTx` and both database fixtures. Its item 9 writes `store/instance.go` and names the instance advisory key. [The Machines plan](../go-s3-server-machines/plan.md) consumes the migrated fixture and Watch helper. The Store plan now reserves the startup key and identifies its later reader. |
+| Follower and retention | The approved design's Positions must follow commit order and How every Watch call works sections require forward positions and fresh snapshots. It defines neither a database-restore procedure nor overdue receipt alerts. The round 3 backlog request records the restore boundary. |
