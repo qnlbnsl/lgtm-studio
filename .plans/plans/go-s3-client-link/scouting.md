@@ -51,13 +51,13 @@ The repository has the Sprint 1 client program, state, key, settings, facts, har
 
 | Gate | Evidence and result |
 |---|---|
-| 1. Decisions | The 62 rows have status `closed` or `unanswered`. Every unanswered row names its assumption. Rows 41 and 42 name the owner gates. |
+| 1. Decisions | The 63 rows have status `closed` or `unanswered`. Every unanswered row names its assumption. Rows 41 and 42 name the owner gates. |
 | 2. Acceptance | The nine done criteria each name a test, command or observed stack step. All ten build items name a first failing assertion and a verification command. |
 | 3. Design artifacts | The three workstreams point to the approved design. The client work changes no screen hierarchy. The result carries the website copy request. |
 | 4. Traceability | The declared inputs and all 23 decisions, 11 rules and 13 checks map to the workstreams, another team or a later wave. |
 | 5. Risks | The three workstreams each have risk, severity and mitigation rows. All ten risky items name a mutation. |
 | 6. Verification | Each workstream lists its gating tests and environment checks. There is one plan-level rollout sequence. |
-| 7. Adversarial review | The registers account for every finding. Round 3 has 10 findings in nine groups worth 17 points. The plan remains in `attack`. |
+| 7. Adversarial review | The registers account for every finding. Round 4 has one major worth three points. The plan remains in `attack`. |
 | 8. Anchors | Ten task rows have matching scouting anchors. The contract, receipt store and stack script checks below anchor the changed work. |
 | 9. Guardrails | The table cites the repository's ownership, credits, issue, integration and writing rules. |
 | 10. Sizing | The scope check passed. The ten low or medium rows have reasons, prerequisites and attack flags. The orchestrator owns launch allowances. |
@@ -108,5 +108,16 @@ The Contract round 4 result, drafts and post-build checks 16, 18 to 20 and 24 an
 | `src/client/internal/link/store.go:110`, `:247` and `:353` | Open normalizes access and format errors to `ErrStoreDamaged` unless they match a specific exception. The embedded database can also report invalid metadata when its read fails. The fold uses a retry exit for all open failures. |
 | `src/client/internal/link/outbox.go:55` and `:77`, and `src/contracts/proto/lgtm/link/v1/events.proto:9` | Reads return database errors. Acknowledgement rejects a mark at or above `Next()`. The server may answer as soon as it commits, before the client send returns. The new session test holds the send there. |
 | `src/client/internal/link/receipts.go:65` and `:98`, and `src/contracts/proto/lgtm/link/v1/commands.proto:51` and `:88` | Existing receipts take precedence. `Begin` at expiry leaves an absent receipt absent. A requested scan earns done when its own event commits, and later attempts can replay the stored result. |
-| Stack Client plan, service outcomes, installer step 17 and `live_removed_machine_stays_stopped` | The service manager retries nonzero exits. The installer directs the operator to the journal. Check the existing local-fault and removal diagnostics in the installed service. |
+| Stack Client plan, service outcomes, installer step 17 and `live_removed_machine_stays_stopped` | The service manager retries nonzero exits. Round 3 deferred the local-fault journal check. The installer hint covered startup timeout, and the existing live check covered removal. |
 | Server Machines plan, `MaxNameBytes` and `BecomeCurrent` | The planned server has a 64-byte name and 43-byte approved token. These supply the welcome fixture. No new dependency on server internals or a contract annotation is required. |
+
+## Evidence for the fourth review fold
+
+| Anchor | Observation |
+|---|---|
+| `docs/specs/2026-11-25-go-rewrite-foundation-design.md:41` and `:288` | Decision 16 requires reconnect and restart. The event rules require durable replay. The fold names the diagnostics without changing the exit mapping or the sequence rules. |
+| `src/client/internal/link/outbox.go:18`, `:29` and `:77`, and `src/client/internal/link/store.go:53` and `:61` | `Store.Append` has `ErrSequenceExhausted`. `Store.Ack` has `ErrAckAhead`. The planned `src/client/internal/link/session.go` will log the two codes. The planned `src/client/internal/app/client_test.go` will check the line and status together. |
+| `src/contracts/proto/lgtm/link/v1/link.proto:261` and `events.proto:9` and `:59` | The welcome provides `last_event_number`. The server sends `EventAck.through` after commit, which can precede the return of the client's send. The fold corrects the handoff wording. |
+| `src/client/internal/link/receipts.go:78` and `:98` | A finished receipt is read before admission expiry is considered. A missing receipt at equality returns `DecisionExpired` without writing. The planned `Store.Decline` owns the finished write for a new expired scan. |
+| `src/server/internal/store/storetest/postgres.go:24` | `NewDatabase` reads `LGTM_TEST_POSTGRES` and skips if absent. The installed impossible-mark check uses an intact disposable fixture. |
+| `deploy/test/checks.sh:330`, `:344` and `:506`, and Stack Client plan's service outcomes, installer step 17 and `live_removed_machine_stays_stopped` | `log_has` reads `msg` and `code`, and C10 reads the existing removal and mismatch codes. The installer is planned at `deploy/install-client.sh`, with the existing check script as a log-reading pattern. The Stack Client plan's current journal hint covers startup timeout. Its existing live stop check covers removal. The result requests the final guidance and a live assertion for `impossible_ack`. |
