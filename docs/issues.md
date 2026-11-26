@@ -7755,3 +7755,10 @@ Found on 2026-11-26, by the review after the build of the amendment that freezes
 3. A new revision must be written on its own line with a leading comma. Neither the guide nor the error text says so.
 4. Check 3 of the contract plan still says that a gap in the events stops the client, and the amendment says the client dials again.
 5. The cases of an encrypted join with a self-signed certificate were moved out of wave 1, and no issue records them. They are: a join over `https` with a self-signed certificate, and the refusal of a wrong pin.
+
+## 1658. Findings of the review of the built Join
+
+Found on 2026-11-26, by the review after the build of work item 4 of the plan `go-s3-server-machines`. The report is `.plans/plans/go-s3-server-machines/attack/post-build-b.md`. The reviewer was of the same vendor as the builder, so the rule that another vendor reviews was not met. Its one major finding went to a test writer and a builder on the same day: a malformed `Join` body can carry the submitted secret or key into the error text, because the decoder puts the raw value into its error. These minor findings are open.
+
+1. A `Join` that stops on its own time limit or is cancelled is reported with the sentence of a database outage.
+2. The host name is decoded before the refusals and the replay are decided, although it is checked only after them.
