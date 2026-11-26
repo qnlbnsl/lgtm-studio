@@ -61,7 +61,16 @@ func StartFollower(ctx context.Context, s *Store, report func(error)) (*Follower
 	return startFollower(ctx, s, report, feedReaderOptions{})
 }
 
+// StartFollowerWithLifetime reads the head under ctx and follows the feed under lifetime.
+func StartFollowerWithLifetime(ctx, lifetime context.Context, s *Store, report func(error)) (*Follower, error) {
+	return startFollowerWithLifetime(ctx, lifetime, s, report, feedReaderOptions{})
+}
+
 func startFollower(ctx context.Context, s *Store, report func(error), options feedReaderOptions) (*Follower, error) {
+	return startFollowerWithLifetime(ctx, ctx, s, report, options)
+}
+
+func startFollowerWithLifetime(ctx, lifetime context.Context, s *Store, report func(error), options feedReaderOptions) (*Follower, error) {
 	var head int64
 	if err := withFeedRead(ctx, s.pagePool, func(ctx context.Context, tx *ReadTx) error {
 		var err error
@@ -75,7 +84,7 @@ func startFollower(ctx context.Context, s *Store, report func(error), options fe
 	if now == nil {
 		now = time.Now
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(lifetime)
 	f := &Follower{
 		ctx:            ctx,
 		cancel:         cancel,

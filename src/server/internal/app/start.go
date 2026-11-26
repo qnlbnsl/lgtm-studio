@@ -215,7 +215,8 @@ func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logg
 			log.Warn(storeReportMessage, "error", err.Error())
 		}
 	}
-	follower, err := store.StartFollower(st.life, s, report)
+	// The follower must stay open until in-flight requests have drained.
+	follower, err := store.StartFollowerWithLifetime(st.life, context.WithoutCancel(st.life), s, report)
 	if err != nil {
 		return nil, []string{st.interrupted(prerequisites, lineFeed)}
 	}
@@ -234,7 +235,7 @@ func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logg
 		Sessions: sessions,
 		Origins:  origins,
 		Session:  api.NewSessionService(password, sessions),
-		Clients:  machines.NewService(s, sessions, registry, tokens).WithFollower(follower),
+		Clients:  machines.NewService(s, sessions, registry, tokens).WithFollower(follower).WithWatchShutdown(st.life),
 		Link:     link.NewService(s, tokens, public),
 	})
 
