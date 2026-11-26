@@ -68,10 +68,12 @@ The stock Node invocation hit `spawnSync git EPERM` while creating an unused sta
 
 | Read | Anchor |
 |---|---|
-| The Contract round 3 and Client Local round 4 requests | The Client Local ruling supersedes the request for a server-time lower bound on receipt pruning. The round 3 contract draft still promises the full retention window. |
+| The Contract rounds 3 and 4 and Client Local round 4 requests | The Client Local ruling accepts machine clock skew in pruning. Contract round 4 still promises the full retention window. |
 | Sprint 1 server store and vault | The server store classifies an indeterminate transaction as unavailable. The vault gives the signing key to the server. The client uses the generated link for both proofs. |
 | Sprint 2 server sign-in and Stack Web | Sign-in item 8 supplies `servertest.Start`, its bound endpoint and restart fixture. The stack uses cleartext HTTP/2 on loopback and reserves a public encrypted endpoint for later. |
 | Sprint 3 Stack Client and the wave 1 script | The service policy restarts nonzero run exits. The installer still names `server.json`, and `client_join` and `start_client` still export the superseded state setting. The result carries both requests. |
 | The epic and issues 1641 and 1642 | The Sprint 3 link plans share the freeze gate. The first importer owns a module change. Restored state and live copies are outside wave 1. |
 
 The elapsed-clock targets are `src/client/internal/link/clock_linux.go` and `clock_darwin.go`. The dependency provides `unix.ClockGettime` on both platforms. Linux `CLOCK_BOOTTIME` counts suspend time, and Apple uses its continuous clock for `CLOCK_MONOTONIC_RAW`. The planned sign-in dependency selects the same module version used here. [Linux clock documentation](https://www.man7.org/linux/man-pages/man3/clock_gettime.3.html), [Apple clock implementation](https://github.com/apple-oss-distributions/Libc/blob/main/gen/clock_gettime.c), [Go cryptography module requirements](https://github.com/golang/crypto/blob/v0.59.0/go.mod).
+
+The Contract round 4 result, drafts and post-build checks 16, 18 to 20 and 24 anchor the follow-up. The pinned Connect library's `error.go` documents `(*Error).Meta()` as exposing the metadata decoded from protocol headers, trailers or the stream body. The local-state plan's `Begin` prefers existing receipts, returns `DecisionExpired` without a write for a new expired command and lets `Finish` store the final result of a reserved command.
