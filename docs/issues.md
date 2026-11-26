@@ -7624,3 +7624,27 @@ The link is frozen when the plans `go-s3-server-machines` and `go-s3-client-link
 8. A machine that is approved on a live stream never gets a connection token.
 9. A lost reply to `Join` cannot be recovered after the token expired.
 10. Nothing tells the client to give up a stream that went silent.
+
+## 1644. Small findings of the reviews of the built client
+
+Found on 2026-11-26, by the reviews after the build of the plan `go-s1-client-local`. The reports are `post-build-a.md` and `post-build-b.md` in `.plans/plans/go-s1-client-local/attack/`. The two major findings, both gaps in tests, went back to the test writer on the same day. These minor ones are open.
+
+1. `Open` of the state folder fails when a parent folder can be searched but not read.
+2. No test fails when the removal of temporary files runs before the lock is taken.
+3. No test fixes what `Create` returns after a file was placed and not synced, and a placed file can be reported as a plain failure.
+4. Three checks of `Load` and `Open` have no test, and `Load` accepts a key file that the plan calls invalid.
+5. `Paths()` on a nil folder panics.
+6. `WriteAtomic` can replace the lock file.
+7. A store file that cannot be opened for permission reasons is reported as damaged.
+
+## 1645. Small findings of the review of the built database layer
+
+Found on 2026-11-26, by the review after the build of work items 1 to 3 of the plan `go-s1-server-store`. The report is `.plans/plans/go-s1-server-store/attack/post-build-a.md`. Its verdict was to ship. These minor findings are open.
+
+1. The connection defaults, the isolation level of `Read`, the order of the migration parts and the copy of the configuration in `Open` have no test.
+2. Two failures give the operator no useful sentence.
+3. A test run without the database setting skips the database tests and looks green.
+4. The module asks for Go 1.26.0, and the vulnerability scan reports faults of the standard library that later 1.26 releases fix. A `toolchain` line for the newest 1.26 release removes them.
+5. `Close` can block forever, and no test covers it.
+6. A nested error loses its outcome when it is sanitized a second time.
+7. The test fixture does not check the connection limit of the server.
