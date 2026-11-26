@@ -161,7 +161,7 @@ It is not a code that the Go runtime uses for a crash, which is 2.
 | `.plans/plans/go-s3-client-link/plan.md`, item 9 | `run` exits 0 on cancellation or a stop for good, 75 for an accepted restart and 1 for a failure. `join` exits 0 or 1. A usage error exits 2. `TestRunCommandExitStatus` proves them. |
 | `.plans/plans/go-s2-server-signin/plan.md`, items 1, 8 and 9 | `config.Load(lookup)`, `vault.Open`, `vault.LoadLinkIdentity` with `allowInitialize` false, the dispatcher `run(ctx, args, lookup, stdout, stderr) int` with a placeholder entry `join-token`, and `servertest.Server.Environment()`. |
 | `.plans/plans/go-s1-server-store/plan.md`, line 126 | `store.Open(ctx, config, policy)`. |
-| `.plans/plans/go-s3-server-machines/plan.md`, items 3, 12 and 14, and its request 12 | `machines.NewTokens`, `Tokens.Create` with an empty address taking `PublicURL`, `ErrAddressMismatch`, `ErrNoCertificatePin`, `client_join_tokens`, `CreateClientToken` without the mark, and the helpers `Clients(t)`, `Link()` and `Settings()` of `servertest`. |
+| `.plans/plans/go-s3-server-machines/plan.md`, items 3, 12 and 14, and its request 12 | `machines.NewTokens`, `Tokens.Create` with `TokenOptions{HostsServer}` and the address always `PublicURL`, `ErrNoCertificatePin`, `client_join_tokens`, `CreateClientToken` without the mark, and the helpers `Clients(t)`, `Link()` and `Environment()` of `servertest`. This row was corrected in the fold of round 2. |
 | `.plans/plans/go-s2-stack-web/plan.md`, items 1, 4, 5 and 7 | The image's `/usr/local/bin/lgtm-server` as user 10001, `LGTM_PUBLIC_URL` equal to `http://127.0.0.1:${LGTM_WEB_PORT:-8787}`, the launcher's use of `COMPOSE_FILE`, and the stream test of the link's route. |
 | `deploy/compose.yaml`, line 1 | The project is named `lgtm`, so `docker compose port web 8080` finds the stack without `-p`. |
 | `deploy/test/checks.sh`, lines 219 and 233, and `deploy/test/README.md`, the row "Client state folder" at line 81 | The two lines and the row that still name `XDG_STATE_HOME`. |
@@ -181,3 +181,14 @@ It is not a code that the Go runtime uses for a crash, which is 2.
 | `.plans/plans/go-s3-client-link/plan.md`, line 24 | The owner settles whether the client also reads a token from standard input. |
 | `.plans/plans/go-s3-client-link/plan.md`, line 108 | `identity.json` holds `address`, which the installer compares with the selected stack. |
 | A Bash probe by three reviewers | `${SHIM_WEB_PORT:-8787}` gives 8787 for an empty value, while `${SHIM_WEB_PORT-8787}` gives an empty string. |
+
+## Sources checked for the fold of round 2 on 2026-11-26
+
+| File and anchor | What it establishes |
+|---|---|
+| `deploy/up.sh`, lines 19 and 20 | The launcher calls `docker compose -f "$here/compose.yaml"`. Plan `go-s2-stack-web`, item 5, keeps that call when `COMPOSE_FILE` is unset and drops `-f` when it is set. |
+| Round 2 reports architect-r2 04 and logic-r2 04 | Two reviewers found alone, with Docker Compose, that an exported default `COMPOSE_FILE` reads the settings file at the repository root, while `-f` reads the one in `deploy/`. |
+| `deploy/test/with-postgres.sh`, line 7 | The wrapper runs a command given after `--` with `LGTM_TEST_POSTGRES` set to a disposable database in Docker. |
+| `src/contracts/proto/lgtm/v1/clients.proto`, line 67 | `Client.connected_at` is a field of the contract, set by the server for a machine with presence, by plan `go-s3-server-machines`. |
+| `.plans/plans/go-s3-server-machines/plan.md`, lines 150 to 152 | `TokenOptions` has only `HostsServer`. |
+| `src/frontend/src/screens/service.tsx`, line 410 | The Machines page still shows the old join command, which gate G5 depends on. |
