@@ -7806,3 +7806,13 @@ The review loop on the launcher was stopped here by the orchestrator after four 
 ## 1664. A refused address of the token issuer is reported as a database outage
 
 Found on 2026-11-26 by the review of the built record calls (finding post-d 3 of the plan `go-s3-server-machines`). The plan names two errors of the issuer of join tokens, an invalid address and a missing certificate pin, and gives neither a public code or sentence. The built handler answers both with the sentence for an unreachable database. The address comes from the server's own settings, so a person meets this only after a wrong setting. The sentence should name the setting.
+
+## 1665. A Machines service without a shared follower starts one follower for each watch
+
+Found on 2026-11-26 by the cross-vendor review of the Machines watch (finding post-c 4 of the plan `go-s3-server-machines`). The server program builds the Machines service with one shared follower of the feed. A service that is built without that option starts its own follower for every call of `WatchClients`, in `src/server/internal/machines/watch.go`. Each of those followers has no function to report an outage, so an outage of the feed is not logged. Each one also holds its own reader, its own listening connection and its own buffer, and all of them share the store's single page connection.
+
+The running server is not affected, because it always passes the shared follower. A test harness or a later program that forgets the option gets a cost that grows with the number of open watches.
+
+The next step is one of two changes. Either the constructor requires a follower, or the path without one is documented as a path for tests and gets a report function that reaches the log.
+
+The same review's finding post-c 8 needs no issue. It said that the plan's test filter also ran a test of the stream plan, which failed then. That test passes since the stream plan's item 9 was built.
