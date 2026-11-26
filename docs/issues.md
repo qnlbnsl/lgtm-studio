@@ -7770,6 +7770,21 @@ Found on 2026-11-26, when the website of the built stack was opened in a browser
 1. The Go server of sprint 2 answers `WatchClients` with `unimplemented`, because the calls of machines are wired in sprint 3. This part ends when work item 7 of the plan `go-s3-server-machines` is built.
 2. The website asks again and again and shows nothing meanwhile. Its main element stays marked busy and holds no text. A person sees an empty page with no sentence that says what failed. The same would happen whenever the first watch fails for another reason. A change to what the page shows needs the owner's approval.
 
+Update of 2026-11-26: part 1 has ended. Work item 7 was built in commit `aa633e16`, and the page renders after sign-in. Part 2 stays open.
+
 ## 1660. A machine reports the full path of a workspace that lies outside the home folder
 
 Found on 2026-11-26 by the review of the built client reports (finding post-c 2 of the plan `go-s3-client-link`). The client shortens a workspace path that lies under the home folder. A workspace on another volume cannot be shortened, and the client then sends the full local path to the server as a fact of the machine. The contract permits the field, and the plan asks for the path, shortened when possible. The server belongs to the same single user, so this was ruled not a fault of the build. Whether such a path is left out or shown is a choice about what the Machines page shows.
+
+## 1661. The dialog that adds a machine shows the commands of the old engine
+
+Found on 2026-11-26, when the Machines page was opened in a browser against the Go server. The page renders, and "Add machine" gets a real join token from the Go server. The dialog then shows two commands that do not exist for the Go client.
+
+1. Step 1 shows `npm install -g lgtm`. The Go client is installed by `deploy/install-client.sh`.
+2. Step 2 shows `lgtm client join <address> --token <token>`. The Go client's command is `lgtm-client join`.
+
+A person who follows the dialog cannot add a machine. A change to what the dialog shows needs the owner's approval.
+
+## 1662. The website shows sample repositories and agents beside the real Machines page
+
+Found on 2026-11-26 in the same look. After sign-in against the Go server, the Machines page shows real data, which is no machine at first. The sidebar and the Home page still show the sample repositories, teams, agents and seven waiting requests of the website's built-in sample data. Wave 1 of the Go server answers only the calls of sign-in and machines. A person cannot tell which parts of the page are real. Whether the website hides the parts that the server does not answer yet is a choice about what the page shows.
