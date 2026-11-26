@@ -137,6 +137,7 @@ func (r *clientRun) attempt(ctx context.Context, welcomed func()) error {
 		return errStream
 	}
 	if retire != nil {
+		retire = sync.OnceFunc(retire)
 		defer retire()
 	}
 	s, err := openSession(ctx, client, r.opts.Server, r.opts.Credential)
@@ -151,7 +152,7 @@ func (r *clientRun) attempt(ctx context.Context, welcomed func()) error {
 
 	live := &liveSession{run: r}
 	r.live = live
-	restart, err := live.serve(ctx, s)
+	restart, err := live.serve(ctx, s, retire)
 	r.commands.setSession(nil)
 	r.live = nil
 
@@ -342,7 +343,7 @@ func (l *liveSession) approved() bool {
 	return l.run.commands.state.GetApproval() == linkv1.Approval_APPROVAL_APPROVED
 }
 
-func (l *liveSession) serve(ctx context.Context, s *session) (_ bool, err error) {
+func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (restart bool, err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	wire := runSessionIO{send: s.send, receive: s.receive}
 	if wrapRunSessionIO != nil {
@@ -389,6 +390,12 @@ func (l *liveSession) serve(ctx context.Context, s *session) (_ bool, err error)
 		cancel()
 		silence.Stop()
 		timingMu.Unlock()
+		if restart && retire != nil {
+			// Close the connection before joining workers because the peer
+			// can leave a transport write blocked after request cancellation.
+			s.cancel()
+			retire()
+		}
 		_ = s.close()
 		workers.Wait()
 		s.welcome.ConnectionToken = ""
@@ -508,6 +515,7 @@ func (l *liveSession) serve(ctx context.Context, s *session) (_ bool, err error)
 	ready := make(chan struct{})
 	close(ready)
 	var restartDeadline <-chan time.Time
+	requestClosed := false
 
 	busy, haveEvents := false, true
 	handle := func(reply streamReply) error {
@@ -539,8 +547,14 @@ func (l *liveSession) serve(ctx context.Context, s *session) (_ bool, err error)
 	}
 	for ctx.Err() == nil {
 		restarting := restartDeadline != nil
-		if restarting && !busy && len(l.results) == 0 {
-			return true, nil
+		if restarting && !busy && len(l.results) == 0 && !requestClosed {
+			// Send hands bytes to the local request pipe. Close the request
+			// side and let the peer finish before canceling, within the same
+			// restart deadline.
+			if err := s.closeRequest(); err != nil {
+				return true, nil
+			}
+			requestClosed = true
 		}
 		var dispatch <-chan struct{}
 		if !busy && sendErr == nil && (len(l.results) != 0 ||
