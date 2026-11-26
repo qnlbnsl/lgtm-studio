@@ -1,11 +1,13 @@
 // Package machines keeps the server's record of machines and their join tokens.
-//
-// This file is a STUB of the test writer. The builder replaces every body.
 package machines
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
@@ -55,7 +57,7 @@ type NewMachine struct {
 	HostsServer bool
 }
 
-// Querier is what Get and List need. Both *store.Tx and *store.ReadTx satisfy it.
+// Querier provides reads within either a read or a write transaction.
 type Querier interface {
 	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
@@ -67,34 +69,153 @@ type Registry struct{}
 // NewRegistry returns the registry.
 func NewRegistry() *Registry { return &Registry{} }
 
-// CreateWaiting inserts a waiting machine at revision 1 and records `machines` saved.
+const machineColumns = `id, public_key, host_name, name, approval, state_revision, hosts_server,
+token_id, joined_at, approved_at, facts, harnesses, harnesses_scanned, last_seen_at, last_address`
+
+func scanMachine(row pgx.Row) (Machine, error) {
+	var m Machine
+	if err := row.Scan(&m.ID, &m.PublicKey, &m.HostName, &m.Name, &m.Approval, &m.StateRevision,
+		&m.HostsServer, &m.TokenID, &m.JoinedAt, &m.ApprovedAt, &m.Facts, &m.Harnesses,
+		&m.HarnessesScanned, &m.LastSeenAt, &m.LastAddress); err != nil {
+		return Machine{}, err
+	}
+	return m, nil
+}
+
+// CreateWaiting inserts a waiting machine at revision 1 and records the change.
 func (r *Registry) CreateWaiting(ctx context.Context, tx *store.Tx, in NewMachine) (Machine, error) {
-	return Machine{}, nil
+	id, err := store.NewID()
+	if err != nil {
+		return Machine{}, err
+	}
+	m, err := scanMachine(tx.QueryRow(ctx, `
+INSERT INTO machines (id, public_key, host_name, approval, state_revision, hosts_server, token_id)
+VALUES ($1, $2, $3, 'waiting', 1, $4, $5)
+RETURNING `+machineColumns, id, in.PublicKey, in.HostName, in.HostsServer, in.TokenID))
+	if err != nil {
+		return Machine{}, err
+	}
+	if err := recordMachineChange(tx, id, store.Saved); err != nil {
+		return Machine{}, err
+	}
+	return m, nil
 }
 
 // Get returns the machine or ErrNoMachine.
 func (r *Registry) Get(ctx context.Context, q Querier, id string) (Machine, error) {
-	return Machine{}, nil
+	m, err := scanMachine(q.QueryRow(ctx, `SELECT `+machineColumns+` FROM machines WHERE id = $1`, id))
+	if err == pgx.ErrNoRows {
+		return Machine{}, ErrNoMachine
+	}
+	return m, err
 }
 
 // List returns every machine ordered by joined_at, then id.
-func (r *Registry) List(ctx context.Context, q Querier) ([]Machine, error) { return nil, nil }
+func (r *Registry) List(ctx context.Context, q Querier) ([]Machine, error) {
+	rows, err := q.Query(ctx, `SELECT `+machineColumns+` FROM machines ORDER BY joined_at, id`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (Machine, error) {
+		return scanMachine(row)
+	})
+}
 
-// SetApproved approves a waiting machine under a normalized name, or returns ErrNotWaiting or ErrNameTaken.
-func (r *Registry) SetApproved(ctx context.Context, tx *store.Tx, id, name string) error { return nil }
+// SetApproved approves a waiting machine under a normalized name.
+func (r *Registry) SetApproved(ctx context.Context, tx *store.Tx, id, name string) error {
+	name, err := NormalizeName(name)
+	if err != nil {
+		return err
+	}
+	var approval Approval
+	err = tx.QueryRow(ctx, `SELECT approval FROM machines WHERE id = $1 FOR NO KEY UPDATE`, id).Scan(&approval)
+	if err == pgx.ErrNoRows {
+		return ErrNoMachine
+	}
+	if err != nil {
+		return err
+	}
+	if approval != ApprovalWaiting {
+		return ErrNotWaiting
+	}
+	_, err = tx.Exec(ctx, `
+UPDATE machines
+SET name = $2, approval = 'approved', approved_at = clock_timestamp(), state_revision = state_revision + 1
+WHERE id = $1`, id, name)
+	if err != nil {
+		return nameWriteError(err)
+	}
+	return recordMachineChange(tx, id, store.Saved)
+}
 
 // SetName renames a machine and reports whether anything changed.
 func (r *Registry) SetName(ctx context.Context, tx *store.Tx, id, name string) (bool, error) {
-	return false, nil
+	name, err := NormalizeName(name)
+	if err != nil {
+		return false, err
+	}
+	var current string
+	err = tx.QueryRow(ctx, `SELECT name FROM machines WHERE id = $1 FOR NO KEY UPDATE`, id).Scan(&current)
+	if err == pgx.ErrNoRows {
+		return false, ErrNoMachine
+	}
+	if err != nil || current == name {
+		return false, err
+	}
+	_, err = tx.Exec(ctx, `UPDATE machines SET name = $2, state_revision = state_revision + 1 WHERE id = $1`, id, name)
+	if err != nil {
+		return false, nameWriteError(err)
+	}
+	if err := recordMachineChange(tx, id, store.Saved); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // Delete removes a machine of any standing, or returns ErrNoMachine.
-func (r *Registry) Delete(ctx context.Context, tx *store.Tx, id string) error { return nil }
+func (r *Registry) Delete(ctx context.Context, tx *store.Tx, id string) error {
+	tag, err := tx.Exec(ctx, `DELETE FROM machines WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNoMachine
+	}
+	return recordMachineChange(tx, id, store.Removed)
+}
 
 // DeleteWaiting removes the machine only if it still waits, and reports whether it did.
 func (r *Registry) DeleteWaiting(ctx context.Context, tx *store.Tx, id string) (bool, error) {
-	return false, nil
+	tag, err := tx.Exec(ctx, `DELETE FROM machines WHERE id = $1 AND approval = 'waiting'`, id)
+	if err != nil || tag.RowsAffected() == 0 {
+		return false, err
+	}
+	if err := recordMachineChange(tx, id, store.Removed); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // NormalizeName trims spaces and checks the rules of a machine's name.
-func NormalizeName(name string) (string, error) { return "", nil }
+func NormalizeName(name string) (string, error) {
+	if !utf8.ValidString(name) || strings.ContainsFunc(name, unicode.IsControl) {
+		return "", ErrInvalidName
+	}
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > 64 {
+		return "", ErrInvalidName
+	}
+	return name, nil
+}
+
+func nameWriteError(err error) error {
+	var dbErr *store.Error
+	if errors.As(err, &dbErr) && dbErr.SQLState == "23505" && dbErr.Constraint == "machines_approved_name" {
+		return ErrNameTaken
+	}
+	return err
+}
+
+func recordMachineChange(tx *store.Tx, id string, change store.Change) error {
+	return tx.Record(store.ChangeRef{Topic: "machines", Key: id, Change: change})
+}

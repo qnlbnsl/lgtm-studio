@@ -7,9 +7,6 @@ import (
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/store"
 )
 
-// The migration files are copied from the plan by the test writer, so that the tests can reach the tables.
-// The builder owns them from here on.
-//
 //go:embed migrations/*.sql
 var embeddedMigrations embed.FS
 
