@@ -36,6 +36,11 @@ var (
 
 	canonicalUUID   = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
 	errJoinRedirect = errors.New("enroll: join endpoint redirected the request")
+	errFrameDebug   = errors.New("link: disable GODEBUG=http2debug before connecting")
+
+	// The Go HTTP/2 transport enables payload logging at process startup
+	// using these substring checks on GODEBUG.
+	inheritedHTTPDebug = os.Getenv("GODEBUG")
 )
 
 const (
@@ -196,6 +201,9 @@ func Join(ctx context.Context, f *state.Folder, address, token, hostName string,
 	if err != nil {
 		return Server{}, err
 	}
+	if err := CheckFrameDebug(); err != nil {
+		return Server{}, err
+	}
 	httpClient, err := transport.NewHTTPClient(origin, decoded.GetCertificateKeySha256())
 	if err != nil {
 		return Server{}, JoinError{Code: "invalid_token"}
@@ -215,8 +223,9 @@ func Join(ctx context.Context, f *state.Folder, address, token, hostName string,
 		MachinePublicKey: key.PublicKey(),
 		HostName:         joinHostName(hostName),
 	}
-	client := linkv1connect.NewLinkServiceClient(httpClient, origin, connect.WithReadMaxBytes(64<<10))
-	reply, err := joinWithRetry(ctx, client, request, onRetry)
+	joinHTTP := &joinHTTPClient{Client: httpClient}
+	client := linkv1connect.NewLinkServiceClient(joinHTTP, origin, connect.WithReadMaxBytes(64<<10))
+	reply, err := joinWithRetry(ctx, client, joinHTTP, request, onRetry)
 	if err != nil {
 		return Server{}, err
 	}
@@ -232,6 +241,30 @@ func Join(ctx context.Context, f *state.Folder, address, token, hostName string,
 		ClientPublicKey: request.GetMachinePublicKey(), PublicKey: reply.GetServerPublicKey(),
 		CertificateKeySHA256: decoded.GetCertificateKeySha256(),
 	}, nil
+}
+
+// CheckFrameDebug refuses credential exchanges when the transport may log payloads.
+func CheckFrameDebug() error {
+	if strings.Contains(inheritedHTTPDebug, "http2debug=1") || strings.Contains(inheritedHTTPDebug, "http2debug=2") {
+		return errFrameDebug
+	}
+	return nil
+}
+
+// joinHTTPClient records the HTTP status and media type for the current Join attempt.
+type joinHTTPClient struct {
+	*http.Client
+	status      int
+	contentType string
+}
+
+func (c *joinHTTPClient) Do(request *http.Request) (*http.Response, error) {
+	response, err := c.Client.Do(request)
+	if err == nil {
+		c.status = response.StatusCode
+		c.contentType = response.Header.Get("Content-Type")
+	}
+	return response, err
 }
 
 func requireUnenrolled(paths state.Paths) error {
@@ -300,7 +333,7 @@ func joinHostName(name string) string {
 	return name[:end]
 }
 
-func joinWithRetry(ctx context.Context, client linkv1connect.LinkServiceClient, request *linkv1.JoinRequest, onRetry func()) (*linkv1.JoinResponse, error) {
+func joinWithRetry(ctx context.Context, client linkv1connect.LinkServiceClient, joinHTTP *joinHTTPClient, request *linkv1.JoinRequest, onRetry func()) (*linkv1.JoinResponse, error) {
 	deadline := joinNow().Add(joinBudget)
 	backoff := time.Second
 	for {
@@ -312,6 +345,7 @@ func joinWithRetry(ctx context.Context, client linkv1connect.LinkServiceClient, 
 			return nil, JoinError{Code: "join_timeout"}
 		}
 		attempt, cancel := context.WithTimeout(ctx, min(joinAttemptTimeout, remaining))
+		joinHTTP.status, joinHTTP.contentType = 0, ""
 		reply, err := client.Join(attempt, connect.NewRequest(request))
 		cancel()
 		if stopped := ctx.Err(); stopped != nil {
@@ -320,7 +354,7 @@ func joinWithRetry(ctx context.Context, client linkv1connect.LinkServiceClient, 
 		if err == nil {
 			return reply.Msg, nil
 		}
-		if final := joinRefusal(err); final != nil {
+		if final := joinRefusal(err, joinHTTP.status, joinHTTP.contentType); final != nil {
 			return nil, final
 		}
 
@@ -343,7 +377,7 @@ func joinWithRetry(ctx context.Context, client linkv1connect.LinkServiceClient, 
 	}
 }
 
-func joinRefusal(err error) error {
+func joinRefusal(err error, status int, contentType string) error {
 	// Transport and RPC errors may contain server-controlled text.
 	switch {
 	case errors.Is(err, transport.ErrCertificateKeyMismatch):
@@ -353,6 +387,17 @@ func joinRefusal(err error) error {
 	}
 	var remote *connect.Error
 	if !errors.As(err, &remote) {
+		return nil
+	}
+	if !connect.IsWireError(err) {
+		code := remote.Code()
+		// Connect's unary Protobuf reply requires HTTP 200 and application/proto.
+		// A network error while reading a response with that shape can still retry.
+		if code == connect.CodeResourceExhausted || (status >= 200 && status < 300 &&
+			(status != http.StatusOK || contentType != "application/proto" ||
+				code == connect.CodeInvalidArgument || code == connect.CodeInternal)) {
+			return JoinError{Code: "invalid_reply"}
+		}
 		return nil
 	}
 	switch remote.Code() {
@@ -365,10 +410,6 @@ func joinRefusal(err error) error {
 		}
 	case connect.CodeInvalidArgument:
 		return JoinError{Code: "invalid_argument"}
-	case connect.CodeResourceExhausted:
-		if !connect.IsWireError(err) {
-			return JoinError{Code: "invalid_reply"}
-		}
 	}
 	return nil
 }
