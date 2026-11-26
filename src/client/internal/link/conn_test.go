@@ -216,6 +216,7 @@ func welcomeFrame(w *linkv1.Welcome) *linkv1.OpenResponse {
 
 func goodWelcome() *linkv1.Welcome {
 	return &linkv1.Welcome{
+		ConnectionToken: "fixture-approved-token",
 		State:           &linkv1.MachineState{Approval: linkv1.Approval_APPROVAL_APPROVED, Name: "build-1", Revision: 3},
 		LastEventNumber: 7,
 		ServerTime:      timestamppb.New(time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)),
@@ -443,13 +444,13 @@ func TestOpenProofFixture(t *testing.T) {
 				t.Fatalf("the server saw %d hellos, %d proofs and %d other frames", hellos, proofs, others)
 			}
 			if !proto.Equal(sess.welcome, welcome) {
-				t.Fatalf("the session holds welcome %v, want %v", sess.welcome, welcome)
+				t.Fatal("the session changed the approved welcome")
 			}
 			if sess.welcome.GetLastEventNumber() != 7 {
 				t.Fatalf("the session lost the last event number")
 			}
-			if sess.welcome.GetConnectionToken() != "" {
-				t.Fatal("a welcome without a token gained one")
+			if sess.welcome.GetConnectionToken() != welcome.GetConnectionToken() {
+				t.Fatal("the approved session did not retain its token")
 			}
 			if beforeErr == nil && afterErr == nil {
 				if !sess.sentAtOK || sess.sentAt < before || sess.sentAt > after {
@@ -648,6 +649,7 @@ func TestOpenRejectsWrongProofAndOrder(t *testing.T) {
 		{name: "a waiting welcome that carries a token", proofAllowed: true, script: afterProof(func() *linkv1.OpenResponse {
 			w := goodWelcome()
 			w.State.Approval = linkv1.Approval_APPROVAL_WAITING
+			w.State.Name = ""
 			w.ConnectionToken = "fake-token-1"
 			return welcomeFrame(w)
 		})},
@@ -659,7 +661,7 @@ func TestOpenRejectsWrongProofAndOrder(t *testing.T) {
 				s, client, server, cred := startScene(t, p, c.script)
 				sess, err := open(t, client, server, cred)
 				if err == nil {
-					t.Fatalf("openSession accepted the stream: %+v", sess.welcome)
+					t.Fatal("openSession accepted a malformed handshake")
 				}
 				if sess != nil {
 					t.Fatal("openSession returned a session together with an error")
@@ -714,6 +716,9 @@ func TestOpenRejectsWrongProofAndOrder(t *testing.T) {
 				t.Run(c.name, func(t *testing.T) {
 					w := goodWelcome()
 					w.State.Approval = c.approval
+					if c.approval == linkv1.Approval_APPROVAL_WAITING {
+						w.State.Name = ""
+					}
 					w.ConnectionToken = c.token
 					_, client, server, cred := startScene(t, p, honest(w))
 					sess, err := open(t, client, server, cred)
@@ -721,7 +726,7 @@ func TestOpenRejectsWrongProofAndOrder(t *testing.T) {
 						t.Fatalf("openSession: %v", err)
 					}
 					if got := sess.welcome.GetConnectionToken(); got != c.wantToken {
-						t.Fatalf("the session keeps token %q, want %q", got, c.wantToken)
+						t.Fatal("the session kept or discarded the wrong token")
 					}
 					if c.approval == linkv1.Approval(99) || c.approval == linkv1.Approval_APPROVAL_UNSPECIFIED {
 						if sess.welcome.GetState().GetApproval() != linkv1.Approval_APPROVAL_WAITING {
@@ -751,7 +756,7 @@ func TestOpenRejectsWrongProofAndOrder(t *testing.T) {
 				t.Fatalf("openSession: %v", err)
 			}
 			if !proto.Equal(sess.welcome, w) {
-				t.Fatalf("the session holds %v, want %v", sess.welcome, w)
+				t.Fatal("the session changed the largest planned welcome")
 			}
 		})
 	}
