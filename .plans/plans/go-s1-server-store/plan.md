@@ -13,7 +13,7 @@ epic: go-rewrite
 
 The server needs one place to write its records before sign-in or the Machines page starts using PostgreSQL. This sprint gives each server part a way to bring its tables up to date and change them inside a transaction. It keeps a feed of what changed so the website can start from a full list and then receive individual updates.
 
-The main risk is a lost update when two writes commit out of order. PostgreSQL assigns each feed position while the store holds a lock that ends with the transaction. A test pauses the first writer after it has a position. The test must show that removing the lock lets the second writer become visible first.
+The main risk is a lost update when two writes commit out of order. PostgreSQL assigns each feed position while the store holds a lock that ends with the transaction. A test pauses the first writer after it has a position. Removing the lock must let a later writer become visible first. Moving the lock after position assignment must also fail the test.
 
 The sprint ends with tests against real PostgreSQL. Starting the server and opening a stream from the Machines page belong to later sprints.
 
@@ -21,9 +21,9 @@ The sprint ends with tests against real PostgreSQL. Starting the server and open
 
 A server part writes its own records and tells the store which records changed. The store writes the feed at the end of that same transaction. The feed holds record identifiers, and a reader gets the current record from the part that owns it.
 
-A successful call can keep its reply for retries when the caller supplies a request key. The store checks that the caller, operation and request body match before it returns the saved reply. The retention sweep removes receipts older than a day.
+A successful call can keep its reply for retries when the caller supplies a request key. The store checks that the caller, operation and request body match before it returns the saved reply. The retention sweep keeps receipts for at least a day after they become visible. The owner still has a choice about retrying calls that contain or return credentials.
 
-Each open Watch stream begins with a snapshot. One reader per server checks for changes every two seconds and also wakes on a database notification. A stream that falls 2,048 changes behind is disconnected so it can open with a new snapshot.
+Each open Watch stream begins with a snapshot. One reader per server checks for changes every two seconds and also wakes on a database notification. A stream that reaches the lag limit is disconnected so it can open with a new snapshot. A stream also ends when the session that opened it stops authorizing access.
 
 See [the decision log](decisions.md).
 
@@ -43,10 +43,11 @@ A Watch reads its first list and its feed position from one view of the database
 
 ## Rollout order
 
-1. Use the root Go module and shared Watch shape from sprint 0. Give the integration tests a PostgreSQL role that can create disposable databases.
-2. Establish the tables and numbered migrations on an empty database. Prove that a startup failure leaves the prior schema and version records intact.
-3. Run the server tests and the feed-lock mutation on the merged foundation. Compare the store and Watch interfaces with the parts that use them in later sprints.
-4. In later sprints, the server opens the store and applies the manifests before serving. It starts the follower and cleanup after the migrations succeed. No existing engine data is moved.
+1. The Contract team delivers the root Go module and shared Watch shape in sprint 0. In sprint 1 it owns the `github.com/jackc/pgx/v5 v5.13.0` change to `go.mod` and `go.sum`. The Server team lands the first driver import in the same integration change so the sprint 0 tidy check stays green. The Stack team supplies the disposable PostgreSQL test role in sprint 1. The role can create databases. The operations and production roles stay separate. (architect-r1 1, critic-r1 5) **UNREVIEWED MECHANISM**. Land the dependency with its use because an unused dependency would fail the existing tidy gate.
+2. Establish the tables on an empty database and test concurrent startup. The Stack team's sprint 1 draft specifies `deploy/test/with-postgres.sh -- <command>`. Stack writes it and Server tests consume its `LGTM_TEST_POSTGRES`. The contract is an isolated maintenance database login with `CREATEDB`.
+3. Verify the Server foundation before the later sprints. Server owns `src/server/internal/store/check-feed-lock.sh` and Stack owns the thin executable `deploy/test/mutate-feed-lock.sh` for the sprint 1 C12 check. Stack's wrapper invokes the Server script with `LGTM_TEST_POSTGRES`. `deploy/test/checks.sh` is the consumer of the wrapper. The orchestrator tracks these handoffs in the epic comparison. (architect-r1 1)
+4. In later sprints, the server applies the manifests before serving and starts the follower and cleanup. The sign-in and Machines plans supply the session authorizer and the real stream sender. The owner needs to settle the behavior of retries that carry or return credentials before those calls adopt receipts.
+
 
 ---
 <!-- ⛔ implementation details and gate evidence below; owner overview is complete -->
@@ -57,6 +58,8 @@ The Server team builds the two folders named in the brief. The Contract team own
 
 Phase 4 of the build loop applies to each item. The test writer uses the stated fixtures and compiles the tests against stubs if needed. The first run must fail on the named assertion. A test of a race treats a bounded timeout only as a fixture failure. The lock tests also assert that the writer reaches the expected gate before returning, so an empty stub can fail a behavior assertion. The builder keeps the frozen tests. The lead checks the exact commit, runs the named mutations on a disposable branch, and runs merged tests before moving the lead branch.
 
+The implementation tables abbreviate workstream as WS. The decision log marks the superseded sprint-cut row as closed by its dated replacement. Unanswered implementation choices are documented build assumptions. **UNREVIEWED MECHANISM** (critic-r1 12). The plan retains the vendor counts because they are part of the sizing gate.
+
 **WS-1. Parts can store state and upgrade their own tables**
 
 A later server part gets typed access to its own tables through the store. Startup applies the numbered changes that the part registers. Tests exercise separate databases, including when packages run at the same time.
@@ -65,9 +68,9 @@ A later server part gets typed access to its own tables through the store. Start
 
 | # | Criterion | Observed by |
 |---|---|---|
-| 1 | Parallel tests can create the same table name in separate empty databases. The helper removes its databases and the store rolls back canceled work. | `TestDatabasesAreIsolated` and `TestTransactionsReleaseConnection`. |
+| 1 | Parallel tests use separate empty databases. Canceling a write returns the connection. Waiting writers leave room for a reader. | `TestDatabasesAreIsolated`, `TestTransactionsReleaseConnection` and `TestWritersCannotStarveReaders`. |
 | 2 | An identifier contains the version, variant and timestamp of a version 7 universally unique identifier (UUID). | `TestNewIDVersionAndTime` and `TestUUIDv7EntropyFailure`. |
-| 3 | Concurrent startup applies each numbered change once per part. A failed batch leaves its tables and recorded versions unchanged. | `TestMigrateConcurrentStarts`, `TestMigrateFailureRollsBack` and `TestMigrateValidatesManifest`. |
+| 3 | Concurrent startup applies each numbered change once per part. A failed batch leaves its tables and recorded versions unchanged. | `TestMigrateColdConcurrentStarts`, `TestMigrateConcurrentStarts`, `TestMigrateFailureRollsBack` and `TestMigrateValidatesManifest`. |
 
 **Tasks**
 
@@ -75,41 +78,62 @@ A later server part gets typed access to its own tables through the store. Start
 |---|---|---|
 | 1 | Open the pool, define the query handles and isolate tests. | `src/server/internal/store/pool.go` `Open`, `Read`, `withWrite` and `src/server/internal/store/storetest/postgres.go` `NewDatabase`. See S1 in [scouting.md](scouting.md). |
 | 2 | Generate identifiers in Go. | `src/server/internal/store/ids.go` `NewID`. See S2 in [scouting.md](scouting.md). |
-| 3 | Load and apply the migration manifests and create the store tables. | `src/server/internal/store/migrate.go` `Migrate` and `src/server/internal/store/migrations/0001_store.sql` `schema_migrations`, `feed`, `feed_retention` and `receipts`. See S3 in [scouting.md](scouting.md). |
+| 3 | Load and apply the migration manifests and create the store tables. | `src/server/internal/store/migrate.go` `Migrate` and `src/server/internal/store/migrations/0001_store.sql` `feed`, `feed_retention` and `receipts`. See S3 in [scouting.md](scouting.md). |
 
 **1. Connection pool, query handles and test isolation**
 
 Create `src/server/internal/store/pool.go`, `src/server/internal/store/pool_test.go` and `src/server/internal/store/storetest/postgres.go`. This item needs the root module and the driver's dependency entries from the Contract team. Item 2 can run beside it. It implements D2, D3, D4, R3, R7, R10 and C12.
 
-The store uses `github.com/jackc/pgx/v5`, the driver named in the design's PostgreSQL check. Its query handles have the following public surface. Item 4 implements `Tx` with the same three query methods as `ReadTx` and adds `Record`.
+The store uses `github.com/jackc/pgx/v5`, the driver named in the design's PostgreSQL check. Its query handles have the following public surface. Item 1 writes only the read handle. Item 4 writes `Tx` in `feed.go`. (critic-r1 10)
 
 ```go
 type Store struct { /* private pool and configuration */ }
 type ReadTx struct { /* private transaction */ }
-type Tx struct { /* private transaction and pending changes */ }
 
-func Open(ctx context.Context, config *pgxpool.Config) (*Store, error)
+type ConnectionPolicy struct {
+    AllowPrivateStackPostgres bool
+}
+
+type Error struct {
+    SQLState   string
+    Constraint string
+}
+
+func (e *Error) Error() string
+func (e *Error) Retryable() bool
+func Open(ctx context.Context, config *pgxpool.Config, policy ConnectionPolicy) (*Store, error)
 func (s *Store) Close()
 func (s *Store) Read(ctx context.Context, read func(context.Context, *ReadTx) error) error
 
 func (tx *ReadTx) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 func (tx *ReadTx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
 func (tx *ReadTx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
-func (tx *Tx) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
-func (tx *Tx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
-func (tx *Tx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
 ```
 
-`Open` copies the parsed configuration and pings before returning. `Read` begins a read-only `REPEATABLE READ` transaction. The private `func (s *Store) withWrite(ctx context.Context, write func(context.Context, pgx.Tx) error) error` runs a read-write `READ COMMITTED` transaction without automatic retries. Store code alone commits or rolls back. The caller closes query rows and uses the handle only during its callback. If a callback fails, panics or is canceled, roll back using a bounded cleanup context independent of the caller. Return callback or commit errors to the caller. An ambiguous commit error can be retried by the caller with the same request key. Application queries use parameters for values. The part owns its queries and table changes.
+`Open` copies the parsed configuration and pings within five seconds. An open failure says “The database connection failed, check the PostgreSQL connection settings.” It requires at least eight pooled connections. It installs connection defaults of `idle_in_transaction_session_timeout=30s` and `statement_timeout=15s`. It uses transmission control protocol (TCP) keepalives with a 30-second idle period. The Store admits at most `MaxConns - 3` domain writers before pool acquisition. `Read` and the follower can use the reserved capacity. Startup migrations and one maintenance worker may use one slot independently of writer admission. The listener connects separately. The Store team writes these limits. The later server startup configures the pool and the test helper supplies at least eight connections. (logic-r1 2, threat-r1 3, critic-r1 1, critic-r1 8)
 
-The real test helper exports `func NewDatabase(t testing.TB, schema string) *pgxpool.Config`. It reads `LGTM_TEST_POSTGRES` as a PostgreSQL connection string for an existing maintenance database. The test role needs `CREATEDB`. The helper fails the integration test if the variable is absent or provisioning fails. It creates a database from `template0` per test with a process-independent random name under PostgreSQL's identifier length limit. Quote the identifier with `pgx.Identifier.Sanitize`. The administrative connection remains in the maintenance database. There, issue `CREATE DATABASE <quoted-name> TEMPLATE template0` outside a transaction. Copy the parsed connection configuration, replace `ConnConfig.Database` and create a validated package schema such as `store_test` or `watch_test` inside the new database. Set `RuntimeParams["search_path"]` to that schema on the returned configuration. Raw test connections, the pool and the listener all use copies of that configuration. Close application connections before dropping their database. Register teardown immediately after creation so it runs on failure too. Confirm `DROP DATABASE <quoted-name> WITH (FORCE)` succeeds from the maintenance connection with a fresh bounded context. The database drop also removes the package schema. Use at least four connections in a test that needs competing writers, an observer and a listener. Separate tests use separate databases even when two processes run the same test package.
+`ConnectionPolicy` defaults to verified Transport Layer Security (TLS) for remote connections. Validate every configured endpoint including fallbacks before dialing. Local Unix sockets and loopback connections can use plaintext. The server bootstrap can allow plaintext to the exact private Compose service `postgres` when it is running inside the stack. For other endpoints, require a verified certificate chain and hostname as with `sslmode=verify-full`. Reject insecure or plaintext remote fallbacks. The dedicated listener uses the same validated configuration. Server Store writes the policy, the sprint 2 Server bootstrap supplies it and Stack owns the private network binding. **UNREVIEWED MECHANISM** (threat-r1 9). An explicit opt-in avoids trusting a hostname by itself.
+
+`Read` uses a read-only `REPEATABLE READ` transaction. The private `func (s *Store) withWrite(ctx context.Context, write func(context.Context, pgx.Tx) error) error` uses `READ COMMITTED` and a 30-second operation limit, including admission, queries and commit. It sets `SET LOCAL lock_timeout = '10s'` before domain code and any receipt or feed lock. It honors a shorter caller deadline. It rolls back on an error, cancellation or panic with independent cleanup bounded to one second. Discard a connection if cleanup cannot finish. The maintainer uses the same transaction rules without original domain-writer admission. The store owns transaction control. Callback authors close result rows, use parameters and leave transaction-control statements to the store. The store never re-executes a callback automatically. (architect-r1 7, critic-r1 1, logic-r1 2)
+
+At the Store boundary, replace PostgreSQL errors with `*Error` containing only the SQL state code (SQLSTATE), the declared constraint identifier if applicable and a fixed public sentence. Drop messages, row values, details and raw causes. Normalize errors returned by row reads and iterators as well as callback and commit errors. Context cancellation and domain errors keep their identity. `Retryable()` is true for `55P03`, `40P01` and `40001`. The service adapter maps them to Connect `aborted` with “The database was busy, retry the request.” An ambiguous keyed commit is retried with the same key. Adapters must avoid restarting an ambiguous unkeyed mutation. Store writes `Error`. The sweep, follower and later services read it. **UNREVIEWED MECHANISM** (threat-r1 8, architect-r1 7). Discarding the raw cause prevents later formatting from exposing row data.
+
+The Server fixture exports `func NewDatabase(t testing.TB, schema string) *pgxpool.Config`. It reads `LGTM_TEST_POSTGRES`. If absent, fail with “Set LGTM_TEST_POSTGRES to a disposable PostgreSQL maintenance database.” If it lacks the creation privilege, fail with “Give the LGTM_TEST_POSTGRES test role the database creation privilege.” Do not print the connection string. The test role connects to an existing maintenance database and creates a randomly named database via `CREATE DATABASE <quoted-name> TEMPLATE template0` outside a transaction. Quote the identifier with `pgx.Identifier.Sanitize`. Create the validated package schema inside the new database and set `search_path` in the copied test configuration.
+
+Register cleanup immediately. Close application connections before running `DROP DATABASE <quoted-name> WITH (FORCE)` from the maintenance connection with a fresh 10-second context. A killed process cannot run this cleanup. Use the disposable Stack wrapper to discard its entire instance after such a run. An operator who uses a different disposable test cluster removes only databases owned by that failed invocation. **UNREVIEWED MECHANISM** (critic-r1 8). The fixture cleans abandoned databases with the disposable instance rather than guessing whether another parallel run owns an old database.
+
+A fixture wait defaults to 15 seconds unless an item gives another bound. Assert arrival at a gate before evaluating a race. Silence checks last 250 milliseconds after their registration or synchronization barrier. Shared database gates belong to item 4. (critic-r1 3, critic-r1 10)
 
 Tests first in `pool_test.go`.
 
 - `TestDatabasesAreIsolated`. Run two parallel subtests with the same schema name. Before creating an identical table, assert it is absent from both databases. Insert a distinct value in each and read exactly that value. Assert that the database names differ. In the parent, after the parallel group completes, query the maintenance database for both names and assert that both are gone.
-- `TestTransactionsReleaseConnection`. Use a one-connection pool. Write a row, cancel the context in the callback and return its error. Open an independent transaction through the pool and assert that it can read promptly and that the row is absent. Repeat with a callback panic caught by the test. In a read transaction attempt an insert and assert the PostgreSQL read-only error. Check that opening a refused connection returns an error without returning a store.
+- `TestTransactionsReleaseConnection`. Use an eight-connection pool. Record pool acquisition counts before and after each case. Write a row, cancel the context in the callback and return its error. Open an independent transaction through the pool and assert that it can read within one second and that the row is absent. Repeat with a callback panic caught by the test. In a read transaction attempt an insert and assert the PostgreSQL read-only error. Check that opening a refused connection returns an error without returning a store.
 
-This item is risky because it sets the isolation level and controls transaction lifetime. Changing `Read` to a writable transaction must fail the read-only assertion. Changing its isolation to `READ COMMITTED` must fail `TestWatchSnapshotUsesOneTransaction` in item 9. Acceptance is the two tests above and the named downstream isolation mutation.
+- `TestWritersCannotStarveReaders`. Hold a transaction-level advisory lock on a separate PostgreSQL connection. Start eight domain writes on an eight-connection Store. Make their callbacks wait on that same lock. Assert through pool statistics that at most five writers hold a connection. Assert a `Read` completes within one second. Hold the gate past one write's 10-second lock wait and assert a sanitized retryable `55P03`. Cancel another waiter and check that its slot and connection return. Remove writer admission as the mutation. (threat-r1 3, logic-r1 2)
+- `TestOpenRefusesPlainRemote`. Exercise local socket, loopback, allowed stack host, verified remote host and a remote plaintext fallback. Validate the policy before dialing. Assert the two non-verified remote cases fail. (threat-r1 9)
+- `TestDatabaseErrorsHideValues`. Cause an actual SQL check violation and a unique conflict on fixture values. Check `%v`, `%+v` and an error-chain walk for absence of inserted values. Assert SQLSTATE and the declared constraint are retained. (threat-r1 8)
+
+This item is risky because it sets the isolation level and controls transaction lifetime. Changing `Read` to a writable transaction must fail the read-only assertion. Changing its isolation to `READ COMMITTED` must fail `TestWatchSnapshotUsesOneTransaction` in item 9. Acceptance is the named pool, error and policy tests plus the downstream isolation mutation.
 
 **2. Version 7 identifiers**
 
@@ -126,7 +150,7 @@ This item is risky because it sets the sortable time component. Encoding the tim
 
 **3. Numbered database changes and store tables**
 
-Create `src/server/internal/store/migrate.go`, `src/server/internal/store/migrate_test.go` and `src/server/internal/store/migrations/0001_store.sql`. This item needs item 1. It can run beside item 2. It implements D3, D4, D5, R1, R3, R7, R10 and C12.
+Create `src/server/internal/store/migrate.go`, `src/server/internal/store/migrate_test.go`, `src/server/internal/store/locks.go`, `src/server/internal/store/migrations/0001_store.sql`, `src/server/internal/store/storetest/migrated/store.go` and `src/server/internal/store/storetest/migrated/store_test.go`. This item needs item 1. It can run beside item 2. It implements D3, D4, D5, R1, R3, R7, R10 and C12.
 
 ```go
 type Migrations struct {
@@ -141,7 +165,11 @@ The startup caller passes each part explicitly. A part embeds `migrations/*.sql`
 
 Run startup in one read-write transaction. Acquire `SELECT pg_advisory_xact_lock(841941100002::bigint)` before creating the migration ledger with `CREATE TABLE IF NOT EXISTS` or reading it. Apply the embedded `store` part first and other parts in lexical order by name. Apply each part in number order. Update its last version in the same transaction as the migration. Run each trusted embedded SQL file as a whole using the driver's simple query mode without parameters. Migrations use transactional PostgreSQL statements and the part's own table names. Files already merged are append-only in the sense that a correction gets a new file and number. Startup returns an error before serving if validation or execution fails.
 
-The bootstrap ledger is `schema_migrations(part text PRIMARY KEY, version integer NOT NULL CHECK (version > 0))`. The first store migration creates the following exact tables.
+The Store team writes the reserved lock constants in `locks.go`. `feedLockID int64 = 841941100001` is used by the feed writer. `migrationLockID int64 = 841941100002` is used by `Migrate`. `receiptLockNamespace int32 = 1279743053` is used by `WriteOnce`. Parts may not allocate keys in these spaces. The first two locks use the single-integer key space. The receipt lock uses two integers. (architect-r1 9)
+
+The Server team also writes `func migrated.NewStore(t testing.TB, schema string, parts ...store.Migrations) *store.Store` in the dedicated `storetest/migrated` package. It provisions a database, opens it with the default local policy, applies migrations and registers Store close before database drop. Later part tests call this fixture. Store's own in-package tests import the database fixture without importing back into Store. **UNREVIEWED MECHANISM** (architect-r1 9). A subpackage avoids a Go import cycle. Freeze `TestNewMigratedStore` in the fixture package. Assert a registered part table exists on return and the database disappears after subtest cleanup.
+
+`Migrate` creates and writes the ledger, including the `store` row. `0001_store.sql` creates the three data tables below. (architect-r1 8, critic-r1 9) The bootstrap ledger is `schema_migrations(part text PRIMARY KEY, version integer NOT NULL CHECK (version > 0))`. The first store migration creates the following exact tables.
 
 ```sql
 CREATE TABLE feed (
@@ -150,7 +178,8 @@ CREATE TABLE feed (
     scope text NOT NULL,
     key text NOT NULL CHECK (key <> ''),
     change text NOT NULL CHECK (change IN ('saved', 'removed')),
-    written_at timestamptz NOT NULL DEFAULT clock_timestamp()
+    written_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    retention_started_at timestamptz
 );
 
 CREATE TABLE feed_retention (
@@ -161,25 +190,45 @@ CREATE TABLE feed_retention (
 INSERT INTO feed_retention (singleton, pruned_through) VALUES (true, 0);
 
 CREATE TABLE receipts (
-    request_key text PRIMARY KEY CHECK (octet_length(request_key) BETWEEN 1 AND 256),
+    principal_hash bytea NOT NULL CHECK (octet_length(principal_hash) = 32),
+    request_key text NOT NULL CHECK (octet_length(request_key) BETWEEN 1 AND 256),
+    fingerprint_version smallint NOT NULL CHECK (fingerprint_version > 0),
     request_hash bytea NOT NULL CHECK (octet_length(request_hash) = 32),
-    reply bytea NOT NULL,
-    written_at timestamptz NOT NULL DEFAULT clock_timestamp()
+    reply bytea NOT NULL CHECK (octet_length(reply) <= 65536),
+    written_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    retention_started_at timestamptz,
+    PRIMARY KEY (principal_hash, request_key)
 );
 
-CREATE INDEX receipts_written_at_request_key_idx
-    ON receipts (written_at, request_key);
+CREATE INDEX receipts_retention_idx
+    ON receipts (retention_started_at NULLS FIRST, principal_hash, request_key);
+
+CREATE FUNCTION reject_feed_insert_outside_flush() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    IF current_setting('lgtm.feed_flush', true) IS DISTINCT FROM 'on' THEN
+        RAISE EXCEPTION 'Feed entries must be written by the store flush.'
+            USING ERRCODE = '23514', CONSTRAINT = 'feed_requires_store_flush';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER feed_requires_store_flush
+    BEFORE INSERT ON feed
+    FOR EACH ROW EXECUTE FUNCTION reject_feed_insert_outside_flush();
 ```
 
-Feed keys and scopes are opaque text. An empty scope denotes a server-wide record. A receipt contains a digest and the successful reply bytes. The feed has no record payload. The primary key index serves ordered feed reads and prefix cleanup. The same store migration owns the retention row, which prevents a reader with an old cursor from silently stepping over deleted history. The store tables belong to the store. Future parts declare their own tables in their own manifests.
+The Server migration owner writes `retention_started_at` on both retention tables, the version and principal columns on `receipts`, the reply limit and the feed trigger. The feed and receipt writers read the constraints. The receipt and pruning workers read the receipt key. Item 6 alone fills the retention clock. (logic2-r1 1, logic2-r1 3, threat-r1 6, critic-r1 7, architect-r1 3) The guard catches accidental direct writes by repository parts. It assumes trusted application statements and migrations. The test fixture can enable it deliberately to arrange historical rows. Feed keys and scopes are opaque text. An empty scope denotes a server-wide record. A receipt contains a digest and the successful reply bytes. The feed has no record payload. The primary key index serves ordered feed reads and prefix cleanup. The same store migration owns the retention row, which prevents a reader with an old cursor from silently stepping over deleted history. The store tables belong to the store. Future parts declare their own tables in their own manifests.
 
 Tests first in `migrate_test.go`.
 
+- `TestMigrateColdConcurrentStarts`. Hold the migration advisory lock on an observer connection while two calls start on a database with no ledger. Wait for both advisory-lock waiters in `pg_locks`. Assert the waiting backends have started no ledger creation by observing their active statement and lock records. An uncommitted ledger can be invisible to another transaction, so invisibility alone is insufficient. Release the lock. Assert that both succeed and that the ledger contains `store=1` once. (critic-r1 2, logic-r1 10)
 - `TestMigrateConcurrentStarts`. Bootstrap the store ledger once, then register two new fixture parts with version 1 and a second change in one part. Launch two startup calls on separate connections. Have the first hold a gate inside its first migration. Assert that the second waits for the first on the startup advisory lock before the gate is released. Use `pg_locks` and `pg_blocking_pids` to distinguish the startup lock from the test gate and a catalog lock. Release the gate. Both calls succeed. Observe the store schema through the catalog. Assert the ledger values `store=1`, the first part at 2 and the second at 1. Assert that non-idempotent fixture inserts occur once and in version order. A third call leaves the rows and versions unchanged.
 - `TestMigrateFailureRollsBack`. Start with version 1 of a fixture part, then attempt version 2 that creates a new table followed by a failing statement. Assert an error, absence of the new table, and ledger version 1. Replace only the unmerged fixture file and assert a rerun records version 2.
 - `TestMigrateValidatesManifest`. Submit duplicate names, duplicate numbers, missing numbers and invalid paths as table-driven cases. Assert a refusal before any ledger or table appears. After a valid migration, submit an older or incomplete manifest and assert a refusal with the previous ledger intact.
 
-This item is risky because it controls schema order. Removing the startup advisory lock must fail `TestMigrateConcurrentStarts`. The three tests are the acceptance observations.
+This item is risky because it controls schema order. Removing the startup advisory lock must fail `TestMigrateConcurrentStarts`. Moving ledger creation before the lock must fail `TestMigrateColdConcurrentStarts`. The named tests are the acceptance observations.
 
 **Design artifact.** The database layer in the approved design supplies the brief. This workstream has no screen.
 
@@ -190,7 +239,7 @@ This item is risky because it controls schema order. Removing the startup adviso
 | Parallel tests or a canceled transaction leave pooled connections or test databases behind. | Medium | Use a fresh cleanup context and prove teardown against the maintenance database in item 1. |
 | Two startups apply the same migration or advance its ledger before its statements are durable. | High | Use one transaction and the startup advisory lock. Prove concurrent and failed starts in item 3. |
 
-**Verify.** Run `go test -race -count=1 ./src/server/internal/store/...` with `LGTM_TEST_POSTGRES` pointing to a disposable PostgreSQL 16 or newer. The required environment is a real instance with the database creation privilege. No device check is needed.
+**Verify.** Run `go test -race -count=1 ./src/server/internal/store/...` with `LGTM_TEST_POSTGRES` pointing to a disposable PostgreSQL 16 or newer. The required environment is the Stack test wrapper or an equivalent disposable instance with the database creation privilege. No device check is needed.
 
 **Rollout detail.** Step 1 makes the root Go module available and gives tests a PostgreSQL account. Step 2 applies `Migrate` before serving. Later server startup must close the store and report a migration error if startup cannot finish.
 
@@ -203,8 +252,8 @@ A part changes its current state and marks what changed in one transaction. The 
 | # | Criterion | Observed by |
 |---|---|---|
 | 4 | A later writer cannot expose a position past a lower uncommitted position. A failed commit leaves no visible state or feed entry. | `TestFeedPositionsFollowCommitOrder`, its lock-removal mutation, `TestFeedRollbackAndNotification` and `TestFeedLockStartsAtFlush`. |
-| 5 | A concurrent retry returns one stored reply. A mismatched retry is refused and a failed attempt leaves the key reusable. | `TestWriteOnceConcurrentRetry`, `TestWriteOnceMismatch` and `TestWriteOnceRollbackAndUnkeyed`. |
-| 6 | Cleanup removes expired feed entries and receipts while retaining the cutoff entries and part-owned tables. | `TestPruneCutoffAndWatermark` and `TestPrunePreservesFeedPrefix`. |
+| 5 | A concurrent retry returns one stored reply. A mismatched retry is refused and a failed attempt leaves the key reusable. | `TestWriteOnceConcurrentRetry`, `TestWriteOnceMismatch`, `TestWriteOnceVersionedReplay` and `TestWriteOnceRollbackAndUnkeyed`. |
+| 6 | Cleanup removes expired feed entries and receipts while retaining the cutoff entries and part-owned tables. | `TestPruneCutoffAndWatermark`, `TestPrunePreservesFeedPrefix` and `TestPruneStartsAgeAfterCommit`. |
 
 **Tasks**
 
@@ -216,9 +265,17 @@ A part changes its current state and marks what changed in one transaction. The 
 
 **4. Feed writes and commit order**
 
-Create `src/server/internal/store/feed.go` and `src/server/internal/store/feed_test.go`. This item needs items 1 and 3 and uses the `Tx` handle from item 1. It implements D3, D4, D5, R4, R7, R10 and C12. It can run beside item 2 if that item remains open, and it precedes items 5 and 7.
+Create `src/server/internal/store/feed.go`, `src/server/internal/store/feed_test.go`, `src/server/internal/store/storetest/gate.go` and `src/server/internal/store/check-feed-lock.sh`. This item owns `Tx` and needs items 1 and 3. Items 5, 7, 8 and 9 consume the test gates without editing them. (critic-r1 10) It implements D3, D4, D5, R4, R7, R10 and C12. It can run beside item 2 if that item remains open, and it precedes items 5 and 7.
 
 ```go
+type Tx struct { /* private transaction and pending changes */ }
+func (tx *Tx) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
+func (tx *Tx) Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+func (tx *Tx) QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+
+const MaxWriteChanges = 256
+var ErrTooManyChanges error
+
 type Change string
 
 const (
@@ -243,12 +300,16 @@ func (s *Store) Write(ctx context.Context, write func(context.Context, *Tx) erro
 func (tx *Tx) Record(change ChangeRef) error
 ```
 
-The callback writes current state and calls `Record` for each changed domain record using a non-secret reference. Treat a `Record` error as an error of the callback. Validate nonempty topic and key, valid PostgreSQL text, and the two change values before buffering. Callbacks that change no domain record may leave the buffer empty. A part executes no SQL on the store's tables and its callback performs no external side effects. A watched record uses one topic and one scope per entry. The server-wide scope is the empty string. Keys for new records come from `NewID` when the domain owns the identifier.
+The callback writes current state and calls `Record` for each changed domain record using a non-secret reference. `Record` validates topic, scope and key as PostgreSQL text. Topic and key must be nonempty. It accepts only `saved` and `removed`. Its first error poisons the transaction, even if the caller ignores the result. The 257th reference returns `ErrTooManyChanges`. A part whose larger operation permits smaller atomic units splits it explicitly. Otherwise the operation returns the bound error without partial changes. A record that moves scope emits `removed` in the old scope followed by `saved` in the new scope in the same write. The Store team writes the limit and sentinel. Domain services read them and own the operation boundaries. (threat-r1 4, critic-r1 6, logic-r1 11)
 
-After the callback and any receipt insert succeed, a write with pending changes runs these statements on its transaction. The flush inserts buffered changes in their recorded order. The request's current transaction commits immediately after the notification statement.
+After a successful callback and any receipt insert, execute `SET CONSTRAINTS ALL IMMEDIATE` before taking the feed lock. This runs pending deferred checks while no feed lock is held. The production feed migration contains no deferred checks or triggers that can acquire domain locks during commit. Store callbacks use no transaction-control or store-owned configuration statements. The database guard rejects direct feed inserts without the flush flag. It is a guard against accidental use by application code. (critic-r1 1, logic2-r1 4, threat-r1 10, architect-r1 3, threat-r1 5)
+
+If changes are buffered, enqueue the following statements in order in one `pgx.Batch`. For each reference queue one parameterized insert, in `Record` order. Close and drain the batch before committing. A writer with no buffered change skips the batch. **UNREVIEWED MECHANISM** (critic-r1 1, logic-r1 2, threat-r1 4). One ordered batch avoids a request and response for each entry after the lock. It also makes the identity allocation order explicit without relying on execution order inside a multi-row statement.
 
 ```sql
 SELECT pg_advisory_xact_lock(841941100001::bigint);
+
+SELECT set_config('lgtm.feed_flush', 'on', true);
 
 INSERT INTO feed (topic, scope, key, change)
 VALUES ($1, $2, $3, $4);
@@ -256,15 +317,26 @@ VALUES ($1, $2, $3, $4);
 SELECT pg_notify('lgtm_feed_changed', '');
 ```
 
-Only the store allocates positions. The identity uses a sequence with cache size 1, so a pooled session cannot hold a range of future positions. Gaps from rolled-back allocations are valid. Positions, rather than timestamps or notification order, are the cursor. PostgreSQL releases the advisory lock at transaction end. A database snapshot can therefore observe a prefix of committed positions. This applies when the snapshot reads the one writer or its physical standby. The empty notification is a wake-up hint. PostgreSQL makes it visible on commit with the rows. Position allocation and `written_at` occur in the final flush. `written_at` is the database clock at insertion, immediately before the commit attempt in ordinary operation. PostgreSQL cannot fill a column with the exact commit timestamp from that same transaction. This approximation is recorded in [decisions.md](decisions.md).
+The identity sequence has cache size 1. Rollback can leave positions unused. Positions are the cursor. They are assigned under the lock and become visible as a committed prefix on the writer or a physical standby. The empty notification takes effect on commit. PostgreSQL releases the lock at transaction end. The store records `written_at` during insertion. Item 6 starts retention from committed visibility instead of this approximation.
+
+A slow commit can hold the feed lock until PostgreSQL finishes the transaction. This delays other feed writers. It does not itself lock readers or writers with no pending changes. Normal domain locks still apply. The ten-second lock wait and reserved pool capacity are specified in item 1. Use its retryable errors at the service boundary. **UNREVIEWED MECHANISM** (architect-r1 7, threat-r1 10). Retrying is a caller action with the same key, so the store never runs an arbitrary callback twice.
+
+**Test seams.** Server item 4 writes `func WaitForBlock(t testing.TB, observer *pgx.Conn, waiter, blocker int32, key int64)` in `storetest/gate.go`. It polls `pg_locks` and `pg_blocking_pids` every 10 milliseconds for at most 15 seconds. Use `objsubid = 1` and reconstruct the bigint key as `(classid::bigint << 32) | objid::bigint`. The SQL helper `func HoldAdvisoryGate(t testing.TB, observer *pgx.Conn, key int64) func()` takes a session lock and returns a cleanup-registered idempotent release function. The test observer reads writer identities using `SELECT pg_backend_pid()` emitted from each transaction callback. Use fixture `records(id text PRIMARY KEY, value text NOT NULL)`, topic `records`, scope `''` and disjoint keys `a` and `b`.
+
+The feed tests install a deferred constraint trigger `feed_test_gate` on `feed`. Its body runs `PERFORM pg_advisory_xact_lock(841941100901::bigint)` only for `NEW.key = 'a'` and then returns `NEW`. In failure tests its body can instead raise for that key. Store item 4 defines a private per-Store fixture seam with `afterConstraints func(context.Context, pgx.Tx) error` and `beforeCommit func(context.Context, pgx.Tx) error` callbacks, nil in production. The first hook can execute `SET CONSTRAINTS feed_test_gate DEFERRED` after the production constraint check. The second runs after batch close and can cancel or panic. Use the standard fixture deadlines for waits and 250 milliseconds for notification silence. (critic-r1 3, logic2-r1 4)
 
 Tests first in `feed_test.go`.
 
-- `TestFeedPositionsFollowCommitOrder`. Use two independent writer connections, a raw observer and two different fixture rows. Through a test-only PostgreSQL constraint trigger on `feed`, defer a gate for writer A until `COMMIT`. The gate waits for a separate advisory lock already held by the observer. Capture A's and B's backend identifiers from inside their callbacks. Wait for PostgreSQL to report A blocked on the gate after the feed insert has allocated its position. Start B and observe one of two outcomes before releasing the gate. With the production lock, `pg_blocking_pids` reports B blocked by A and a fresh observer query sees neither writer. Without the lock, B finishes and a fresh observer query sees B alone, because A remains blocked. In both cases release A and drain both writers with bounded waits. Assert that B waited for A, that after release the ordered feed reads A followed by B, and that a reader that advanced only on committed observations saw both rows. Any assertion failure records the observed blockers and visible keys. Removal of the production lock must fail on B becoming visible first. Removing the gate during teardown must release both connections even on test failure.
-- `TestFeedLockStartsAtFlush`. Pause A's callback after its state write and `Record` on a channel. B writes a disjoint record and commits while A remains in the callback. Assert B is visible before releasing A. Then assert the ordered feed is B followed by A. This catches holding the advisory lock around domain work.
-- `TestFeedRollbackAndNotification`. Start a raw listening connection and wait for registration before writes. Use a deferred trigger to make a write fail during commit after it allocated a position. Assert that neither its state nor its feed row is visible. Commit a second write that records two changes and assert their order, the matching current rows and one committed notification. Assert the aborted write did not notify. The test may use two bounded listener waits to prove silence and later delivery against a fresh database.
+- `TestFeedPositionsFollowCommitOrder`. Hold the test gate and wait for A to block at commit. Assert that A reached the gate after its insert. Start B on a separate backend. With the lock, B waits for A on `feedLockID` and neither row is visible. Assert `last_value` of the identity sequence from `pg_sequences` equals A's allocated value seen at the gate. Resolve the sequence name with `pg_get_serial_sequence`. With the lock removed, B commits and becomes visible first. Release A before asserting failure. Report that case with the exact text `writer B became visible before writer A`. In the unmodified run, require A then B in visible order and an advancing reader to see both. Move only the lock behind all inserts as the second mutation. Keep the guard flag before inserts. It must fail the sequence assertion. (logic-r1 1)
+- `TestFeedLockStartsAtFlush`. Pause A's callback after its state write and `Record`. Require B to commit before A resumes. Assert B then A in the feed.
+- `TestFeedRollbackAndNotification`. Register a raw listener. Force a commit error with the test-only deferred trigger. Assert no state, feed row or notification. Commit a second write with 256 marked references. Assert all positions are increasing in recorded order. Assert one flush batch through the driver's batch tracing seam and one committed notification. (critic-r1 1, threat-r1 4)
+- `TestFeedRejectsInsertOutsideFlush`. Run a raw insert through `Tx.Exec` before the flush. Assert SQLSTATE `23514`, constraint `feed_requires_store_flush` and no saved row. Use a separate callback to show ordinary `Record` still works. Removing the trigger must fail. (architect-r1 3, threat-r1 5)
+- `TestRecordValidationAndLimit`. Exercise an empty topic, empty key, zero byte, invalid change and the 257th reference. Assert the failure is returned at `Record` and keeps state and feed rows out even if the callback returns nil. (critic-r1 6, threat-r1 4)
+- `TestFeedLockDoesNotBlockUnrecordedWrites`. Hold the feed lock on a separate backend. Complete a no-change write while one buffered writer waits. In separate cases cancel the waiter and let another reach the lock timeout. Assert the connection is returned and that both error causes are distinguishable. (critic-r1 1, architect-r1 7)
+- `TestFeedLockEndsWithTransaction`. Cancel after batch close, panic there and make the deferred trigger fail at commit in three subtests. Keep the writer backend alive where possible. Inspect `pg_locks` and then use a confirmed different backend to write. Require it to finish within one second without a leftover lock. Replacing the transaction lock with a session lock must fail. Exercise cleanup after an aborted transaction even if the mutant attempts to unlock through that transaction. (logic-r1 3)
+- `TestFeedChecksDeferredDomainConstraintsBeforeLock`. Give B a `FOR UPDATE` lock on a parent row. A inserts a child with a deferred foreign key to that row and attempts a feed write. Assert A waits on B's parent transaction before acquiring the feed lock. Let B flush and commit. Both writes must finish. Move the constraint check behind the feed lock and require the test to fail. In a separate domain-only race, take two row locks in opposite order. Assert the victim returns a retryable deadlock error and one keyed caller retry succeeds in the merged receipt item. (logic2-r1 4, architect-r1 7, threat-r1 10)
 
-This item is risky because it establishes commit ordering. Remove only the production `pg_advisory_xact_lock` statement. `TestFeedPositionsFollowCommitOrder` must fail for B's early visibility. Restore it and rerun the test on the original commit. The three named tests and the mutation report are the acceptance observations.
+This item is risky because it establishes feed ordering. The tests above and the three lock mutations are acceptance. The Server script `check-feed-lock.sh` takes an archived copy of the committed checkout in a temporary directory. It runs the baseline test against `LGTM_TEST_POSTGRES`. Then it removes exactly the batch statement that acquires the feed lock, runs the same test and exits successfully only for the expected early-visibility assertion. It removes the temporary copy on exit. The Stack wrapper consumes this script and C12 consumes the Stack wrapper. (architect-r1 1, logic-r1 1)
 
 **5. Request receipts**
 
@@ -274,14 +346,17 @@ Create `src/server/internal/store/receipts.go` and `src/server/internal/store/re
 const RequestKeyHeader = "Lgtm-Request-Key"
 
 type Request struct {
-    Key       string
-    Caller    string
-    Procedure string
-    Body      []byte
+    Key                string
+    Caller             string
+    Procedure          string
+    FingerprintVersion int16
+    Fingerprints        map[int16][]byte
 }
 
 var ErrInvalidRequestKey error
+var ErrInvalidRequest error
 var ErrRequestKeyConflict error
+var ErrReceiptReplyTooLarge error
 
 func (s *Store) WriteOnce(
     ctx context.Context,
@@ -290,21 +365,27 @@ func (s *Store) WriteOnce(
 ) ([]byte, error)
 ```
 
-The authenticated caller supplies a stable, non-secret principal and method name. It encodes the parsed body to stable bytes for identical retries. For a current Protocol Buffers caller use deterministic serialization of the same parsed request. The store hashes an unambiguous encoding of principal, method and body, using an unsigned 64-bit big-endian byte length before each field and the 256-bit Secure Hash Algorithm (SHA-256). It persists only the digest and reply bytes for the key. The header is optional. An empty key delegates the callback to `Write` without a receipt. With a nonempty key reject invalid 8-bit Unicode Transformation Format (UTF-8), a zero byte or more than 256 bytes with `ErrInvalidRequestKey`. The adapter treats key strings as case-sensitive. It passes only receipt-safe replies and never writes raw credentials into this table. It authenticates and authorizes before using the store. The later service owns the policy for calls returning credentials.
+A keyed request uses a stable authorized principal and method name. Authenticate and authorize before entering the store. An empty key delegates to `Write`. With a key, reject an empty caller or procedure, a missing selected fingerprint or a nonpositive fingerprint version before lock acquisition. A key must be valid 8-bit Unicode Transformation Format (UTF-8), contain no zero byte and use at most 256 bytes. Treat it as case-sensitive. A request can still be replayed while its receipt is retained, for at least 24 hours after visibility under the database clock assumption in item 6. After deletion that same key can start a new write. The new Store signatures are written here. The sprint 2 and 3 Server adapters read them and write the caller identities and per-procedure encoders. (logic-r1 6, critic-r1 7)
 
-Inside the `Write` transaction, use `SELECT pg_advisory_xact_lock(1279743053, hashtext($1))` keyed by the exact request key. This two-integer lock space is distinct from the feed and migration lock space. A hash collision delays unrelated work without changing its result. After acquiring the lock, use `SELECT request_hash, reply FROM receipts WHERE request_key = $1 FOR UPDATE`. A matched digest returns the stored reply without calling `write`. A different digest returns `ErrRequestKeyConflict` without exposing the prior reply. The adapter maps it to Connect `already_exists` with “That request key was already used for a different request.” The adapter maps `ErrInvalidRequestKey` to `invalid_argument` with “The request key is invalid.” With no row, call `write`, insert its digest and successful reply and let `Write` flush its changes. Encode an empty successful reply as zero bytes. Return bytes only after the transaction succeeds. Write-once behavior is for keyed calls during receipt retention. A failed operation stores no result. No key, digest or reply is included in diagnostics.
+For each keyed procedure, its adapter owns a documented semantic fingerprint per version. Version 1 encodes the mutation fields in a fixed documented order and encodes presence when it affects the operation. Use length-framed field values. Do not marshal the parsed Protocol Buffers message as a fingerprint. Keep the old encoder and replay fixtures through a compatible upgrade for every receipt that can remain stored. An unknown field that has no effect on the version's mutation does not affect that version's encoding. A new field that changes mutation semantics needs a new operation identity or a documented compatibility rule that refuses replay of an incompatible request. The adapter supplies the current fingerprint and the versions it can still verify. A stored version that the adapter cannot verify returns `ErrRequestKeyConflict` without running the mutation. The Server migration writes `receipts.fingerprint_version` and the Store reads it to choose the supplied encoding. **UNREVIEWED MECHANISM** (logic2-r1 3, threat-r1 7). Versioned semantic bytes keep equivalent requests stable across supported transport encodings and builds.
+
+The 256-bit Secure Hash Algorithm (SHA-256) of the authenticated principal gives `principal_hash`. Acquire `SELECT pg_advisory_xact_lock(1279743053, hashtext(encode($1::bytea, 'hex') || ':' || $2))` with that hash and key. Inside the `Write` transaction select `fingerprint_version, request_hash, reply` from `receipts` by `principal_hash` and `request_key` with `FOR UPDATE`. The digest frames the caller, procedure and semantic fingerprint with an unsigned 64-bit big-endian byte length for each. **UNREVIEWED MECHANISM** (logic-r1 7). Test the framing across the procedure and fingerprint fields. The new principal namespace already protects the caller boundary. A principal gets a separate key namespace. A hash collision can delay another operation without making it a match. The migration writer owns the composite primary key. `WriteOnce` and `Prune` use it. (threat-r1 6, logic-r1 7)
+
+A matching digest returns the original reply without executing the callback. A mismatch returns `ErrRequestKeyConflict` with no reply. A missing row invokes the callback. If its successful reply is larger than 65,536 bytes, return `ErrReceiptReplyTooLarge` and roll back. Encode an empty successful reply as zero bytes. Insert the version, digest and reply before the feed flush. Return bytes only after commit. Authentication and credential-bearing mutations are awaiting a receipt policy decision. The approved design already prohibits writing credentials or password-derived fingerprints to receipts. The Service team must settle that policy before wiring a keyed credential-bearing call. See [the finding register](attack/round-1-findings.md). The store logs no key, digest or reply. The adapter maps `ErrRequestKeyConflict` to Connect `already_exists` with “That request key was already used for a different request.” It maps malformed metadata to `invalid_argument`. (critic-r1 7, threat-r1 2)
 
 Tests first in `receipts_test.go`.
 
-- `TestWriteOnceConcurrentRetry`. Hold the first callback after a state insert. Start a retry on another connection with the same caller, procedure, key and body. Prove the second backend waits for the first's advisory lock or records a forbidden second callback attempt. Release the first. Assert two identical replies, one callback invocation, one receipt with the expected digest and one committed state update and feed row. Retry after reopening the store and assert the original reply comes from the database.
-- `TestWriteOnceMismatch`. Store one successful receipt. Retry its key with a different body, caller or procedure in three subtests. Assert `ErrRequestKeyConflict`, no reply, no callback and no additional feed entry. Check that an oversized key and a key with a zero byte get `ErrInvalidRequestKey` before the callback.
-- `TestWriteOnceRollbackAndUnkeyed`. Cause a commit-time failure after the receipt insert and feed allocation. Assert an error and no receipt, state or feed row. Reuse that key with different bytes and assert success. Make two successful unkeyed calls with a callback returning an empty successful reply and assert that both run without increasing the receipt count.
+- `TestWriteOnceConcurrentRetry`. Hold A's callback after a state insert. B uses the same authenticated principal, method, key and fingerprint. On the raw observer require B to block on A in the two-integer advisory space. Release A. Assert one callback, one receipt, one state change and one feed row. Require identical replies across both callers and a reopened store. (critic-r1 7)
+- `TestWriteOnceMismatch`. With the same principal and key, change the semantic fingerprint or procedure. Assert conflict with no reply or callback. Move a byte from the end of the procedure to the start of an otherwise identical fingerprint. The tuple must remain distinct. With a different authenticated principal the same key succeeds independently. Add invalid key, missing caller, missing procedure and missing version cases. (logic-r1 6, logic-r1 7, threat-r1 6)
+- `TestWriteOnceVersionedReplay`. Save a version 1 receipt, reopen with a version 2 fixture that still supplies the version 1 encoder and retry. Assert byte-identical replay. A changed semantic value and a missing verifier both conflict. Repeat with a zero-byte successful reply and inspect the saved length. The future service adapter verifies the same semantic request across its actual encoder revisions. (logic2-r1 3, threat-r1 7)
+- `TestWriteOnceRollbackAndUnkeyed`. Use the commit gate to fail after receipt insertion and feed allocation. Assert no state, receipt or feed row. Retry with a changed fingerprint and assert success. Confirm two unkeyed successes run twice and create no receipt. Reject an oversized reply and assert state and feed rollback. (critic-r1 7)
+- `TestWriteOnceReleasesKeyLock`. Cancel or panic in the keyed callback and force a separate deferred commit failure. Check the receipt advisory namespace and replay on another backend. Closing the failed transaction must release its key lock. Replacing the key lock with a session lock must fail in the aborted cases. (logic-r1 3)
 
-This item is risky because request-key matching and call ordering protect the write and reply. Delete the per-key lock or bypass the digest comparison. The respective concurrent and mismatch test must fail. Those test results and the rollback test are the acceptance observations.
+This item is risky because request keys protect writes and replies. Deleting the key lock, replacing it with a session lock, bypassing the digest comparison or hashing an unframed tuple must fail the named tests.
 
 **6. Feed and receipt retention**
 
-Create `src/server/internal/store/prune.go` and `src/server/internal/store/prune_test.go`. This item needs item 5 and can run beside items 7 and 8 when their dependencies are ready. It implements D3, D5, R7, R10 and C12.
+Create `src/server/internal/store/prune.go` and `src/server/internal/store/prune_test.go`. This item needs items 1 and 3. It can run beside items 4, 5, 7 and 8 when their dependencies are ready. (critic-r1 10) It implements D3, D5, R7, R10 and C12.
 
 ```go
 type PruneResult struct {
@@ -316,16 +397,23 @@ func (s *Store) Prune(ctx context.Context) (PruneResult, error)
 func (s *Store) RunPruner(ctx context.Context, report func(error))
 ```
 
-`RunPruner` runs one sweep at startup and then hourly until context cancellation. A sweep takes its cutoff from PostgreSQL as `clock_timestamp() - interval '24 hours'`. It prunes in committed batches of up to 512 feed rows and 512 receipt rows until neither batch found another full page. Report an error for the failed sweep and try again on the next scheduled sweep. `Prune` returns the count from committed batches, so an error after a batch can accompany nonzero counts. The caller supplies a sanitized diagnostic reporter. The sweep worker exposes private `func (s *Store) pruneBefore(ctx context.Context, cutoff time.Time) (PruneResult, error)` for deterministic retention tests.
+`RunPruner` sweeps immediately and then hourly until canceled. It reports sanitized errors and tries again at the next scheduled sweep. The internal test entry points are `func (s *Store) runPruner(ctx context.Context, ticks <-chan time.Time, report func(error))` and `func (s *Store) pruneBefore(ctx context.Context, cutoff time.Time) (PruneResult, error)`. The public `Prune` reads `clock_timestamp() - interval '24 hours'` once per sweep and passes the cutoff down. Return counts only for committed batches. (critic-r1 6, critic-r1 11)
 
-For each batch acquire the `feed_retention` singleton row with `FOR UPDATE`. Select the earliest retained feed rows by primary key. Delete the consecutive beginning of that page for which `written_at < cutoff`. Stop at the first row still within retention. Advance `pruned_through` to the largest deleted position in the same transaction. PostgreSQL wall-clock adjustments can put an older timestamp after a newer one. The older row then waits for that prefix to expire. This preserves the meaning of the cursor when a watcher misses a day. Leave the sequence alone. Delete up to 512 receipts whose `written_at < cutoff` in timestamp and key order, holding the selected row locks through the delete. A concurrent valid replay holding a receipt row lock completes before deletion. Cleanup does not acquire the feed writer's advisory lock. The data removed here is limited to expired store feed entries and receipts. A part's current rows and its separate conversation or audit history are outside retention.
+Observe unmarked committed rows in bounded batches of 512 per table. Lock the rows before sampling `clock_timestamp()` to fill their nullable `retention_started_at`. A row's retention starts once, at first committed visibility to the sweeper. Unobserved rows cannot be deleted. The normal delay is up to the hourly sweep interval, with further delay if the sweeper is unavailable. A stalled commit cannot shorten the period. PostgreSQL's clock must advance normally for age decisions. A backwards adjustment can lengthen retention. An administrative clock jump forward can compress wall-clock retention and belongs in the deployment checks. The `written_at` field is the insertion-time diagnostic and has no say in expiration. **UNREVIEWED MECHANISM** (logic2-r1 1, logic-r1 8). One durable observation clock per row gives full post-visibility retention without depending on optional PostgreSQL commit metadata.
+
+For feed maintenance, acquire the `feed_retention` singleton with `FOR UPDATE`. Stamp unmarked feed rows in ascending position order. Fetch the earliest 512 feed positions and delete only their consecutive prefix with `retention_started_at < cutoff`. Advance `pruned_through` to the last deleted position in that transaction. Never reset the sequence. If an observed row older than twice the retention remains beyond a blocked prefix, report that stall once per sweep without row values. A future diagnostic `written_at` alone cannot stop pruning. (critic-r1 11, logic-r1 8)
+
+Receipt observation and expiration use separate transactions from feed cleanup. In the receipt batches select by `retention_started_at NULLS FIRST`, `principal_hash` and `request_key`, limiting to eligible rows. Use `FOR UPDATE` and wait within the item 1 lock deadline for an in-progress replay. A replay that locked the row first completes with its saved reply. If deletion commits first, a later retry sees no receipt and may run as a new write. Retry a timed-out sweep on its next scheduled run. Repeat completed 512-row pages until neither observation nor deletion has another full batch. The Store team writes the age columns and the sweeper that sets them. Later adapters rely on the minimum retention window. (critic-r1 7)
 
 Tests first in `prune_test.go`.
 
-- `TestPruneCutoffAndWatermark`. Use the private sweep entry point with a fixed cutoff taken from the real database. Insert more than one batch of fixture feed and receipt rows strictly older than the cutoff, plus rows at the cutoff and later. Assert that the older feed prefix and receipts are deleted and counted, cutoff entries remain, part-owned records remain, and `pruned_through` equals the greatest deleted feed position. Re-run at the same cutoff and assert zero deletions. Advance the cutoff until the rest of the feed is pruned. Then write a new entry and assert its position exceeds the previous head.
-- `TestPrunePreservesFeedPrefix`. Insert one expired row, a newer row and a higher-position row with an older timestamp. Assert that the sweep deletes only the first row and places its watermark there. Advance the cutoff and assert the later sweep removes the remaining eligible prefix and advances to its last position.
+- `TestPruneCutoffAndWatermark`. Seed multiple pages of observed old rows and some rows at and after the exact cutoff. Require committed deletion counts, receipt and feed boundaries, the last deleted position, and preservation of part-owned records. Run again and require zero deletions. After the whole feed is pruned, a raw test insert with the flush flag and lock still receives a higher position.
+- `TestPrunePreservesFeedPrefix`. Seed old and fresh observed times out of position order. Assert cleanup stops before the fresh row and reports a blocked stale prefix when another row is old enough. Use a future `written_at` on a row with an old observation time and prove that the diagnostic time does not block its deletion. (logic-r1 8, critic-r1 11)
+- `TestPruneStartsAgeAfterCommit`. Set backdated insertion times for a receipt and feed row in an uncommitted fixture transaction. Run cleanup before and after releasing commit. Assert observation is null until visible, then newer than the cutoff for both rows. Run a cutoff sweep and confirm the receipt survives. In the merged build retry that key and require the saved reply and unchanged state. (logic2-r1 1)
+- `TestPruneWaitsForReplayOfSameKey`. Hold an eligible receipt row `FOR UPDATE` from the raw replay fixture. Start pruning. Observe that receipt cleanup waits but committed feed cleanup can progress. The holder reads the original reply and commits. Require the sweep to delete the expired row. Seed a receipt exactly at the cutoff and verify it survives until the cutoff advances. The merged check uses the public replay path in both lock orders. (critic-r1 7)
+- `TestRunPrunerLifecycle`. Use the real PostgreSQL clock and a controlled tick channel. Prove the public `Prune` operation retains freshly observed rows. Require one startup sweep, one sweep on an explicit tick, a sanitized error from a gated failed sweep, recovery on a later tick and cancellation. Assert the production schedule is one hour. (critic-r1 6)
 
-This item is risky because a deleted row affects ordering. Change cleanup to delete by age without respecting the prefix, or skip updating `pruned_through`. The respective retention test must fail. Both tests are the acceptance observations.
+This item is risky because expiration changes progress and permits a key to run again. Ignoring the feed prefix, removing its watermark or expiring directly on `written_at` must fail the real PostgreSQL tests.
 
 **Design artifact.** The feed, ordering and safe-retry sections of the approved design supply the brief. This workstream has no screen.
 
@@ -348,9 +436,9 @@ One reader per process fetches committed rows. A bounded buffer shares those row
 
 | # | Criterion | Observed by |
 |---|---|---|
-| 7 | A committed feed row reaches the reader on a notification. With no notification it arrives on a poll, in order and once. | `TestFeedReaderNotificationAndPolling` and `TestFeedReaderCatchupAndRetry`. |
-| 8 | At 2,048 unacknowledged changes a subscriber is cut off. A draining subscriber can continue. | `TestFollowerLagAt2048`, `TestFollowerPrunedCursor` and `TestFollowerIgnoresSequenceGaps`. |
-| 9 | The first message contains the entire result, followed by one message per later matching row. A blocked stream can be canceled and reopened with a fresh snapshot. | `TestWatchSnapshotUsesOneTransaction`, `TestWatchFiltersAndLoadsCurrentRecords` and `TestWatchCanRestartAfterLag`. |
+| 7 | A committed feed row reaches the reader on a notification. With no notification it arrives on a poll, in order and once. | `TestFeedReaderNotificationAndPolling`, `TestFeedReaderCatchupAndRetry` and `TestFeedReaderBoundsStalledQuery`. |
+| 8 | A subscriber is cut off at the lag limit, on loss of history or while the feed is unavailable. A draining subscriber can continue during another subscriber’s lag. | `TestFollowerLagAt2048`, `TestFollowerPrunedCursor`, `TestFollowerDetectsHeadRegression` and `TestFollowerEndsStaleStreams`. |
+| 9 | The first message contains the entire result, followed by one message per later matching row. A blocked stream can be canceled and reopened with a fresh snapshot. The stream also stops when authorization ends. | `TestWatchSnapshotUsesOneTransaction`, `TestWatchFiltersAndLoadsCurrentRecords`, `TestWatchCanRestartAfterLag` and `TestWatchRechecksAuthorization`. |
 
 **Tasks**
 
@@ -371,6 +459,7 @@ func (s *Store) Snapshot(
 ) (int64, error)
 
 type feedPage struct {
+    Head          int64
     PrunedThrough int64
     Rows          []FeedRow
 }
@@ -378,20 +467,34 @@ type feedPage struct {
 func (s *Store) readFeedPage(ctx context.Context, after int64) (feedPage, error)
 ```
 
-`Snapshot` calls `load` and reads the high-water position inside the same `Read` transaction. It returns the greater of the highest extant position and `feed_retention.pruned_through`. At initialization with no feed row or pruning it returns zero. Keep `readHead(ctx context.Context, tx *ReadTx) (int64, error)` private so follower initialization uses the same calculation. The retention watermark preserves the logical position when cleanup has removed every row.
+`Snapshot` reads the high-water position first and then calls `load` in the same `Read` transaction. The head is the greater of the highest extant position and `feed_retention.pruned_through`. The first empty feed is position zero. A fully pruned feed returns the pruning position. `readHead(ctx context.Context, tx *ReadTx) (int64, error)` supplies this calculation to startup and reading. (critic-r1 6, logic2-r1 5)
 
-`readFeedPage` reads the pruning watermark and fetches up to 512 rows in the same read-only snapshot. Its indexed select is `WHERE position > $1 ORDER BY position ASC LIMIT 512`. Bind the greater of `after` and `pruned_through` to `$1`. Close its result set before returning. Each iteration advances to the highest position actually read or to the pruning watermark. When a page is full, drain another page without waiting. On a failed read, keep the last successfully applied position.
+`readFeedPage` returns the head, the pruning floor and up to 512 rows from one read-only transaction. A head below the supplied cursor detects replaced history. In that case return the new head without rows. Otherwise query `WHERE position > $1 ORDER BY position ASC LIMIT 512` using the greater of the cursor and the pruning floor. Close the result set before returning. Advance only after the page is accepted. If a non-reset page starts at or below the last applied position, report the invalid page and preserve the cursor. After a full page drain immediately. A failed page preserves the last applied position. (architect-r1 6, critic-r1 11, logic-r1 7, logic-r1 9)
 
-Define private `runFeedReader(ctx context.Context, s *Store, after int64, options feedReaderOptions, apply func(feedPage))`. It polls every two seconds with a separate timer from its notification path. It also drains on a wake from a single dedicated PostgreSQL connection. The listener executes `LISTEN lgtm_feed_changed` on that connection and signals a wake as soon as registration is effective. It uses a coalescing channel of capacity one. A lost listener reconnects at most once per poll interval and wakes the reader again on registration. A standby that cannot register still serves the periodic read path. Poll errors defer to the next wake or poll without resetting the cursor. Transient errors can be reported at the lifecycle boundary without credentials or arguments. Shutdown cancels waits and closes the listener. The follower and snapshot queries use one configured database endpoint that preserves position progress. Switching to a different history requires a restart of the follower and its streams.
+Define private `runFeedReader(ctx context.Context, s *Store, after int64, options feedReaderOptions, apply func(feedPage) error)`. One goroutine owns the cursor. It selects over a two-second poll and a wake channel of size one. Another goroutine only manages the dedicated `LISTEN lgtm_feed_changed` connection and requests wakes. The listener wakes the reader on registration and on notifications. Dial and registration together have a three-second bound. Reconnect at most once per poll interval. A standby or an unavailable listener leaves polling active. Each page attempt uses a two-second context for acquisition and the transaction, including queries. Rollback has at most one additional second. A timeout leaves a later poll free to resume. These are production limits. (logic2-r1 2, logic-r1 9)
 
-Private options let tests turn off the listener, observe registration and read errors, control poll signals, and set a bounded database read deadline. The production default uses a real two-second ticker and attempts to listen. The data source is PostgreSQL in both modes.
+**Test seams.** The Server reader owns the private options below. Items 7 and 8 use them. The default has no callbacks, uses `time.Now` and a two-second ticker, and enables the listener. For a fixture, a nil tick channel uses the production ticker. `afterAcquire` runs in the reading transaction before the head query. It may wait on a real PostgreSQL test advisory lock. `onPage` is invoked after application completes, including an empty accepted page, before the next read. `onListen` fires after registration and receives the listener backend identifier. Test callbacks use buffered channels and do not block production shutdown. (critic-r1 3)
+
+```go
+type feedReaderOptions struct {
+    ticks           <-chan time.Time
+    now             func() time.Time
+    disableListener bool
+    onListen        func(int32)
+    onReadError     func(error)
+    afterAcquire    func(context.Context, *ReadTx, int64) error
+    onPage          func(feedPage)
+}
+```
 
 Tests first in `read_feed_test.go`.
 
-- `TestFeedReaderNotificationAndPolling`. Start the reader with test-controlled poll signals and no tick. Wait for real listener registration. Commit a row and assert it is delivered before the test signals a poll. Start a reader with the listener disabled, commit another row after its starting position and signal one poll. Assert that it receives the second row even though no notification can reach it. Signal another poll and assert no duplicate row. Assert the production poll interval is two seconds.
-- `TestFeedReaderCatchupAndRetry`. Commit more than 512 real feed entries. Disable the listener and hold the only pooled connection. Signal a poll and observe a read failure when connection acquisition reaches its deadline. Release the connection and signal the next poll. Assert ordered, exactly-once reading of all committed entries across the page break, without another notification. Use fixture SQL to delete a prefix and update the watermark in one transaction. Read after the deleted prefix and assert that the page reports its watermark along with any surviving rows.
+- `TestFeedReaderNotificationAndPolling`. Start with a test-supplied tick channel and wait for actual listener registration. Commit a real row and receive it before sending a poll. With the listener disabled, send a poll after the next commit and require delivery. Exercise a notification and tick together at another commit and require one delivery across accepted pages. Assert the production interval is two seconds. (logic-r1 9)
+- `TestFeedReaderCatchupAndRetry`. Commit over 1,024 fixture rows. Let the first page of 512 apply. For the next page, use `afterAcquire` to capture and terminate that backend through a separate connection. Confirm a read error. Resume on a separate tick and assert that all rows arrive exactly once and in order. A later empty page proves the reader reached the final cursor. Use fixture SQL to verify pages read across a pruned prefix. (logic-r1 7)
+- `TestFeedReaderBoundsStalledQuery`. The acquisition hook issues a real advisory wait on a lock the observer holds. Keep the lock until the production two-second query budget expires. Require a timeout while the lock remains held. Release the gate and signal the next tick. Assert the next read resumes at the last applied position. (logic2-r1 2)
+- `TestSnapshotRetainsPrunedHead`. Remove the entire feed and update the durable floor in the same fixture transaction. Assert that `Snapshot` returns the floor, even with no rows left. (critic-r1 6)
 
-This item is risky because a missed wake or a bad cursor can lose a committed entry. Removing the poll must fail the poll-only case of `TestFeedReaderNotificationAndPolling`. Replacing `position > $1` with `position >= $1` must fail the no-duplicate assertion. The two tests are the acceptance observations.
+Removing polling, letting two drains apply the same page, using an inclusive cursor, resetting the cursor on error or removing the production page deadline must fail the tests above. The item is risky because it can lose a committed entry.
 
 **8. Bounded broadcast and subscriber lifetime**
 
@@ -401,11 +504,13 @@ Create `src/server/internal/store/follow.go` and `src/server/internal/store/foll
 const MaxWatchLag = 2048
 
 var ErrWatchLagged error
+var ErrFeedUnavailable error
+var ErrSubscriptionState error
 
 type Follower struct { /* private reader and subscriber state */ }
 type Subscription struct { /* private cursor and cancellation state */ }
 
-func StartFollower(ctx context.Context, s *Store) (*Follower, error)
+func StartFollower(ctx context.Context, s *Store, report func(error)) (*Follower, error)
 func (f *Follower) Close()
 func (f *Follower) Subscribe(ctx context.Context) (*Subscription, error)
 func (sub *Subscription) Context() context.Context
@@ -415,19 +520,31 @@ func (sub *Subscription) Ack(position int64) error
 func (sub *Subscription) Close()
 ```
 
-The server starts one follower after migrations. Private `startFollower(ctx context.Context, s *Store, options feedReaderOptions) (*Follower, error)` reads the current head before starting `runFeedReader`. The exported entry point uses production options. Initialize the unavailable-through marker to the starting head so an arbitrarily old cursor cannot skip history loaded before startup. A first subscriber can then take its own snapshot at that head or later. The follower retains the last 2,048 observed feed rows in a process-wide ordered ring. Track the latest actual evicted position and the durable `pruned_through` separately. This state can be rebuilt from the database by opening a fresh Watch. A lock in this process protects the ring and subscription state. It never allocates positions or surrounds a database call, record loader or stream send.
+The server starts one follower after migrations. Private `startFollower(ctx context.Context, s *Store, report func(error), options feedReaderOptions) (*Follower, error)` reads the head before starting the reader. The exported entry point uses production options. The startup head is the initial unavailable-through marker. The follower retains at most the last 2,048 observed rows in a shared ring. It tracks the latest evicted position and the durable pruning floor. A process lock protects the ring and subscriptions. It does not surround application calls or database queries.
 
-`Subscribe` registers the stream before its snapshot query. `Start(after)` sets its cursor once. A cursor may be ahead of the follower if the database snapshot saw a recent commit first. Ignore rows through that cursor as the follower catches up. Cancel an active subscriber with cause `ErrWatchLagged` when 2,048 actual committed rows follow its acknowledged cursor, or when the cursor is below an evicted or pruned position. Recheck the same condition when starting a cursor and publishing a page. Use a cancellation cause so losing a stream interrupts its in-progress work even when it is outside `Next`. A per-subscriber wake channel may coalesce to one signal. The shared ring and one in-flight row replace per-subscriber backlogs.
+**Lag rule.** Lag is the count of actual observed committed feed rows with position greater than the subscriber's acknowledged cursor. Count rows across all topics and scopes. The in-flight row counts once until acknowledged. Cancel with `ErrWatchLagged` at lag greater than or equal to `MaxWatchLag`. Evaluate on `Start` and for each row as a page is applied. A cursor older than the unavailable, evicted or pruned marker is separately invalid because history is missing. Equality with the marker is usable. For example, one in-flight row plus 2,046 later rows leaves the stream open. One additional row ends it. (architect-r1 5, critic-r1 4, logic-r1 5)
 
-`Next` returns the next row and records it as the only in-flight row. `Ack` accepts only its position and advances the cursor. The stream acknowledges filtered rows when it skips them, and matching rows after the caller's send returns successfully. This includes a pending matching row in the backlog count. A subscriber with an incomplete snapshot is subject to the threshold when it sets its cursor. Repeated or invalid `Start` and `Ack` calls return an error without moving the cursor. The Watch path uses one consumer per subscription. `Close` is idempotent on both objects. Follower close cancels and joins the reader and listener and unblocks subscribers. Closing a subscription removes it from the follower. No subscriber can delay the reader or another subscriber.
+`Subscribe` registers the stream before its snapshot as required by the design. `Start(after)` sets the cursor once. A cursor can be ahead of the follower when the snapshot sees a newer commit. Ignore rows through that cursor. A snapshot may take longer than the lag window under sustained writes. Report an immediate lag at `Start` once per consecutive incident until a stream starts successfully. The existing website reconnects with backoff. **UNREVIEWED MECHANISM** (critic-r1 11). Use the same cut-off for slow snapshot loading and for blocked delivery.
+
+`Next` delivers one in-flight row. It returns `ErrSubscriptionState` before `Start` or while a row is still outstanding. `Ack` accepts only the outstanding position. Invalid `Start` and `Ack` calls leave state unchanged. A consumer acknowledges filtered rows as it skips them. A matching row is acknowledged only after the send returns. Cancel the subscription context on lag so ongoing work can stop before another `Next`. `Close` is idempotent on the follower and subscription. Follower close cancels and joins the reader and listener. Subscriber close removes the subscription. The Store team writes these methods and the state sentinel. The Watch helper reads them. (critic-r1 6, logic2-r1 7)
+
+When a page reports a lower head than the read cursor, close subscribers with `ErrWatchLagged` and reinitialize cursor and ring at the new head. Report a sanitized history-reset event. Starting on the new head lets a new snapshot cover everything already committed there. A different history with an overlapping head cannot be detected by comparing positions. Operations stop the server before replacing the database in that case. Keep a stable endpoint throughout a follower lifetime. (architect-r1 6, critic-r1 11)
+
+If no page succeeds for at least ten seconds, including an empty successful read, report one sanitized incident and end streams with `ErrFeedUnavailable`. Reject new subscriptions with that cause until a page succeeds. Evaluate this after failed attempts. The bounded attempts keep the check live even during a stuck query. Recovery clears the incident and preserves the last applied cursor unless history regressed. The Server team writes the reporter and new error. Server startup supplies the reporter. The Watch helper and service adapters consume the error. (logic-r1 4, logic2-r1 2, critic-r1 8)
+
+**Test seams.** Use the item 7 configuration to disable the listener, request a poll, advance fixture time and check when a page applied. Use `records(id text PRIMARY KEY, value text NOT NULL)` and source topic `records`. Use the item 4 gates and deadlines. For a deliberately over-limit single commit, tests may seed entries directly in an isolated database under the feed lock with the guard flag. The public writer remains capped. (critic-r1 3, critic-r1 4, threat-r1 4)
 
 Tests first in `follow_test.go`.
 
-- `TestFollowerLagAt2048`. Attach a slow and fast subscriber at the same head. Give the slow subscriber one row without acknowledging it. Drive feed commits through the real store, allowing the fast subscriber to acknowledge each batch before the next. At 2,047 rows assert the slow context is still open. At 2,048 assert its cause is `ErrWatchLagged` even though it has not called `Next` again. Assert the fast subscriber receives the boundary row and a subsequent row once each.
-- `TestFollowerPrunedCursor`. Subscribe without activating it. Start it after its proposed cursor has fallen below the eviction watermark. Assert `ErrWatchLagged`. In a separate case write an old feed prefix, delete it and update the watermark together using fixture SQL while the reader is paused, then signal a poll. An active subscriber whose cursor is behind the pruning floor is canceled. A fresh subscriber starting at the current head receives the next new row.
-- `TestFollowerIgnoresSequenceGaps`. In the isolated database create enough rolled-back or unused sequence allocations to make a large position gap. Then append one committed row. Assert the subscriber gets that row and stays open. Start a subscriber at a known head while the reader is behind it. Assert that it ignores earlier and equal positions and reads the first later one. Close the follower with a subscriber blocked in `Next` and assert that the call returns.
+- `TestFollowerLagAt2048`. Start a slow and a fast subscriber at the same head. Run boundary cases with no `Next`, with an unacknowledged first row and with a mix of filtered rows. Check lag 2,046 and 2,047 stay open. In the in-flight case these counts already include that row. At 2,048 require cancellation and `ErrWatchLagged`. In a separate case apply a full 512-row page that crosses the limit. The fast subscriber starts with enough acknowledged progress to receive the boundary and subsequent rows. (architect-r1 5, critic-r1 4, logic-r1 5)
+- `TestFollowerBulkWriteCutsOffEveryone`. Seed one 2,047-row test commit and then a separate 2,048-row test commit in an independent database. Without acknowledgements, all subscribers stay open after the first case and are canceled after the second. Use the fixture injection because the production path rejects either oversized single write. (critic-r1 4, threat-r1 4)
+- `TestFollowerPrunedCursor`. Activate one subscriber with a row still in flight. In one case, seed eviction before an older subscriber activates. In another, commit fixture deletion past the old cursor while polls are paused. On the next poll require cancellation even though the first subscriber never calls `Next` again. A new snapshot at the head can receive a later row.
+- `TestFollowerIgnoresSequenceGaps`. Create a large rolled-back sequence gap in the isolated database. One committed row after it must not trigger lag. An ahead-of-reader subscriber ignores positions through its cursor and receives the next higher committed row.
+- `TestFollowerSubscriptionLifecycle`. Reject `Next` before `Start`. After `Next` for position 41, reject a second `Next` and an incorrect `Ack`. Accept `Ack(41)` and deliver the next row. Reject a second `Start`. Repeated `Close` on each object is harmless and closes blocked waits. (logic2-r1 7, critic-r1 6)
+- `TestFollowerDetectsHeadRegression`. Move an active follower to a high position. Truncate the fixture feed with identity reset and reset its pruning floor. Poll. Assert old subscriptions end with `ErrWatchLagged` and the callback reports once. Start at the new head and receive a subsequent lower-numbered row. (architect-r1 6, critic-r1 11)
+- `TestFollowerEndsStaleStreams`. In poll-only mode hold a real read gate until attempts time out. Advance the fixture clock to ten seconds after the last success. Require an unavailable error on existing and new streams and a single report. Release the lock. Require a new subscription after a successful page and prove later rows arrive. (logic-r1 4, logic2-r1 2, critic-r1 8)
 
-This item is risky because the cursor and buffer determine which changes get through. Replace actual row counts with subtraction of positions or change the boundary from `>=` to `>`. The gap and threshold tests respectively must fail. Those tests and the pruned-cursor test are the acceptance observations.
+This item is risky because cursor and buffer movement determine which changes get through. A numeric-distance count or a strict greater-than limit fails the gap or boundary tests. Disabling regression detection or the stale-stream cutoff fails its dedicated test.
 
 **9. Typed Watch streams**
 
@@ -437,13 +554,17 @@ Create `src/server/internal/watch/watch.go` and `src/server/internal/watch/watch
 type Source[T any] struct {
     Topic    string
     Scope    string
-    Snapshot func(context.Context, *store.ReadTx) ([]T, error)
+    Authorize func(context.Context, *store.ReadTx) error
+    Snapshot  func(context.Context, *store.ReadTx) ([]T, error)
     Load     func(context.Context, *store.ReadTx, string) (T, bool, error)
 }
 
 type Snapshot[T any] struct {
     Records []T
 }
+
+var ErrInvalidSource error
+var ErrWatchUnauthorized error
 
 type Message[T any] struct {
     Position   int64
@@ -461,21 +582,27 @@ func Serve[T any](
 ) error
 ```
 
-The service authorizes the requested topic and scope before calling `Serve`. A source supplies readers over its own tables. `Serve` registers the subscription first and defers its close. It runs `source.Snapshot` inside `Store.Snapshot` using the subscription context and starts the subscription at that position. Then it sends a message with a non-nil `Snapshot`, even when the result is empty. Exactly one variant is set in any message. Every emitted position identifies the snapshot's database point or the corresponding feed row.
+The service checks the requested scope and session before calling `Serve`. `Serve` rejects an empty topic or a nil authorize, snapshot, load or send function with `ErrInvalidSource` before subscribing. A source supplies readers over its own tables and restricts those readers to the authorized topic and scope. The helper registers before taking the snapshot. Its first repeatable read fixes the feed head, checks authorization and loads records in the same snapshot. Activate the subscription before emitting the full snapshot. An empty list still sets the snapshot variant. (logic-r1 6, logic2-r1 5)
 
-`Serve` skips and acknowledges rows whose topic or scope differs. A matching `removed` row emits its key. For a matching `saved` row, run `source.Load` in a new `Store.Read` transaction. Send the current record if found. If it is already gone, send the key and the row's position. Its later removal entry still receives its own message if it matches. Never hold a database transaction open during a send. Acknowledge after each successful send. Errors from a source or sender end the stream. A subscriber canceled for lag returns `store.ErrWatchLagged`, even if the in-progress load or send returned context cancellation first. Lag cancellation also applies while the first message is being sent.
+Before a matching message, reauthorize using a read-only transaction. A save loads the current record in that same authorization transaction. A removed row emits its key. A save to a now-missing record emits the key too. Acknowledge filtered rows as skipped. Acknowledge sent rows only after a successful send. No transaction stays open during network delivery. A move across scopes yields a removal to the old watcher and a save to the new one. (logic-r1 11, critic-r1 6)
 
-This generic envelope follows the design's shared Watch shape. The future service adapter maps snapshot, saved and removed-key variants into its generated response and carries the feed position in the field fixed by sprint 0. The store and generic helper need no generated-type import. The comparison with sprint 0 checks the three variants, the signed 64-bit position range and the first empty snapshot. Map and preview adapters are built with their services.
+A separate recheck runs at least every 30 seconds while a stream is quiet or a send is blocked. Bound authorization reads to two seconds. The check reads current session and requested scope permissions. A revoked or expired session returns `watch.ErrWatchUnauthorized`. Cancel ongoing work with that cause. An unavailable authorization check terminates with a retryable unavailable error. Serialize transport writes. Cancellation does not recall bytes authorized and sent earlier. Server Watch writes `Source.Authorize` and both Watch sentinels. The sprint 2 sign-in part provides its session read function. The sprint 3 Machines service binds that function and maps revocation to `unauthenticated` with “Sign in again to reopen this watch.” (threat-r1 1)
 
-The sender must honor the subscription context even when a client blocks the transport. A later Connect adapter maps lag to `resource_exhausted` with “The watch fell behind and must be reopened.” when the transport can still emit a status. A blocked response must be interrupted at the transport, such as with a per-response write deadline triggered by subscription cancellation. Treat a closed transport as a reconnect signal. Keep writes serialized. The later service must test cancellation on a real blocked stream as well as through this helper's callback.
+The Server Watch team writes the internal signed `Message.Position` and the three variant fields. The Contract team writes `FeedPosition.value` as `uint64`. The sprint 3 Server adapter validates that the store value is nonnegative, converts it to unsigned and always emits a present `position`, including zero for a new database. Map `Snapshot`, `Saved` and `RemovedKey` to `all`, `saved` and `removed_id` respectively. Exactly one variant is present. Contract and Server compare these items using the draft and generated descriptors. The current browser consumes the three variants. (architect-r1 4, critic-r1 5, logic2-r1 6)
+
+The sender honors the subscription context even when a client blocks transport. The adapter maps `ErrWatchLagged` to the draft's Connect `aborted` with “The watch fell behind and must be reopened.” Map `ErrFeedUnavailable` to `unavailable`, using “The change feed is unavailable, try again.” Use those statuses when the transport can still write. A blocked response must end at the transport, using a per-response write deadline triggered by cancellation or an equivalent operation supported by the server. The current browser reopens the stream after closure. The later Machines adapter owns this behavior and its real transport test. (architect-r1 2, critic-r1 5, logic2-r1 6)
+
+**Test seams.** Use `records(id text PRIMARY KEY, scope text NOT NULL, value text NOT NULL)` and `sessions(id text PRIMARY KEY, active boolean NOT NULL)`. Use topics `records` and `other`. Use scopes `p1` and `p2`. The authorizer queries `sessions`, returning `ErrWatchUnauthorized` when the selected row is absent or inactive. Watch test code uses the exported `Follower.Subscribe`, `Start`, `Next` and `Ack` to observe a known committed marker without adding an exported testing interface. Private `serve[T any]` takes the same arguments as `Serve` plus `ticks <-chan time.Time`. Nil uses the production 30-second ticker. Reuse the item 4 fixture deadline and silence check. (critic-r1 3)
 
 Tests first in `watch_test.go`.
 
-- `TestWatchSnapshotUsesOneTransaction`. Establish a real follower and a known row. Pause the snapshot loader after its first read. Commit a change to that row on another connection and wait for the follower to observe the writer. Resume the loader. Assert the first message contains the old value at the old position and the next carries the new value at its later position. Run the same barrier when starting with an empty table and assert there is still an empty snapshot first. In a test-only query or an isolation mutation demonstrate that two read-committed statements can see different database points under this fixture.
-- `TestWatchFiltersAndLoadsCurrentRecords`. Verify an empty first result on the selected topic and scope. Commit rows for another topic and scope, alongside a matching save and removal. Delay handling the save until a subsequent update is committed and assert it emits the current value while preserving the saved row's position. In a second case remove a record before a saved row is loaded and assert a removal message for the saved position and one for the removal position. Send a matching marker as the final row and check the exact message positions through that marker. This proves the nonmatching rows produce no messages. Verify that another write commits while a send callback is held.
-- `TestWatchCanRestartAfterLag`. Hold the sending callback until its context closes. Commit 2,048 actual rows after the last acknowledged position and let the follower drain. Assert the held callback wakes with the lag cause and `Serve` returns that error. Start a new Watch and assert the first message reflects the whole current result, including the committed changes. In a separate subtest cancel the caller and assert that the subscription and wait are released with caller cancellation.
+- `TestWatchSnapshotUsesOneTransaction`. Put the competing write before the loader's first query in one case. The head-first implementation has already established its repeatable read. Put the competing write after the loader's first query in a second case. Assert both cases send the old record and old position followed by the new change. Run with an initially empty table and require a present empty snapshot. Freeze both split mutations. Head-first in a separate transaction yields an old head with new data. Records-first with a separate head read can skip the new entry. The relevant barrier must detect each changed result. (logic2-r1 5)
+- `TestWatchFiltersAndLoadsCurrentRecords`. Assert exactly one variant in the empty snapshot and each emitted change. Commit interleaved changes under a different topic and scope, a matching save and a removal. Hold the initial snapshot sender while a subsequent write commits. Then let the change loader open its read transaction and assert that the earlier saved position uses the current data. Use a matching marker to check the exact positions and the absence of nonmatching messages. Verify a now-missing saved record emits a removal and a later removal at its own position. Move a record between scopes and require the old watcher to receive a removal and the new watcher to receive a save. A write can complete while a sender is held. (critic-r1 6, logic-r1 11)
+- `TestWatchCanRestartAfterLag`. Hold the sender until cancellation. Write batches of at most 256 changes until the follower reaches the limit. Require the sender and `Serve` to return the lag cause. Reopen and require the first snapshot to cover the new records. Also exercise caller cancellation.
+- `TestWatchRejectsInvalidSource`. Supply each missing callback and an empty topic in separate cases. Require `ErrInvalidSource` without a sender call. (logic-r1 6)
+- `TestWatchRechecksAuthorization`. After sending the first snapshot, delete or invalidate the session row. Commit a matching change and assert it is never sent. In a second case hold the sender and signal a periodic tick after revocation. Require `ErrWatchUnauthorized` while the send is blocked. Check a temporary database failure produces an unavailable result. (threat-r1 1)
 
-This item is risky because snapshot and feed ordering determine whether a reader sees a change. Split the state read and position lookup into separate transactions. `TestWatchSnapshotUsesOneTransaction` must fail on the missing update. The three tests are the acceptance observations.
+The item is risky because it handles ordering and access. The tests above must fail split transactions in either order, a writable snapshot, or a sender that stays authorized after session revocation.
 
 **Design artifact.** The approved design's Watch procedure and the existing Machines stream are the shape references. This workstream has no screen.
 
@@ -483,13 +610,13 @@ This item is risky because snapshot and feed ordering determine whether a reader
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| A notification is missed or a read is interrupted. | Medium | Keep a database cursor, use a two-second poll, and prove polling without a listener. |
-| A slow network stream holds an unbounded backlog or blocks another stream. | High | Share one fixed ring and cancel at 2,048 actual rows, including the in-flight row. Require a cancellable sender. |
+| A notification is missed or a read is interrupted. | Medium | Keep a cursor and bound each attempt. Prove polling without a listener and stream cancellation when reads stay unavailable. |
+| A slow network stream holds an unbounded backlog or blocks another stream. | High | Share one fixed ring and apply the lag rule during publication. Require a cancellable sender. |
 | A write lands between the initial record read and the cursor read. | High | Use one read-only repeatable-read transaction and a gated two-connection test. |
 
 **Verify.** Against disposable PostgreSQL, run `go test -race -count=1 ./src/server/internal/store/... ./src/server/internal/watch/...`. Run the notification-disabled branch without a listener to exercise the standby delivery path on a real primary. This sprint needs no device. The actual standby and the Connect transport adapter are outside the sprint's deployment. The later Machines service owns the blocked-transport test.
 
-**Rollout detail.** Step 3 checks the buffer and Watch helper on real PostgreSQL. Run `go test -count=1 ./src/server/...` on the merged Server work. At the full wave 1 verification run `go test ./...` against the same test setup for C12. In later server startup, initialize one follower after migrations. On shutdown stop streams and join follower and pruning work before closing PostgreSQL connections.
+**Rollout detail.** Step 3 checks the buffer and Watch helper on real PostgreSQL. Sprint 2 supplies session lookup. Sprint 3 maps the wire reply and verifies real transport cancellation. (threat-r1 1, architect-r1 2) Run `go test -count=1 ./src/server/...` on the merged Server work. At the full wave 1 verification run `go test ./...` against the same test setup for C12. In later server startup, initialize one follower after migrations. On shutdown stop streams and join follower and pruning work before closing PostgreSQL connections.
 
 </details>
 
@@ -504,7 +631,7 @@ The source universe is the approved design's decisions D1 through D23, rules R1 
 | D3, D4 | WS-1, WS-2, WS-3 | Use PostgreSQL for durable state and ordering while running one server. The Stack team owns deployment. |
 | D5 | WS-1, WS-2, WS-3 | Current tables, one change feed and reads from current state. |
 | D6 to D8 | Outside this plan | Agent steering, machine proof and the agent protocol belong to later work. |
-| D9, D10 | WS-2 | Keep credentials out of receipts. Vault setup and secret access belong to the stack and sign-in plans. |
+| D9, D10 | WS-2 | Credential-bearing calls require an owner decision before wiring receipts. Vault setup and secret access belong to the stack and sign-in plans. |
 | D11 to D23 | Outside this plan | Sign-in cookies, machine and link behavior, secrets and later agent behavior are owned by later work. |
 | R1 | WS-1 | Each part registers its own manifest. |
 | R2 | WS-3 | The store consumes the reviewed shared Watch semantics. |
@@ -558,14 +685,14 @@ Backend covers server logic and SQL here. Item 3 is a startup runner that also p
 | 1 | backend | server/backend | medium | The pool, isolation and database fixture cross the PostgreSQL connection boundary. | Yes | Sprint 0 module and driver entries. |
 | 2 | backend | server/backend | low | The format uses one documented byte layout and a small pure test seam. | Yes | Sprint 0 module. |
 | 3 | backend | server/backend | medium | One runner applies a validated manifest in a serialized startup transaction. | Yes | 1. |
-| 4 | backend | server/backend | medium | One flush path needs a controlled commit race across two connections. | Yes | 1 and 3. |
+| 4 | backend | server/backend | medium | One ordered flush reuses a shared database gate. Separate gate setup and transaction assertions. | Yes | 1 and 3. |
 | 5 | backend | server/backend | medium | The receipt check wraps the existing write path and adds one per-key lock. | Yes | 4. |
-| 6 | backend | server/backend | medium | A bounded deletion must preserve a feed prefix and a durable watermark. | Yes | 5. |
+| 6 | backend | server/backend | medium | Bounded observation and deletion preserve the committed age and watermark. | Yes | 1 and 3. |
 | 7 | backend | server/backend | medium | One reader reconciles an advisory signal with ordered reads and a periodic fallback. | Yes | 4. |
 | 8 | backend | server/backend | medium | One bounded memory structure owns subscribers and their cancellation. | Yes | 7. |
-| 9 | backend | server/backend | medium | One snapshot-to-stream helper reuses the bounded subscriber and exposes a sender contract. | Yes | 8 and sprint 0 Watch shape. |
+| 9 | backend | server/backend | medium | One snapshot-to-stream helper reuses the subscriber and session callback. | Yes | 8 and sprint 0 Watch shape. |
 
-Load for the first full plan review and build is 12 OpenAI launches, 15 Anthropic launches and five xAI launches. This assumes nine build and nine independent test-writing launches split evenly across the first two vendors. The initial plan review adds one OpenAI, four Anthropic and one xAI launch under the epic's assignments. Two post-build slices add one OpenAI, one Anthropic and one xAI launch per slice. The budget includes two additional xAI launches for focused checks. Risky mutations run in those review seats on disposable branches. A further full plan round adds one OpenAI, four Anthropic and one xAI launch. The remaining weekly allowances are held by the orchestrator and were unavailable for this assignment. Compare these counts with those readings before scheduling. If an allowance is short, schedule the dependent work after the relevant reset.
+Load for the first full plan review and build is 12 OpenAI launches, 15 Anthropic launches and five xAI launches. These are vendor allowances required by the sizing probe. The work units name only areas and sizes. This assumes nine build and nine independent test-writing launches split evenly across the first two vendors. The initial plan review adds one OpenAI, four Anthropic and one xAI launch under the epic's assignments. Two post-build slices add one OpenAI, one Anthropic and one xAI launch per slice. The budget includes two additional xAI launches for focused checks. Risky mutations run in those review seats on disposable branches. The 49 notes fit the existing nine build items. A further full plan round adds one OpenAI, four Anthropic and one xAI launch. The remaining weekly allowances are held by the orchestrator and were unavailable for this assignment. Compare these counts with those readings before scheduling. If an allowance is short, schedule the dependent work after the relevant reset.
 
 </details>
 
@@ -573,6 +700,28 @@ Load for the first full plan review and build is 12 OpenAI launches, 15 Anthropi
 
 | Round | New findings (blocker, major, minor) | Outcome |
 |---|---|---|
-| Initial self-check | Plan review has not run. | The orchestrator runs the review rounds after this handoff under the epic's phase 3 rules. |
+| 1 | 0 blockers, 19 majors and 30 minors before deduplication. | See [the round 1 register](attack/round-1-findings.md). It records the fixes, deployment checks and owner choice. |
+
+</details>
+
+<details><summary><b>Post-build checks from round 1</b></summary>
+
+Run the database checks on PostgreSQL 16 and 17 when both are available. Keep the tested commit, commands and observations. These checks supplement the frozen tests. They need the built Store or the later service adapter.
+
+| Area | Scenario | Expected result |
+|---|---|---|
+| Integration | On a clean merged sprint 1 checkout, run the Stack disposable database wrapper with `go build ./...` and `go test -count=1 ./src/server/...`. Run `deploy/test/checks.sh --only C12` with the wrapper's connection setting. | Database provisioning, the root suite and the feed-lock hook pass. The wrapper removes the disposable instance. |
+| Dependency | Run `go mod tidy -diff` and `govulncheck ./...`. Record the selected PostgreSQL driver version. | The root module is tidy. The driver matches the integration pin and the scan reports no known vulnerability in the used dependency path. |
+| Feed ordering | Repeat the gated commit race 50 times with two writer backends reused by the pool. Trace the lock, the observer's sequence value and the first visible row. | The test gate stalls only A. The sequence stays at A while B waits. The lock-removal mutation shows B early. The lock-after-allocation mutation fails the sequence assertion. |
+| Lock cleanup | Terminate a backend holding the feed lock. Repeat abort, panic and deferred commit failure with the session-lock mutations for feed and receipts. | No production advisory lock survives transaction end. A different backend can write. Reconstruct the bigint feed key from both `pg_locks` halves with `objsubid = 1`. The receipt namespace uses `objsubid = 2`. |
+| Writer isolation | Hold the feed lock past the wait deadline. Queue eight writers. Also run a non-feed write and a read. Repeat with the deferred-foreign-key race and 100 concurrent requests recording 50 references each. | A read uses reserved capacity and returns within one second. A separately admitted non-feed write does not wait on the feed lock. Waiters time out consistently. Deferred checking happens before the feed lock, and the batch traces contain one flush batch per successful write. |
+| Feed bound | Attempt one write with 3,000 references in front of three open streams. | The 257th reference fails and rolls back the write. Streams receive no changes from that write. |
+| Notification | In 1,000 commits observe notifications and then read each commit through a new snapshot. Disconnect the listener while writes continue, then reconnect during further writes. | Each notified row is already visible. Polling and registration wakes deliver every retained position once and in order. With notifications refused, the bounded polling path still makes progress. |
+| Migration | On a fresh database repeat two startup calls 50 times. Move ledger creation before the migration lock for a test run. | The baseline starts both callers and records `store=1` once. The mutation fails the pre-ledger lock observation. |
+| Receipts | Drop a keyed response after database commit, restart the process and retry. Repeat with a zero-byte reply and with a still-retained older fingerprint version. Race replay and cleanup in both lock orders. | One state change and one feed entry exist. A matching retained retry returns the original bytes. Cutoff and cleanup match item 6. |
+| Retention clock | Delay a write whose insertion time is past the cutoff and commit near the sweep. Simulate a future insertion timestamp and a blocked expired prefix. | Freshly committed rows receive a new observation timestamp. A future diagnostic timestamp cannot block expiration. A stale blocked prefix is reported. |
+| Restore and lag | Regress the database head while a subscriber is active. Run eight bounded writers during slow and fast subscriptions, and prune behind an in-flight row. Make snapshot loading fall behind the lag limit, then retry without the write load. | The history reset closes old streams. The slow stream ends at exactly 2,048 observed rows. The fast stream sees each row it acknowledges. A new stream starts with current state. |
+| Real Watch transport | Hold a sender open, trigger lag, and reopen through the real Machines handler. Open another watch and revoke its session, first during idle and then during a blocked send. | The Machines adapter emits `aborted` for lag when writable and stops the blocked transport otherwise. The new stream sends the full snapshot, with a present zero position if appropriate. Revocation ends the stream without a later unauthorized record. |
+| Error details | Trigger a database check violation and a duplicate in the built Store, then format the returned error and inspect application diagnostics. | The fixed message and safe metadata appear without any fixture row values. |
 
 </details>
