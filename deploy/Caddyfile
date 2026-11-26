@@ -1,0 +1,10 @@
+# Stub of the test writer. It listens without serving the website or proxying requests.
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+http://:8080 {
+	respond 503
+}
