@@ -128,9 +128,9 @@ The link between a server and a machine is frozen when the plans `go-s3-server-m
 The orchestrator decided this on 2026-11-26, because the reviews of the contract kept finding disagreements with plans that were not yet reviewed.
 Until then, a change to the link files is an ordinary work item of the Contract team. After it, a change goes back to phase 3.
 
-From sprint 1 on, no team edits `go.mod` or `go.sum`.
-A plan lists each module and version it needs.
-The orchestrator adds them right before the first work item that imports them.
+From sprint 1 on, a team changes `go.mod` and `go.sum` only to add a module that its plan lists, with the version the plan states.
+The builder adds the module in the same change as the first import of it, because the Go check refuses a module that nothing imports.
+The orchestrator compares the change of `go.mod` with the plan's list before it commits.
 
 The hook `deploy/test/mutate-feed-lock.sh`, which check 12 calls, is a wrapper that the Stack team owns.
 The Server team writes the mutation that the wrapper calls, inside `src/server/`.
