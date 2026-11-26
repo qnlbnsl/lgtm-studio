@@ -1,0 +1,103 @@
+REVISE
+
+The local store can erase a completed restart receipt while the server can still retry that command, allowing the same request to restart the client twice.
+
+## Findings
+
+### logic2-r1 01. BLOCKER. R6. The wall clock can erase a live receipt.
+
+Item 6 prunes against the machine's wall clock. The local store uses that clock even for the receipt being finished. The wire contract requires the saved outcome through 24 hours after expiry by server time. Evidence appears in `.plans/plans/go-s3-client-link/plan.md:242`, `.plans/plans/go-s3-client-link/plan.md:246`, `.plans/plans/go-s1-client-local/plan.md:424`, and `src/contracts/proto/lgtm/link/v1/commands.proto:4` through line 20.
+
+If the machine's wall clock is 25 hours ahead and a restart completes one minute before server expiry, the finish transaction can delete its own committed receipt. If the result is lost, a relaunch can receive attempt 2 before expiry, find no receipt and restart again. A retry after expiry can also replace a lost successful result with expired during the promised replay window.
+
+Amend both plans so pruning requires a conservative lower bound of server time strictly beyond the retention boundary. Skip pruning when a usable bound is unavailable. Keep the upper admission bound separate. Require a real-store test that finishes a restart with the machine clock 25 hours ahead, loses the result, reopens the store, and receives the original outcome without a second restart.
+
+### logic2-r1 02. BLOCKER. R2. The server plan still targets a different link contract.
+
+The client stops on authenticated `failed_precondition` with `unknown_machine`. The server plan emits `unauthenticated` for removal, uses `out_of_range` for an event gap, expects to read a command-result message, and sweeps every pending command by age. The current contract reserves the result's old message field and exempts standing updates from expiry. Evidence appears in `.plans/plans/go-s3-client-link/plan.md:155`, `.plans/plans/go-s3-client-link/plan.md:195`, `.plans/plans/go-s3-server-machines/plan.md:738`, `.plans/plans/go-s3-server-machines/plan.md:795`, `.plans/plans/go-s3-server-machines/plan.md:812`, `.plans/plans/go-s3-server-machines/plan.md:893`, `src/contracts/proto/lgtm/link/v1/link.proto:44` through line 55, and `src/contracts/proto/lgtm/link/v1/commands.proto:6` and `:60`.
+
+Remove an enrolled machine and then run its client. Built as written, the server refuses it with a code the client treats as retryable, so the client retries indefinitely and check 10 fails. The old result-field reader also has no generated field to read. A standing update held past the server's grace period can be closed without the required client result.
+
+Make the server plan and its frozen-test assertions conform to the checked-in link contract before the joint freeze. Cover removal before and after welcome, an unsupported revision after a verified challenge, the event-gap reason in terminal error metadata, the three-field result, and standing updates across the grace boundary. Keep the client's transient handling of `unauthenticated`.
+
+### logic2-r1 03. MAJOR. R6. Recording an expiry decline creates a false started receipt.
+
+Item 6 passes an invented time before expiry to `Begin` and finishes the resulting reservation as expired in another transaction. The local store reports any recovered started receipt as interrupted. Evidence appears in `.plans/plans/go-s3-client-link/plan.md:244`, `.plans/plans/go-s1-client-local/plan.md:423` through line 425, and `src/contracts/proto/lgtm/link/v1/commands.proto:73` through line 85.
+
+If the elapsed clock fails and the process dies after the reservation commits, the next delivery reports interrupted for an action the client had already decided to decline. An ambiguous failure of the second commit can produce the same false result.
+
+Give the store a way to atomically record an expired outcome for an absent receipt while preserving any existing receipt. Apply the same crash rule when a normal reservation fails its final expiry check. Define the recovery result if the decline transaction never committed, and test recovery on both sides of the commit boundary.
+
+### logic2-r1 04. MAJOR. D16. The retry cap measures sleep instead of attempt cadence.
+
+The design requires a retry at least every 15 seconds. The plan allows 10 seconds per handshake exchange, waits up to 15 seconds after failure, and observes an existing stream for up to 30 seconds without a valid response. Evidence appears in `docs/specs/2026-11-25-go-rewrite-foundation-design.md:41`, `.plans/plans/go-s3-client-link/plan.md:155`, and `.plans/plans/go-s3-client-link/plan.md:195` through line 200.
+
+Once backoff is capped, a connection attempt that gets no challenge and times out after 10 seconds can be followed by another 15 seconds of sleep. That puts the next attempt at least 25 seconds after the first. The listed test can pass by checking the sleep alone.
+
+Set the reconnect deadline from the start of each failed attempt and include dialing, proof and worker teardown in the disconnected attempt budget. Keep at most one stream active. Test elapsed time between attempts with a listener that accepts connections and never sends a challenge. Measure the established-stream silence limit separately.
+
+### logic2-r1 05. MAJOR. C10. The stack checks and installer use a stale enrollment interface.
+
+The real client resolves `LGTM_CLIENT_STATE_DIR` and puts `identity.json` directly in it. The stack check sets `XDG_STATE_HOME`, edits an identity one folder deeper, and looks for `msg=link_refused` with `code=server_key_mismatch`. The plan only names that code for the bad-signature case. The installer still checks `server.json`. Evidence appears in `src/client/internal/config/config.go:14` and `:27`, `src/client/internal/state/folder.go:19`, `.plans/plans/go-s3-client-link/plan.md:195`, `deploy/test/checks.sh:217`, `:232`, `:329` and `:520`, and `.plans/plans/go-s3-stack-client/plan.md:224`.
+
+On a clean test machine, two fixture joins can resolve to the same default state folder, so the second refuses the existing enrollment. Even with isolated joins, check 10 can miss the real identity or fail to recognize a bad-signature diagnostic. A second normal installer run can mint a new token and fail the redundant join instead of reusing its enrollment.
+
+Require the Stack team's reconciliation before the combined acceptance run. Pass the absolute fixture directory explicitly to both commands, edit the identity in that directory, and align the installer and shim with the real identity filename. Specify the exact client log fields for wrong signing key and verified removal. Check that a wrong-key attempt sends no proof even though the process remains eligible to retry.
+
+### logic2-r1 06. MAJOR. C7. A pending older snapshot can take a later event number.
+
+The reporter retains refused snapshots by kind and retries after an acknowledgement. A fresh approval or welcome can also publish new snapshots. Events apply in number order, and the server uses capture time for display. Evidence appears in `.plans/plans/go-s3-client-link/plan.md:183`, `.plans/plans/go-s3-client-link/plan.md:197`, and `src/contracts/proto/lgtm/link/v1/events.proto:7` and `:44`.
+
+Fill the outbox and let an automatic inventory snapshot wait in memory. After room opens, let a fresh scan with a changed version commit first. The older pending snapshot can then receive a higher event number and put the old version back on the Machines page. The existing test only compares refused facts snapshots.
+
+Give one publisher ownership of pending snapshot replacement and append admission. Define freshness by capture order even when two scans finish in the opposite order. Once a newer snapshot of a kind commits, discard its older unnumbered snapshot. Preserve existing numbered events, and test the older pending inventory against a newer automatic or requested scan.
+
+### logic2-r1 07. MAJOR. R6. The plan lacks a test for its start-before-commit mutation.
+
+Item 6 names starting work before the receipt commits as a mutation. Its assertions check replay, timing and finish before restart, but none holds the start receipt's commit and observes the action. Sprint 1 supplies an unexported transaction hook in the same package. Evidence appears in `.plans/plans/go-s3-client-link/plan.md:247` through line 249 and `.plans/plans/go-s1-client-local/plan.md:413`.
+
+A builder can start a requested scan just before committing its receipt, then wait for the commit before replying. The same scan count, result and replay can satisfy the named assertions in every clean run. A process killed in that window can run the scan again on retry.
+
+Hold or fail `Begin` at the durable commit boundary while observing scan invocation and restart acceptance. Require zero effects until a successful commit and zero effects on a failed commit. Require this test to fail the mutation before the item merges.
+
+### logic2-r1 08. MAJOR. D17. The encrypted link still needs a joint design ruling.
+
+The approved design requires a machine certificate on the encrypted link. Client decision 8 is still an assumption that the machine sends only its signed proof, and the stack's public encrypted endpoint is deferred. Issue 1633 assigns the encryption boundary to the relevant plans before the sprint builds. Evidence appears in `docs/specs/2026-11-25-go-rewrite-foundation-design.md:316` through line 325, `docs/issues.md:7520` through line 7529, and `.plans/plans/go-s3-client-link/decisions.md:15` and `:43`.
+
+On a non-loopback deployment, an endpoint that implements the design by requiring a machine certificate ends negotiation before the client can send its signed proof. A loopback stack and a stand-alone leaf-pin test can both pass while that deployment cannot join.
+
+Close issue 1633 in the joint plan before freezing the link. Record whether proof replaces the machine certificate and where encrypted support is required. Make the Client, Server and Stack plans and the approved design agree, including what their acceptance tests cover.
+
+### logic2-r1 09. MINOR. C6. Join recovery only mentions waiting records.
+
+The contract checks expiry before replay. The plan tells an owner to remove a waiting record before using a fresh folder. Evidence appears in `src/contracts/proto/lgtm/link/v1/link.proto:61` through line 76 and `.plans/plans/go-s3-client-link/plan.md:258`.
+
+A first join can commit just before expiry and lose its reply. The watch can show the machine and the owner can approve it before the retry receives `token_expired`. The client still has no identity, and the documented cleanup misses the approved record.
+
+Describe the same-key replay limit explicitly, and tell the owner how to locate and remove the matching enrollment if it is now waiting or approved. Keep the expiry and refusal precedence from the contract.
+
+## Answers to the attack questions
+
+1. **Order and restart.** The store numbers events from 1 and refuses before unsigned wrap. Welcome restores the server's cumulative mark, and duplicate acknowledgements within range are harmless. A gap ends one stream. The server issues increasing, nonwrapping attempts, and the client keeps the highest running attempt and scopes its reply to that stream. Standing uses higher revisions, keeps equal content, and retains the accepted state on a conflicting tie. Wall timestamps do not order events. Command expiry uses elapsed time, with the exact expiry boundary closed. Retention and actual retry cadence fail as described in 01 and 04. Evidence appears in `.plans/plans/go-s3-client-link/plan.md:168`, `:195`, `:242` and `:245`, `.plans/plans/go-s1-client-local/plan.md:420`, and `src/contracts/proto/lgtm/link/v1/commands.proto:29` through line 37 and `:104` through line 116.
+2. **Failure and repair.** A join timeout reuses the durable key while the token remains valid. Server database unavailability retries. Local commit uncertainty stops writes and reopens on relaunch. A recovered started receipt reports interruption. A missing elapsed bound denies new work, and a server clock jump is outside the wire guarantee. A crash while recording a decline, a fast local clock, and an expired replay after approval leave the gaps in 03, 01 and 09. Evidence appears in `.plans/plans/go-s3-client-link/plan.md:105` through line 108, `:198` and `:242` through line 246, and `src/contracts/proto/lgtm/link/v1/link.proto:55`.
+3. **Intersecting rules.** Before proof verification, an unknown-machine refusal or revision refusal retries. After verification, those same reasons stop, an event gap reconnects, and database unavailability retries. The peer's planned removal code falls in the retry cell. With a finished receipt, timely and expired attempts replay alike. With a running or recovered-started receipt, they wait or report interruption respectively. With no receipt they start only under a valid timely bound, otherwise decline. A waiting client admits only standing updates, and these answer done at every valid expiry with higher revisions applied and older or equal revisions retained. The expired plus crash cell and live receipt plus fast clock cell are defective. Evidence appears in `.plans/plans/go-s3-client-link/plan.md:155`, `:195` and `:242` through line 246.
+4. **Zero and missing values.** Welcome mark zero means no events, while event zero is invalid. Attempt and standing revision zero are invalid. Missing state or server time breaks welcome. An unknown or zero approval waits, with no usable side-call token. Absent load means unavailable, and present zero means measured zero. Empty host name is accepted when unavailable. Zero command outcome is reserved and the server maps it to failed. A bad local receipt yields interrupted. Nothing found in these defaults after checking `src/contracts/proto/lgtm/link/v1/link.proto:9` through line 18, `:253`, `src/contracts/proto/lgtm/link/v1/events.proto:18` and `:98`, and `src/contracts/proto/lgtm/link/v1/commands.proto:51`, `:73` and `:111`.
+5. **Concurrent owners.** Folder locking excludes concurrent local join and run. A single process orders command delivery and completion. A single stream sends events and serializes its send ceiling with acknowledgement processing. The server fence makes older streams ineffective. An acknowledgement can free space while a fresh scan and a pending snapshot compete to append, which leaves 06 open. Evidence appears in `.plans/plans/go-s1-client-local/plan.md:184` through line 192, `.plans/plans/go-s3-client-link/plan.md:169`, `:183` and `:245`, and `src/contracts/proto/lgtm/link/v1/link.proto:100` through line 107.
+6. **Risk mutations.** Items 1 to 5 name direct assertions for wrong pins or origins, replaced join keys, bad proofs or leading-header metadata, impossible acknowledgements or wrong replay cursors, and early logging or path leakage. Item 6 proves the expiry-order, missing-decline and conflicting-standing mutations but leaves the start-before-commit mutation in 07. Item 7 names assertions for the cap, gap, unsigned refusal and waiting reports, with the cap limited to sleep. Items 8 and 9 directly check no dial, lock release, redaction and restart exit status. Evidence appears in `.plans/plans/go-s3-client-link/plan.md:94`, `:109`, `:156`, `:170`, `:184`, `:247`, `:199`, `:260` and `:272`, and the test descriptions immediately following each.
+7. **Wrong implementations the listed item tests can miss.** Item 1 accepts a non-loopback plain destination only through the low-level constructor when the parser is bypassed. Item 2 resets the full retry budget after a transient response if the exhaustion check only verifies eventual failure. Item 3 accepts a known invalid approved welcome with revision zero if the incomplete case only omits its state. Item 4 replays correctly under a fast reader but starves heartbeats when the replay queue is large. Item 5 republishes stale inventory as in 06. Item 6 loses a live receipt or starts work before commit as in 01 and 07. Item 7 caps sleeps but misses start-to-start cadence as in 04. Item 8 ignores the store's close error before publishing an identity. Item 9 silently drops the interrupt cancellation path in `main` while the direct wrapper tests still pass. Evidence appears in `.plans/plans/go-s3-client-link/plan.md:95`, `:110`, `:157`, `:171`, `:185`, `:248`, `:200`, `:261` and `:270` through line 273.
+8. **States the interface can exclude.** An atomic decline operation prevents a known decline from being stored as started. Separate server-time bounds prevent a pruning input from acting as permission to start. A single snapshot publisher can enforce freshness before numbering. These changes address 03, 01 and 06.
+
+a. **Join and key proof.** The client keeps the private key in `machine.key` and saves the origin, machine identifier, both public keys and the applicable certificate-key digest in `identity.json`. It checks the join reply's signing key and every stream challenge, and it sends no proof on a mismatch. The encrypted transport checks the leaf key before sending a request. A lost reply reuses the durable key and the token, and an eligible replay yields the first machine identifier. Expiry, revocation or removal can prevent replay. Check 10 still has the integration defects in 02 and 05. Evidence appears in `.plans/plans/go-s3-client-link/plan.md:92` through line 108, `:153` and `:258`, and `src/contracts/proto/lgtm/link/v1/link.proto:61` through line 79.
+b. **Reconnect and replay.** The plan caps retry sleeps at 15 seconds, while failed attempts can extend the actual interval as in 04. A verified contract removal stops the client, subject to 02. For an ordinary outage, the server commits a contiguous prefix with the effects and the client resumes after that mark. Resent events do not repeat their effects, and reports keep their durable numbers. This works by reading within the one-outbox and no-restore assumptions. Evidence appears in `.plans/plans/go-s3-client-link/plan.md:168` through line 171, `:195`, and `src/contracts/proto/lgtm/link/v1/events.proto:7` through line 31.
+c. **Commands and exact dependencies.** Normal duplicates reuse a running or saved receipt. Early pruning can let a command execute twice. A new expired command should answer expired without work. A stored outcome takes precedence, and `SetState` uses revision and answers done. Confirmed live by byte comparison that the three link drafts match the checked-in Protocol Buffers files. The named join, proof, welcome, report and result fields match them. The planned local names match `CreateStore`, `OpenStore`, `Read`, `Ack`, `Begin` and `Finish`, plus the existing state, credential and configuration functions. The store and scan are still prerequisites at commit `6d416f17`, and the local clock and decline semantics require the changes in 01 and 03. Evidence appears in `src/contracts/gen/go/lgtm/link/v1/linkv1connect/link.connect.go:55`, `src/contracts/proto/lgtm/link/v1/commands.proto:60`, `.plans/plans/go-s1-client-local/plan.md:337` and `:407` through line 425, `src/client/internal/config/config.go:28`, `src/client/internal/state/atomic.go:23`, and `src/client/internal/enroll/credential.go:58`.
+
+## Post-build checks
+
+- **Join recovery.** Hold the first successful server reply after its commit, then kill and relaunch the client with the same folder and token. Verify one machine identifier, one client key and a usable identity. Then change the saved server key in a disposable copy and verify that the server receives no proof.
+- **Loss of acknowledgement.** Crash the real server after applying one event and before sending its acknowledgement. Produce three more reports while it is down. On restart, verify the committed prefix, the application order and one effect per number using the real database and a later report.
+- **Receiver and sender lifetime.** Block a replay send on a heavily backlogged stream while a result and heartbeat become due. Cancel the stream. Verify that both network workers exit, a valid acknowledgement around send completion is handled without a false permanent stop, and a replacement stream opens within the specified budget.
+- **Restart and expiry on both supported systems.** Lose an accepted restart's result after commit and deliver the same command with a higher attempt after relaunch. Verify the original result and a single restart. Suspend a client across a new command's expiry and verify an expired result with no action. Repeat with the machine wall clock ahead.
+
+## Grade
+
+5 out of 10. There are 2 blockers, 6 majors and 1 minor.

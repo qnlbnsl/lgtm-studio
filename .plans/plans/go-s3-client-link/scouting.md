@@ -1,6 +1,6 @@
 # Scouting the client link and its acceptance checks
 
-This is the planning and prerequisite reconciliation evidence from 2026-11-26. The Sprint 0 and Sprint 1 plans are under review. Their current planned interfaces are identified below.
+This records planning, prerequisite reconciliation and the first review fold on 2026-11-26. The anchors distinguish existing code from work that remains in the plans.
 
 ## Requirements and existing repository anchors
 
@@ -23,9 +23,9 @@ This is the planning and prerequisite reconciliation evidence from 2026-11-26. T
 | `floorplan/plan.json` | The neighboring entries "Joining a server", "Connection to the server", "Events waiting to be sent", "Machine settings" and "Machine facts and load" place the work. The connection entry uses the older `Connect` procedure spelling. |
 | Planning skill and model sheet | Read the planning skill, template, self-check probes and the work area and complexity rows. `backend` and `client/backend` are the applicable values. |
 
-## Greenfield anchors for the work items
+## Existing dependencies and client-link work item anchors
 
-There is no `src/client/` or `src/server/` implementation directory in this checkout yet. The targets below are future paths. Patterns identify a current file and symbol or section, or a planned dependency when the pattern is the direct build prerequisite.
+The repository has the Sprint 1 client program, state, key, settings, facts, harness scan and store sources. The link and application targets below name planned work. A dependency on another plan remains a build gate until its interface is agreed and available.
 
 | Item | File and planned anchor | Nearest pattern or dependency |
 |---|---|---|
@@ -34,12 +34,13 @@ There is no `src/client/` or `src/server/` implementation directory in this chec
 | 3 | `src/client/internal/link/conn.go`, `openSession`, `proofText` | Sprint 0 `draft/link.proto`, `LinkService.Open` and `Proof`. The proof tests will use the contract fixture `src/contracts/testdata/link-proof.json` once generated. |
 | 4 | `src/client/internal/link/replay.go`, `replay` | Sprint 1 `src/client/internal/link/outbox.go` target with `Store.Read`, `Store.Ack`, `Store.Next` and `Store.Changed`. `deploy/test/checks.sh`, `client_sequences`, reads the durable observation. |
 | 5 | `src/client/internal/link/report.go`, `reporter`, `captureFacts`, `scanHarnesses` | Sprint 1 `sysinfo.ReadFacts`, `sysinfo.ReadLoad` and `harness.Scan`. Sprint 0 `draft/events.proto`, `Facts` and `HarnessesFound`. |
-| 6 | `src/client/internal/link/commands.go`, `commandHandler`, `serverClock` | Sprint 0 `draft/commands.proto`, `Command`, `CommandResult` and `MachineState`. Sprint 1 `Store.Begin` and `Store.Finish` in the receipt item. |
-| 7 | `src/client/internal/link/retry.go` and `session.go`, `Run`, `RunOptions` | `floorplan/plan.json`, "Connection to the server". Sprint 0 `draft/link.proto`, `LinkService` code table and `Open` timeout comments. |
+| 6 | `src/client/internal/link/commands.go`, `commandHandler`, `serverClock` | Sprint 0 `commands.proto`, `Command` and `CommandResult`. The existing `src/client/internal/link/receipts.go` supplies `Store.Begin` and `Store.Finish`. The atomic `Store.Decline` interface is a request to Client Local. |
+| 7a | `src/client/internal/link/retry.go`, `supervise` | Sprint 0 `link.proto`, the `LinkService` code table and `Open` handshake deadlines. Item 3 owns the error classification. |
+| 7b | `src/client/internal/link/session.go`, `Run`, `RunOptions` | `floorplan/plan.json`, "Connection to the server". `deploy/test/checks.sh`, `wait_refusal` and `check_c10`, fixes the diagnostics. |
 | 8 | `src/client/internal/app/client.go`, `Join`, `Run` | Sprint 1 `config.StateDir`, `state.Open` and the package main `run` stub. Stack Client's plan names the service outcomes. |
 | 9 | `src/client/cmd/lgtm-client/main.go`, `runContext`. `src/client/clienttest/clienttest.go`, `Options`, `Join` and `Run`. | Sprint 1 package main's `run` and `version`. Issue 1634 and the epic's in-process test rule supply the package boundary. |
 
-## Checks run during planning
+## Checks run during initial planning
 
 - Read the files and searched the named declarations above. The three spot checks were `LinkService.Open` in the draft contract, `check_c10` in the stack script and the old join command in the Machines dialog. Each file and anchor was present.
 - The active `go version` reported Go 1.23.3. The local Go 1.26.0 toolchain source exposes the two HTTP/2 protocol setters used by the plan. Sprint 0 owns the module toolchain selection.
@@ -50,16 +51,16 @@ There is no `src/client/` or `src/server/` implementation directory in this chec
 
 | Gate | Evidence and result |
 |---|---|
-| 1. Decisions | The 24 rows have status `closed` or `unanswered`. Every unanswered row names its assumption. Row 6 records the owner's sprint confirmation and supersedes row 5. |
-| 2. Acceptance | The nine done criteria each name a test, command or observed stack step. Every item names a first failing assertion and a verification command. |
+| 1. Decisions | The 50 rows have status `closed` or `unanswered`. Every unanswered row names its assumption. Rows 41 and 42 name the owner gates. |
+| 2. Acceptance | The nine done criteria each name a test, command or observed stack step. All ten build items name a first failing assertion and a verification command. |
 | 3. Design artifacts | The three workstreams point to the approved design. The client work changes no screen hierarchy. The result carries the website copy request. |
 | 4. Traceability | The declared inputs and all 23 decisions, 11 rules and 13 checks map to the workstreams, another team or a later wave. |
-| 5. Risks | The three workstreams each have risk, severity and mitigation rows. All nine risky items name a mutation. |
+| 5. Risks | The three workstreams each have risk, severity and mitigation rows. All ten risky items name a mutation. |
 | 6. Verification | Each workstream lists its gating tests and environment checks. There is one plan-level rollout sequence. |
-| 7. Adversarial review | The plan is ready for round 1. The bounded assignment delegates findings and their resolution to the orchestrator. |
-| 8. Anchors | Nine task rows have matching scouting anchors. The three existing spot checks passed. |
+| 7. Adversarial review | The round 1 register accounts for all 42 findings, gives duplicate-adjusted points and names the patches for round 2. The plan remains in `attack`. |
+| 8. Anchors | Ten task rows have matching scouting anchors. The contract, receipt store and stack script checks below anchor the changed work. |
 | 9. Guardrails | The table cites the repository's ownership, credits, issue, integration and writing rules. |
-| 10. Sizing | The scope check passed. All nine rows are low or medium, with a reason, prerequisites and attack flag. The estimate gives per-vendor launches. Live allowance verification belongs to the orchestrator at launch, as the epic specifies. |
+| 10. Sizing | The scope check passed. The ten low or medium rows have reasons, prerequisites and attack flags. The orchestrator owns launch allowances. |
 | Format and linkage | The frontmatter, four top-level sections, divider, five folds and linked epic row passed. The epic remains active. |
 
 The stock Node invocation hit `spawnSync git EPERM` while creating an unused standard-input pipe for Git in this runner. A probe showed that Git ran successfully with standard input ignored. The same privacy checker ran with only that subprocess option adjusted at runtime. A second scan applied the same rules to the four deliverables, including the untracked files. The deliverables were also read for full sentences, expanded terms, relative paths and dated decisions.
@@ -68,12 +69,24 @@ The stock Node invocation hit `spawnSync git EPERM` while creating an unused sta
 
 | Read | Anchor |
 |---|---|
-| The Contract rounds 3 and 4 and Client Local round 4 requests | The Client Local ruling accepts machine clock skew in pruning. Contract round 4 still promises the full retention window. |
+| The Contract rounds 3 and 4 and Client Local round 4 requests | The Client Local ruling accepts machine clock skew in pruning. `commands.proto` still states the full retention window. The fold result carries the wording request to Contract. |
 | Sprint 1 server store and vault | The server store classifies an indeterminate transaction as unavailable. The vault gives the signing key to the server. The client uses the generated link for both proofs. |
 | Sprint 2 server sign-in and Stack Web | Sign-in item 8 supplies `servertest.Start`, its bound endpoint and restart fixture. The stack uses cleartext HTTP/2 on loopback and reserves a public encrypted endpoint for later. |
-| Sprint 3 Stack Client and the wave 1 script | The service policy restarts nonzero run exits. The installer still names `server.json`, and `client_join` and `start_client` still export the superseded state setting. The result carries both requests. |
+| Sprint 3 Stack Client and the wave 1 script | The service policy restarts nonzero run exits. The current Stack Client plan names `identity.json`. The script still uses the earlier state setting and derives the path. The result carries the implementation dependency. |
 | The epic and issues 1641 and 1642 | The Sprint 3 link plans share the freeze gate. The first importer owns a module change. Restored state and live copies are outside wave 1. |
 
 The elapsed-clock targets are `src/client/internal/link/clock_linux.go` and `clock_darwin.go`. The dependency provides `unix.ClockGettime` on both platforms. Linux `CLOCK_BOOTTIME` counts suspend time, and Apple uses its continuous clock for `CLOCK_MONOTONIC_RAW`. The planned sign-in dependency selects the same module version used here. [Linux clock documentation](https://www.man7.org/linux/man-pages/man3/clock_gettime.3.html), [Apple clock implementation](https://github.com/apple-oss-distributions/Libc/blob/main/gen/clock_gettime.c), [Go cryptography module requirements](https://github.com/golang/crypto/blob/v0.59.0/go.mod).
 
 The Contract round 4 result, drafts and post-build checks 16, 18 to 20 and 24 anchor the follow-up. The pinned Connect library's `error.go` documents `(*Error).Meta()` as exposing the metadata decoded from protocol headers, trailers or the stream body. The local-state plan's `Begin` prefers existing receipts, returns `DecisionExpired` without a write for a new expired command and lets `Finish` store the final result of a reserved command.
+
+## Code and contract checked for the first review fold
+
+| Anchor | Observation |
+|---|---|
+| `src/client/internal/config/config.go`, `src/client/internal/state/` and `src/client/internal/enroll/` | The configuration and state code provides `config.StateDir`, `LoadSettings`, `state.Open`, `WriteAtomic` and `SyncDir`. The credential package provides `Load` and `Credential.Sign`. |
+| `src/client/internal/sysinfo/` and `src/client/internal/harness/` | The facts and load readers are `ReadFacts` and `ReadLoad`. The scanner exposes `Definitions`, `Scan` and `DefaultScanOptions`. |
+| `src/client/internal/link/receipts.go`, `store.go` and `outbox.go` | `Begin` checks existing receipts before expiry. An absent expired command writes nothing. `Finish` requires a running receipt and prunes by `wallClock`. The current store has no atomic decline call. `Read`, `Ack`, `Next` and `Changed` are the outbox interfaces. |
+| `src/contracts/proto/lgtm/link/v1/{link,events,commands}.proto` and the Contract drafts | The verified challenge precedes a trusted refusal. A welcome carries time and the committed event number after proof. An event gap ends one stream. An approved welcome requires fresh facts and inventory. A standing update is answered with done irrespective of expiry. |
+| `deploy/test/checks.sh`, `client_join`, `start_client`, `check_c10` and `check_c11` | The state exports still use `XDG_STATE_HOME`. C10 reads `msg=link_refused` and the two refusal codes. C11 keeps the same process, observes three durable events and checks that each number was applied once in order. |
+| `src/server/internal/store/storetest/postgres.go`, `scripts/check-go.sh` and the Stack Web plan | The fixture skips explicitly if `LGTM_TEST_POSTGRES` is unset. The root check runs `go test ./...`. Stack Web owns the existing long-stream soak command. |
+| Connect 1.21.1 and the `golang.org/x/net` v0.63.0 module metadata | The client option `WithReadMaxBytes` caps each received message. Server Machines sets a 64-kibibyte cap. The network module selects `golang.org/x/sys` v0.50.0. |
