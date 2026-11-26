@@ -1,0 +1,23 @@
+message lgtm.link.v1.Event
+  1 number uint64
+  2 happened_at google.protobuf.Timestamp
+  10 facts lgtm.link.v1.Facts oneof=report
+  11 harnesses_found lgtm.link.v1.HarnessesFound oneof=report
+message lgtm.link.v1.EventAck
+  1 through uint64
+message lgtm.link.v1.Facts
+  1 os string
+  2 cores uint32
+  3 memory_bytes uint64
+  4 client_version string
+  5 workspace string
+  6 agent_limit uint32
+message lgtm.link.v1.HarnessesFound
+  1 harnesses lgtm.link.v1.Harness repeated
+message lgtm.link.v1.Harness
+  1 name string
+  2 version string optional
+message lgtm.link.v1.Heartbeat
+  1 cpu_percent uint32 optional
+  2 memory_percent uint32 optional
+message lgtm.link.v1.HeartbeatAck

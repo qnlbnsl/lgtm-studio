@@ -1,0 +1,28 @@
+rpc lgtm.link.v1.LinkService.Open stream lgtm.link.v1.OpenRequest stream lgtm.link.v1.OpenResponse
+message lgtm.link.v1.OpenRequest
+  1 hello lgtm.link.v1.Hello oneof=kind
+  2 proof lgtm.link.v1.Proof oneof=kind
+  3 heartbeat lgtm.link.v1.Heartbeat oneof=kind
+  4 event lgtm.link.v1.Event oneof=kind
+  5 command_result lgtm.link.v1.CommandResult oneof=kind
+message lgtm.link.v1.OpenResponse
+  1 challenge lgtm.link.v1.Challenge oneof=kind
+  2 welcome lgtm.link.v1.Welcome oneof=kind
+  3 heartbeat_ack lgtm.link.v1.HeartbeatAck oneof=kind
+  4 event_ack lgtm.link.v1.EventAck oneof=kind
+  5 command lgtm.link.v1.Command oneof=kind
+message lgtm.link.v1.Hello
+  1 machine_id string
+  2 machine_nonce bytes
+  3 link_revision uint32
+message lgtm.link.v1.Challenge
+  1 server_nonce bytes
+  2 server_signature bytes
+message lgtm.link.v1.Proof
+  1 machine_signature bytes
+message lgtm.link.v1.Welcome
+  1 connection_token string
+  2 state lgtm.link.v1.MachineState
+  3 last_event_number uint64
+  4 server_time google.protobuf.Timestamp
+  5 link_revision uint32

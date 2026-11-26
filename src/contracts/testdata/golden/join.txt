@@ -1,0 +1,15 @@
+rpc lgtm.link.v1.LinkService.Join lgtm.link.v1.JoinRequest lgtm.link.v1.JoinResponse
+message lgtm.link.v1.JoinToken
+  1 token_id string
+  2 secret bytes
+  3 address string
+  4 server_key_sha256 bytes
+  5 certificate_key_sha256 bytes
+message lgtm.link.v1.JoinRequest
+  1 token_id string
+  2 token_secret bytes
+  3 machine_public_key bytes
+  4 host_name string
+message lgtm.link.v1.JoinResponse
+  1 machine_id string
+  2 server_public_key bytes

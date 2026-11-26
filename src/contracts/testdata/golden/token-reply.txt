@@ -1,0 +1,5 @@
+message lgtm.v1.CreateClientTokenResponse
+  1 token_id string
+  2 token string
+  3 expires_at google.protobuf.Timestamp
+  4 address string

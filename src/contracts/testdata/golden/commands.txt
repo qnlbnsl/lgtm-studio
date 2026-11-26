@@ -1,0 +1,33 @@
+message lgtm.link.v1.Command
+  1 id string
+  2 attempt uint32
+  3 expires_at google.protobuf.Timestamp
+  10 scan_harnesses lgtm.link.v1.ScanHarnesses oneof=action
+  11 set_state lgtm.link.v1.SetState oneof=action
+  12 restart lgtm.link.v1.Restart oneof=action
+message lgtm.link.v1.CommandResult
+  1 command_id string
+  2 attempt uint32
+  3 outcome lgtm.link.v1.CommandOutcome
+  reserved 4-4
+  reserved message
+message lgtm.link.v1.ScanHarnesses
+message lgtm.link.v1.Restart
+message lgtm.link.v1.SetState
+  1 state lgtm.link.v1.MachineState
+message lgtm.link.v1.MachineState
+  1 approval lgtm.link.v1.Approval
+  2 name string
+  3 revision uint64
+enum lgtm.link.v1.CommandOutcome
+  0 COMMAND_OUTCOME_UNSPECIFIED
+  1 COMMAND_OUTCOME_DONE
+  2 COMMAND_OUTCOME_FAILED
+  3 COMMAND_OUTCOME_EXPIRED
+  4 COMMAND_OUTCOME_UNSUPPORTED
+  5 COMMAND_OUTCOME_INTERRUPTED
+enum lgtm.link.v1.Approval
+  0 APPROVAL_UNSPECIFIED
+  1 APPROVAL_WAITING
+  2 APPROVAL_APPROVED
+  3 APPROVAL_REMOVED
