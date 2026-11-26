@@ -119,14 +119,19 @@ func TestReportInventoryAndLoad(t *testing.T) {
 		probes.readFacts = func(version string) (sysinfo.Facts, error) {
 			return sysinfo.Facts{OS: "Linux", Cores: 7, MemoryBytes: 9<<30 + 17, ClientVersion: version}, nil
 		}
+		versions := map[harness.Name]string{
+			harness.Claude: "1.2.3",
+			harness.Codex:  "0.98.0",
+			harness.Gemini: "0.21.4",
+			harness.Cursor: "2026.11.26-a1b2c3",
+		}
 		probes.scan = func(_ context.Context, opts harness.ScanOptions) []harness.Found {
 			if opts.Home != home {
 				t.Error("the scan did not receive its configured home")
 			}
 			found := fixtureReportProbes().scan(context.Background(), opts)
-			found[0].Installed, found[0].Version = true, "1.2.3"
-			found[2].Installed = true
 			for i := range found {
+				found[i].Installed, found[i].Version = true, versions[found[i].Harness]
 				found[i].Path = "/fixture/private-executable"
 				if i != 0 {
 					found[i].Problem = "fixture private diagnostic"
@@ -197,12 +202,12 @@ func TestReportInventoryAndLoad(t *testing.T) {
 			t.Fatalf("inventory length = %d, want all four scan entries", len(got))
 		}
 		for i, row := range got {
-			want := &linkv1.Harness{Name: string(defs[i].Name)}
-			if i == 0 {
-				want.Version = proto.String("1.2.3")
+			want := &linkv1.Harness{
+				Name:    string(defs[i].Name),
+				Version: proto.String(versions[defs[i].Name]),
 			}
 			if !proto.Equal(row, want) {
-				t.Errorf("inventory entry %d has the wrong name or optional version", i)
+				t.Errorf("inventory entry %d has the wrong name or optional version for %s", i, want.Name)
 			}
 			checkReportString(t, "harness name", row.GetName(), 32)
 			checkReportString(t, "harness version", row.GetVersion(), 64)
@@ -238,6 +243,7 @@ func TestReportInventoryAndLoad(t *testing.T) {
 			found := scan(ctx, opts)
 			found[0].Harness += "\x00"
 			found[0].Installed, found[0].Version = true, "1.\x002.3"
+			found[2].Installed = true
 			return found
 		}
 		home := t.TempDir()
@@ -262,6 +268,9 @@ func TestReportInventoryAndLoad(t *testing.T) {
 		inventory := event.GetHarnessesFound().GetHarnesses()
 		if len(inventory) != len(harness.Definitions()) {
 			t.Fatal("preparing strings dropped a harness entry")
+		}
+		if row := inventory[2]; row.GetName() != string(harness.Gemini) || row.Version != nil {
+			t.Error("installed Gemini has no measured version, so its version field must be absent")
 		}
 		for _, row := range inventory {
 			checkReportString(t, "harness name", row.GetName(), 32)
