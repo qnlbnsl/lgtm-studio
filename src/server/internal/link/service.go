@@ -16,6 +16,7 @@ type Service struct {
 	store     *store.Store
 	tokens    *machines.Tokens
 	serverKey ed25519.PublicKey
+	streaming *streamingService
 }
 
 // NewService creates the link service for one server.

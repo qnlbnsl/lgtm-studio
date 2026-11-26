@@ -9,6 +9,7 @@ tool (
 
 require (
 	connectrpc.com/connect v1.21.1
+	filippo.io/edwards25519 v1.2.0
 	github.com/jackc/pgx/v5 v5.13.0
 	go.etcd.io/bbolt v1.4.3
 	golang.org/x/crypto v0.59.0
