@@ -143,10 +143,10 @@ The work items are listed in the brief of each plan.
 
 | Order | Plan slug | What it delivers | State | Commit |
 |---|---|---|---|---|
-| 1 | go-s0-contract | The Go module, Go code generated from the contract, the shared `Watch` shape, and the link contract. | linked | |
+| 1 | go-s0-contract | The Go module, Go code generated from the contract, the shared `Watch` shape, and the link contract. | linked | 667ede94 |
 | 2 | go-s1-server-store | The server's database layer: transactions, numbered database changes, the change feed, safe retries and `Watch` streams. | linked | |
-| 3 | go-s1-client-local | What the client does on its own machine: its key, its facts, the harness scan, and the two records it keeps on disk. | linked | |
-| 4 | go-s1-stack-vault | The compose stack with PostgreSQL and OpenBao, where OpenBao opens by itself after a restart. | linked | |
+| 3 | go-s1-client-local | What the client does on its own machine: its key, its facts, the harness scan, and the two records it keeps on disk. | linked | dd0c8cba |
+| 4 | go-s1-stack-vault | The compose stack with PostgreSQL and OpenBao, where OpenBao opens by itself after a restart. | linked | f072231a |
 | 5 | go-s2-server-signin | The server program: settings, request handling, sign-in, web sessions, and the vault client. | linked | |
 | 6 | go-s2-stack-web | The images of the server and the website, and one command that starts everything. | linked | |
 | 7 | go-s3-server-machines | The machine registry, join tokens, the Machines page's calls, and the server end of the link. | linked | |
