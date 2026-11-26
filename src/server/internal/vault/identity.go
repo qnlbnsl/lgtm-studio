@@ -17,6 +17,9 @@ type LinkIdentity struct {
 	SigningKey   ed25519.PrivateKey
 	Fingerprint  string
 	VaultVersion int
+
+	// adopted records that the first pin took a key this load did not create.
+	adopted bool
 }
 
 const (
@@ -70,10 +73,11 @@ func LoadLinkIdentity(ctx context.Context, s *store.Store, c *Client, allowIniti
 		}
 	}
 
+	adopted := true
 	switch state {
 	case keyFound:
 	case keyAbsent:
-		key, state = c.createAndReread(ctx, token)
+		key, state, adopted = c.createAndReread(ctx, token)
 		if state != keyFound {
 			if state == keyUnavailable {
 				return LinkIdentity{}, ErrUnavailable
@@ -87,6 +91,7 @@ func LoadLinkIdentity(ctx context.Context, s *store.Store, c *Client, allowIniti
 	}
 
 	identity := newIdentity(key)
+	identity.adopted = adopted
 	if err := writePin(ctx, s, identity.Fingerprint); err != nil {
 		return LinkIdentity{}, err
 	}
@@ -95,17 +100,19 @@ func LoadLinkIdentity(ctx context.Context, s *store.Store, c *Client, allowIniti
 
 // createAndReread makes the single create attempt and then reads the entry once.
 // Whatever the write's reply, only the stored seed is used, so a losing candidate is discarded.
-func (c *Client) createAndReread(ctx context.Context, token string) (storedKey, keyState) {
+// The flag reports that the stored seed is not this load's candidate, because a competing create won.
+func (c *Client) createAndReread(ctx context.Context, token string) (storedKey, keyState, bool) {
 	var candidate [32]byte
 	defer clear(candidate[:])
 	if _, err := rand.Read(candidate[:]); err != nil {
-		return storedKey{}, keyInvalid
+		return storedKey{}, keyInvalid, false
 	}
 	c.createKey(ctx, token, &candidate)
 	if ctx.Err() != nil {
-		return storedKey{}, keyUnavailable
+		return storedKey{}, keyUnavailable, false
 	}
-	return c.readKey(ctx, token)
+	key, state := c.readKey(ctx, token)
+	return key, state, key.seed != candidate
 }
 
 func newIdentity(key storedKey) LinkIdentity {
