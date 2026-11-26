@@ -69,7 +69,7 @@ type ClientServiceClient interface {
 	// WatchClients sends every client once, and then each change as it happens.
 	WatchClients(context.Context, *connect.Request[v1.WatchClientsRequest]) (*connect.ServerStreamForClient[v1.WatchClientsResponse], error)
 	// CreateClientToken makes a token that one new client uses once to join this server.
-	// The server's own command `lgtm client add` makes the same kind of token.
+	// The server's own command `lgtm-server join-token` makes the same kind of token.
 	// A call that carries `Lgtm-Request-Key` is refused with `invalid_argument` before any token is
 	// made. Every other call makes a new token, and a token whose reply was lost ends at expires_at.
 	CreateClientToken(context.Context, *connect.Request[v1.CreateClientTokenRequest]) (*connect.Response[v1.CreateClientTokenResponse], error)
@@ -85,7 +85,7 @@ type ClientServiceClient interface {
 	// ReconnectClient restarts a client that is connected. A client that is not connected is refused
 	// with `failed_precondition`, because the server never dials a machine.
 	ReconnectClient(context.Context, *connect.Request[v1.ReconnectClientRequest]) (*connect.Response[v1.ReconnectClientResponse], error)
-	// RemoveClient disconnects a client and forgets it. It also refuses a client that waits for approval.
+	// RemoveClient disconnects a client and forgets it. It removes a client that waits for approval in the same way.
 	RemoveClient(context.Context, *connect.Request[v1.RemoveClientRequest]) (*connect.Response[v1.RemoveClientResponse], error)
 }
 
@@ -208,7 +208,7 @@ type ClientServiceHandler interface {
 	// WatchClients sends every client once, and then each change as it happens.
 	WatchClients(context.Context, *connect.Request[v1.WatchClientsRequest], *connect.ServerStream[v1.WatchClientsResponse]) error
 	// CreateClientToken makes a token that one new client uses once to join this server.
-	// The server's own command `lgtm client add` makes the same kind of token.
+	// The server's own command `lgtm-server join-token` makes the same kind of token.
 	// A call that carries `Lgtm-Request-Key` is refused with `invalid_argument` before any token is
 	// made. Every other call makes a new token, and a token whose reply was lost ends at expires_at.
 	CreateClientToken(context.Context, *connect.Request[v1.CreateClientTokenRequest]) (*connect.Response[v1.CreateClientTokenResponse], error)
@@ -224,7 +224,7 @@ type ClientServiceHandler interface {
 	// ReconnectClient restarts a client that is connected. A client that is not connected is refused
 	// with `failed_precondition`, because the server never dials a machine.
 	ReconnectClient(context.Context, *connect.Request[v1.ReconnectClientRequest]) (*connect.Response[v1.ReconnectClientResponse], error)
-	// RemoveClient disconnects a client and forgets it. It also refuses a client that waits for approval.
+	// RemoveClient disconnects a client and forgets it. It removes a client that waits for approval in the same way.
 	RemoveClient(context.Context, *connect.Request[v1.RemoveClientRequest]) (*connect.Response[v1.RemoveClientResponse], error)
 }
 

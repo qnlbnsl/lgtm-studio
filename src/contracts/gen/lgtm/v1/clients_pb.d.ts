@@ -541,7 +541,7 @@ export declare const ClientService: GenService<{
   },
   /**
    * CreateClientToken makes a token that one new client uses once to join this server.
-   * The server's own command `lgtm client add` makes the same kind of token.
+   * The server's own command `lgtm-server join-token` makes the same kind of token.
    * A call that carries `Lgtm-Request-Key` is refused with `invalid_argument` before any token is
    * made. Every other call makes a new token, and a token whose reply was lost ends at expires_at.
    *
@@ -605,7 +605,7 @@ export declare const ClientService: GenService<{
     output: typeof ReconnectClientResponseSchema;
   },
   /**
-   * RemoveClient disconnects a client and forgets it. It also refuses a client that waits for approval.
+   * RemoveClient disconnects a client and forgets it. It removes a client that waits for approval in the same way.
    *
    * @generated from rpc lgtm.v1.ClientService.RemoveClient
    */
