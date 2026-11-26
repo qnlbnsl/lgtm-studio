@@ -7516,3 +7516,33 @@ Found on 2026-11-25, while `docs/specs/2026-11-25-go-rewrite-foundation-design.m
 12. **Older documents still point at `SECURITY.md` and at numbered rules of the old `AGENTS.md`.** They are `docs/remote-access.md`, `docs/features.md`, two files in `docs/research/`, the older files in `docs/specs/`, the plans in `.plans/`, and comments in `packages/`. The three scope files in `.plans/scopes/engine/` name sections of `AGENTS.md` that no longer exist.
 13. **Two tests of the old engine read `SECURITY.md`.** The test in `packages/engine/test/harnesses/signin-documentation.test.ts` was removed with the file. The test in `packages/contracts/test/permission-scale.test.ts` now reads only the decisions record.
 14. **`README.md` still describes the old engine.**
+
+## 1633. The design of the Go rewrite does not say where encryption ends for the link
+
+Found on 2026-11-25, while the sprints of the Go rewrite were planned. Nothing here is fixed.
+
+1. **The server is reachable only inside the compose stack.** A web server stands in front of it and holds the certificate. The design says the join token carries the fingerprint of the server's certificate. It does not say how the server learns the fingerprint of a certificate that another service holds.
+2. **A certificate that a machine presents stops at the web server.** The design says the machine presents a self-signed certificate made from its own key. The server never sees it when the web server ends the encrypted connection.
+3. **The challenge that both ends sign already proves the machine.** The design does not say whether the machine's certificate adds anything to it.
+4. **The link is one long two-way stream.** The web server must pass it on without cutting it, and no check has shown that yet.
+
+The plans `go-s2-stack-web`, `go-s3-server-machines` and `go-s3-client-link` settle this before sprint 3 is built.
+
+## 1634. A Go test cannot import both programs, and the design asks for one that does
+
+Found on 2026-11-25, while the sprints of the Go rewrite were planned. Nothing here is fixed.
+
+The design's rule 10 says that tests of the link use a real client against a real server in one process.
+The design also keeps each program's code under an `internal` folder, so that Go refuses an import from one program into the other.
+A test package can therefore import neither `src/server/internal/` nor `src/client/internal/` from outside its own program.
+
+Each program needs an entry point for tests that is not under `internal`, and a third folder needs to hold the tests that start both.
+The design names neither.
+
+## 1635. The build loop sizes work in points and gives each lead a cap, and no document defines either
+
+Found on 2026-11-25, while the sprints of the Go rewrite were planned. Nothing here is fixed.
+
+`docs/specs/2026-11-05-build-loop-design.md` says that work is sized in points, and that what is over a lead's cap is split.
+No document says what a point is worth, or how many points a lead may hold.
+The epic of the Go rewrite sizes each work item as low, medium or high instead, and it tries to split a high item first.
