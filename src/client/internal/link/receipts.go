@@ -68,30 +68,11 @@ func (s *Store) Begin(c Command, now time.Time) (Decision, []byte, error) {
 	if err := s.ready(); err != nil {
 		return 0, nil, err
 	}
-	if !validCommandID(c.ID) || c.ExpiresAt.IsZero() || now.IsZero() {
+	if !validReceiptCommand(c) || now.IsZero() {
 		return 0, nil, ErrInvalidCommand
 	}
 
-	key := []byte(c.ID)
-	var decision Decision
-	var result []byte
-	err := s.db.View(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket(receiptsBucket)
-		data := bucket.Get(key)
-		if data == nil && bucket.Bucket(key) == nil {
-			return nil
-		}
-		decision = DecisionInterrupted
-		r, payload, valid := readReceipt(data, s.opts.MaxResultBytes)
-		if valid {
-			if r.State == receiptFinished {
-				decision, result = DecisionReplay, payload
-			} else if _, running := s.running[c.ID]; running {
-				decision = DecisionRunning
-			}
-		}
-		return nil
-	})
+	decision, result, err := s.findReceipt(c.ID)
 	if err != nil || decision != 0 {
 		return decision, result, err
 	}
@@ -104,12 +85,56 @@ func (s *Store) Begin(c Command, now time.Time) (Decision, []byte, error) {
 		return 0, nil, ErrInvalidCommand
 	}
 	if err := s.update(func(tx *bolt.Tx) error {
-		return tx.Bucket(receiptsBucket).Put(key, data)
+		return tx.Bucket(receiptsBucket).Put([]byte(c.ID), data)
 	}); err != nil {
 		return 0, nil, err
 	}
 	s.running[c.ID] = c.ExpiresAt
 	return DecisionRun, nil, nil
+}
+
+// Decline records an expired command without reserving a start.
+func (s *Store) Decline(c Command, result []byte) (Decision, []byte, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ready(); err != nil {
+		return 0, nil, err
+	}
+	if !validReceiptCommand(c) {
+		return 0, nil, ErrInvalidCommand
+	}
+	decision, saved, err := s.findReceipt(c.ID)
+	if err != nil || decision != 0 {
+		return decision, saved, err
+	}
+	if err := s.writeFinishedReceipt(c.ID, c.ExpiresAt, result); err != nil {
+		return 0, nil, err
+	}
+	return DecisionExpired, nil, nil
+}
+
+// findReceipt looks up a receipt while the store lock is held.
+func (s *Store) findReceipt(id string) (Decision, []byte, error) {
+	key := []byte(id)
+	var decision Decision
+	var result []byte
+	err := s.db.View(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket(receiptsBucket)
+		data := bucket.Get(key)
+		if data == nil && bucket.Bucket(key) == nil {
+			return nil
+		}
+		decision = DecisionInterrupted
+		if r, payload, valid := readReceipt(data, s.opts.MaxResultBytes); valid {
+			if r.State == receiptFinished {
+				decision, result = DecisionReplay, payload
+			} else if _, running := s.running[id]; running {
+				decision = DecisionRunning
+			}
+		}
+		return nil
+	})
+	return decision, result, err
 }
 
 // Finish stores the command result and prunes expired finished receipts.
@@ -123,6 +148,15 @@ func (s *Store) Finish(id string, result []byte) error {
 	if !running {
 		return ErrNotRunning
 	}
+	if err := s.writeFinishedReceipt(id, expires, result); err != nil {
+		return err
+	}
+	delete(s.running, id)
+	return nil
+}
+
+// writeFinishedReceipt saves and prunes receipts in one commit with the lock held.
+func (s *Store) writeFinishedReceipt(id string, expires time.Time, result []byte) error {
 	if len(result) > s.opts.MaxResultBytes {
 		return ErrResultTooLarge
 	}
@@ -135,17 +169,13 @@ func (s *Store) Finish(id string, result []byte) error {
 		return err
 	}
 	cutoff := wallClock().Add(-receiptAge)
-	if err := s.update(func(tx *bolt.Tx) error {
+	return s.update(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(receiptsBucket)
 		if err := bucket.Put([]byte(id), data); err != nil {
 			return err
 		}
 		return pruneReceipts(bucket, cutoff, s.opts.MaxResultBytes)
-	}); err != nil {
-		return err
-	}
-	delete(s.running, id)
-	return nil
+	})
 }
 
 func pruneReceipts(bucket *bolt.Bucket, cutoff time.Time, maxResult int) error {
@@ -165,6 +195,10 @@ func pruneReceipts(bucket *bolt.Bucket, cutoff time.Time, maxResult int) error {
 		}
 	}
 	return nil
+}
+
+func validReceiptCommand(c Command) bool {
+	return validCommandID(c.ID) && !c.ExpiresAt.IsZero()
 }
 
 func validCommandID(id string) bool {
