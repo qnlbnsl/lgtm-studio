@@ -7816,3 +7816,26 @@ The running server is not affected, because it always passes the shared follower
 The next step is one of two changes. Either the constructor requires a follower, or the path without one is documented as a path for tests and gets a report function that reaches the log.
 
 The same review's finding post-c 8 needs no issue. It said that the plan's test filter also ran a test of the stream plan, which failed then. That test passes since the stream plan's item 9 was built.
+
+## 1666. Ten minor findings of the review of the server program
+
+Found on 2026-11-26 by the review of the server program (findings post-f 1 to post-f 10 of the plan `go-s2-server-signin`, item 9). The review found no major fault and graded the build 8 out of 10. The report is `.plans/plans/go-s2-server-signin/attack/post-build-f.md`. None of the ten blocks the build.
+
+Findings about the program:
+
+1. After a silent loss of the instance lock, the old instance answers until the next probe fails. That is at most six seconds. During a graceful stop nothing probes the lock while the drain runs, for up to five seconds (post-f 4).
+2. A failed unlock and a failed close of the store leave no line in the log (post-f 5).
+3. An invalid value of `LGTM_ALLOW_PRIVATE_STACK` is reported with the sentence for invalid PostgreSQL settings (post-f 6).
+
+Findings about the tests and the test server:
+
+4. The test server ties a restarted application to the test that calls `Restart`, so a restart from a subtest ends with the subtest (post-f 1).
+5. No test separates a busy database from another failure of the lock query (post-f 2).
+6. No test fixes the error that `Wait` returns after a lost lock, although the exit code depends on it (post-f 3).
+7. The test server reports a refused start with one generic sentence and drops the lines that name the cause (post-f 7).
+8. The test server reserves its port, releases it, and binds it again later, so another process can take it in between (post-f 8).
+9. Two fields of the test server are written and read by different goroutines without synchronisation (post-f 9).
+
+The tenth finding is about the review's own task file, which named a heading that no file has (post-f 10). It needs no change of the code.
+
+The next step is a small repair pass for points 2, 3, 6 and 9, which are cheap. Points 1 and 8 need a decision on whether the short windows matter.
