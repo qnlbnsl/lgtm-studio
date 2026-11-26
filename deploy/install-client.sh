@@ -52,6 +52,14 @@ cleanup() {
     if [[ -n $tmp_unit ]]; then rm -f -- "$tmp_unit"; fi
 }
 
+replace_file() {
+    if [[ $os == Darwin ]]; then
+        [[ ! -d $2 ]] && mv -f -- "$1" "$2"
+    else
+        mv -fT -- "$1" "$2"
+    fi
+}
+
 manage_unit() {
     systemctl --user "$@" >/dev/null 2>&1 ||
         fail "systemctl --user $1 lgtm-client.service failed."
@@ -66,6 +74,36 @@ remove_client() {
         fail 'The installed program or user service could not be removed.'
     manage_unit daemon-reload
     printf '%s\n' 'Removed the lgtm-client user service and program and kept its state.'
+}
+
+bootout_launch_agent() {
+    if ! launchctl bootout "$launch_target" >/dev/null 2>&1 &&
+        launchctl print "$launch_target" >/dev/null 2>&1; then
+        fail 'launchctl bootout dev.lgtmstudio.client failed.'
+    fi
+}
+
+remove_launch_agent() {
+    bootout_launch_agent
+    rm -f -- "$unit_file" "$bin" 2>/dev/null ||
+        fail 'The installed program or launch agent could not be removed.'
+    printf '%s\n' 'Removed the lgtm-client launch agent and program and kept its state.'
+}
+
+launch_agent_state_dir() {
+    # Read the state setting from the XML layout written by this installer.
+    awk '
+        /<key>EnvironmentVariables<\/key>/, /<\/dict>/ {
+            if ($0 ~ /^[[:blank:]]*<key>LGTM_CLIENT_STATE_DIR<\/key>[[:blank:]]*$/ && getline > 0) {
+                if ($0 ~ /^[[:blank:]]*<string>[^<]*<\/string>[[:blank:]]*$/) {
+                    sub(/^[[:blank:]]*<string>/, "")
+                    sub(/<\/string>[[:blank:]]*$/, "")
+                    print
+                }
+                exit
+            }
+        }
+    ' "$unit_file"
 }
 
 build_version() {
@@ -111,13 +149,35 @@ install_systemd_unit() {
         -e "s|^Environment=LGTM_CLIENT_STATE_DIR=@LGTM_CLIENT_STATE_DIR@\$|Environment=LGTM_CLIENT_STATE_DIR=$state_dir|" \
         -e "s|^Environment=PATH=@LGTM_CLIENT_PATH@\$|Environment=PATH=$(service_path)|" \
         "$repo/deploy/lgtm-client.service" >"$tmp_unit" 2>/dev/null &&
-        mv -fT -- "$tmp_unit" "$unit_file" 2>/dev/null ||
+        replace_file "$tmp_unit" "$unit_file" 2>/dev/null ||
         fail 'The systemd user service could not be installed.'
     tmp_unit=''
 
     manage_unit daemon-reload
     manage_unit enable lgtm-client.service
     manage_unit restart lgtm-client.service
+}
+
+install_launch_agent() {
+    local log_file=$HOME/Library/Logs/lgtm-client.log
+    mkdir -p -- "${unit_file%/*}" "${log_file%/*}" 2>/dev/null ||
+        fail 'The launch agent or log folder could not be created.'
+    tmp_unit=$(mktemp -- "${unit_file}.XXXXXX" 2>/dev/null) ||
+        fail 'A temporary launch agent file could not be created.'
+    sed -e "s|<string>@LGTM_CLIENT_BIN@</string>|<string>$bin</string>|" \
+        -e "s|<string>@LGTM_CLIENT_STATE_DIR@</string>|<string>$state_dir</string>|" \
+        -e "s|<string>@LGTM_CLIENT_PATH@</string>|<string>$(service_path)</string>|" \
+        -e "s|<string>@LGTM_CLIENT_LOG@</string>|<string>$log_file</string>|" \
+        "$repo/deploy/dev.lgtmstudio.client.plist" >"$tmp_unit" 2>/dev/null &&
+        replace_file "$tmp_unit" "$unit_file" 2>/dev/null ||
+        fail 'The launch agent could not be installed.'
+    tmp_unit=''
+
+    bootout_launch_agent
+    launchctl bootstrap "$launch_domain" "$unit_file" >/dev/null 2>&1 ||
+        fail 'launchctl bootstrap dev.lgtmstudio.client failed.'
+    launchctl enable "$launch_target" >/dev/null 2>&1 ||
+        fail 'launchctl enable dev.lgtmstudio.client failed.'
 }
 
 enable_linger() {
@@ -141,6 +201,16 @@ wait_for_service() {
     done
 }
 
+wait_for_launch_agent() {
+    local deadline=$((SECONDS + 10)) agent_status
+    until agent_status=$(launchctl print "$launch_target" 2>/dev/null) &&
+        grep -Eq '^[[:blank:]]*state = running[[:blank:]]*$' <<< "$agent_status"; do
+        (( SECONDS < deadline )) ||
+            fail 'dev.lgtmstudio.client did not start; read Library/Logs/lgtm-client.log in your home folder.'
+        sleep 1
+    done
+}
+
 main() {
     if (( $# > 1 )) || [[ $# == 1 && $1 != --remove ]]; then
         printf '%s\n' 'Usage: deploy/install-client.sh [--remove]' >&2
@@ -148,6 +218,7 @@ main() {
     fi
 
     local repo uid os bin unit_file state_dir address tmp_bin='' tmp_unit=''
+    local launch_domain launch_target
     repo=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P) ||
         fail 'The repository folder could not be found.'
     cd -- "$repo" || fail 'The repository folder could not be opened.'
@@ -156,26 +227,45 @@ main() {
     [[ $uid != 0 ]] || fail 'install-client.sh must run as the user who runs the harnesses, not as root.'
     os=$(uname -s 2>/dev/null) || fail 'The operating system could not be identified.'
     case $os in
-        Linux) ;;
-        Darwin) fail 'The macOS installer is not available yet.' ;;
+        Linux)
+            systemctl --user show-environment >/dev/null 2>&1 ||
+                fail 'This Linux system has no systemd user manager for this user.'
+            ;;
+        Darwin)
+            launch_domain=gui/$uid
+            launch_target=$launch_domain/dev.lgtmstudio.client
+            launchctl print "$launch_domain" >/dev/null 2>&1 ||
+                fail 'macOS starts lgtm-client at login; run install-client.sh from a logged-in session.'
+            ;;
         *) fail 'install-client.sh supports Linux and macOS only.' ;;
     esac
-    systemctl --user show-environment >/dev/null 2>&1 ||
-        fail 'This Linux system has no systemd user manager for this user.'
     safe_absolute_path "${HOME:-}" ||
         fail 'The home folder path holds a character that a service file cannot carry.'
 
     bin=$HOME/.local/bin/lgtm-client
-    unit_file=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/lgtm-client.service
+    if [[ $os == Darwin ]]; then
+        unit_file=$HOME/Library/LaunchAgents/dev.lgtmstudio.client.plist
+    else
+        unit_file=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/lgtm-client.service
+    fi
     if [[ ${1:-} == --remove ]]; then
-        remove_client
+        if [[ $os == Darwin ]]; then
+            remove_launch_agent
+        else
+            remove_client
+        fi
         return
     fi
 
     local requested_state=${LGTM_CLIENT_STATE_DIR:-}
     if [[ -e $unit_file ]]; then
-        state_dir=$(sed -n 's/^Environment=LGTM_CLIENT_STATE_DIR=//p' "$unit_file" 2>/dev/null) ||
-            fail 'The installed service could not be read.'
+        if [[ $os == Darwin ]]; then
+            state_dir=$(launch_agent_state_dir 2>/dev/null) ||
+                fail 'The installed service could not be read.'
+        else
+            state_dir=$(sed -n 's/^Environment=LGTM_CLIENT_STATE_DIR=//p' "$unit_file" 2>/dev/null) ||
+                fail 'The installed service could not be read.'
+        fi
         if [[ -n $requested_state && $requested_state != "$state_dir" ]]; then
             fail 'LGTM_CLIENT_STATE_DIR names another folder than the installed service; run install-client.sh --remove first.'
         fi
@@ -231,9 +321,16 @@ main() {
     fi
 
     chmod 0755 -- "$tmp_bin" 2>/dev/null &&
-        mv -fT -- "$tmp_bin" "$bin" 2>/dev/null || fail 'The program could not be installed.'
+        replace_file "$tmp_bin" "$bin" 2>/dev/null || fail 'The program could not be installed.'
     tmp_bin=''
     printf 'built lgtm-client %s\n' "$version"
+
+    if [[ $os == Darwin ]]; then
+        install_launch_agent
+        wait_for_launch_agent
+        printf '%s\n' 'lgtm-client runs as the launch agent dev.lgtmstudio.client; the Machines page shows whether it connects.'
+        exit 0
+    fi
 
     install_systemd_unit
     local status=0
