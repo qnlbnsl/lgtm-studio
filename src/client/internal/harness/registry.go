@@ -22,7 +22,11 @@ type Definition struct {
 }
 
 // Definitions returns the four harnesses in the order Claude, Codex, Gemini, Cursor.
-// This body is a stub of the test writer.
 func Definitions() []Definition {
-	return nil
+	return []Definition{
+		{Claude, []string{"claude"}, regexp.MustCompile(`^(\d+\.\d+\.\d+) \(Claude Code\)$`)},
+		{Codex, []string{"codex"}, regexp.MustCompile(`^codex-cli (\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)$`)},
+		{Gemini, []string{"gemini"}, regexp.MustCompile(`^(\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?)$`)},
+		{Cursor, []string{"cursor-agent", "agent"}, regexp.MustCompile(`^(\d{4}\.\d{1,2}\.\d{1,2}-[0-9a-f]{6,12})$`)},
+	}
 }
