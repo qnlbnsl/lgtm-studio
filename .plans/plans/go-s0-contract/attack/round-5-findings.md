@@ -75,3 +75,18 @@ It was a major, and the reviewer scored it highest with logic-r5 09.
 | Reviewer | Verdict | Grade | Counts |
 |---|---|---|---|
 | logic | REVISE | 5 | 0 blockers, 9 majors, 0 minors |
+
+## 7. The recheck
+
+The reviewer checked the fold in `round-5-logic-recheck.md`, with the verdict REVISE.
+It closed logic-r5 03 and logic-r5 06.
+logic-r5 01, 07 and 09 stayed open in the texts of other plans, which their own planners changed at the orchestrator's request, so this plan does not touch them.
+The four below were folded, and each changed place is marked UNREVIEWED FIX. No review round follows, and the plan's status is `done`.
+
+| Finding | Open point | Outcome | Place |
+|---|---|---|---|
+| logic-r5 02 | Check 10 gave the stream's test seams and order to plan `go-s3-server-machines`. | fixed | Post-build check 10 now gives them to plan `go-s3-server-stream`, as the amendment does. |
+| logic-r5 04 | A report whose only fault is a zero byte or a number above its limit in `link.proto` had no stated outcome at the next number. | fixed | One sentence in `draft/events.proto` and in item 4 of the plan: it is consumed with an `EventAck` and no effect. Item F2 names it. |
+| logic-r5 05 | The targeted command skipped `TestCodeFallbackIsWritten`, and the fixture could drop `after_verified_challenge` from a stop row. | fixed | Item F4: the command runs `Fallback`. The condition is checked both ways, and every stop row of `Open` must hold it. |
+| logic-r5 08 | A run without `LGTM_LINK_BASE` passed. | fixed | Item F5: the check fails closed when a commit before `HEAD` holds the record, and the build of item F5 is told apart by git. |
+

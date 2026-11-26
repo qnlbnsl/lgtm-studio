@@ -26,7 +26,9 @@
 //   - At the next number, and only there, the server checks the report's value rules and applies
 //     a valid report. It consumes an event that holds no
 //     report, a report it does not know, or a report that breaks a rule of this file: the number
-//     counts as applied, and the report has no effect.
+//     counts as applied, and the report has no effect. A report whose only fault is a zero byte
+//     in a string, or a number above its limit in link.proto, is consumed the same way, with an
+//     EventAck and no effect.
 // - One machine id has one outbox. A server number at or above the machine's next number, or
 //   below one the server acknowledged before, comes from a restore or a copy of the server's or
 //   the machine's state, which wave 1 does not cover.
