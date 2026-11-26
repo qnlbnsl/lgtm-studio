@@ -1,0 +1,15 @@
+[Unit]
+Description=LGTM Studio client
+StartLimitIntervalSec=0
+
+[Service]
+Type=exec
+ExecStart=@LGTM_CLIENT_BIN@ run
+Environment=LGTM_CLIENT_STATE_DIR=@LGTM_CLIENT_STATE_DIR@
+Environment=PATH=@LGTM_CLIENT_PATH@
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target
