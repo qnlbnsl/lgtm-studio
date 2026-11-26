@@ -7705,3 +7705,11 @@ Found on 2026-11-26, by the review after the build of work items 1 to 5 of the p
 2. The password file of the standalone mode is read without a size limit.
 3. The cookie reader accepts a value in double quotes, because the standard parser removes them.
 4. The plan has no register with the heading "Not reviewed before the build". Its unreviewed places are marked in the plan itself.
+
+## 1652. Small findings of the review of the built machine records and join tokens
+
+Found on 2026-11-26, by the review after the build of work items 1 and 3 of the plan `go-s3-server-machines`. The report is `.plans/plans/go-s3-server-machines/attack/post-build-a.md`. Its verdict was to ship. Its one major finding is a gap in the tests: no test fails when the row lock of an approval or a rename is removed. That gap and the other test gaps went to a test writer on the same day. These minor findings are open.
+
+1. A missing signing key of the server is a plain error, which a caller will report as a database outage. The key is better checked once, when the token service is made.
+2. The registry accepts two names that look the same, one written with a precomposed letter and one with a combining accent.
+3. The schema leaves three rules to the code: one machine per token, a name on every approved machine, and the three columns of a used token set together.
