@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
+set +x
 set -u
 set -o pipefail
+umask 077
 export LC_ALL=C
 
 cd -- "${BASH_SOURCE[0]%/*}/../.." || exit 2
@@ -20,17 +22,26 @@ need() {
 }
 
 compose() {
-    docker compose -f "$compose_file" "$@"
+    if [[ -n ${COMPOSE_FILE:-} ]]; then
+        docker compose "$@"
+    else
+        docker compose -f "$compose_file" "$@"
+    fi
 }
 
 require_stack() {
-    [[ -f $compose_file ]] || fail "$compose_file is missing."
+    [[ -n ${COMPOSE_FILE:-} || -f $compose_file ]] || fail "$compose_file is missing."
     need docker
     docker compose version >/dev/null 2>&1 || fail "Docker Compose is unavailable."
 }
 
 configure_web() {
-    local port=${LGTM_WEB_PORT:-8787}
+    local address port=${LGTM_WEB_PORT:-}
+    if [[ -z $port ]]; then
+        address=$(compose port web 8080 2>/dev/null) ||
+            fail "Compose could not report the published web port."
+        port=${address##*:}
+    fi
     [[ $port =~ ^[0-9]{1,5}$ ]] && (( 10#$port >= 1 && 10#$port <= 65535 )) ||
         fail "LGTM_WEB_PORT is outside the valid port range."
     web_url="http://127.0.0.1:$((10#$port))"
@@ -49,7 +60,7 @@ rpc() {
     if (($#)); then shift; fi
     local -a cookies=()
     [[ -z $cookie_file ]] || cookies=(--cookie "$cookie_file")
-    response=$(curl --silent --noproxy '*' --max-time 5 "${cookies[@]}" "$@" \
+    response=$(curl -q --silent --noproxy '*' --max-time 5 "${cookies[@]}" "$@" \
         --header 'Content-Type: application/json' --header 'Connect-Protocol-Version: 1' \
         --data-binary @- --write-out $'\n%{http_code}' "$web_url/lgtm.v1.$method" <<< "$data") ||
         return 1
@@ -64,7 +75,7 @@ get_server() {
 }
 
 await_server() {
-    local deadline=$((SECONDS + 60))
+    local deadline=$((SECONDS + ${1:-60}))
     until get_server; do
         ((SECONDS < deadline)) || return 1
         pause
@@ -81,7 +92,7 @@ pause() {
 
 signin() {
     local data
-    data=$(jq -nc --arg password "$1" '{password: $password}') || return 1
+    data=$(printf '%s' "$1" | jq -Rsc '{password: .}') || return 1
     rpc SessionService/SignIn "$data" '' --cookie-jar "$2" && [[ $http_code == 200 ]] &&
         jq -e '.result == "SIGN_IN_RESULT_SIGNED_IN" or .result == 1' <<< "$body" >/dev/null &&
         get_server "$2" && jq -e '.signedIn == true' <<< "$body" >/dev/null
@@ -89,9 +100,10 @@ signin() {
 
 signin_rejected() {
     local data
-    data=$(jq -nc --arg password "$1" '{password: $password}') || return 1
-    rpc SessionService/SignIn "$data" && [[ $http_code == 200 ]] &&
-        jq -e '.result == "SIGN_IN_RESULT_REJECTED" or .result == 2' <<< "$body" >/dev/null
+    data=$(printf '%s' "$1" | jq -Rsc '{password: .}') || return 1
+    rpc SessionService/SignIn "$data" '' --cookie-jar "$2" && [[ $http_code == 200 ]] &&
+        jq -e '.result == "SIGN_IN_RESULT_REJECTED" or .result == 2' <<< "$body" >/dev/null &&
+        get_server "$2" && jq -e '(.signedIn // false) == false' <<< "$body" >/dev/null
 }
 
 unauthenticated() {
@@ -117,12 +129,17 @@ close_watch() {
 }
 
 cleanup() {
-    local status=$? id data
+    local status=$? id data cookie_file
     close_watch
     stop_client
+    for cookie_file in "${extra_jars[@]}"; do
+        if [[ -f $cookie_file ]]; then
+            rpc SessionService/SignOut '{}' "$cookie_file" >/dev/null 2>&1 || :
+        fi
+    done
     if [[ -n $restore_service ]]; then
         if ! compose up -d --no-deps "${restore_flags[@]}" "$restore_service" >/dev/null 2>&1 ||
-            ! await_server; then
+            ! await_server "${restore_timeout:-60}"; then
             printf '%s\n' "Recovery could not bring $restore_service back online."
             status=1
         fi
@@ -155,6 +172,9 @@ make_scratch() {
     scratch_helper=$helper
     scratch=$(go run "$scratch_helper") ||
         fail "A temporary directory could not be created."
+    if [[ $scratch != /* ]]; then
+        scratch=$PWD/$scratch
+    fi
     jar=$scratch/session.cookies
 }
 
@@ -216,7 +236,7 @@ new_token() {
 
 client_join() {
     local pid deadline=$((SECONDS + 15))
-    XDG_STATE_HOME=$1 "$client_bin" join "$web_url" "$token" >"$scratch/join.log" 2>&1 &
+    LGTM_CLIENT_STATE_DIR=$1/lgtm-client "$client_bin" join "$web_url" "$token" >"$scratch/join.log" 2>&1 &
     pid=$!
     while kill -0 "$pid" 2>/dev/null; do
         if ((SECONDS >= deadline)); then
@@ -230,7 +250,7 @@ client_join() {
 }
 
 start_client() {
-    XDG_STATE_HOME=$state_home "$client_bin" run >"$scratch/client.log" 2>&1 &
+    LGTM_CLIENT_STATE_DIR=$state_home/lgtm-client "$client_bin" run >"$scratch/client.log" 2>&1 &
     client_pid=$!
 }
 
@@ -356,11 +376,10 @@ check_c1() {
     local page
     [[ -x $up_file ]] || fail "$up_file is missing or is not executable."
     require_stack
-    configure_web
-    require_password
     "$up_file" >/dev/null 2>&1 || fail "$up_file could not start the stack."
+    configure_web
     await_server || fail "The website address did not answer with the Go server."
-    page=$(curl --silent --fail --noproxy '*' --max-time 5 "$web_url/") ||
+    page=$(curl -q --silent --fail --noproxy '*' --max-time 5 "$web_url/") ||
         fail "The loopback address did not serve the website."
     [[ $page == *'id="app"'* && $page == *'<script'* ]] ||
         fail "The loopback address returned no website entry point."
@@ -368,22 +387,31 @@ check_c1() {
 }
 
 check_c2() {
-    local state logs deadline
+    local state logs deadline override
     require_stack
     configure_web
-    require_password
     get_server || fail "The Go server was unavailable before the missing-password check."
-    restore_service=server
-    restore_flags=(--force-recreate)
-    docker compose -f "$compose_file" -f - up -d --force-recreate --no-deps server \
-        >/dev/null 2>&1 <<'YAML' || fail "Compose could not create the server without a password."
+    make_scratch
+    override=$scratch/no-password.yaml
+    cat >"$override" <<'YAML' || fail "The temporary Compose override could not be written."
 services:
   server:
     restart: "no"
     environment:
       LGTM_WEB_PASSWORD: !reset null
 YAML
-    deadline=$((SECONDS + 20))
+    restore_service=server
+    restore_flags=(--force-recreate)
+    restore_timeout=180
+    if [[ -n ${COMPOSE_FILE:-} ]]; then
+        COMPOSE_FILE=$COMPOSE_FILE${COMPOSE_PATH_SEPARATOR:-:}$override \
+            compose up -d --force-recreate --no-deps server >/dev/null 2>&1 ||
+            fail "Compose could not create the server without a password."
+    else
+        compose -f "$override" up -d --force-recreate --no-deps server >/dev/null 2>&1 ||
+            fail "Compose could not create the server without a password."
+    fi
+    deadline=$((SECONDS + 180))
     while :; do
         state=$(compose ps -a --format '{{.State}} {{.ExitCode}}' server 2>/dev/null) ||
             fail "Compose could not report the server's exit status."
@@ -394,13 +422,27 @@ YAML
     [[ $state != 'exited 0' ]] || fail "The server exited successfully without LGTM_WEB_PASSWORD."
     logs=$(compose logs --no-color --no-log-prefix server 2>/dev/null) ||
         fail "Compose could not read the server's startup diagnostic."
-    [[ $logs == *LGTM_WEB_PASSWORD* ]] || fail "The startup diagnostic did not name LGTM_WEB_PASSWORD."
+    [[ $logs == *'LGTM_WEB_PASSWORD is missing or invalid.'* ]] ||
+        fail "The startup diagnostic did not name the missing password."
+    [[ $logs == *'Session revocation committed.'* ]] ||
+        fail "The server did not confirm session revocation before refusing to start."
     printf '%s\n' "The server refused to start without LGTM_WEB_PASSWORD."
 }
 
+different_password() {
+    local candidate
+    candidate=$(od -An -N16 -tx1 /dev/urandom) || return 1
+    candidate=${candidate//[[:space:]]/}
+    [[ $candidate =~ ^[0-9a-f]{32}$ && $candidate != "$1" ]] || return 1
+    printf '%s' "$candidate"
+}
+
 check_c3() {
+    local wrong_password
     web_session
-    signin_rejected "$LGTM_WEB_PASSWORD-$BASHPID-wrong" || fail "SignIn did not refuse a wrong password."
+    wrong_password=$(different_password "$LGTM_WEB_PASSWORD") || fail "A wrong password could not be generated."
+    extra_jars+=("$scratch/rejected.cookies")
+    signin_rejected "$wrong_password" "$scratch/rejected.cookies" || fail "SignIn did not refuse a wrong password."
     unauthenticated || fail "SignOut without a session did not return unauthenticated."
     printf '%s\n' "The server accepted the right password, refused a wrong password, and required a session."
 }
@@ -409,16 +451,19 @@ check_c4() {
     local changed_password
     web_session
     restore_service=server
+    restore_timeout=180
     compose restart server >/dev/null 2>&1 || fail "Compose could not restart the server."
-    await_server || fail "The server did not return after its restart."
+    await_server 180 || fail "The server did not return after its restart."
     get_server "$jar" && jq -e '.signedIn == true' <<< "$body" >/dev/null ||
         fail "The original session stopped working after a server restart."
-    changed_password=$LGTM_WEB_PASSWORD-$BASHPID-changed
+    changed_password=$(different_password "$LGTM_WEB_PASSWORD") || fail "A replacement password could not be generated."
     restore_flags=(--force-recreate)
-    LGTM_WEB_PASSWORD="$changed_password" compose up -d --force-recreate --no-deps server >/dev/null 2>&1 ||
+    LGTM_WEB_PASSWORD="$changed_password" compose up -d --wait --wait-timeout 180 --force-recreate --no-deps server \
+        >/dev/null 2>&1 ||
         fail "Compose could not start the server with the changed password."
     await_server || fail "The server did not return with the changed password."
     unauthenticated "$jar" || fail "The original session still worked after the password changed."
+    extra_jars+=("$scratch/changed.cookies")
     signin "$changed_password" "$scratch/changed.cookies" || fail "The changed password could not sign in."
     printf '%s\n' "The original session survived a restart and ended when the password changed."
 }
@@ -631,8 +676,8 @@ check_c13() {
     if [[ $'\n'$running$'\n' == *$'\nserver\n'* ]]; then
         original=$(server_key_fingerprint) || original=''
     fi
-    if ! compose up -d --force-recreate "${services[@]}" >/dev/null 2>&1; then
-        if ! compose up -d "${services[@]}" >/dev/null 2>&1; then
+    if ! compose up -d --wait --wait-timeout 180 --force-recreate "${services[@]}" >/dev/null 2>&1; then
+        if ! compose up -d --wait --wait-timeout 180 "${services[@]}" >/dev/null 2>&1; then
             fail "Compose failed to recreate the stack and could not bring it back up."
         fi
         fail "Compose failed to recreate the stack."
@@ -660,7 +705,7 @@ run_check() {
     local number=$1 observation
     if observation=$(
         scratch='' scratch_helper='' jar='' client_pid='' watch_fd='' watch_pid='' restore_service=''
-        fixture_ids=() fixture_tokens=() restore_flags=()
+        fixture_ids=() fixture_tokens=() restore_flags=() extra_jars=() restore_timeout=60
         trap cleanup EXIT
         "check_c$number" 2>/dev/null
     ); then
