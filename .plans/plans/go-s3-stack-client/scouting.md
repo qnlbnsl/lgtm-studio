@@ -192,3 +192,14 @@ It is not a code that the Go runtime uses for a crash, which is 2.
 | `src/contracts/proto/lgtm/v1/clients.proto`, line 67 | `Client.connected_at` is a field of the contract, set by the server for a machine with presence, by plan `go-s3-server-machines`. |
 | `.plans/plans/go-s3-server-machines/plan.md`, lines 150 to 152 | `TokenOptions` has only `HostsServer`. |
 | `src/frontend/src/screens/service.tsx`, line 410 | The Machines page still shows the old join command, which gate G5 depends on. |
+
+## Sources checked for the fold of round 3 on 2026-11-26
+
+| File and anchor | What it establishes |
+|---|---|
+| `deploy/test/checks.sh`, line 378 | Check C2 calls `docker compose -f "$compose_file" -f -` with an inline override, outside the helper `compose`. |
+| `deploy/test/checks.sh`, line 355 | Check C1 starts before `deploy/up.sh` has run, so a port read from Compose must come after the launcher returns. |
+| `.plans/plans/go-s3-client-link/plan.md`, line 106 | `identity.json` holds `machineId`, which the live test reads to bind the waiting machine to its fixture. |
+| `.plans/plans/go-s3-server-machines/plan.md`, line 343 | The server sets `connected_at` from the database's wall clock at each admission, so it shows only the latest connection. |
+| `src/frontend/src/server/sync.ts`, line 117 | The website's token adapter drops the `address` of `CreateClientTokenResponse`. |
+| Round 3 report threat-r3 06 | Docker Compose repeats a value of a malformed settings file on standard error when `port` fails. |
