@@ -43,7 +43,17 @@ func runContext(ctx context.Context, args []string, stdin io.Reader, stdout, std
 		if args[0] == "join" {
 			token := args[2]
 			if token == "-" {
-				token = readJoinToken(stdin)
+				// A standard input writer can stay open after a shutdown signal.
+				result := make(chan string, 1)
+				go func() { result <- readJoinToken(stdin) }()
+				select {
+				case token = <-result:
+				case <-ctx.Done():
+					return 1
+				}
+				if ctx.Err() != nil {
+					return 1
+				}
 			}
 			if token != "" && len(token) <= maxJoinTokenBytes {
 				if err := app.Join(ctx, opts, args[1], token); err != nil {
@@ -64,19 +74,25 @@ func readJoinToken(stdin io.Reader) string {
 		return ""
 	}
 	const maxLineBytes = maxJoinTokenBytes + len("\r\n")
-	reader := bufio.NewReaderSize(io.LimitReader(stdin, int64(maxLineBytes)), maxLineBytes)
+	reader := bufio.NewReaderSize(io.LimitReader(stdin, int64(maxLineBytes)), maxJoinTokenBytes+1)
 	line, err := reader.ReadSlice('\n')
 	switch err {
 	case nil:
-		line = bytes.TrimSuffix(line[:len(line)-1], []byte("\r"))
+		return string(bytes.TrimSuffix(line[:len(line)-1], []byte("\r")))
 	case io.EOF:
-	default:
-		return ""
+		if len(line) <= maxJoinTokenBytes {
+			return string(line)
+		}
+	case bufio.ErrBufferFull:
+		// The byte after a full-length token can only start a line ending.
+		if line[maxJoinTokenBytes] == '\r' {
+			token := string(line[:maxJoinTokenBytes])
+			if next, err := reader.ReadByte(); err == nil && next == '\n' {
+				return token
+			}
+		}
 	}
-	if len(line) > maxJoinTokenBytes {
-		return ""
-	}
-	return string(line)
+	return ""
 }
 
 func main() {
