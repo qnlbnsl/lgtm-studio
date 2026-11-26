@@ -113,7 +113,7 @@ type router struct {
 }
 
 // NewHandler serves readiness, the web services behind the origin gate and the session guard,
-// and the placeholders of the machine link.
+// and the machine link.
 func NewHandler(options Options) http.Handler {
 	protocol := connect.WithRequireConnectProtocolHeader()
 	r := &router{
@@ -135,7 +135,13 @@ func NewHandler(options Options) http.Handler {
 			lgtmv1connect.SessionServiceSignInProcedure, lgtmv1connect.SessionServiceSignOutProcedure)
 	}
 	if options.Clients != nil {
-		_, handler := lgtmv1connect.NewClientServiceHandler(options.Clients, protocol, guard)
+		recordDecoding := connect.WithConditionalHandlerOptions(func(spec connect.Spec) []connect.HandlerOption {
+			if spec.StreamType == connect.StreamTypeUnary {
+				return []connect.HandlerOption{redactMalformedJSON(messageMalformed)}
+			}
+			return nil
+		})
+		_, handler := lgtmv1connect.NewClientServiceHandler(options.Clients, protocol, guard, recordDecoding)
 		r.register(transport.WithWriteDeadline(handler),
 			lgtmv1connect.ClientServiceWatchClientsProcedure,
 			lgtmv1connect.ClientServiceCreateClientTokenProcedure,
