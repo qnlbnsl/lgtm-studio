@@ -7800,3 +7800,7 @@ Found on 2026-11-26 by the fourth review of the launcher `deploy/up.sh` (finding
 5. A termination signal sent to the launcher alone, while it reads a settings source that blocks, leaves the private copy on disk until the read ends.
 
 The review loop on the launcher was stopped here by the orchestrator after four reviews. A simpler rule may serve better than five more repairs: the launcher could refuse a caller's Compose overrides that it does not support, and the test scripts could use one supported way to make a private stack.
+
+## 1664. A refused address of the token issuer is reported as a database outage
+
+Found on 2026-11-26 by the review of the built record calls (finding post-d 3 of the plan `go-s3-server-machines`). The plan names two errors of the issuer of join tokens, an invalid address and a missing certificate pin, and gives neither a public code or sentence. The built handler answers both with the sentence for an unreachable database. The address comes from the server's own settings, so a person meets this only after a wrong setting. The sentence should name the setting.
