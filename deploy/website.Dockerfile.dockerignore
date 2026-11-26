@@ -1,2 +1,19 @@
-# Stub of the test writer. The image does not use the build context yet.
+# The build context of deploy/website.Dockerfile is an allow-list. The first line leaves out
+# everything, so the state folder, the settings file and any certificate never reach the build.
 *
+!package.json
+!pnpm-lock.yaml
+!pnpm-workspace.yaml
+!tsconfig.base.json
+!src/frontend/**
+!src/contracts/**
+!src/mock-server/**
+!design/mock/**
+!design/fonts/**
+!third_party/inter/**
+!third_party/jetbrains-mono/**
+!third_party/codemirror/**
+!deploy/Caddyfile
+**/node_modules
+**/dist
+**/.cert
