@@ -40,8 +40,40 @@ compose() {
     fi
 }
 
+# The settings can change while the launcher waits for the lock. Every Compose call, including the
+# calls of stack-prepare.sh, reads one private copy, which is removed when the launcher exits.
+settings_copy() {
+    local -a files
+    local file n=0 list=''
+    if [[ -n ${COMPOSE_ENV_FILES:-} ]]; then
+        IFS=, read -r -a files <<<"$COMPOSE_ENV_FILES"
+    else
+        case ${COMPOSE_DISABLE_ENV_FILE:-} in
+            1|t|T|true|TRUE|True) files=() ;;
+            *) file=${COMPOSE_FILE:-"$here/compose.yaml"}
+               file=${file%%"${COMPOSE_PATH_SEPARATOR:-:}"*}
+               files=("$(dirname -- "$file")/.env")
+               [[ -e ${files[0]} ]] || files=() ;;
+        esac
+    fi
+    : >"$settings/0" || return 1
+    list=$settings/0
+    for file in "${files[@]}"; do
+        n=$((n + 1))
+        cat -- "$file" >"$settings/$n" 2>/dev/null || return 1
+        list=$list,$settings/$n
+    done
+    export COMPOSE_ENV_FILES=$list
+}
+
+settings=$(mktemp -d)
+trap 'rm -rf -- "$settings"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
 # Compose's own message for a malformed settings file can print the password, so it is discarded.
-if ! compose config --quiet >/dev/null 2>&1; then
+if ! settings_copy || ! compose config --quiet >/dev/null 2>&1; then
     printf '%s\n' 'the settings cannot be read; check the quoting in deploy/.env' >&2
     exit 2
 fi
