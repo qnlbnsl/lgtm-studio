@@ -7658,3 +7658,11 @@ Found on 2026-11-26, by the second review round of the plan `go-s3-stack-client`
 1. The installer cannot join a machine again after a removal, a changed port, a restore, or another stack on the same port. The owner does it by hand.
 2. Two runs of the installer at the same time by one user can join twice, and both write the service file.
 3. The installer checks no owner and no mode of the parent folders of the program, of the service unit and of the launch agent.
+
+## 1647. Small findings of the review of the built vault stack
+
+Found on 2026-11-26, by the review after the build of the plan `go-s1-stack-vault`. The report is `.plans/plans/go-s1-stack-vault/attack/post-build-all.md`. Its one major finding and three minor ones are gaps in tests, and went back to the test writer on the same day. These are open.
+
+1. A failure after OpenBao is initialized and before the first start finishes loses the only copy of the root token. The install is then stuck, and the way out is to remove the state and start again.
+2. A change of a pinned image gives a diagnostic that does not name the image as the cause.
+3. The test of the proof trusts the text that the proof prints.
