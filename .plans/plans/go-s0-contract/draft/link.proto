@@ -7,7 +7,8 @@
 // The website never calls this package. Its calls are in package lgtm.v1.
 //
 // Values that every message of this package keeps. A message that breaks one is refused with
-// `invalid_argument`.
+// `invalid_argument`. The one exception is the report of an event at the next number, which
+// events.proto consumes.
 // - The id of a machine, a command or a token is a UUID in its canonical form: 36 characters of
 //   lowercase hexadecimal digits and hyphens.
 // - A nonce is exactly 32 bytes, a public key exactly 32 bytes, a signature exactly 64 bytes, and
@@ -32,89 +33,84 @@ option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/li
 // such as a byte stream, presents the connection token of the current stream in the header
 // `Lgtm-Link-Token`.
 //
-// What a client does with each code. To retry is to keep the key and every file, and to try
-// again. To stop is to log one sentence for the owner, try no more, and exit with status 0, which
-// tells the client's service not to start it again. A client that stopped on Open keeps its files
-// and does not dial again until the owner joins it again.
+// The codes of the server. A final code means that the server gives the same answer to the same
+// request until the owner acts. Every other code may change on a later try.
 //
-//   Join  permission_denied    Stop: "The server refused this join token. Make a new one."
-//   Join  invalid_argument     Stop.
-//   Join  any other code       Retry with the same key within 15 seconds, for at most 15 minutes
-//                              after the first try. Then stop: "The server did not answer in time."
-//   Open  failed_precondition  Stop when it follows a Challenge that verified, and retry within 15
-//                              seconds otherwise. The server sends it for a machine it does not
-//                              know or removed, for an event that leaves a gap, and for a link
-//                              revision it does not speak. The client logs the server's reason
-//                              and: "Remove this machine on the Machines page and join it again."
-//   Open  aborted              Retry after 15 seconds, or after 60 seconds when the last aborted
-//                              came less than one minute ago. Log that another process may use
-//                              this machine's key.
-//   Open  any other code       Retry within 15 seconds. This covers unauthenticated,
-//                              invalid_argument, deadline_exceeded, unavailable, and a connection
-//                              that broke.
-//
-// A server that cannot read its database answers `unavailable`, never `failed_precondition` and
-// never `permission_denied`.
+//   Join  permission_denied    Final. The header `Lgtm-Join-Refusal` holds the reason.
+//   Join  invalid_argument     Final. The request breaks a value rule.
+//   Open  failed_precondition  Final when it follows a Challenge whose signature verified. The
+//                              header `Lgtm-Link-Refusal` holds the reason: unknown_machine for a
+//                              machine id the server does not know, also after a removal;
+//                              event_gap for an event above the next number;
+//                              link_revision_mismatch for a link revision the server does not
+//                              speak.
+//   Open  unauthenticated      The machine's signature did not verify.
+//   Open  aborted              A newer stream of the same machine replaced this one.
+//   Open  invalid_argument     A message out of order, or one that breaks a value rule.
+//   Open  deadline_exceeded    Hello or Proof came more than 10 seconds late.
+//   both  unavailable          The server cannot read its database. It never answers a final code
+//                              for that reason.
 service LinkService {
   // Join trades a join token for the server's public key, and registers the machine's public key.
   //
-  // - The server refuses with `permission_denied`, checking in this order: an unknown token, an
-  //   expired token, a revoked token, a token bound to another key, and a token whose machine was
-  //   removed. Expiry follows the server's clock. The message of the refusal is the word
-  //   token_unknown, token_expired, token_revoked, token_used or token_removed, in that order,
-  //   and the client logs it. A token bound to another key is token_used.
-  // - A token that passes those checks and is not used yet is claimed by a conditional update of
-  //   its row. In the same transaction the server binds the token to the machine's key and
-  //   creates the waiting machine. Of two first uses at once, exactly one wins.
+  // - The server refuses with `permission_denied`, checking in this order. The reason in the
+  //   header `Lgtm-Join-Refusal` is one word, and the error's message is a sentence for people.
+  //   - token_unknown: no token has the id, or the secret does not match the token's verifier.
+  //     The server checks the secret before it looks at any other state of the token.
+  //   - token_expired: the token's expiry has passed by the server's clock.
+  //   - token_revoked: the owner revoked the token.
+  //   - token_used: the token is bound to another machine key.
+  //   - machine_removed: the machine that used the token with this key was removed.
+  // - A token that passes those checks and is not used yet is claimed. In the same transaction
+  //   the server binds the token to the machine's key and creates the waiting machine. Of two
+  //   first uses at once, exactly one wins: a loser with the same key gets the winner's reply,
+  //   and a loser with another key gets token_used.
   // - A token that passes those checks and is used by the same key is a replay. It returns the
   //   first reply and creates nothing. The host name of a replay is not read.
   // - A failure before the commit changes nothing and returns `unavailable`.
   // - Revoking a used token removes its machine while the machine still waits for approval. It
-  //   changes nothing for an approved machine, whose later replays are refused as revoked.
-  // - The client stores its key before its first Join and sends the same key on every retry.
+  //   changes nothing for an approved machine, whose later replays are refused as token_revoked.
   rpc Join(JoinRequest) returns (JoinResponse);
   // Open is the stream between a machine and the server. The machine sends first.
   //
   // The handshake:
   // - The machine sends Hello. The server answers with Challenge. The machine sends Proof. The
   //   server answers with Welcome.
-  // - The server answers every well-formed Hello with a Challenge before it looks the machine up.
-  //   It then ends the stream with `failed_precondition` when the machine id is unknown or
-  //   removed, or when it does not speak the link revision of Hello. It ends the stream with
-  //   `unauthenticated` when the machine's signature does not verify.
+  // - The server answers every well-formed Hello with a Challenge before it looks the machine up
+  //   or reads its link revision. Only then does it end the stream with `failed_precondition`
+  //   for an unknown machine or a link revision it does not speak, and with `unauthenticated`
+  //   when the machine's signature does not verify.
   // - Before Welcome, a message of another kind, an empty message, or a message that breaks a rule
   //   of this package ends the stream with `invalid_argument`.
   // - The server ends the stream with `deadline_exceeded` when Hello is not there 10 seconds after
   //   the stream opened, or Proof 10 seconds after it sent Challenge.
-  // - The machine ends the stream and retries when Challenge is not there 10 seconds after it
-  //   sent Hello, when Welcome is not there 10 seconds after it sent Proof, and when the server's
-  //   signature does not verify. A machine whose send fails still reads the server's last
-  //   message and code before it decides.
   //
   // After Welcome:
+  // - A stream is its machine's current stream from its Welcome until it ends.
   // - Either end may send any of its other messages, in any order, except that events keep the
   //   order that events.proto gives.
   // - A receiver ignores a message of a kind it does not know, because wave 2 adds kinds with
   //   numbers not used yet.
-  // - The machine ends the stream and dials again when it hears nothing for 30 seconds.
   // - A newer stream of the same machine whose Proof verified replaces this one, which ends with
-  //   `aborted`. Nothing that arrives on the replaced stream changes the machine.
+  //   `aborted`.
   //
   // What the website shows of a machine:
   // - Waiting, while its standing is APPROVAL_WAITING, whether or not it has a stream.
-  // - Joining, while it is approved and its current stream has not yet delivered both a Facts and
-  //   a HarnessesFound event.
-  // - Online, while it is approved and its current stream delivered both.
+  // - Joining, while it is approved and the server has not yet applied both a valid Facts and a
+  //   valid HarnessesFound from its current stream while it was approved.
+  // - Online, while it is approved and the server applied both.
   // - Offline, while it is approved and has no current stream.
   //
   // A machine that waits for approval:
+  // - Its Welcome holds an empty connection token. A machine gets a connection token in the
+  //   Welcome of a stream that opens after its approval.
   // - The server sends it no command other than SetState, and ignores its command results.
-  // - A later call that presents its connection token is refused until the machine is approved.
   //
   // Removal:
-  // - When the removal of a machine commits, the server ends its current stream with
-  //   `failed_precondition`, and with it the connection token. Every later Open of that machine
-  //   gets a Challenge and then `failed_precondition`.
+  // - Once the removal of a machine has committed, no stream of that machine receives Welcome.
+  // - The server ends the machine's current stream with `failed_precondition` and the reason
+  //   unknown_machine, and with it the connection token. Every later Open of that machine gets a
+  //   Challenge and then the same code.
   // - The server may send SetState with APPROVAL_REMOVED before it ends the stream, and nothing
   //   waits for its delivery.
   rpc Open(stream OpenRequest) returns (stream OpenResponse);
@@ -125,28 +121,20 @@ service LinkService {
 // The token's text is the prefix `lgtm1_` followed by the binary encoding of this message in
 // unpadded base64url. The server makes it, the client reads it, and the website only shows it.
 // The text is a secret: no log, board or page other than the one that made it holds it.
-//
-// The server makes a token for one of two addresses. The first is its configured public
-// address, with the pin of that address's certificate. The second is its own loopback address,
-// with no pin, which only the server's own command on the server's machine may ask for. A token
-// for the loopback address marks the machine that uses it as the one that hosts the server.
 message JoinToken {
   // The id of the token. It is safe to show and to store.
   string token_id = 1;
   // 32 random bytes. The server stores only a verifier of them.
   bytes secret = 2;
-  // The address the machine dials, such as "https://lgtm.example.net" or "http://127.0.0.1:8787":
-  // a scheme, a host and an optional port, with no path. It is the only address the client
-  // dials. A client refuses an address on its command line that differs from it, after both are
-  // written in lowercase without the default port. A client refuses an address that is neither
-  // https nor a loopback address over http, and an https address without
-  // certificate_key_sha256. It follows no redirect.
+  // The address at which the server answers this package, such as "https://lgtm.example.net" or
+  // "http://127.0.0.1:8787": a scheme, a host and an optional port, with no path. The scheme is
+  // https, or http for a loopback address only.
   string address = 3;
   // SHA-256 of the server's Ed25519 public key.
   bytes server_key_sha256 = 4;
-  // SHA-256 of the SubjectPublicKeyInfo of the certificate the machine must see at an https
-  // address. Empty for a loopback address over plain HTTP/2. The client checks it before it sends
-  // the secret, and again on every stream. A server refuses to make an https token without it.
+  // SHA-256 of the SubjectPublicKeyInfo of the certificate that the server presents at an https
+  // address. Every https token carries it. A token for a loopback address over plain HTTP/2 has
+  // none.
   bytes certificate_key_sha256 = 5;
 }
 

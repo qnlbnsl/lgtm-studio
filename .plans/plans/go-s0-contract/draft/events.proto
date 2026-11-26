@@ -5,21 +5,22 @@
 // is there, so it is never numbered or kept.
 //
 // The order of events. The server alone decides what was applied.
-// - A machine numbers its events from 1, with no gaps, and never reuses a number.
+// - A machine numbers its events from 1, with no gaps, and never reuses or changes a number.
 // - The server keeps the last event number it applied for each machine. It writes that number in
 //   the same transaction as the event's effect, and it sends EventAck only after the commit.
-// - Welcome.last_event_number carries that number. The machine forgets the events it sent that
-//   are at or below it, numbers every event it has not sent to follow it, and sends from the next
-//   one, in order.
-// - The server applies an event only when its number is the last applied plus one. A lower number
-//   is a repeat: the server drops it and acknowledges its number again. A higher number is a gap:
-//   the server ends the stream with `failed_precondition`.
-// - When Welcome.last_event_number is below a number the server acknowledged to the machine
-//   before, the machine stops as for `failed_precondition`.
-// - The machine checks a report against the rules of this file before the report takes a
-//   number, and a full buffer refuses a new event before it takes a number.
-// - The server consumes the next event when it holds no report, a report it does not know, or a
-//   report that breaks a rule of this file. It logs that, and the number counts as applied.
+// - Welcome.last_event_number carries that number. The machine forgets its events at or below it
+//   and sends the rest from the next one, in order.
+// - The server checks each event in this order. An event without a number breaks a value rule.
+//   A number at or below the last applied is a repeat: the server applies nothing and sends
+//   EventAck with the last applied number. A number above the next one is a gap: the server ends
+//   the stream with `failed_precondition` and the reason event_gap. Only the next number reaches
+//   its report.
+// - At the next number, the server consumes an event that holds no report, a report it does not
+//   know, or a report that breaks a rule of this file. The number counts as applied, and the
+//   report has no effect.
+// - One machine id has one outbox. A server number at or above the machine's next number, or
+//   below one the server acknowledged before, comes from a restore or a copy of the server's or
+//   the machine's state, which wave 1 does not cover.
 // - When it becomes approved on a stream, by a Welcome or by a SetState, the machine sends its
 //   current Facts and HarnessesFound as new events.
 syntax = "proto3";
@@ -50,7 +51,7 @@ message Event {
 // The server sends it on the stream that sent the events, after the transaction that moved
 // its mark has committed.
 message EventAck {
-  // The last event number the server applied, after its commit.
+  // The last event number the server applied, after its commit, also when it answers a repeat.
   uint64 through = 1;
 }
 

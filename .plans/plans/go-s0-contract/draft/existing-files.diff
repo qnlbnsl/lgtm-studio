@@ -1,16 +1,14 @@
 --- a/src/contracts/proto/lgtm/v1/clients.proto
 +++ b/src/contracts/proto/lgtm/v1/clients.proto
-@@ -7,6 +7,9 @@
+@@ -7,6 +7,7 @@
  package lgtm.v1;
  
  import "google/protobuf/timestamp.proto";
 +import "lgtm/v1/common.proto";
-+
-+option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1;lgtmv1";
  
- // ClientService lists the clients of a server and lets the owner add and remove them.
- // Every call needs a session.
-@@ -15,8 +18,11 @@
+ option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1;lgtmv1";
+ 
+@@ -17,8 +18,11 @@
    rpc WatchClients(WatchClientsRequest) returns (stream WatchClientsResponse);
    // CreateClientToken makes a token that one new client uses once to join this server.
    // The server's own command `lgtm client add` makes the same kind of token.
@@ -23,7 +21,7 @@
    rpc RevokeClientToken(RevokeClientTokenRequest) returns (RevokeClientTokenResponse);
    // ApproveClient lets a client that joined with a token start work, under the name the owner gives it.
    rpc ApproveClient(ApproveClientRequest) returns (ApproveClientResponse);
-@@ -24,7 +30,8 @@
+@@ -26,7 +30,8 @@
    rpc RenameClient(RenameClientRequest) returns (RenameClientResponse);
    // ScanClientHarnesses asks an online client to look for harnesses again. The result arrives on WatchClients.
    rpc ScanClientHarnesses(ScanClientHarnessesRequest) returns (ScanClientHarnessesResponse);
@@ -33,7 +31,7 @@
    rpc ReconnectClient(ReconnectClientRequest) returns (ReconnectClientResponse);
    // RemoveClient disconnects a client and forgets it. It also refuses a client that waits for approval.
    rpc RemoveClient(RemoveClientRequest) returns (RemoveClientResponse);
-@@ -35,9 +42,11 @@
+@@ -37,9 +42,11 @@
    // The name the owner gave it. A client that waits for approval has the name of its host here.
    string name = 2;
    ClientState state = 3;
@@ -47,7 +45,7 @@
    string address = 5;
    // The folder that holds its repositories, such as "~/projects".
    string workspace = 6;
-@@ -91,6 +100,8 @@
+@@ -93,6 +100,8 @@
      // The id of one client that is gone.
      string removed_id = 3;
    }
@@ -56,7 +54,7 @@
  }
  
  message ClientList {
-@@ -102,9 +113,14 @@
+@@ -104,9 +113,14 @@
  message CreateClientTokenResponse {
    // The token's id. It is safe to show and to store.
    string token_id = 1;
@@ -66,42 +64,9 @@
    string token = 2;
 +  // 15 minutes after the token was made.
    google.protobuf.Timestamp expires_at = 3;
-+  // The address inside the token. The page writes it as the address of the command it shows, so
-+  // that the command and the token agree.
++  // The address inside the token, which is the address the machine dials. A sample server may
++  // leave it empty.
 +  string address = 4;
  }
  
  message RevokeClientTokenRequest {
---- a/src/contracts/proto/lgtm/v1/map.proto
-+++ b/src/contracts/proto/lgtm/v1/map.proto
-@@ -9,6 +9,8 @@
- 
- import "google/protobuf/timestamp.proto";
- 
-+option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1;lgtmv1";
-+
- // MapService reads the codebase map of a project and asks for a new one.
- // Every call needs a session.
- service MapService {
---- a/src/contracts/proto/lgtm/v1/preview.proto
-+++ b/src/contracts/proto/lgtm/v1/preview.proto
-@@ -4,6 +4,8 @@
- 
- import "google/protobuf/timestamp.proto";
- 
-+option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1;lgtmv1";
-+
- // The running product of a project, which the Browser page of the Design view shows.
- //
- // A repository also has previews. They run in its main checkout, on the base branch. Such a
---- a/src/contracts/proto/lgtm/v1/session.proto
-+++ b/src/contracts/proto/lgtm/v1/session.proto
-@@ -3,6 +3,8 @@
- 
- package lgtm.v1;
- 
-+option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1;lgtmv1";
-+
- // SessionService is the first service a website calls.
- //
- // A session travels in a cookie that the server sets on SignIn and clears on SignOut.

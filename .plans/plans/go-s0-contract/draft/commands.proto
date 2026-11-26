@@ -9,18 +9,12 @@
 //   holds no final result 24 hours after expires_at, it records COMMAND_OUTCOME_EXPIRED itself.
 // - Every outcome except COMMAND_OUTCOME_UNSPECIFIED is final. The server never sends a command
 //   again once it holds a final result for it.
-// - The machine writes a receipt of a command to disk before it starts the work, and it keeps
-//   the receipt at least 24 hours after expires_at. A command that arrives twice runs once.
-// - The server's clock decides expiry. The server reads Welcome.server_time after Proof verified.
-//   The machine counts the server's time as Welcome.server_time plus the time its monotonic clock
-//   measured since it sent Proof. While the server's clock runs without a jump, this count is
-//   never behind it, and it is ahead by at most the time from Proof to Welcome, which is at most
-//   10 seconds.
-// - A machine that holds no receipt of a command and counts the server's time at or after
-//   expires_at does not run it, and answers COMMAND_OUTCOME_EXPIRED. So a machine may refuse a
-//   command up to 10 seconds early, and never starts one late.
-// - The machine uses the same count to decide expiry for its receipts and to drop a receipt 24
-//   hours after expires_at. It drops none before its first Welcome.
+// - A command that arrives twice runs once. A machine answers every attempt of a command it
+//   started with the result it recorded, until 24 hours after expires_at.
+// - The server's clock decides expiry, and Welcome.server_time gives it. A machine does not start
+//   a command after expires_at by the server's clock, and answers COMMAND_OUTCOME_EXPIRED.
+// - SetState is the one exception: a machine applies it whatever its expires_at, because a
+//   higher revision is always safe to apply.
 syntax = "proto3";
 
 package lgtm.link.v1;
@@ -93,10 +87,8 @@ enum CommandOutcome {
 message ScanHarnesses {}
 
 // Restart asks the machine to end its client program, so that the service of its user starts it
-// again. The machine writes its receipt with COMMAND_OUTCOME_DONE to disk, then tries for at most
-// 5 seconds to send the result, and then exits with status 75, whether or not the send worked.
-// The outcome means that the machine accepted the restart. The new process sends the result from
-// its receipt when the server sends the command again, and shows itself with a new stream.
+// again. COMMAND_OUTCOME_DONE means that the machine accepted the restart and recorded that before
+// it answered. The machine's next stream then comes from the new program.
 message Restart {}
 
 // SetState gives the machine its new standing.
