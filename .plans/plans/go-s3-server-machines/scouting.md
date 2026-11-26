@@ -59,6 +59,8 @@ For each target, the nearest pattern is a file of an earlier plan or a file of t
 - Read on 2026-11-26, for round 3 of the review. The Go source of `context.AfterFunc` says that its stop function does not wait for a started callback to complete (`src/context/context.go` of the toolchain, the comment of `AfterFunc`). The reviewer cites the HTTP/2 server's recycling of the response state after the handler returns, so `transport.Send` waits for a started callback (decision 84).
 - `src/server/internal/watch/watch.go:50`: `serve` is still the test writer's stub, and `Serve` passes its `send` a context, which item 11 hands to `transport.Send`. Whether that context ends on a revocation is the store plan's to confirm, so the revocation case is post-build check P11.
 - Ownership of files in round 3: the skeleton (item 0) writes every file that declares a name and every schema file. Item 12 writes `machines/records.go` instead of changing `machines/service.go`, and item 5's `link/oneline_test.go` holds the shared lock-line helper, so no two items write one file.
+- Read on 2026-11-26, for round 4. `src/server/internal/api/server.go` holds `api.Options` with `Sessions`, `Origins`, `Session`, `Clients` and `Link`, and `NewHandler` is still the test writer's stub. `src/server/internal/app/` and `src/server/servertest/` do not exist yet, so part A states its wiring as a change to sign-in items 6 and 9 once they are built.
+- No tracked plan names a caller of the old `Tokens.Prune`, which is why decision 92 removes it.
 
 ## S6. Sign-in and the server program
 
