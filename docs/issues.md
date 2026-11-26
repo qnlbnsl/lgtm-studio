@@ -7713,3 +7713,13 @@ Found on 2026-11-26, by the review after the build of work items 1 and 3 of the 
 1. A missing signing key of the server is a plain error, which a caller will report as a database outage. The key is better checked once, when the token service is made.
 2. The registry accepts two names that look the same, one written with a precomposed letter and one with a combining accent.
 3. The schema leaves three rules to the code: one machine per token, a name on every approved machine, and the three columns of a used token set together.
+
+## 1653. Small findings of the review of the built installer of the client on macOS
+
+Found on 2026-11-26, by the review after the build of work item 3 of the plan `go-s3-stack-client`. The report is `.plans/plans/go-s3-stack-client/attack/post-build-b.md`. Its verdict was to ship. The macOS branch ran only on Linux with stand-ins, so the check on a Mac is still owed. These minor findings are open.
+
+1. The search path of the macOS agent is not tested for unsafe entries, and relative and empty entries are copied into the service.
+2. The macOS branch is tested only with GNU tools, and the wait for the agent has no test of its timeout.
+3. An agent file in another layout makes the installer refuse the right state folder.
+4. The process type `Background` may slow the harnesses that the client starts.
+5. The installer does not wait for the old agent to stop before it loads the new one.
