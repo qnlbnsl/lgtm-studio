@@ -11,15 +11,15 @@ epic: go-rewrite
 
 ## Overview
 
-Sprint 1 gives LGTM Studio a database and a vault. One command starts both. OpenBao keeps its data in a separate PostgreSQL database and uses the same local key file after a restart.
+One command starts the sprint 1 stack. OpenBao stores data in its own PostgreSQL database and unseals with the same local key after restart.
 
-Reviewers observed PostgreSQL storage and automatic unseal in disposable containers. The first build item repeats the proof with the production database role and container user. The sprint 2 server receives a protected credential that reaches only its signing-key path.
+The first build item repeats the storage and unseal proof with production identities. The sprint 2 server gets a credential for its signing-key path.
 
 ## Key decisions
 
-The orchestrator reduced the plan to six work items on 2026-11-26. First start saves one protected administrator file and publishes the separate server credential after it can log in. A completed run verifies the existing credential and leaves both files alone. (architect-r3 1, architect-r3 3, logic-r3 1, logic-r3 4)
+On 2026-11-26, the orchestrator kept six work items. First start saves the administrator response and publishes the server credential after login. Repeat launches verify the credential. (architect-r3 1, architect-r3 3, logic-r3 1, logic-r3 4)
 
-The launcher locks its state directory. Password and seal checks stop a start with mismatched files. A known unfinished first installation can be rebuilt manually from empty state. After an installation has served data, restore the matching state and volume. (architect-r3 2, logic-r3 2, logic-r3 3)
+Startup locks the state directory and checks the passwords and seal. Only a known unfinished disposable installation can be rebuilt as part of wave 1. Restoring PostgreSQL or the vault state directory to an earlier state is outside wave 1. (architect-r3 2, logic-r3 2, logic-r3 3)
 
 [Full decision log](decisions.md)
 
@@ -35,7 +35,7 @@ Each daemon uses its own database login. The launcher checks PostgreSQL before p
 
 ### Give the server a restricted vault credential and restart the stack
 
-First start creates the signing-key policy and role. The launcher checks that the server credential can sign in before publishing its file. On restart OpenBao reopens automatically, and the same credential reads the original value.
+First start creates the restricted role and validates its credential before publication. After automatic unseal, the same credential reads the original value.
 
 ## Rollout order
 
@@ -195,37 +195,40 @@ The setup job publishes a credential only after it works. The launcher repeats t
 
 **Work item 4. Initialize OpenBao and publish one server credential**
 
-Create `deploy/openbao-init.sh`, `deploy/openbao-server-policy.hcl` and `deploy/test/vault-init.sh`. Extend Compose with the one-shot service `openbao-init` under the `setup` profile. Use the daemon's pinned OpenBao image and its `bao` command-line interface. The job joins only `vault` and mounts only `admin/`, `server/` and the read-only policy. Use the host's existing `jq` prerequisite for structured output. Transfer administrator and server values through protected streams or files, with tracing disabled. Docker arguments, service environments, inspection and logs must contain no secret values. (architect-r3 4, architect-r3 7, logic-r3 5)
+Create `deploy/openbao-init.sh`, `deploy/openbao-server-policy.hcl` and `deploy/test/vault-init.sh`. The one-shot Compose service `openbao-init` uses the daemon's pinned image under the `setup` profile, joins only `vault` and mounts only `admin/`, `server/` and the read-only policy. Disable tracing and keep secrets out of arguments, Compose environments, inspection and logs. (architect-r3 4, architect-r3 7, logic-r3 5)
 
-Record only the two facts below. Stack's initializer owns the files. It reads them itself on retry. The seal guard reads their presence, and Server reads only the published file. (architect-r3 3, logic-r3 4)
+The initializer writes and rereads both files. The seal guard checks their presence. Server reads only the published file. (architect-r3 3, logic-r3 4)
 
 | Fact | File and access |
 |---|---|
-| Initialization response saved | `admin/init-response.json` stores the output of `bao operator init -format=json -recovery-shares=1 -recovery-threshold=1`. Keep it owner and group 10002 and mode `0400`, like the unseal key. It is vault administrator material. Read it only through the local setup path. Mount it in neither daemon nor Server. (architect-r3 1, logic-r3 1, architect-r3 6) |
-| Server credential published | `server/openbao.json` has the format and ownership in the sprint 2 contract. Publish with a private temporary file and ordinary rename inside the same destination directory. Flush the file and directory. Only the final filename counts as published. (architect-r3 3, logic-r3 4, logic-r3 5) |
+| Initialization response saved | Save raw `bao operator init -format=json -recovery-shares=1 -recovery-threshold=1` output at `admin/init-response.json`. Use owner and group 10002 and mode `0400`. Only local setup mounts this administrator file. (architect-r3 1, logic-r3 1, architect-r3 6) |
+| Server credential published | Write and flush a private temporary file with the sprint 2 format and ownership. Rename it to `server/openbao.json` in the same directory and flush the directory. Only the final name counts. (architect-r3 3, logic-r3 4, logic-r3 5) |
 
-- Check initialization and active status separately. An uninitialized vault with either retained file is `state directory is ahead of the database`. An initialized vault without a valid administrator response is `vault is initialized but bootstrap state is incomplete`. Preserve the state on either refusal. Save and flush the one-time initialization response before any authenticated change. Use one 60-second active-health wait measured by elapsed time. A wait failure prints `OpenBao did not become active` and leaves both files intact.
-- With the response saved and no published file, enable version 2 of the key-value engine at `lgtm` and OpenBao's application-role authentication, called AppRole, at `auth/approle`. Reuse matching mounts on a retry. Apply the exact policy and role `lgtm-server`. Grant read, create and update at `lgtm/data/server/link/signing-key`. Set `secret_id_ttl=0`, `secret_id_num_uses=0`, `token_type=batch`, `token_ttl=15m`, `token_max_ttl=15m` and `token_no_default_policy=true`. Issue one identifier only when none exists for the role. If issuance was interrupted and an identifier already exists without a published file, report incomplete setup and preserve the evidence. A read or authorization error never counts as absence. Use the operator guide for a known unfinished first installation. (architect-r3 3, logic-r3 4)
-- Validate the server login before publishing. With a valid published file, perform one validation login and skip initialization and provisioning. Leave the policy, role and both files unchanged. An invalid or unusable final file returns `server vault credential needs repair`. The launch creates no substitute. The recovery guide distinguishes an unfinished first start from an installation with data.
+- Check initialization separately from the single 60-second elapsed-time active wait. If uninitialized with either file, report `state directory is ahead of the database`. If initialized without a valid response, report `vault is initialized but bootstrap state is incomplete`. On a wait failure report `OpenBao did not become active`. Preserve both files on refusal and flush the saved response before authenticated changes.
+- **UNREVIEWED FIX (logic-r4 1).** In the job, use BusyBox `sed` to extract one `root_token` from the complete pinned init output shape. Reject malformed or truncated output as incomplete. Supply `BAO_TOKEN` only to authenticated `bao` child processes. Get `role_id` via `bao read -field=role_id` and `secret_id` via `bao write -f -field=secret_id`. Use shell `printf` after checking the generated identifiers' character set. Feed the protected file to `bao write auth/approle/login -` and discard the token-bearing output. Only tests use host `jq`.
+- With the response saved and no published file, enable version 2 of the key-value engine at `lgtm` and application-role authentication (AppRole) at `auth/approle`. Reuse matching mounts. Apply policy and role `lgtm-server`, granting read, create and update at `lgtm/data/server/link/signing-key`. Set `secret_id_ttl=0`, `secret_id_num_uses=0`, `token_type=batch`, `token_ttl=15m`, `token_max_ttl=15m` and `token_no_default_policy=true`. (architect-r3 3, logic-r3 4)
+- **UNREVIEWED FIX (logic-r4 2).** Require a successful read of `auth/approle/role/lgtm-server` after applying the role. Only then does `bao list -format=json auth/approle/role/lgtm-server/secret-id` with exit 2, exactly `{}` on standard output and empty standard error permit one issuance. This is the pinned client's empty-list response. Existing accessors, a failed role read or any other list outcome stop issuance with the incomplete-setup diagnostic and preserve evidence.
+- Validate login before publishing. With a final file, validate once without provisioning or rewriting either file. An unusable file returns `server vault credential needs repair`.
 
-Freeze `vault_publishes_scoped_credential` in `deploy/test/vault-init.sh`. Require the administrator and published file modes, expected owner and fields, and a 900-second login lease. Write and read a disposable signing-key value. Deny a sibling secret, administrative policy and tooling path. An initialized fixture with a deliberately missing response must return the incomplete-setup diagnostic. Verify an unauthenticated request cannot obtain administrator access. Use the real daemon without a recording proxy or command shim. (architect-r3 1, architect-r3 3, logic-r3 4, logic-r3 5)
+Freeze `vault_publishes_scoped_credential` in `deploy/test/vault-init.sh`. Check file modes, owners and fields, a 900-second login lease and a signing-key round trip. Deny sibling, policy, tooling and unauthenticated administrator access. Check a missing response and the PB6 and PB7 cases on the real daemon. (architect-r3 1, architect-r3 3, logic-r3 4, logic-r3 5)
 
-This item is risky. Broaden the server policy or attempt publication with an invalid identifier. Require the denial or login assertion to fail. Acceptance is `bash deploy/test/vault-init.sh` with the named assertion passing.
+This item is risky. Broaden the policy or publish an invalid identifier and require the denial or login assertion to fail. Acceptance is `bash deploy/test/vault-init.sh` with its named assertion passing.
 
 **Contract for sprint 2**
 
 | Surface | Writer or supplier | Reader |
 |---|---|---|
 | Runtime user | The Stack web plan runs the server image as numeric user and group 10001. | The Server program reads mounted files as that identity. |
-| Database | Stack sets `LGTM_POSTGRES_HOST=postgres`, `LGTM_POSTGRES_PORT=5432`, `LGTM_POSTGRES_DATABASE=lgtm_app`, `LGTM_POSTGRES_USER=lgtm_app` and `LGTM_POSTGRES_PASSWORD_FILE=/run/lgtm/postgres.password`. Mount `postgres-app.password` read-only there. | [Server sign-in work item 1](../go-s2-server-signin/plan.md) consumes these five settings and the hexadecimal password file. [Stack web work item 4](../go-s2-stack-web/plan.md) supplies the same names when it mounts the server. (architect-r3 8, logic-r3 10) |
-| Rollout database query | Item 2 replaces the entire `psql_in_stack` connection logic and removes the old account and database defaults from the test guide. Run `compose exec -T --user 70:70 postgres`. Inside it, read `/run/lgtm-db/postgres-app.password` into the local `psql` process and use `psql -w -h 127.0.0.1 -U lgtm_app -d lgtm_app`. Keep bound arguments and standard input. | C5 uses this command in sprint 3. The web plan leaves the helper to item 2. (architect-r3 8) |
-| Vault credential | Stack writes default `deploy/.state/server/openbao.json` or `server/openbao.json` under the state override. It is 8-bit Unicode Transformation Format (UTF-8) JavaScript Object Notation (JSON) with exactly two nonempty string fields, `role_id` and `secret_id`, and one trailing newline. Use owner and group 10001 and mode `0400`. Stack mounts it read-only at `/run/lgtm/openbao.json` and sets `LGTM_OPENBAO_CREDENTIAL_FILE` to that path. Stack sets `LGTM_OPENBAO_ADDR` to the `openbao` service on port 8200 over plain Hypertext Transfer Protocol (HTTP). | Server reads those two settings. AppRole login uses `POST /v1/auth/approle/login`. Server reads `auth.client_token` and sends it in `X-Vault-Token`. |
+| Database | [Stack web item 4](../go-s2-stack-web/plan.md) sets `LGTM_POSTGRES_HOST=postgres`, `LGTM_POSTGRES_PORT=5432`, `LGTM_POSTGRES_DATABASE=lgtm_app`, `LGTM_POSTGRES_USER=lgtm_app` and `LGTM_POSTGRES_PASSWORD_FILE=/run/lgtm/postgres.password`. Mount `postgres-app.password` read-only there. | [Server sign-in item 1](../go-s2-server-signin/plan.md) reads the five settings and the hexadecimal password file. (architect-r3 8, logic-r3 10) |
+| Rollout database query | Item 2 owns `psql_in_stack` and its test guide. Run `compose exec -T --user 70:70 postgres` and read `/run/lgtm-db/postgres-app.password` into `psql -w -h 127.0.0.1 -U lgtm_app -d lgtm_app`. Keep bound arguments and standard input. | C5 uses the helper in sprint 3. (architect-r3 8) |
+| Vault credential | Stack writes `server/openbao.json` under `deploy/.state` or the override. Use 8-bit Unicode Transformation Format (UTF-8) JavaScript Object Notation (JSON) with exactly two nonempty strings, `role_id` and `secret_id`, and one trailing newline. Use owner and group 10001 and mode `0400`. Stack sets `LGTM_OPENBAO_CREDENTIAL_FILE` to the read-only mount `/run/lgtm/openbao.json` and `LGTM_OPENBAO_ADDR` to `openbao` on port 8200 over plain Hypertext Transfer Protocol (HTTP). | Server reads both settings, uses `POST /v1/auth/approle/login` and sends the returned `auth.client_token` in `X-Vault-Token`. |
 | Signing key and observation | Server writes its 32-byte Ed25519 seed as standard base64 in field `private_seed_b64` at `lgtm/data/server/link/signing-key`. The first write uses `options.cas=0`. Server emits `msg=link_signing_key_loaded`, `source=openbao` and a nonempty public string `fingerprint`. | Server reads the stored seed after a creation conflict. `server_key_fingerprint` in the rollout driver reads the log fields for C13. (threat-r2 10) |
-| Launch and networks | Item 6 writes executable `deploy/up.sh` and supplies the private `data` and `vault` networks. | The web plan extends the launcher and adds the server only after successful vault setup. The launcher option `--until vault` belongs to the web plan's fallback. It adds the option there and updates the surviving `deploy/test/stack-vault.sh` invocation. (architect-r3 8) |
+| Launch and networks | Item 6 writes `deploy/up.sh` and supplies private `data` and `vault` networks. | Web extends the launcher after vault success, adds its `--until vault` fallback and updates `deploy/test/stack-vault.sh`. (architect-r3 8) |
+| Web migration. **UNREVIEWED FIX (logic-r4 3).** | Sprint 1 has no writer for `deploy/test/vault-testlib.sh`, `fixture_create`, `fixture_cleanup`, `--reset --yes` or `LGTM_POSTGRES_URL`. | Web owns disposable Compose projects, state, loopback ports and teardown per test. Drop `up_reset_removes_web_and_server` and use the five database settings. Replace the old PB5 trace for `up_starts_no_server_before_the_vault` with the vault phase and PB8. Trace full restart to PB4 and C13. Sprint 1 item 2 owns C5. |
 
 **Work item 6. Verify first start and restart of the stack**
 
-Create executable `deploy/up.sh`, `deploy/README.md` and `deploy/test/stack-vault.sh`. Hold the existing exclusive `flock` on the canonical state directory during startup. Use one state directory per Compose project. The launcher emits `phase <name> start` and `phase <name> done`. Stack writes these observations, and the web launcher and rollout tests consume them. (architect-r3 2, logic-r3 2)
+Create executable `deploy/up.sh`, `deploy/README.md` and `deploy/test/stack-vault.sh`. Take an exclusive `flock` on the canonical state directory, one per Compose project. Emit `phase <name> start` and `phase <name> done` for the web launcher and rollout tests. (architect-r3 2, logic-r3 2)
 
 | Phase | Operation |
 |---|---|
@@ -234,14 +237,14 @@ Create executable `deploy/up.sh`, `deploy/README.md` and `deploy/test/stack-vaul
 | `vault` | Start `openbao`, run `openbao-init`, and require both daemons healthy. |
 | `ready` | Complete launcher readiness. After the last phase line, print `postgres and openbao are healthy`. A failed phase exits nonzero with its diagnostic. |
 
-Use `docker compose -f deploy/compose.yaml` with the same project and state settings. Ordinary shutdown uses `down` without volume removal. In `deploy/README.md`, name Docker Compose and `jq` as startup prerequisites. Explain that `admin/init-response.json` holds the local administrator token for any manual policy administration. Keep it out of logs, shell history and server mounts. (architect-r3 1, logic-r3 1)
+Document Docker Compose for startup and ordinary `down` for shutdown. Use `docker compose -f deploy/compose.yaml` with existing project and state settings. For manual policy administration use the local administrator response. Keep it out of logs, shell history and server mounts. (architect-r3 1, logic-r3 1)
 
-Document a rebuild only for an operator who knows first start never succeeded and whose stack is still disposable. Confirm the project and its dedicated state folder, remove that project's volumes with `docker compose -f deploy/compose.yaml -p <project> down -v`, remove that project's state folder using its owner or an administrator, and run the launcher again. Document that deleting either side alone can make existing data unusable. If the stack has held data, preserve both sides and restore matching files and volume from backup. The launcher performs no destructive recovery. (architect-r3 2, logic-r3 3, logic-r3 6, logic-r3 7, logic-r3 9)
+For a known unfinished disposable installation, confirm the project and state folder. Run `docker compose -f deploy/compose.yaml -p <project> down -v`, remove that project's state folder as its owner or an administrator, and relaunch. Deleting either side can leave data unusable. Preserve both sides after the stack has held data. Rollback is outside wave 1. (architect-r3 2, logic-r3 3, logic-r3 6, logic-r3 7, logic-r3 9)
 
-- `stack_starts_twice_without_changes` runs the real launcher twice and compares the administrator file, seal file and server credential by fingerprint and modification time. Compare the role's identifier count. Both runs reach ready with one identifier and two healthy daemons.
-- `stack_reopens_existing_vault` writes a fixture signing-key value with the published file as user 10001. Run plain Compose shutdown and rerun the launcher with the same state and volume. The vault unseals without input and the same file reads the original value. This is the vault half of C13.
+- `stack_starts_twice_without_changes` runs the launcher twice. Both runs reach ready with one identifier and two healthy daemons. Compare the fingerprints and modification times of the administrator, seal and server files.
+- `stack_reopens_existing_vault` writes a fixture signing key using the published file as user 10001. After ordinary shutdown and relaunch with the same state and volume, OpenBao unseals automatically and the file reads the same value. This checks the vault part of C13.
 
-This item is risky. Bypass database readiness or provision on an already completed run and require a startup assertion to fail. Acceptance is `bash deploy/test/stack-vault.sh` with two passing assertions. The full check waits for sprint 2's Go server and website. (architect-r3 2, architect-r3 3, logic-r3 5)
+This item is risky. Skip database readiness or provision on repeat start and require failure. Run `bash deploy/test/stack-vault.sh` for two passing assertions. Full C13 waits for sprint 2. (architect-r3 2, architect-r3 3, logic-r3 5)
 
 **Post-build checks**
 
@@ -252,6 +255,9 @@ This item is risky. Bypass database readiness or provision on an already complet
 | PB3. Secret handling | Inspect arguments, logs, rendered Compose and container configuration during success and rejected password runs. Require no fixture secrets. Check the two durable bootstrap files are the only bootstrap records and that the administrator file is never exposed to Server. (architect-r3 1, logic-r3 1) |
 | PB4. Restart and concurrency | Run two launchers against the same state directory, including a symbolic-link spelling. The lock serializes them, then both may reach ready with one credential. After a host restart run C13 when the server is present. The signing-key fingerprint must match. (architect-r3 2) |
 | PB5. Database rollout hooks | With Server's store merged, run `deploy/test/with-postgres.sh -- go test ./src/server/internal/store/...` and `deploy/test/with-postgres.sh -- deploy/test/checks.sh --only C12`. The maintenance name check, database suite and expected change-feed mutation all pass. The C5 query helper independently reads the application database. (architect-r3 5) |
+| PB6. Setup tools and response | In the pinned image without `jq` or external network access, reach OpenBao on `vault` and publish one credential. A truncated init response that still contains the token fails with `vault is initialized but bootstrap state is incomplete` and leaves state intact. Mutating the job to call `jq` must fail. (logic-r4 1) |
+| PB7. Empty identifier list | Record the nonsecret list result for a fresh role and require zero accessors to become exactly one. One existing accessor with no final file, a failed role read or a list error each forbid issuance. Treating the pinned empty response as an error must fail first start. (logic-r4 2) |
+| PB8. Web launcher handoff | With Web's disposable projects, run `up_starts_everything_in_order`, `up_until_vault_stops_early` and `up_starts_no_server_before_the_vault`. Full launch uses the five Server settings. Early stop and a malformed vault credential both leave `server` and `web` absent. The malformed credential produces `server vault credential needs repair`. (logic-r4 3) |
 
 **Risks**
 
@@ -319,8 +325,9 @@ Load. Six test writers, six builders and six mutation checks give 18 execution s
 
 | Round | Findings | Outcome |
 |---|---|---|
-| Round 1 | [Register](attack/round-1-findings.md). | The round has a recorded disposition for every finding. |
-| Round 2 | [Register](attack/round-2-findings.md). | The round has a recorded disposition for every finding. |
-| Round 3 | [Register](attack/round-3-findings.md). | The orchestrator's scope ruling replaces the listed earlier mechanisms. The next round reviews only the changed headings. |
+| Round 1 | [Register](attack/round-1-findings.md). | Findings folded. |
+| Round 2 | [Register](attack/round-2-findings.md). | Findings folded. |
+| Round 3 | [Register](attack/round-3-findings.md). | The scope ruling supersedes earlier mechanisms. |
+| Round 4 | [Register](attack/round-4-findings.md). | Three fixes go directly to build. |
 
 </details>
