@@ -1,0 +1,11 @@
+[
+  {"call": "Join", "code": "permission_denied", "action": "stop", "key": "Lgtm-Join-Refusal"},
+  {"call": "Join", "code": "invalid_argument", "action": "stop"},
+  {"call": "Open", "code": "failed_precondition", "action": "stop", "key": "Lgtm-Link-Refusal", "reasons": ["unknown_machine", "link_revision_mismatch"], "after_verified_challenge": true},
+  {"call": "Open", "code": "failed_precondition", "action": "dial again", "key": "Lgtm-Link-Refusal", "reasons": ["event_gap"], "after_verified_challenge": false},
+  {"call": "Open", "code": "unauthenticated", "action": "dial again"},
+  {"call": "Open", "code": "aborted", "action": "dial again"},
+  {"call": "Open", "code": "invalid_argument", "action": "dial again"},
+  {"call": "Open", "code": "deadline_exceeded", "action": "dial again"},
+  {"call": "both", "code": "unavailable", "action": "dial again"}
+]
