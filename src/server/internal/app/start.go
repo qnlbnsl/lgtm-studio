@@ -17,6 +17,8 @@ import (
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/api"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/auth"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/config"
+	"github.com/qnlbnsl/lgtm-studio/src/server/internal/link"
+	"github.com/qnlbnsl/lgtm-studio/src/server/internal/machines"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/store"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/vault"
 )
@@ -158,7 +160,7 @@ func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logg
 	go st.watchLock()
 
 	migration, cancelMigration := context.WithTimeout(st.life, st.budgets.migration)
-	err = s.Migrate(migration, auth.Migrations(), vault.Migrations())
+	err = s.Migrate(migration, auth.Migrations(), vault.Migrations(), machines.Migrations())
 	cancelMigration()
 	if err != nil {
 		return nil, st.unreconciled(st.interrupted(migration, lineMigrate))
@@ -225,10 +227,15 @@ func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logg
 	}()
 
 	sessions := auth.NewSessions(s, password)
+	public := identity.SigningKey.Public().(ed25519.PublicKey)
+	registry := machines.NewRegistry()
+	tokens := machines.NewTokens(s, registry, machines.Issuer{PublicURL: cfg.PublicURL, ServerKey: public})
 	handler := api.NewHandler(api.Options{
 		Sessions: sessions,
 		Origins:  origins,
 		Session:  api.NewSessionService(password, sessions),
+		Clients:  machines.NewService(s, sessions, registry, tokens).WithFollower(follower),
+		Link:     link.NewService(s, tokens, public),
 	})
 
 	// The last probe comes immediately before the listener opens.
@@ -255,7 +262,6 @@ func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logg
 		IdleTimeout:       idleTimeout,
 		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelWarn),
 	}
-	public := identity.SigningKey.Public().(ed25519.PublicKey)
 	server := &Server{
 		addr:      listener.Addr(),
 		publicKey: append(ed25519.PublicKey(nil), public...),

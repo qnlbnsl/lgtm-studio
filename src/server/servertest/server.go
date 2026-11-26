@@ -17,6 +17,11 @@ import (
 	"testing"
 	"time"
 
+	"connectrpc.com/connect"
+
+	"github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1/linkv1connect"
+	lgtmv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1"
+	"github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1/lgtmv1connect"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/app"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/config"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/store/storetest"
@@ -98,6 +103,23 @@ func Start(t testing.TB, options Options) *Server {
 	t.Cleanup(func() { s.stop() })
 	s.launch(t)
 	return s
+}
+
+// Clients signs in through the fixture's cookie jar and returns the website's client service.
+func (s *Server) Clients(t testing.TB) lgtmv1connect.ClientServiceClient {
+	t.Helper()
+	session := lgtmv1connect.NewSessionServiceClient(s.HTTPClient, s.URL)
+	res, err := session.SignIn(t.Context(), connect.NewRequest(&lgtmv1.SignInRequest{Password: s.cfg.Password}))
+	if err != nil || res.Msg.GetResult() != lgtmv1.SignInResult_SIGN_IN_RESULT_SIGNED_IN {
+		t.Fatal("The fixture could not sign in to the website.")
+	}
+	return lgtmv1connect.NewClientServiceClient(s.HTTPClient, s.URL)
+}
+
+// Link returns a machine-link client that sends no website cookies.
+func (s *Server) Link() linkv1connect.LinkServiceClient {
+	client := &http.Client{Transport: s.transport, Timeout: clientTimeout}
+	return linkv1connect.NewLinkServiceClient(client, s.URL)
 }
 
 // Stop closes the application and its listener. It is safe to call more than once.
