@@ -2,6 +2,7 @@ package link
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -14,6 +15,8 @@ import (
 )
 
 const HeartbeatTimeout = 30 * time.Second
+
+const watchdogIdentityTimeout = 2 * time.Second
 
 func (s *Service) Open(ctx context.Context, stream *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse]) error {
 	if s.streaming == nil {
@@ -187,15 +190,13 @@ func (w *streamWatchdog) refresh() {
 	}
 }
 
-func (w *streamWatchdog) run(ctx context.Context, cancel context.CancelCauseFunc) {
+func (w *streamWatchdog) run(ctx context.Context, cancel context.CancelCauseFunc, silenceCause func() error) {
 	for ctx.Err() == nil {
 		w.mu.Lock()
 		wait := w.deadline.Sub(w.controls.now())
-		if wait <= 0 {
-			cancel(errHandshakeDeadline)
-		}
 		w.mu.Unlock()
 		if wait <= 0 {
+			cancel(silenceCause())
 			return
 		}
 		tick, stop := w.controls.timer(wait)
@@ -204,5 +205,24 @@ func (w *streamWatchdog) run(ctx context.Context, cancel context.CancelCauseFunc
 		case <-tick:
 		}
 		stop()
+	}
+}
+
+func (s *streamingService) silenceCause(ctx context.Context, handle *Handle) error {
+	read, stop := context.WithTimeout(ctx, watchdogIdentityTimeout)
+	defer stop()
+	_, err := s.state.CheckCurrent(read, handle.machineID, handle.streamID)
+	switch {
+	case errors.Is(err, ErrUnknownMachine):
+		// The admission that displaced this stream may still be publishing its cause.
+		leave, gateErr := s.hub.enter(read, handle)
+		if gateErr == nil {
+			leave()
+		}
+		return ErrUnknownMachine
+	case errors.Is(err, ErrNotCurrent):
+		return ErrNotCurrent
+	default:
+		return errHandshakeDeadline
 	}
 }

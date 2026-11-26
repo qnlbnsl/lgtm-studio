@@ -93,12 +93,8 @@ func (s *State) CheckCurrent(ctx context.Context, machineID, streamID string) (m
 		if err != nil {
 			return err
 		}
-		var current bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT FROM link_connections WHERE machine_id = $1 AND stream_id = $2)`, machineID, streamID).Scan(&current); err != nil {
+		if err := checkCurrentStream(ctx, tx, machineID, streamID); err != nil {
 			return err
-		}
-		if !current {
-			return ErrNotCurrent
 		}
 		approval = machine.Approval
 		return nil
@@ -107,6 +103,32 @@ func (s *State) CheckCurrent(ctx context.Context, machineID, streamID string) (m
 		return "", err
 	}
 	return approval, nil
+}
+
+func (s *State) noteWelcome(ctx context.Context, machineID, streamID string) error {
+	return s.store.Write(ctx, func(ctx context.Context, tx *store.Tx) error {
+		if _, err := s.registry.Lock(ctx, tx, machineID); err != nil {
+			if err == machines.ErrNoMachine {
+				return ErrUnknownMachine
+			}
+			return err
+		}
+		if err := checkCurrentStream(ctx, tx, machineID, streamID); err != nil {
+			return err
+		}
+		return s.registry.Touch(ctx, tx, machineID)
+	})
+}
+
+func checkCurrentStream(ctx context.Context, q machines.Querier, machineID, streamID string) error {
+	var current bool
+	if err := q.QueryRow(ctx, `SELECT EXISTS(SELECT FROM link_connections WHERE machine_id = $1 AND stream_id = $2)`, machineID, streamID).Scan(&current); err != nil {
+		return err
+	}
+	if !current {
+		return ErrNotCurrent
+	}
+	return nil
 }
 
 func (s *State) Heartbeat(ctx context.Context, machineID, streamID string, hb *linkv1.Heartbeat) error {
@@ -119,12 +141,8 @@ func (s *State) Heartbeat(ctx context.Context, machineID, streamID string, hb *l
 			return err
 		}
 		s.locked(ctx, machineID)
-		var current bool
-		if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT FROM link_connections WHERE machine_id = $1 AND stream_id = $2)`, machineID, streamID).Scan(&current); err != nil {
+		if err := checkCurrentStream(ctx, tx, machineID, streamID); err != nil {
 			return err
-		}
-		if !current {
-			return ErrNotCurrent
 		}
 		if hb == nil || hb.GetCpuPercent() > 100 || hb.GetMemoryPercent() > 100 {
 			return ErrInvalidMessage
@@ -209,6 +227,7 @@ FROM link_connections WHERE machine_id = ANY($1)`, ids)
 		return nil, err
 	}
 	defer rows.Close()
+	watching := machines.WatchingPresence(ctx)
 	for rows.Next() {
 		var id string
 		var p machines.Presence
@@ -216,7 +235,7 @@ FROM link_connections WHERE machine_id = ANY($1)`, ids)
 			&p.CPUPercent, &p.MemoryPercent, &p.FactsReceived, &p.HarnessesReceived); err != nil {
 			return nil, err
 		}
-		p.Held = s.hub.Holds(id, p.StreamID)
+		p.Held = s.hub.holds(id, p.StreamID, watching)
 		out[id] = p
 	}
 	return out, rows.Err()

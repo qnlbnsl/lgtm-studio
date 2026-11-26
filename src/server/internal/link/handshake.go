@@ -65,16 +65,17 @@ func proofText(label, machineID string, machineNonce, serverNonce []byte) []byte
 }
 
 type openHandshake struct {
-	stream     *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse]
-	controls   handshakeControls
-	steady     streamControls
-	watchdog   *streamWatchdog
-	phases     chan *handshakeReceive
-	frames     chan receivedFrame
-	readerDone chan struct{}
-	machineID  string
-	handle     *Handle
-	cleanup    bool
+	stream          *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse]
+	controls        handshakeControls
+	steady          streamControls
+	watchdog        *streamWatchdog
+	phases          chan *handshakeReceive
+	frames          chan receivedFrame
+	readerDone      chan struct{}
+	machineID       string
+	handle          *Handle
+	cleanup         bool
+	publishPresence bool
 }
 
 func (s *Service) open(ctx context.Context, stream *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse], serve func(context.Context, *Handle, <-chan receivedFrame, *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse]) error) error {
@@ -95,17 +96,22 @@ func (s *Service) open(ctx context.Context, stream *connect.BidiStream[linkv1.Op
 		watchdogDone = make(chan struct{})
 		go func() {
 			defer close(watchdogDone)
-			h.watchdog.run(ctx, cancel)
+			h.watchdog.run(ctx, cancel, func() error { return link.silenceCause(ctx, h.handle) })
 		}()
 		close(h.phases)
-		err = serve(ctx, h.handle, h.frames, stream)
+		if h.publishPresence {
+			err = link.state.noteWelcome(ctx, h.machineID, h.handle.streamID)
+		}
+		if err == nil {
+			err = serve(ctx, h.handle, h.frames, stream)
+		}
 	}
 	if err == nil {
 		err = errLinkFinished
 	}
 	if h.handle != nil && errors.Is(err, ErrUnknownMachine) {
 		// A registry miss can arrive before the admission that displaced this stream is published.
-		leave, gateErr := link.hub.enter(h.handle)
+		leave, gateErr := link.hub.enter(ctx, h.handle)
 		if gateErr != nil {
 			err = gateErr
 		} else {
@@ -242,7 +248,7 @@ func (s *Service) handshake(ctx context.Context, cancel context.CancelCauseFunc,
 	if err != nil {
 		return err
 	}
-	link.hub.FinishWelcome(h.handle)
+	h.publishPresence = link.hub.finishWelcome(h.handle)
 	link.options.Logger.Info("link_stream_opened", "machine_id", machineID, "generation", admitted.Generation)
 	return nil
 }

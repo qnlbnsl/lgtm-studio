@@ -20,17 +20,18 @@ type hubMachine struct {
 	handles    map[*Handle]struct{}
 	current    *Handle
 	generation int64
-	admitting  bool
+	admitting  *Handle
 	removed    bool
 }
 
 type Handle struct {
-	machineID, streamID string
-	machine             *hubMachine
-	ctx                 context.Context
-	cancel              context.CancelCauseFunc
-	wake                chan struct{}
-	started, finished   bool
+	machineID, streamID  string
+	machine              *hubMachine
+	ctx                  context.Context
+	cancel               context.CancelCauseFunc
+	wake                 chan struct{}
+	started, finished    bool
+	watchedBeforeWelcome bool
 }
 
 func NewHub() *Hub {
@@ -51,7 +52,7 @@ func (h *Hub) Track(machineID, streamID string, ctx context.Context, cancel cont
 }
 
 // enter keeps the machine record alive for the entire gate operation.
-func (h *Hub) enter(handle *Handle) (func(), error) {
+func (h *Hub) enter(ctx context.Context, handle *Handle) (func(), error) {
 	m := handle.machine
 	h.mu.Lock()
 	if _, ok := m.handles[handle]; !ok {
@@ -70,7 +71,7 @@ func (h *Hub) enter(handle *Handle) (func(), error) {
 	select {
 	case m.gate <- struct{}{}:
 		leave := func() { <-m.gate; release() }
-		if err := context.Cause(handle.ctx); err != nil {
+		if err := context.Cause(ctx); err != nil {
 			leave()
 			return nil, err
 		}
@@ -82,9 +83,9 @@ func (h *Hub) enter(handle *Handle) (func(), error) {
 			return nil, ErrNotCurrent
 		}
 		return leave, nil
-	case <-handle.ctx.Done():
+	case <-ctx.Done():
 		release()
-		return nil, context.Cause(handle.ctx)
+		return nil, context.Cause(ctx)
 	}
 }
 
@@ -95,21 +96,21 @@ func (h *Hub) forgetIdle(id string, m *hubMachine) {
 }
 
 func (h *Hub) Admit(handle *Handle, commit func() (int64, bool, error)) error {
-	leave, err := h.enter(handle)
+	leave, err := h.enter(handle.ctx, handle)
 	if err != nil {
 		return err
 	}
 	defer leave()
 	m := handle.machine
 	h.mu.Lock()
-	m.admitting = true
+	m.admitting = handle
 	h.mu.Unlock()
 	generation, unknown, err := commit()
 
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	defer func() {
-		m.admitting = false
+		m.admitting = nil
 		m.cancelRemoved()
 	}()
 	if unknown {
@@ -138,7 +139,7 @@ func (h *Hub) Admit(handle *Handle, commit func() (int64, bool, error)) error {
 }
 
 func (h *Hub) BeginWelcome(handle *Handle) error {
-	leave, err := h.enter(handle)
+	leave, err := h.enter(handle.ctx, handle)
 	if err != nil {
 		return err
 	}
@@ -156,13 +157,19 @@ func (h *Hub) BeginWelcome(handle *Handle) error {
 }
 
 func (h *Hub) FinishWelcome(handle *Handle) {
+	h.finishWelcome(handle)
+}
+
+func (h *Hub) finishWelcome(handle *Handle) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	m := handle.machine
 	if m.current == handle && handle.started {
 		handle.finished = true
 		m.cancelRemoved()
+		return handle.watchedBeforeWelcome && handle.ctx.Err() == nil
 	}
+	return false
 }
 
 func (h *Hub) Unregister(handle *Handle) {
@@ -180,12 +187,30 @@ func (h *Hub) Unregister(handle *Handle) {
 }
 
 func (h *Hub) Holds(machineID, streamID string) bool {
+	return h.holds(machineID, streamID, false)
+}
+
+func (h *Hub) holds(machineID, streamID string, watching bool) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	m := h.machines[machineID]
+	if m == nil || m.removed {
+		return false
+	}
+	if watching {
+		// The database may already show the admission while the hub is still publishing it.
+		candidate := m.current
+		if m.admitting != nil && m.admitting.streamID == streamID {
+			candidate = m.admitting
+		}
+		if candidate != nil && candidate.streamID == streamID && !candidate.finished {
+			// The watch needs another saved reference after it sees the admission without liveness.
+			candidate.watchedBeforeWelcome = true
+		}
+	}
 	// The published handle may already be displaced while the commit is in flight.
-	return m != nil && !m.admitting && m.current != nil && m.current.streamID == streamID &&
-		m.current.ctx.Err() == nil && m.current.finished && !m.removed
+	return m.admitting == nil && m.current != nil && m.current.streamID == streamID &&
+		m.current.ctx.Err() == nil && m.current.finished
 }
 
 func (h *Hub) Wake(machineID string) {
@@ -223,7 +248,7 @@ func (h *Hub) EndRemoved(machineID string) {
 }
 
 func (m *hubMachine) cancelRemoved() {
-	if m.removed && !m.admitting && m.current != nil && m.current.finished {
+	if m.removed && m.admitting == nil && m.current != nil && m.current.finished {
 		m.current.cancel(ErrUnknownMachine)
 	}
 }

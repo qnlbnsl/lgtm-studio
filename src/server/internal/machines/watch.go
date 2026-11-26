@@ -16,6 +16,14 @@ import (
 
 var errServerStopping = errors.New("The server is stopping.")
 
+type watchPresenceKey struct{}
+
+// WatchingPresence reports whether a presence read serves a Machines watch.
+func WatchingPresence(ctx context.Context) bool {
+	watching, _ := ctx.Value(watchPresenceKey{}).(bool)
+	return watching
+}
+
 // WatchClients streams the machine snapshot and subsequent changes for a live session.
 func (s *Service) WatchClients(
 	ctx context.Context,
@@ -91,6 +99,7 @@ func (s *Service) WatchClients(
 			return client, err == nil, err
 		},
 	}
+	ctx = context.WithValue(ctx, watchPresenceKey{}, true)
 	err := watch.Serve(ctx, s.store, follower, source, func(ctx context.Context, message watch.Message[*lgtmv1.Client]) error {
 		return transport.Send(ctx, func() error {
 			return stream.Send(watchResponse(message))
