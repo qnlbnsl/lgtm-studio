@@ -311,13 +311,13 @@ func TestOpenStoreCreatesSyncedPrivateFile(t *testing.T) {
 	s.Close()
 
 	// A failing sync gives an error and no store, and the claim is let go.
+	f2, _ := newState(t)
 	mu.Lock()
 	failSync = true
 	mu.Unlock()
 	if s, err := OpenStore(f, StoreOptions{}); err == nil || s != nil {
 		t.Errorf("OpenStore with a failing sync gave %v, %v", s, err)
 	}
-	f2, _ := newState(t)
 	if s, err := CreateStore(f2, StoreOptions{}); err == nil || s != nil {
 		t.Errorf("CreateStore with a failing sync gave %v, %v", s, err)
 	}
