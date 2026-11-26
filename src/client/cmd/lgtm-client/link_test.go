@@ -246,18 +246,19 @@ func (p *commandPeer) start(t *testing.T) {
 	t.Helper()
 	_, handler := linkv1connect.NewLinkServiceHandler(p)
 	p.server = httptest.NewUnstartedServer(handler)
+	t.Cleanup(p.server.Close)
 	p.server.Config.Protocols = new(http.Protocols)
 	p.server.Config.Protocols.SetUnencryptedHTTP2(true)
-	p.server.Start()
-	t.Cleanup(p.server.Close)
+	address := "http://" + p.server.Listener.Addr().String()
 	pin := sha256.Sum256(p.public)
 	wire, err := proto.Marshal(&linkv1.JoinToken{
-		TokenId: commandTokenID, Secret: p.secret, Address: p.server.URL, ServerKeySha256: pin[:],
+		TokenId: commandTokenID, Secret: p.secret, Address: address, ServerKeySha256: pin[:],
 	})
 	if err != nil {
 		t.Fatal("could not encode the command fixture token")
 	}
 	p.token = "lgtm1_" + base64.RawURLEncoding.EncodeToString(wire)
+	p.server.Start()
 }
 
 func (p *commandPeer) Join(ctx context.Context, request *connect.Request[linkv1.JoinRequest]) (*connect.Response[linkv1.JoinResponse], error) {
