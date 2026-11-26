@@ -29,11 +29,16 @@ var (
 	errInvalidChallenge   = errors.New("link: invalid challenge")
 	errInvalidWelcome     = errors.New("link: invalid welcome")
 	errInvalidCredentials = errors.New("link: invalid machine identity or keys")
+	errEventGap           = errors.New("link: event gap")
 	errStream             = errors.New("link: stream failed")
 )
 
-// terminalRefusal carries a final refusal from a server that proved its key.
-type terminalRefusal struct{ Code string }
+// terminalRefusal identifies an incompatible revision or a final refusal.
+// Only a refusal received from a verified peer can stop reconnection.
+type terminalRefusal struct {
+	Code     string
+	fromWire bool
+}
 
 func (e terminalRefusal) Error() string { return "link: refused: " + e.Code }
 
@@ -144,7 +149,7 @@ func (s *session) exchange(ctx context.Context, msg *linkv1.OpenRequest, verifie
 	// A successful stream can outlive both handshake timers.
 	timer := time.AfterFunc(handshakeTimeout, s.cancel)
 	if verified {
-		sentAt, err := elapsedClock()
+		sentAt, err := readElapsedClock()
 		s.sentAt, s.sentAtOK = sentAt, err == nil
 	}
 	err := s.stream.Send(msg)
@@ -197,13 +202,17 @@ func validateWelcome(welcome *linkv1.Welcome) error {
 }
 
 func (s *session) receiveError(err error, verified bool) error {
-	if verified && connect.CodeOf(err) == connect.CodeFailedPrecondition && connect.IsWireError(err) {
+	if connect.CodeOf(err) == connect.CodeFailedPrecondition && connect.IsWireError(err) {
 		// Connect's error metadata merges leading headers with trailing metadata.
 		reasons := s.stream.ResponseTrailer().Values("Lgtm-Link-Refusal")
 		if len(reasons) == 1 {
 			switch reasons[0] {
 			case "unknown_machine", "link_revision_mismatch":
-				return terminalRefusal{Code: reasons[0]}
+				if verified {
+					return terminalRefusal{Code: reasons[0], fromWire: true}
+				}
+			case "event_gap":
+				return connect.NewError(connect.CodeFailedPrecondition, errEventGap)
 			}
 		}
 	}
