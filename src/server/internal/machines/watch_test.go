@@ -342,7 +342,10 @@ func TestWatchClientsBlockedReaderEnds(t *testing.T) {
 			for i := range names {
 				names[i] = fmt.Sprintf("%03d-%s", i, strings.Repeat("x", 200))
 			}
-			f.create(t, names...)
+			for start := 0; start < len(names); start += store.MaxWriteChanges {
+				end := min(start+store.MaxWriteChanges, len(names))
+				f.create(t, names[start:end]...)
+			}
 			// Read just the next envelope header. Its body is larger than the receive window.
 			blockedSize := watchFrameSize(t, res.Body, "first saved change")
 			if blockedSize <= 2*window {
