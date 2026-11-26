@@ -3,14 +3,14 @@ package link
 
 import (
 	"crypto/ed25519"
+	"slices"
 
 	"github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1/linkv1connect"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/machines"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/store"
 )
 
-// Service is a stub of the test writer for item 4 (task s3-machines-tests-b).
-// It answers every call as unimplemented. The builder replaces it and adds Join.
+// Service handles machine joins.
 type Service struct {
 	linkv1connect.UnimplementedLinkServiceHandler
 	store     *store.Store
@@ -18,7 +18,7 @@ type Service struct {
 	serverKey ed25519.PublicKey
 }
 
-// NewService keeps its arguments. This is the signature that the plan gives.
+// NewService creates the link service for one server.
 func NewService(s *store.Store, t *machines.Tokens, serverKey ed25519.PublicKey) *Service {
-	return &Service{store: s, tokens: t, serverKey: serverKey}
+	return &Service{store: s, tokens: t, serverKey: slices.Clone(serverKey)}
 }
