@@ -43,6 +43,7 @@ A server that answers Connect can answer gRPC from the same files.
 - Calls in `lgtm.v1` need a website session, except `SessionService.GetServer` and `SessionService.SignIn`. The session travels in a cookie that the server sets. No message carries it.
 - The shared `Watch` shape in `common.proto` starts with `all`, then sends a `saved` record or a `removed_id` for each change. The first `position` is the highest position the records include, or zero when no change is visible. Each later `position` is higher. `WatchMap` and `WatchPreviews` will adopt this shape when their services are built.
 - `LinkService.Join` needs a join token, and `LinkService.Open` needs the machine's key. Both operate outside the website session.
+- The link `lgtm.link.v1` is frozen at revision 1. A change to `link.proto`, `commands.proto` or `events.proto` needs the next revision and a new entry in `testdata/link-frozen.json`.
 - The server and client speak link revision 1. A later call beside the stream presents the current stream's connection token in the `Lgtm-Link-Token` header.
 - Every message, field and call has a comment that says what it is for.
 
