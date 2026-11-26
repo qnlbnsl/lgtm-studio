@@ -7788,3 +7788,15 @@ A person who follows the dialog cannot add a machine. A change to what the dialo
 ## 1662. The website shows sample repositories and agents beside the real Machines page
 
 Found on 2026-11-26 in the same look. After sign-in against the Go server, the Machines page shows real data, which is no machine at first. The sidebar and the Home page still show the sample repositories, teams, agents and seven waiting requests of the website's built-in sample data. Wave 1 of the Go server answers only the calls of sign-in and machines. A person cannot tell which parts of the page are real. Whether the website hides the parts that the server does not answer yet is a choice about what the page shows.
+
+## 1663. The launcher has faults when a caller overrides Docker Compose through environment variables
+
+Found on 2026-11-26 by the fourth review of the launcher `deploy/up.sh` (findings post-d 1 to post-d 5 of the plan `go-s2-stack-web`). The default start from the deployment folder passes every check, and so does the way the test scripts call the launcher. Each fault below needs a caller who sets `COMPOSE_FILE`, `COMPOSE_ENV_FILES` or `COMPOSE_PROFILES` in a particular way.
+
+1. With both `COMPOSE_FILE` and `COMPOSE_ENV_FILES` set, and an override file that sets the project name, the launcher starts PostgreSQL in one project and prepares the database in another.
+2. With an explicit settings list and an override whose service reads the original settings file as its `env_file`, a settings file damaged during the launch can print the password.
+3. A `COMPOSE_PROFILES` value from the working folder is displaced by the launcher's own profile, and services that only that profile enables are missing.
+4. The operator guide says to look up the port from the repository root. With `COMPOSE_FILE` set, the lookup must run from the folder of the launch.
+5. A termination signal sent to the launcher alone, while it reads a settings source that blocks, leaves the private copy on disk until the read ends.
+
+The review loop on the launcher was stopped here by the orchestrator after four reviews. A simpler rule may serve better than five more repairs: the launcher could refuse a caller's Compose overrides that it does not support, and the test scripts could use one supported way to make a private stack.
