@@ -7769,3 +7769,7 @@ Found on 2026-11-26, when the website of the built stack was opened in a browser
 
 1. The Go server of sprint 2 answers `WatchClients` with `unimplemented`, because the calls of machines are wired in sprint 3. This part ends when work item 7 of the plan `go-s3-server-machines` is built.
 2. The website asks again and again and shows nothing meanwhile. Its main element stays marked busy and holds no text. A person sees an empty page with no sentence that says what failed. The same would happen whenever the first watch fails for another reason. A change to what the page shows needs the owner's approval.
+
+## 1660. A machine reports the full path of a workspace that lies outside the home folder
+
+Found on 2026-11-26 by the review of the built client reports (finding post-c 2 of the plan `go-s3-client-link`). The client shortens a workspace path that lies under the home folder. A workspace on another volume cannot be shortened, and the client then sends the full local path to the server as a fact of the machine. The contract permits the field, and the plan asks for the path, shortened when possible. The server belongs to the same single user, so this was ruled not a fault of the build. Whether such a path is left out or shown is a choice about what the Machines page shows.
