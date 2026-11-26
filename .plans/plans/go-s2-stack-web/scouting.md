@@ -275,3 +275,7 @@ This probe ran on 2026-11-26 with Docker Compose 5.5.0, in a disposable folder t
 | From `deploy/`, with an absolute `COMPOSE_FILE` | 19999 |
 
 So Compose reads the `.env` of its working folder when the file list comes from `COMPOSE_FILE`. The launcher therefore runs from `deploy/`. The checkout had no `.env` at its root on 2026-11-26, and `.gitignore` ignores one.
+
+## Round 4 reading of the built launcher
+
+On 2026-11-26 the vault stack of sprint 1 is built in `deploy/`, though not yet committed. Its `deploy/up.sh` resolves the state folder as an absolute path, takes an exclusive `flock` on it, and defines `compose()` as `docker compose -f "$here/compose.yaml"`, where `$here` is the absolute path of `deploy/`. Its phases are `database`, `seal`, `vault` and `ready`, and its last line is `postgres and openbao are healthy`. `deploy/stack-prepare.sh` calls Compose the same way. `deploy/compose.yaml` declares `name: lgtm`, the networks `data` and `vault`, and the state files `server/postgres-app.password` and `server/openbao.json`. The plan extends this shape and these names.
