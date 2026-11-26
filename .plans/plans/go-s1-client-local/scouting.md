@@ -141,3 +141,30 @@ These were checked on 2026-11-26, at commit `3ef69e50`, while the findings of ro
 | `src/client/internal/harness/trust.go`, `trustedProgram` | `Open` in `src/client/internal/state/folder.go`, which applies the same rule to folders. |
 | `src/client/internal/sysinfo/sysinfo_darwin_test.go`, `TestReadLoadOnMacMatchesSystem` | `src/client/internal/sysinfo/sysinfo_linux_test.go`, `TestReadLoadOnLinux`. |
 | `src/client/internal/sysinfo/testdata/meminfo`, `testdata/loadavg` | The Linux files `/proc/meminfo` and `/proc/loadavg`. |
+
+## Facts checked for the fold of review round 2
+
+These were checked on 2026-11-26, while the findings of round 2 and the orchestrator's ruling were folded. The module was fetched into a scratch folder outside the repository, and nothing was added to the repository.
+
+| Check | Result | Used for |
+|---|---|---|
+| `go list -m -versions go.etcd.io/bbolt` | The newest versions are v1.4.2, v1.4.3, v1.5.0-beta.0, v1.5.0-rc.0 and v1.5.0. | Decision 57. |
+| `go list -m -json go.etcd.io/bbolt@latest` | v1.5.0, published on 2026-06-03, with `go 1.25.0`. The development machine's Go 1.23.3 cannot build it, so it was not built here. | Decision 57. |
+| `go list -m -json go.etcd.io/bbolt@v1.4.3` | Published on 2025-08-19, with `go 1.23`. | Decision 57. |
+| A probe that opens a store, makes a bucket and stores one value with v1.4.3 | It runs on Linux. `CGO_ENABLED=0 go build` succeeds for `linux/amd64`, `linux/arm64`, `darwin/amd64` and `darwin/arm64`. The module adds `golang.org/x/sys` v0.29.0 as an indirect requirement. | The ruling's check that the store builds without a C compiler. |
+| `bolt_linux.go` and `boltsync_unix.go` of v1.4.3 | On Linux a commit syncs with `fdatasync`. On macOS it calls `os.File.Sync`, which uses `F_FULLFSYNC`. | Item 6, the claim that a commit syncs before it returns. |
+| `Tx.Commit` in `tx.go` of v1.4.3 | A failed write of the pages or of the meta page rolls the transaction back in memory and returns the error. | Decision 61. The client stops after any failed commit. |
+| `DB.init` in `db.go` of v1.4.3 | A new file gets four pages, written with one write and then synced. A file that is not empty and has no valid meta page gives `ErrInvalid`. | Decision 58. A store is made under a temporary name. |
+| `deploy/test/checks.sh`, around line 520 | Check C10 reads `$state_home/lgtm-client/identity.json` with the fields `clientPublicKey` and `serverPublicKey`. | Decision 66, the rename of `server.json`. |
+| `deploy/test/checks.sh`, functions `client_sequences` and `check_c11` | Check C11 reads log lines `link_event_buffered` with a number in `sequence`, and needs at least three while the server is stopped for 50 seconds. | Decision 71, and rule 8 of the fold for plan `go-s3-client-link`. |
+| `.plans/plans/go-s0-contract/draft/commands.proto`, the comment at the top | The expiry never changes. The machine counts the server's time from `Welcome.server_time` and its monotonic clock. `COMMAND_OUTCOME_INTERRUPTED` is value 5, and `COMMAND_OUTCOME_UNSUPPORTED` is value 4. | Decisions 63 and 69. |
+| `.plans/plans/go-s0-contract/draft/link.proto`, `Hello.acked_event_number = 4` and `Welcome.last_event_number = 3` | The server raises its mark to the machine's number. The comment says that the machine forgets kept events up to a higher number. | Decision 60, and the request to the Contract team. |
+| `.plans/plans/go-s0-contract/draft/events.proto`, `Facts.workspace = 5` | The folder of repositories, such as `~/projects`, at most 256 bytes. | Rule 23 of the fold for plan `go-s3-client-link`. |
+
+## New target paths of round 2 and their nearest pattern
+
+| Target path | Nearest existing pattern |
+|---|---|
+| `src/client/internal/link/store.go`, `OpenStore` | `CreateExclusive` in `src/client/internal/state/atomic.go` of item 2, and `Open` in `db.go` of `go.etcd.io/bbolt`. |
+| `src/client/internal/link/outbox.go`, `Append`, `MarkSent`, `Ack`, `Reconcile` | `floorplan/plan.json`, entry "Events waiting to be sent", and `NextSequence` in `bucket.go` of `go.etcd.io/bbolt`. |
+| `src/client/internal/harness/trust_linux.go`, `hasAccessList` | `syscall.Getxattr` of Go's standard library for Linux. |
