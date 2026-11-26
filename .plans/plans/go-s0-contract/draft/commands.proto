@@ -13,9 +13,14 @@
 //   the receipt at least 24 hours after expires_at. A command that arrives twice runs once.
 // - The server's clock decides expiry. The server reads Welcome.server_time after Proof verified.
 //   The machine counts the server's time as Welcome.server_time plus the time its monotonic clock
-//   measured since it sent Proof. This count is never behind the server's clock.
+//   measured since it sent Proof. While the server's clock runs without a jump, this count is
+//   never behind it, and it is ahead by at most the time from Proof to Welcome, which is at most
+//   10 seconds.
 // - A machine that holds no receipt of a command and counts the server's time at or after
-//   expires_at does not run it, and answers COMMAND_OUTCOME_EXPIRED.
+//   expires_at does not run it, and answers COMMAND_OUTCOME_EXPIRED. So a machine may refuse a
+//   command up to 10 seconds early, and never starts one late.
+// - The machine uses the same count to decide expiry for its receipts and to drop a receipt 24
+//   hours after expires_at. It drops none before its first Welcome.
 syntax = "proto3";
 
 package lgtm.link.v1;
@@ -60,12 +65,10 @@ message CommandResult {
   string command_id = 1;
   // The attempt this result answers.
   uint32 attempt = 2;
-  // How the command ended.
+  // How the command ended. The server writes the text that the website shows from it.
   CommandOutcome outcome = 3;
-  // One sentence about a failure for the website, at most 200 bytes. The client writes it from
-  // its own fixed sentences and never copies the output of another program into it. Empty when
-  // the command was done.
-  string message = 4;
+  reserved 4;
+  reserved "message";
 }
 
 // CommandOutcome is how one command ended.
@@ -90,9 +93,10 @@ enum CommandOutcome {
 message ScanHarnesses {}
 
 // Restart asks the machine to end its client program, so that the service of its user starts it
-// again. The machine writes its receipt with COMMAND_OUTCOME_DONE to disk, then sends the result,
-// and then ends. The outcome means that the machine accepted the restart. The new process shows
-// itself with a new stream.
+// again. The machine writes its receipt with COMMAND_OUTCOME_DONE to disk, then tries for at most
+// 5 seconds to send the result, and then exits with status 75, whether or not the send worked.
+// The outcome means that the machine accepted the restart. The new process sends the result from
+// its receipt when the server sends the command again, and shows itself with a new stream.
 message Restart {}
 
 // SetState gives the machine its new standing.
@@ -108,8 +112,7 @@ message SetState {
 // revision and other content is a fault of the server: the machine keeps the state it holds and
 // logs one sentence. The machine applies Welcome.state before any command of the same stream.
 message MachineState {
-  // A machine treats APPROVAL_UNSPECIFIED, a value it does not know and a missing state as
-  // APPROVAL_WAITING.
+  // A machine treats APPROVAL_UNSPECIFIED and a value it does not know as APPROVAL_WAITING.
   Approval approval = 1;
   // The name the owner gave the machine. Empty while it waits for approval.
   string name = 2;

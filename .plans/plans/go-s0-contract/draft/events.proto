@@ -4,25 +4,24 @@
 // keeps them on disk until the server acknowledges them. A heartbeat only says that the machine
 // is there, so it is never numbered or kept.
 //
-// The order of events:
-// - One sender on the machine sends events on the current stream in ascending number. It sends
-//   first every kept event above Welcome.last_event_number, and then each new event.
-// - A machine never skips or reuses a number. It keeps the highest number it used, also when it
-//   keeps no event. Its next number is one more than that, and higher than
-//   Welcome.last_event_number.
-// - A full buffer refuses a new event before the event takes a number. The machine then sends
-//   its newest Facts or HarnessesFound again once there is room.
-// - The server's mark is the highest event number it consumed from the machine, or 0.
-// - The server applies an event only when its number is the mark plus one. It commits the
-//   event's effect and the new mark in one transaction, and only then sends EventAck.
-// - An event at or below the mark is a copy. The server applies nothing and sends its mark.
-// - An event above the mark plus one ends the stream with `out_of_range`, and the mark stays.
-// - An event with no report, or with a report this server does not know because a newer client
-//   sent it, is consumed: the mark moves past it, and nothing else changes.
-// - An event whose report breaks a rule of this file ends the stream with `invalid_argument`,
-//   and the mark stays.
-// - After every Welcome in which it may send events, the machine sends its current Facts and
-//   HarnessesFound as new events, so a server that lost rows gets them back.
+// The order of events. The server alone decides what was applied.
+// - A machine numbers its events from 1, with no gaps, and never reuses a number.
+// - The server keeps the last event number it applied for each machine. It writes that number in
+//   the same transaction as the event's effect, and it sends EventAck only after the commit.
+// - Welcome.last_event_number carries that number. The machine forgets the events it sent that
+//   are at or below it, numbers every event it has not sent to follow it, and sends from the next
+//   one, in order.
+// - The server applies an event only when its number is the last applied plus one. A lower number
+//   is a repeat: the server drops it and acknowledges its number again. A higher number is a gap:
+//   the server ends the stream with `failed_precondition`.
+// - When Welcome.last_event_number is below a number the server acknowledged to the machine
+//   before, the machine stops as for `failed_precondition`.
+// - The machine checks a report against the rules of this file before the report takes a
+//   number, and a full buffer refuses a new event before it takes a number.
+// - The server consumes the next event when it holds no report, a report it does not know, or a
+//   report that breaks a rule of this file. It logs that, and the number counts as applied.
+// - When it becomes approved on a stream, by a Welcome or by a SetState, the machine sends its
+//   current Facts and HarnessesFound as new events.
 syntax = "proto3";
 
 package lgtm.link.v1;
@@ -51,7 +50,7 @@ message Event {
 // The server sends it on the stream that sent the events, after the transaction that moved
 // its mark has committed.
 message EventAck {
-  // The server's committed mark. It is the same value that Welcome.last_event_number gives.
+  // The last event number the server applied, after its commit.
   uint64 through = 1;
 }
 

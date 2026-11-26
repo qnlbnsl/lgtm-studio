@@ -14,8 +14,8 @@
    rpc WatchClients(WatchClientsRequest) returns (stream WatchClientsResponse);
    // CreateClientToken makes a token that one new client uses once to join this server.
    // The server's own command `lgtm client add` makes the same kind of token.
-+  // The server keeps no copy of the reply, so it does not replay it for `Lgtm-Request-Key`: every
-+  // call makes a new token. A token that the website no longer needs is revoked.
++  // A call that carries `Lgtm-Request-Key` is refused with `invalid_argument` before any token is
++  // made. Every other call makes a new token, and a token whose reply was lost ends at expires_at.
    rpc CreateClientToken(CreateClientTokenRequest) returns (CreateClientTokenResponse);
 -  // RevokeClientToken ends a token that no client has used.
 +  // RevokeClientToken ends a token. A client that used the token and still waits for approval is
@@ -56,18 +56,22 @@
  }
  
  message ClientList {
-@@ -102,8 +113,10 @@
+@@ -102,9 +113,14 @@
  message CreateClientTokenResponse {
    // The token's id. It is safe to show and to store.
    string token_id = 1;
 -  // The secret a client presents once. The server shows it only in this reply.
-+  // The text of a join token, as lgtm.link.v1.JoinToken describes it. It is a secret, and the
-+  // server shows it only in this reply.
++  // From a Go server, the text of a join token as lgtm.link.v1.JoinToken describes it. It is a
++  // secret, and the server shows it only in this reply. A sample server may return other text.
    string token = 2;
 +  // 15 minutes after the token was made.
    google.protobuf.Timestamp expires_at = 3;
++  // The address inside the token. The page writes it as the address of the command it shows, so
++  // that the command and the token agree.
++  string address = 4;
  }
  
+ message RevokeClientTokenRequest {
 --- a/src/contracts/proto/lgtm/v1/map.proto
 +++ b/src/contracts/proto/lgtm/v1/map.proto
 @@ -9,6 +9,8 @@
