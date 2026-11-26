@@ -15,15 +15,20 @@
 //   value rules of link.proto. A message that cannot be decoded ends the stream with
 //   `invalid_argument`. For a decoded event, the server reads only the number, until the last
 //   step:
-//   - A number of 0 ends the stream with `invalid_argument`.
+//   - A number of 0, or above 2^63 - 1, ends the stream with `invalid_argument`, before any
+//     comparison or arithmetic. At the last applied number 2^63 - 1, every valid number is a
+//     repeat.
 //   - A number at or below the last applied is a repeat: the server applies nothing and sends
 //     EventAck with the last applied number, whatever the report holds.
 //   - A number above the next one is a gap: the server ends this stream with
 //     `failed_precondition` and the reason event_gap, whatever the report holds. A later stream
 //     that sends the missing number goes on.
-//   - At the next number, the server applies a valid report. It consumes an event that holds no
+//   - At the next number, and only there, the server checks the report's value rules and applies
+//     a valid report. It consumes an event that holds no
 //     report, a report it does not know, or a report that breaks a rule of this file: the number
-//     counts as applied, and the report has no effect.
+//     counts as applied, and the report has no effect. A report whose only fault is a zero byte
+//     in a string, or a number above its limit in link.proto, is consumed the same way, with an
+//     EventAck and no effect.
 // - One machine id has one outbox. A server number at or above the machine's next number, or
 //   below one the server acknowledged before, comes from a restore or a copy of the server's or
 //   the machine's state, which wave 1 does not cover.
