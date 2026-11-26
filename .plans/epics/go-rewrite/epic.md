@@ -4,7 +4,7 @@ kind: epic
 status: active
 parked: false
 ship_branch: master
-updated: 2026-11-25
+updated: 2026-11-26
 ---
 
 # LGTM Studio runs on a Go server and a Go client
@@ -41,8 +41,8 @@ The orchestrator is the planning session that wrote this file.
 | Phase of the loop | What it is for this build | State |
 |---|---|---|
 | 1 Define | The design document is the end-result page. The map in `floorplan/` is its mockup. | Done. The owner approved on 2026-11-25. |
-| 2 Design and teams | This file, and one brief for each plan. | Waits for the owner to confirm the sprints and teams. |
-| 3 Plan | The planner of each team turns its brief into a full plan. Reviewers attack it in rounds. The orchestrator then compares the plans. | Not started. |
+| 2 Design and teams | This file, and one brief for each plan. | Done. The owner confirmed the sprints and teams on 2026-11-26. |
+| 3 Plan | The planner of each team turns its brief into a full plan. Reviewers attack it in rounds. The orchestrator then compares the plans. | Started on 2026-11-26. |
 | 4 Build | For each work item, one agent writes the tests first and another writes the code. | Not started. |
 | 5 Verify | The whole sprint is installed and every test runs on the merged work. | Not started. |
 | 6 Review | Reviewers from another vendor read the merged code in slices. | Not started. |
@@ -100,7 +100,7 @@ The model sheet of the owner's toolkit picks the model and the effort of each se
 
 The design names four build waves.
 Waves 0 and 1 are cut here into four sprints, so that each sprint ends with something a person can observe.
-Cutting wave 1 into three sprints is the orchestrator's choice.
+Cutting wave 1 into three sprints was the orchestrator's choice. The owner confirmed it on 2026-11-26.
 
 | Sprint | What a person can observe at its end | Teams that work in it |
 |---|---|---|
@@ -147,8 +147,7 @@ The work items are listed in the brief of each plan.
 `linked` — that plan exists and its `epic:` is this slug.
 Commit — the commit that landed the plan's build, filled in when the build merges.
 
-Every plan is a brief today, with `status: discover`.
-Phase 3 turns each brief into a full plan.
+Phase 3 turns each brief into a full plan. A plan with `status: attack` is in review.
 
 ## Tests that are written before any plan
 
@@ -160,8 +159,8 @@ They stay red until phase 5 of the sprint that makes them pass.
 | A script that drives the running stack through the 13 checks of the design | C1 to C13 | Sprint 1 for C12 and the first half of C13. Sprint 2 for C1 to C4 and the rest of C13. Sprint 3 for C5 to C11. |
 | Go tests that run a real client against a real server in one process | The link: C6 to C11 | Sprint 3 |
 
-Neither is written yet.
-The orchestrator's test writer writes them once the owner confirms the teams.
+The script is `deploy/test/checks.sh`. It was written on 2026-11-26 from the design alone, and all 13 checks fail today, as intended.
+The Go tests of the link wait until sprint 0 has frozen the contract, because they cannot compile before the generated code exists.
 
 ## What the teams must agree on
 
@@ -212,5 +211,6 @@ The orchestrator reads the usage meter of each vendor at the start of each sprin
 - 2026-11-25: the owner decided that builds and reviews use a mix of Codex and Claude, and that Cursor with Grok takes part as well.
 - 2026-11-25: the owner asked for proper phases, separate plans for the server and the client, and smaller work items.
 - 2026-11-25: the owner decided that this build follows the build loop.
-- 2026-11-25: the orchestrator cut wave 1 into three sprints. The owner has not confirmed this.
+- 2026-11-25: the orchestrator cut wave 1 into three sprints.
+- 2026-11-26: the owner confirmed the four sprints and the teams, and told the orchestrator to start.
 - Not decided: whether each builder works in a Git worktree of its own. On 2026-11-25 the owner told the planning session to start none. Phase 4 needs an answer, because builders that share one checkout collide.
