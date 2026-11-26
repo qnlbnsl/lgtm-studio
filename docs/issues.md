@@ -7650,3 +7650,11 @@ Found on 2026-11-26, by the review after the build of work items 1 to 3 of the p
 5. `Close` can block forever, and no test covers it.
 6. A nested error loses its outcome when it is sanitized a second time.
 7. The test fixture does not check the connection limit of the server.
+
+## 1646. Limits of the installer of the client that are outside wave 1
+
+Found on 2026-11-26, by the second review round of the plan `go-s3-stack-client`. The plan accepts each of them for wave 1.
+
+1. The installer cannot join a machine again after a removal, a changed port, a restore, or another stack on the same port. The owner does it by hand.
+2. Two runs of the installer at the same time by one user can join twice, and both write the service file.
+3. The installer checks no owner and no mode of the parent folders of the program, of the service unit and of the launch agent.
