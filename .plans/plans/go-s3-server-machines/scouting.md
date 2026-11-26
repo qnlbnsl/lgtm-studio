@@ -1,7 +1,7 @@
 # Scouting — go-s3-server-machines
 
 The planner read these files on 2026-11-26 and ran no program.
-No Go code exists in the repository yet, so every server file of this plan is a target path.
+When this plan was first written, no Go code existed. On 2026-11-26 the store's pool, identifiers, migrations and feed are committed in `src/server/internal/store/`, with `Write` and `WriteOnce` still stubs. Every server file of this plan is still a target path.
 For each target, the nearest pattern is a file of an earlier plan or a file of the old engine or the sample server.
 
 ## S1. The design and the epic
@@ -51,6 +51,7 @@ For each target, the nearest pattern is a file of an earlier plan or a file of t
 - `store.NewID`, which returns a version 7 universally unique identifier.
 - `watch.Serve`, `watch.Source[T]` with `Topic`, `Scope`, `Authorize`, `Snapshot` and `Load`, `watch.Message[T]` with `Position`, `Snapshot`, `Saved` and `RemovedKey`, and `watch.ErrWatchUnauthorized` and `watch.ErrAuthorizationUnavailable`, which the Machines adapter maps to `unavailable`.
 - `storetest/migrated.NewStore(t, schema, parts...)` for part tests, and `storetest.NewDatabase`.
+- Read in the built code on 2026-11-26, for round 1 of the review. `src/server/internal/store/pool.go`, `sanitizeError`: a store callback's error passes out only as an unwrapped `*domainError` made by `store.NewDomainError`, or as `pgx.ErrNoRows`; every other error becomes a `*store.Error` with an `Outcome` and `Retryable`. `src/server/internal/store/feed.go`: `MaxWriteChanges = 256` and `ErrTooManyChanges`. `src/server/internal/store/receipts.go`: `WriteOnce(ctx, Request, func(ctx, *Tx) ([]byte, error)) ([]byte, error)` and the sentinels `ErrInvalidRequestKey`, `ErrInvalidRequest`, `ErrRequestKeyConflict`, `ErrRequestFingerprintUnavailable` and `ErrReceiptReplyTooLarge`. `src/server/internal/store/migrate.go`: `errLedger` refuses a ledger that the manifest does not cover. The store's commit hooks `afterConstraints` and `beforeCommit` are private to the store, so this plan's tests hold a commit with their own deferred constraint trigger.
 - The store reserves advisory lock keys `841941100001`, `841941100002` and the namespace `1279743053`. This plan uses row locks only.
 - Both `*store.ReadTx` and `*store.Tx` have the methods `Query` and `QueryRow` with the same signatures, so a Go interface of the two methods accepts both.
 
@@ -69,9 +70,11 @@ For each target, the nearest pattern is a file of an earlier plan or a file of t
 - `.plans/plans/go-s2-stack-web/decisions.md`, row 27: wave 1 has no public encrypted address and no certificate. Rows 9, 23 and 25 are replaced.
 - `.plans/plans/go-s2-stack-web/plan.md`, the settings of `server`: `LGTM_PUBLIC_URL` is `http://127.0.0.1:${LGTM_WEB_PORT:-8787}`, `LGTM_ALLOW_PRIVATE_STACK` is `true`, and `LGTM_TLS_CERT_FILE` is absent.
 - `.plans/plans/go-s2-stack-web/plan.md`, the web server rules: `reverse_proxy h2c://server:8080 { flush_interval -1 }` for `/lgtm.link.v1.*`.
-- `.plans/plans/go-s3-stack-client/plan.md`, item 1: `lgtm-server join-token --address <address> [--hosts-server]` in `src/server/cmd/lgtm-server/join_token.go`, with the function `joinTokenCommand`. Its result file asks this plan for a token function with an address and a mark of the server's machine.
+- `.plans/plans/go-s3-stack-client/plan.md`, item 1, read again on 2026-11-26: `lgtm-server join-token [--hosts-server]`, which refuses every other argument and calls `Tokens.Create` with only `HostsServer`. Its table of names still lists `Issuer.CertificateFile` and `Config.TLSCertFile`, which this plan does not have.
 
 ## S8. The client plans
+
+- `.plans/plans/go-s1-client-local/plan.md`, lines 45 to 47 and 105: a finished receipt is removed when the machine's clock is more than 24 hours past the command's expiry, and the client trusts its own clock, by ruling 1 of round 4.
 
 - `.plans/plans/go-s3-client-link/plan.md`, as it stood on 2026-11-26, at status `self-check`.
 - The client reads the reason of a refusal from the metadata of the error, by round 4 of the contract.
@@ -112,4 +115,5 @@ For each target, the nearest pattern is a file of an earlier plan or a file of t
 | `src/server/internal/link/presence.go`, `outbox.go`, `inbox.go` | `src/server/internal/store/receipts.go`, `WriteOnce`, of plan `go-s1-server-store`, item 5, for row locks inside `Store.Write`. |
 | `src/server/internal/link/hub.go` | `src/server/internal/store/follow.go`, `Follower`, of plan `go-s1-server-store`, item 8. |
 | `src/server/internal/transport/deadline.go` | The standard library's `net/http.ResponseController.SetWriteDeadline`. |
+| `src/server/internal/link/stream.go`, the loop of item 10 | No loop of this kind exists yet. The nearest pattern is `watch.Serve` of the store plan, a target in `src/server/internal/watch/watch.go`, which reads from a subscription and sends through one writer. |
 | `src/server/internal/link/machinetest/machine.go` | `src/server/servertest/server.go` of plan `go-s2-server-signin`, item 9. |
