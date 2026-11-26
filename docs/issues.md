@@ -7666,3 +7666,13 @@ Found on 2026-11-26, by the review after the build of the plan `go-s1-stack-vaul
 1. A failure after OpenBao is initialized and before the first start finishes loses the only copy of the root token. The install is then stuck, and the way out is to remove the state and start again.
 2. A change of a pinned image gives a diagnostic that does not name the image as the cause.
 3. The test of the proof trusts the text that the proof prints.
+
+## 1648. Small findings of the review of the built reader of the vault
+
+Found on 2026-11-26, by the review after the build of work item 8 of the plan `go-s2-server-signin`. The report is `.plans/plans/go-s2-server-signin/attack/post-build-b.md`. A reviewer of the builder's own vendor wrote it, because the reviewer of the other vendor was stopped by that vendor's content filter. Its major finding and two minor ones are gaps in tests, and went to a test writer on the same day. These are open.
+
+1. A load with a pin reports "restore the key" for failures that are not a replaced key.
+2. One sentence stands for five different failures at startup, and a database error is swallowed.
+3. The code that clears the seed from memory has no effect.
+4. The client of the vault has no close, and a token that the vault rejected stays cached.
+5. The reader gives the application no way to log whether the key was created or adopted, which the plan asks of work item 9.
