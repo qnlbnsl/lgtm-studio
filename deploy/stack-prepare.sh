@@ -95,7 +95,11 @@ prepare_seal_file() {
 }
 
 compose() {
-    docker compose -f "$here/compose.yaml" "$@"
+    if [ -n "${LGTM_STACK_COMPOSE_SNAPSHOT:-}" ]; then
+        docker compose -f "$LGTM_STACK_COMPOSE_SNAPSHOT" --profile '*' "$@"
+    else
+        docker compose -f "$here/compose.yaml" "$@"
+    fi
 }
 
 offline_prepare() {

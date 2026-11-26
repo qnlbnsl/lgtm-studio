@@ -33,15 +33,17 @@ fi
 # launcher runs from. A list of files in COMPOSE_FILE replaces -f, so a test's overrides reach
 # every call.
 compose() {
-    if [[ -n ${COMPOSE_FILE:-} ]]; then
+    if [[ -n $compose_snapshot ]]; then
+        docker compose -f "$compose_snapshot" --profile '*' "$@"
+    elif [[ -n ${COMPOSE_FILE:-} ]]; then
         docker compose "$@"
     else
         docker compose -f "$here/compose.yaml" "$@"
     fi
 }
 
-# The settings can change while the launcher waits for the lock. Every Compose call, including the
-# calls of stack-prepare.sh, reads one private copy, which is removed when the launcher exits.
+# The settings can change while the launcher waits for the lock. The launcher
+# and stack-prepare.sh share one private copy until the launcher exits.
 settings_copy() {
     local -a files
     local file n=0 list=''
@@ -50,10 +52,8 @@ settings_copy() {
     else
         case ${COMPOSE_DISABLE_ENV_FILE:-} in
             1|t|T|true|TRUE|True) files=() ;;
-            *) file=${COMPOSE_FILE:-"$here/compose.yaml"}
-               file=${file%%"${COMPOSE_PATH_SEPARATOR:-:}"*}
-               files=("$(dirname -- "$file")/.env")
-               [[ -e ${files[0]} ]] || files=() ;;
+            *) files=()
+               [[ ! -e $here/.env || -d $here/.env ]] || files+=("$here/.env") ;;
         esac
     fi
     : >"$settings/0" || return 1
@@ -66,14 +66,45 @@ settings_copy() {
     export COMPOSE_ENV_FILES=$list
 }
 
-settings=$(mktemp -d)
-trap 'rm -rf -- "$settings"' EXIT
+# With COMPOSE_FILE and no explicit settings list, Compose can read both the
+# working folder and project settings. Save the model it resolves with those
+# defaults, including setup services for the later profile-specific calls.
+preflight() {
+    if [[ -n ${COMPOSE_FILE:-} && -z ${COMPOSE_ENV_FILES:-} ]]; then
+        state=$(realpath -m -- "$state") || return 1
+        export LGTM_STACK_STATE_DIR=$state
+        compose --profile setup config >"$settings/compose.yaml" || return 1
+        compose_snapshot=$settings/compose.yaml
+        : >"$settings/0" || return 1
+        export COMPOSE_ENV_FILES=$settings/0
+    else
+        settings_copy || return 1
+    fi
+    compose config --quiet
+}
+
+settings=''
+compose_snapshot=''
+waiting_for_lock=0
+cleanup() {
+    trap '' HUP INT TERM
+    if ((waiting_for_lock)) && [[ -n ${!:-} ]]; then
+        kill %+ 2>/dev/null || true
+        wait "$!" 2>/dev/null || true
+    fi
+    if [[ -n $settings ]]; then
+        rm -rf -- "$settings"
+    fi
+}
+
+trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
+settings=$(mktemp -d)
 
 # Compose's own message for a malformed settings file can print the password, so it is discarded.
-if ! settings_copy || ! compose config --quiet >/dev/null 2>&1; then
+if ! preflight >/dev/null 2>&1; then
     printf '%s\n' 'the settings cannot be read; check the quoting in deploy/.env' >&2
     exit 2
 fi
@@ -84,7 +115,12 @@ export LGTM_STACK_STATE_DIR
 
 # Lock the directory inode so another spelling of the same path shares the lock.
 exec {state_lock}<"$LGTM_STACK_STATE_DIR"
-flock --exclusive "$state_lock"
+# Bash can run a signal trap during wait. The parent keeps the locked descriptor
+# open after flock exits.
+waiting_for_lock=1
+flock --exclusive "$state_lock" &
+wait "$!"
+waiting_for_lock=0
 
 wait_healthy() {
     local service container health deadline=$((SECONDS + 60))
@@ -106,10 +142,14 @@ wait_healthy() {
     done
 }
 
+prepare() {
+    LGTM_STACK_COMPOSE_SNAPSHOT=$compose_snapshot "$here/stack-prepare.sh" "$1"
+}
+
 prepare_database() {
-    "$here/stack-prepare.sh" prepare-db
+    prepare prepare-db
     compose up -d postgres
-    "$here/stack-prepare.sh" reconcile-db
+    prepare reconcile-db
     wait_healthy postgres
 }
 
@@ -156,7 +196,7 @@ phase() {
 }
 
 phase database prepare_database
-phase seal "$here/stack-prepare.sh" seal
+phase seal prepare seal
 phase vault start_vault
 if ((until_vault)); then
     phase ready true
