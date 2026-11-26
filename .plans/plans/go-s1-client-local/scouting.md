@@ -182,3 +182,13 @@ These were checked on 2026-11-26, while the findings of round 3 and the orchestr
 | `.plans/plans/go-s0-contract/draft/events.proto`, the comment at the top | A machine moves its unsent events to follow a higher `Welcome.last_event_number`, and a lower one makes it stop. `Hello` no longer carries an acknowledged number. | Decision 73, and the request to the Contract team. |
 | `.plans/plans/go-s0-contract/draft/commands.proto`, lines 9 to 20 and message `Command` | A machine keeps a receipt at least 24 hours after `expires_at`. The actions of wave 1 are `ScanHarnesses`, `SetState` and `Restart`. | Decision 74, the count of 1,000 receipts. |
 | The design's section "Commands go down" | A result names the command and the attempt, and a result for an older attempt is ignored. | Decision 84, and rule 5 of the fold for plan `go-s3-client-link`. |
+
+## Facts checked for the fold of review round 4
+
+| Check | Result | Used for |
+|---|---|---|
+| The design's section "Commands go down", line 182 | Receipts older than one day are removed. | Decision 87. |
+| `.plans/plans/go-s0-contract/draft/commands.proto`, lines 12 to 17 | A machine answers every attempt of a command it started until 24 hours after `expires_at`. `SetState` is applied whatever its `expires_at`. | Decision 87, and the request to plan `go-s3-client-link` about `SetState`. |
+| `.plans/plans/go-s0-contract/draft/events.proto`, lines 8 to 21 | The draft no longer moves unsent events. A server number at or above the machine's next number comes from a restore, which wave 1 does not cover. | The round 3 request to the Contract team is met. |
+| Both reviewers' reading of `Open` in `db.go` of `go.etcd.io/bbolt`, and a probe of logic-r4 03 | A writable open of a file whose free-page list was not synced writes that list before it returns. | Decision 92. The check runs on a read-only handle. |
+| `scripts/check-go.sh`, line 16 | It runs `go mod tidy -diff`, which fails on a requirement that no file imports. | Decision 90. |
