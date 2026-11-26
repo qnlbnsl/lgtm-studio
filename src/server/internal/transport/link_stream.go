@@ -120,10 +120,15 @@ func (w *linkWriter) Write(p []byte) (int, error) {
 func (w *linkWriter) Flush() { _ = w.FlushError() }
 
 func (w *linkWriter) FlushError() error {
-	if permit := w.welcome; permit != nil && (!permit.started || permit.err != nil) {
+	permit := w.welcome
+	if permit != nil && (!permit.started || permit.err != nil) {
 		return permit.err
 	}
-	return http.NewResponseController(w.ResponseWriter).Flush()
+	err := http.NewResponseController(w.ResponseWriter).Flush()
+	if permit != nil && permit.flushErr == nil {
+		permit.flushErr = err
+	}
+	return err
 }
 
 type welcomeWrite struct {
@@ -132,6 +137,7 @@ type welcomeWrite struct {
 	deadline writeDeadline
 	started  bool
 	err      error
+	flushErr error
 	stop     func() bool
 	done     chan struct{}
 }
@@ -164,6 +170,8 @@ func SendLinkWelcome(ctx context.Context, begin func() error, send func() error)
 		stream.writer.welcome = nil
 		if permit.err != nil {
 			err = permit.err
+		} else if err == nil {
+			err = permit.flushErr
 		}
 		if permit.stop == nil {
 			return
