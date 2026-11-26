@@ -22,18 +22,26 @@ func TestVersionPrintsVersion(t *testing.T) {
 	}
 }
 
-func TestJoinAndRunAreNotBuiltYet(t *testing.T) {
-	for _, cmd := range []string{"join", "run"} {
+func TestJoinAndRunRequireInputAndEnrollment(t *testing.T) {
+	t.Setenv("LGTM_CLIENT_STATE_DIR", commandStateDir(t))
+	for _, tc := range []struct {
+		cmd        string
+		wantStatus int
+		wantText   string
+	}{
+		{"join", 2, "Usage:"},
+		{"run", 1, "join"},
+	} {
 		var out, errOut bytes.Buffer
-		code := run([]string{cmd}, &out, &errOut)
-		if code != 1 {
-			t.Errorf("%s: return code %d, want 1", cmd, code)
+		code := run([]string{tc.cmd}, &out, &errOut)
+		if code != tc.wantStatus {
+			t.Errorf("%s: return code %d, want %d", tc.cmd, code, tc.wantStatus)
 		}
 		if out.Len() != 0 {
-			t.Errorf("%s: stdout %q, want empty", cmd, out.String())
+			t.Errorf("%s: stdout must be empty", tc.cmd)
 		}
-		if !strings.Contains(errOut.String(), cmd) || !strings.Contains(errOut.String(), "not built yet") {
-			t.Errorf("%s: stderr %q must name the command and say \"not built yet\"", cmd, errOut.String())
+		if !strings.Contains(strings.ToLower(errOut.String()), strings.ToLower(tc.wantText)) {
+			t.Errorf("%s: stderr did not include the required instruction", tc.cmd)
 		}
 	}
 }
