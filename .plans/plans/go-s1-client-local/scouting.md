@@ -168,3 +168,17 @@ These were checked on 2026-11-26, while the findings of round 2 and the orchestr
 | `src/client/internal/link/store.go`, `OpenStore` | `CreateExclusive` in `src/client/internal/state/atomic.go` of item 2, and `Open` in `db.go` of `go.etcd.io/bbolt`. |
 | `src/client/internal/link/outbox.go`, `Append`, `MarkSent`, `Ack`, `Reconcile` | `floorplan/plan.json`, entry "Events waiting to be sent", and `NextSequence` in `bucket.go` of `go.etcd.io/bbolt`. |
 | `src/client/internal/harness/trust_linux.go`, `hasAccessList` | `syscall.Getxattr` of Go's standard library for Linux. |
+
+## Facts checked for the fold of review round 3
+
+These were checked on 2026-11-26, while the findings of round 3 and the orchestrator's eight rulings were folded. The probe ran in a scratch folder outside the repository.
+
+| Check | Result | Used for |
+|---|---|---|
+| A probe with `go.etcd.io/bbolt` v1.4.3 that writes an empty file and calls `bolt.Open` on it | `Open` returns no error, and the file then holds 16,384 bytes. The library writes a new store into an existing empty file. | Decision 81. `OpenStore` refuses an empty file before the library opens it (architect-r3 08, logic-r3 05). |
+| The same probe opens a valid store, runs a read transaction, and closes it | The bytes of the file are the same before and after. | Decision 81 and `TestOpenStoreWritesNothingToExistingFile`. |
+| `deploy/test/checks.sh`, lines 219 and 233 | `join` and `run` are started with `XDG_STATE_HOME` set to a temporary folder. `deploy/test/README.md`, line 66, records that choice. | Decision 86, and the request to the Stack team. |
+| `.plans/plans/go-s3-stack-client/plan.md`, lines 95 and 99 | The service template of the installer already sets `LGTM_CLIENT_STATE_DIR`. | Ruling 6 and decision 77. |
+| `.plans/plans/go-s0-contract/draft/events.proto`, the comment at the top | A machine moves its unsent events to follow a higher `Welcome.last_event_number`, and a lower one makes it stop. `Hello` no longer carries an acknowledged number. | Decision 73, and the request to the Contract team. |
+| `.plans/plans/go-s0-contract/draft/commands.proto`, lines 9 to 20 and message `Command` | A machine keeps a receipt at least 24 hours after `expires_at`. The actions of wave 1 are `ScanHarnesses`, `SetState` and `Restart`. | Decision 74, the count of 1,000 receipts. |
+| The design's section "Commands go down" | A result names the command and the attempt, and a result for an older attempt is ignored. | Decision 84, and rule 5 of the fold for plan `go-s3-client-link`. |
