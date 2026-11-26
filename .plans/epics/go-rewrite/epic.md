@@ -152,7 +152,7 @@ The work items are listed in the brief of each plan.
 | 4 | go-s1-stack-vault | The compose stack with PostgreSQL and OpenBao, where OpenBao opens by itself after a restart. | linked | f072231a |
 | 5 | go-s2-server-signin | The server program: settings, request handling, sign-in, web sessions, and the vault client. | linked | f3d461e4 |
 | 6 | go-s2-stack-web | The images of the server and the website, and one command that starts everything. | linked | 9a4dacf4 |
-| 7 | go-s3-server-machines | The machine registry, join tokens, and the Machines page's calls that need no stream: a machine can join, wait, be approved and be listed. | linked | |
+| 7 | go-s3-server-machines | The machine registry, join tokens, and the Machines page's calls that need no stream: a machine can join, wait, be approved and be listed. | linked | aa633e16 |
 | 8 | go-s3-client-link | The `join` and `run` commands, and the client end of the link. | linked | |
 | 9 | go-s3-stack-client | The installer of the client, and the server's own command that makes a join token. | linked | |
 | 10 | go-s3-server-stream | The server end of the link: admission of a stream, presence, and the events a machine sends. Written on 2026-11-26 against the built code of plans 5 and 7 and the frozen link. | linked | |
