@@ -18,10 +18,11 @@
 // - A command that arrives twice runs once. A machine answers every attempt of a command it
 //   started with the result it recorded, until 24 hours after expires_at by its own clock. The
 //   hour between the server's last attempt and that time is the margin for the two clocks.
-// - At most once holds while the machine's clock is within one hour of the server's. A machine
-//   whose clock runs more than one hour fast may answer COMMAND_OUTCOME_EXPIRED for a command it
-//   ran, and one more than a day fast may run a command again after its record was removed. Wave
-//   1 accepts that limit.
+// - At most once holds while the machine's clock runs ahead of the server's by less than one hour
+//   minus the time from the server's send of an attempt to the machine's lookup of its record. A
+//   machine beyond that may answer COMMAND_OUTCOME_EXPIRED for a command it ran, and one more
+//   than a day fast may run a command again after its record was removed. Wave 1 accepts that
+//   limit.
 // - The server's clock decides expiry, and Welcome.server_time gives it. A command starts only
 //   before expires_at. A machine that has not started a command answers COMMAND_OUTCOME_EXPIRED
 //   when it cannot establish that it starts before expires_at. The promise that no command starts
@@ -136,8 +137,9 @@ enum Approval {
   // The owner approved the machine.
   APPROVAL_APPROVED = 2;
   // The owner removed the machine. The server may send this on the current stream before it
-  // ends it, and nothing waits for its delivery. A machine treats it as APPROVAL_WAITING and
-  // keeps its stream, because only the refusal after a verified Challenge proves a removal. See
+  // ends it, and nothing waits for its delivery. A machine treats it as APPROVAL_WAITING, answers
+  // COMMAND_OUTCOME_DONE, keeps its stream and does not stop, because only the refusal after a
+  // verified Challenge proves a removal. See
   // LinkService.Open.
   APPROVAL_REMOVED = 3;
 }
