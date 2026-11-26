@@ -73,6 +73,7 @@ No Go code exists yet, so no Go test exists.
 - **Risky tests are proven.** For a work item that touches sign-in, keys or ordering, a reviewer breaks the code on a temporary branch. The tests must then fail.
 - **One writer for each set of files.** Two builders never edit the same file at the same time.
 - **A merge needs a passing report.** A lead merges a work item only when its checks passed on that exact commit.
+- **A check that needs two teams' work is a gate of the sprint.** A work item is gated on its own tests. A check of the design that needs the server's program and the stack running together is run by the orchestrator once both teams' items are in the branch, and the sprint is not done before it passes.
 - **Reviewers return findings, never edits.** No vendor reviews its own code.
 - **Findings are tied to statements.** A statement is a row of the design's decisions table (D1 to D23), one of its rules (R1 to R11), or one of its checks (C1 to C13), counted in the order of commit `e183b61f`. A minor finding is 1 point, a major one is 3, and a blocker is 9.
 - **A stuck statement goes to the owner.** A statement is stuck when it has at least 12 points and 30% of the points of one round, or when it drew a major or a blocker in three rounds.
