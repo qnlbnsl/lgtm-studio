@@ -7762,3 +7762,10 @@ Found on 2026-11-26, by the review after the build of work item 4 of the plan `g
 
 1. A `Join` that stops on its own time limit or is cancelled is reported with the sentence of a database outage.
 2. The host name is decoded before the refusals and the replay are decided, although it is checked only after them.
+
+## 1659. The website shows an empty page after sign-in while the watch of machines fails
+
+Found on 2026-11-26, when the website of the built stack was opened in a browser after the sign-in checks of sprint 2 passed. The sign-in page loads, a wrong password is refused with a sentence, and the right password signs in. After that the page stays empty.
+
+1. The Go server of sprint 2 answers `WatchClients` with `unimplemented`, because the calls of machines are wired in sprint 3. This part ends when work item 7 of the plan `go-s3-server-machines` is built.
+2. The website asks again and again and shows nothing meanwhile. Its main element stays marked busy and holds no text. A person sees an empty page with no sentence that says what failed. The same would happen whenever the first watch fails for another reason. A change to what the page shows needs the owner's approval.
