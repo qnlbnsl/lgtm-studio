@@ -42,11 +42,13 @@ const (
 	streamSilence     = 30 * time.Second
 	restartSendBudget = 2 * time.Second
 	maxPendingReplies = 256
+	maxPendingFrames  = 64
 )
 
 var (
-	errInvalidFrame = errors.New("link: invalid response frame")
-	errSilentStream = errors.New("link: the server stopped responding")
+	errInvalidFrame     = errors.New("link: invalid response frame")
+	errSilentStream     = errors.New("link: the server stopped responding")
+	errReceiveQueueFull = errors.New("link: too many pending response frames")
 )
 
 var newRunLinkClient = func(server enroll.Server) (linkv1connect.LinkServiceClient, func(), error) {
@@ -286,6 +288,8 @@ func linkFailureCode(err error) string {
 		return "event_gap"
 	case errors.Is(err, errSilentStream):
 		return "server_silent"
+	case errors.Is(err, errReceiveQueueFull):
+		return "receive_queue_full"
 	case errors.Is(err, errInvalidChallenge), errors.Is(err, errInvalidWelcome), errors.Is(err, errInvalidFrame), errors.Is(err, ErrInvalidCommand):
 		return "invalid_frame"
 	case errors.Is(err, errInvalidCredentials):
@@ -335,8 +339,10 @@ type liveSession struct {
 }
 
 type streamReply struct {
-	frame *linkv1.OpenResponse
-	err   error
+	frame      *linkv1.OpenResponse
+	err        error
+	ackCeiling uint64
+	receivedAt time.Time
 }
 
 func (l *liveSession) approved() bool {
@@ -355,8 +361,9 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 	var sendErr error
 	var timingMu sync.Mutex
 	deadline := s.welcomedAt.Add(streamSilence)
+	handedThrough := s.welcome.GetLastEventNumber()
 	var transportEnded time.Time
-	var expired bool
+	var receiveStop error
 	var silence *time.Timer
 	timingMu.Lock()
 	silence = time.AfterFunc(time.Until(deadline), func() {
@@ -369,21 +376,23 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 			silence.Reset(remaining)
 			return
 		}
-		transportEnded, expired = deadline, true
+		transportEnded, receiveStop = deadline, errSilentStream
 		cancel()
 		s.cancel()
 	})
 	timingMu.Unlock()
 
 	defer func() {
-		l.ended = time.Now()
+		if l.ended.IsZero() {
+			l.ended = time.Now()
+		}
 		timingMu.Lock()
 		if !transportEnded.IsZero() && transportEnded.Before(l.ended) {
 			l.ended = transportEnded
 		}
-		if expired && errors.Is(err, context.Canceled) {
-			err = errSilentStream
-			if sendErr != nil {
+		if receiveStop != nil && errors.Is(err, context.Canceled) {
+			err = receiveStop
+			if receiveStop == errSilentStream && sendErr != nil {
 				err = sendErr
 			}
 		}
@@ -408,7 +417,7 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 
 	send := make(chan *linkv1.OpenRequest, 1)
 	sent := make(chan error, 1)
-	replies := make(chan streamReply)
+	replies := make(chan streamReply, maxPendingFrames)
 	workers.Go(func() {
 		for ctx.Err() == nil {
 			select {
@@ -434,20 +443,25 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 				timingMu.Unlock()
 				return
 			}
-			if err == nil {
-				deadline = receivedAt.Add(streamSilence)
-			} else {
+			if err != nil {
 				transportEnded = receivedAt
+				timingMu.Unlock()
+				// Preserve a terminal reply behind the queued frames.
+				select {
+				case replies <- streamReply{err: err}:
+				case <-ctx.Done():
+				}
+				return
+			}
+			deadline = receivedAt.Add(streamSilence)
+			select {
+			case replies <- streamReply{frame: frame, ackCeiling: handedThrough, receivedAt: receivedAt}:
+			default:
+				transportEnded, receiveStop = receivedAt, errReceiveQueueFull
+				cancel()
+				s.cancel()
 			}
 			timingMu.Unlock()
-			select {
-			case replies <- streamReply{frame, err}:
-			case <-ctx.Done():
-				return
-			}
-			if err != nil {
-				return
-			}
 		}
 	})
 
@@ -528,9 +542,15 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 		if sendErr != nil || restartDeadline != nil {
 			return nil
 		}
+		// A queued acknowledgement can only cover handoffs made before it arrived.
+		if ack := reply.frame.GetEventAck(); ack != nil && ack.GetThrough() > reply.ackCeiling {
+			l.ended = reply.receivedAt
+			return storeFault{ErrAckAhead}
+		}
 		wasApproved := l.approved()
 		restart, err := l.receive(reply.frame)
 		if err != nil {
+			l.ended = reply.receivedAt
 			return err
 		}
 		if restart {
@@ -620,7 +640,10 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 					haveEvents = false
 					continue
 				}
+				timingMu.Lock()
 				send <- &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Event{Event: event}}
+				handedThrough = event.GetNumber()
+				timingMu.Unlock()
 			default:
 				continue
 			}
