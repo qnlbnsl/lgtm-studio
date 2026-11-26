@@ -7738,3 +7738,10 @@ Found on 2026-11-26, by the review after the build of work items 7 to 9 of the p
 Found on 2026-11-26, by the review after the build of work items 1, 4 and 5 of the plan `go-s2-stack-web`. The report is `.plans/plans/go-s2-stack-web/attack/post-build-b.md`. Its one major finding went to a test writer and a builder on the same day: the launcher checks the settings file quietly at the start, and a later step reads the file again and passes the error text of Compose through, so a settings file that is damaged while the launcher waits for its lock can print the password. This minor finding is open.
 
 1. The suite of the server image does not check that the server program is the only file added to the base image.
+
+## 1656. Small findings of the review of the repaired router
+
+Found on 2026-11-26, by the review after the repair of two findings in work items 6 and 7 of the plan `go-s2-server-signin`. The report is `.plans/plans/go-s2-server-signin/attack/post-build-e.md`. Both repairs hold. These minor findings are open.
+
+1. A call to a procedure without a registered handler still looks up the session without the time limit of the call. The call then answers `unimplemented` late instead of timing out.
+2. No test fails when the router reads the body of a request before it checks the origin. The built router does not read it.
