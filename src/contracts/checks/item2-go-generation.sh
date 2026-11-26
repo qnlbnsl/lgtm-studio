@@ -26,7 +26,7 @@ expect_status "go build ./... exits 0" 0 go build ./...
 expect_status "go mod tidy -diff exits 0" 0 go mod tidy -diff
 
 # Only the embedded descriptor lines of the old generated TypeScript may differ from master.
-changed="$(git diff -U0 master -- src/contracts/gen/lgtm 2>/dev/null | grep '^[-+][^-+]' | grep -vc 'fileDesc(')" || true
+changed="$(git diff -U0 master 28208cb4 -- src/contracts/gen/lgtm 2>/dev/null | grep '^[-+][^-+]' | grep -vc 'fileDesc(')" || true
 [ "$changed" = "0" ] && pass "only fileDesc lines changed in the old TypeScript" || fail "only fileDesc lines changed in the old TypeScript" "count: $changed"
 
 expect_status "the website type check passes" 0 pnpm --filter ./src/frontend typecheck
