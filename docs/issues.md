@@ -7546,3 +7546,43 @@ Found on 2026-11-25, while the sprints of the Go rewrite were planned. Nothing h
 `docs/specs/2026-11-05-build-loop-design.md` says that work is sized in points, and that what is over a lead's cap is split.
 No document says what a point is worth, or how many points a lead may hold.
 The epic of the Go rewrite sizes each work item as low, medium or high instead, and it tries to split a high item first.
+
+## 1636. The website and the design name the join command differently
+
+Found on 2026-11-26, while the contract of the Go rewrite was planned. Nothing here is fixed.
+
+The website shows the command as `lgtm client join <address> --token <code>`, in `src/frontend/src/screens/service.tsx`.
+The design writes `lgtm-client join <address> <token>`.
+The screen and the client must agree before check 6 of the design can pass.
+
+## 1637. The contract says that the server reaches a machine at its address, and the server never dials a machine
+
+Found on 2026-11-26, while the contract of the Go rewrite was planned. Nothing here is fixed.
+
+The comment of `Client.address` in `src/contracts/proto/lgtm/v1/clients.proto` says that the address is where the server reaches the machine.
+The design has the machine dial the server, always.
+The field may still show the address that the connection came from. The comment needs a decision.
+
+## 1638. Nothing on the link tells the server which machine runs the server
+
+Found on 2026-11-26, while the contract of the Go rewrite was planned. Nothing here is fixed.
+
+The website shows `Client.hosts_server` for the machine that also runs the server.
+No message of the link carries that fact.
+The plan `go-s3-server-machines` or the installer in `go-s3-stack-client` decides where it comes from.
+
+## 1639. Wave 1 has no way to replace the server's signing key or the key of its certificate
+
+Found on 2026-11-26, while the contract of the Go rewrite was planned. Nothing here is fixed.
+
+A machine keeps the server's key and the fingerprint of the certificate's key from the moment it joins.
+When either is replaced, every machine that joined before has to join again.
+The plan `go-s3-server-machines` says what the owner sees then.
+
+## 1640. A Codex worker in its sandbox cannot reach Docker or a local PostgreSQL
+
+Found on 2026-11-26, while the plans of sprint 1 were written. Nothing here is fixed.
+
+Two Codex planners reported that their sandbox refused the Docker socket, so neither ran a database or the vault.
+The design tests against a real PostgreSQL, so a Codex builder needs the network of its own machine to run its tests.
+The builders of this run are started with network access inside the workspace sandbox, and the run log records it.

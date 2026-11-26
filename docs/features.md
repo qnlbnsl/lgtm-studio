@@ -2647,3 +2647,11 @@ The owner raised this on 2026-11-25, while the design of the Go rewrite was revi
 - Whether the owner sees and approves what the pass changes.
 - How a memory is judged stale.
 - The owner named Hermes as a project to look at for this. What it does has not been read.
+
+## A check that the frozen contract did not change by accident
+
+Found on 2026-11-26, while the contract of the Go rewrite was planned.
+
+After sprint 0 the contract is frozen, because two teams build against it.
+The contract check could run `buf breaking` against the commit that merged sprint 0, and fail on a change that breaks a reader.
+It is not part of sprint 0, because adding `go_package` to the existing files itself counts as a breaking change under the strictest rule set.
