@@ -6,11 +6,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"io"
-	"log/slog"
-	"net"
-	"net/netip"
-	"slices"
-	"sync"
 	"time"
 
 	"connectrpc.com/connect"
@@ -23,11 +18,12 @@ import (
 )
 
 const (
-	HandshakeTimeout = 10 * time.Second
-	LinkRefusalKey   = "Lgtm-Link-Refusal"
-	LinkRevision     = 1
-	lookupTimeout    = 15 * time.Second
-	openQueueSize    = 16
+	HandshakeTimeout     = 10 * time.Second
+	LinkRefusalKey       = "Lgtm-Link-Refusal"
+	LinkRevision         = 1
+	lookupTimeout        = 15 * time.Second
+	openQueueSize        = 16
+	terminalWriteTimeout = 2 * time.Second
 )
 
 var (
@@ -64,6 +60,8 @@ func proofText(label, machineID string, machineNonce, serverNonce []byte) []byte
 type openHandshake struct {
 	stream     *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse]
 	controls   handshakeControls
+	steady     streamControls
+	watchdog   *streamWatchdog
 	phases     chan chan receivedFrame
 	frames     chan receivedFrame
 	readerDone chan struct{}
@@ -77,19 +75,21 @@ func (s *Service) open(ctx context.Context, stream *connect.BidiStream[linkv1.Op
 	controls := openControls(ctx)
 	entered := controls.now()
 	h := &openHandshake{
-		stream: stream, controls: controls, phases: make(chan chan receivedFrame, 1),
+		stream: stream, controls: controls, steady: steadyControls(ctx), phases: make(chan chan receivedFrame, 1),
 		frames: make(chan receivedFrame, openQueueSize), readerDone: make(chan struct{}),
 	}
-	ctx, cancel := context.WithCancelCause(ctx)
-	stop := context.AfterFunc(link.life, func() { cancel(errLinkStopping) })
-	defer stop()
-	if link.life.Err() != nil {
-		cancel(errLinkStopping)
-	}
+	ctx, cancel := s.streamContext(ctx)
 	go h.read(ctx)
 
 	err := s.handshake(ctx, cancel, h, entered)
+	var watchdogDone chan struct{}
 	if err == nil && context.Cause(ctx) == nil {
+		h.watchdog = &streamWatchdog{controls: h.steady, deadline: h.steady.now().Add(HeartbeatTimeout)}
+		watchdogDone = make(chan struct{})
+		go func() {
+			defer close(watchdogDone)
+			h.watchdog.run(ctx, cancel)
+		}()
 		close(h.phases)
 		err = serve(ctx, h.handle, h.frames, stream)
 	}
@@ -98,18 +98,21 @@ func (s *Service) open(ctx context.Context, stream *connect.BidiStream[linkv1.Op
 	}
 	cancel(err)
 	cause := context.Cause(ctx)
+	if watchdogDone != nil {
+		<-watchdogDone
+	}
 	if h.handle != nil {
 		link.hub.Unregister(h.handle)
 	}
 	if h.cleanup {
-		link.enqueue(h.machineID, h.handle.streamID)
+		s.queueDisconnect(h.machineID, h.handle.streamID)
 		if h.controls.onQueueDisconnect != nil {
 			h.controls.onQueueDisconnect(h.machineID, h.handle.streamID)
 		}
 	}
 	_ = transport.CloseLinkRead(ctx)
 	<-h.readerDone
-	transport.BoundLinkEnd(ctx, transport.SendTimeout)
+	transport.BoundLinkEnd(ctx, terminalWriteTimeout)
 	reply := openStatus(cause)
 	if h.machineID != "" {
 		code := "ok"
@@ -200,7 +203,7 @@ func (s *Service) handshake(ctx context.Context, cancel context.CancelCauseFunc,
 	var admitted Stream
 	err = link.hub.Admit(h.handle, func() (int64, bool, error) {
 		var admissionErr error
-		admitted, admissionErr = link.state.BecomeCurrent(ctx, machineID, streamID, handshakePeerAddress(h.stream.Peer().Addr, link.options.PrivateStack))
+		admitted, admissionErr = link.state.BecomeCurrent(ctx, machineID, streamID, peerAddress(h.stream.Peer().Addr, link.options.PrivateStack))
 		var dbErr *store.Error
 		unknown := errors.As(admissionErr, &dbErr) && dbErr.Outcome() == store.OutcomeUnknown
 		h.cleanup = admissionErr == nil || unknown
@@ -231,6 +234,9 @@ func (s *Service) handshake(ctx context.Context, cancel context.CancelCauseFunc,
 func (h *openHandshake) read(ctx context.Context) {
 	defer close(h.readerDone)
 	defer close(h.frames)
+	if h.steady.readerDone != nil {
+		defer h.steady.readerDone()
+	}
 	receive := func() receivedFrame {
 		request, err := h.stream.Receive()
 		at := h.controls.now()
@@ -252,7 +258,14 @@ func (h *openHandshake) read(ctx context.Context) {
 		break
 	}
 	for ctx.Err() == nil {
-		frame := receive()
+		request, err := h.stream.Receive()
+		if hb := request.GetHeartbeat(); err == nil && hb != nil && hb.GetCpuPercent() <= 100 && hb.GetMemoryPercent() <= 100 {
+			h.watchdog.refresh()
+		}
+		if h.steady.afterReceive != nil {
+			h.steady.afterReceive(request, err)
+		}
+		frame := receivedFrame{request: request, err: err}
 		select {
 		case h.frames <- frame:
 		case <-ctx.Done():
@@ -322,7 +335,9 @@ func openStatus(err error) error {
 		return linkRefusal(errLinkRevision, "link_revision_mismatch")
 	case errors.Is(err, errMachineSignature):
 		return connect.NewError(connect.CodeUnauthenticated, errMachineSignature)
-	case errors.Is(err, ErrInvalidMessage):
+	case errors.Is(err, ErrEventGap):
+		return linkRefusal(ErrEventGap, "event_gap")
+	case errors.Is(err, ErrInvalidMessage), errors.Is(err, ErrEventNumberZero):
 		return connect.NewError(connect.CodeInvalidArgument, errInvalidLinkMessage)
 	case errors.Is(err, errHandshakeDeadline), errors.Is(err, context.DeadlineExceeded):
 		return connect.NewError(connect.CodeDeadlineExceeded, errHandshakeDeadline)
@@ -356,95 +371,6 @@ func linkRefusal(err error, reason string) error {
 	refusal := connect.NewError(connect.CodeFailedPrecondition, err)
 	refusal.Meta().Set(LinkRefusalKey, reason)
 	return refusal
-}
-
-func handshakePeerAddress(addr string, privateStack bool) string {
-	if privateStack {
-		return ""
-	}
-	host, _, err := net.SplitHostPort(addr)
-	if err != nil {
-		return ""
-	}
-	ip, err := netip.ParseAddr(host)
-	if err != nil {
-		return ""
-	}
-	return ip.WithZone("").Unmap().String()
-}
-
-// The item 5 declarations remain temporary. They provide construction and one
-// cleanup attempt for the item 7 generated-route tests. Item 5 owns retry and feed following.
-type Seams struct {
-	AfterProof, AfterAdmission func(context.Context, string)
-	BeforeEventAck             func(context.Context, string, uint64)
-}
-
-type Options struct {
-	Logger       *slog.Logger
-	PrivateStack bool
-	Seams        Seams
-}
-
-type disconnectRequest struct {
-	machineID, streamID string
-}
-
-type streamingService struct {
-	life     context.Context
-	registry *machines.Registry
-	state    *State
-	hub      *Hub
-	key      ed25519.PrivateKey
-	options  Options
-
-	mu      sync.Mutex
-	pending []disconnectRequest
-	wake    chan struct{}
-}
-
-func NewStreamingService(life context.Context, s *store.Store, t *machines.Tokens, r *machines.Registry, state *State, hub *Hub, key ed25519.PrivateKey, options Options) *Service {
-	service := NewService(s, t, key.Public().(ed25519.PublicKey))
-	if options.Logger == nil {
-		options.Logger = slog.Default()
-	}
-	service.streaming = &streamingService{
-		life: life, registry: r, state: state, hub: hub, key: slices.Clone(key),
-		options: options, wake: make(chan struct{}, 1),
-	}
-	return service
-}
-
-func (s *streamingService) enqueue(machineID, streamID string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.pending = append(s.pending, disconnectRequest{machineID, streamID})
-	select {
-	case s.wake <- struct{}{}:
-	default:
-	}
-}
-
-func (s *Service) Run(ctx context.Context, _ *store.Follower) {
-	link := s.streaming
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-link.life.Done():
-			return
-		case <-link.wake:
-		}
-		link.mu.Lock()
-		pending := link.pending
-		link.pending = nil
-		link.mu.Unlock()
-		for _, request := range pending {
-			attempt, cancel := context.WithTimeout(ctx, 2*time.Second)
-			_, _ = link.state.Disconnect(attempt, request.machineID, request.streamID)
-			cancel()
-		}
-	}
 }
 
 type handshakeControlsKey struct{}
