@@ -926,6 +926,9 @@ func TestRemovalOrdersAdmission(t *testing.T) {
 						if err != nil || removed != id {
 							return store.NewDomainError("Revoking the used token did not remove its waiting machine.")
 						}
+						if deleted, err := f.r.DeleteWaiting(ctx, tx, removed); err != nil || !deleted {
+							return err
+						}
 					} else if err := f.r.Delete(ctx, tx, id); err != nil {
 						return err
 					}
