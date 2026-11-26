@@ -42,7 +42,11 @@ func Send(ctx context.Context, send func() error) (err error) {
 	if !ok {
 		return ErrNoDeadline
 	}
-	if err := deadline.set(time.Now().Add(deadline.timeout)); err != nil {
+	writeBy := time.Now().Add(deadline.timeout)
+	if contextDeadline, ok := ctx.Deadline(); ok && contextDeadline.Before(writeBy) {
+		writeBy = contextDeadline
+	}
+	if err := deadline.set(writeBy); err != nil {
 		return err
 	}
 
@@ -61,5 +65,19 @@ func Send(ctx context.Context, send func() error) (err error) {
 			err = clearErr
 		}
 	}()
-	return send()
+	var flushErr error
+	if stream, ok := ctx.Value(linkStreamKey{}).(*linkStream); ok {
+		stream.writer.sendFlushErr = &flushErr
+		defer func() { stream.writer.sendFlushErr = nil }()
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if err := send(); err != nil {
+		return err
+	}
+	if flushErr != nil {
+		return flushErr
+	}
+	return ctx.Err()
 }

@@ -97,7 +97,8 @@ func BoundLinkEnd(ctx context.Context, limit time.Duration) {
 
 type linkWriter struct {
 	http.ResponseWriter
-	welcome *welcomeWrite
+	welcome      *welcomeWrite
+	sendFlushErr *error
 }
 
 func (w *linkWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
@@ -125,8 +126,12 @@ func (w *linkWriter) FlushError() error {
 		return permit.err
 	}
 	err := http.NewResponseController(w.ResponseWriter).Flush()
-	if permit != nil && permit.flushErr == nil {
-		permit.flushErr = err
+	if permit != nil {
+		if permit.flushErr == nil {
+			permit.flushErr = err
+		}
+	} else if capture := w.sendFlushErr; capture != nil && *capture == nil {
+		*capture = err
 	}
 	return err
 }
