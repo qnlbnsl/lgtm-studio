@@ -1,0 +1,8 @@
+# The build context of deploy/server.Dockerfile is an allow-list. The first line leaves out
+# everything, so the state folder and the settings file never reach the build.
+*
+!go.mod
+!go.sum
+!src/server/**
+!src/contracts/gen/go/**
+**/*_test.go
