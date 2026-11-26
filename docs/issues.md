@@ -7676,3 +7676,23 @@ Found on 2026-11-26, by the review after the build of work item 8 of the plan `g
 3. The code that clears the seed from memory has no effect.
 4. The client of the vault has no close, and a token that the vault rejected stays cached.
 5. The reader gives the application no way to log whether the key was created or adopted, which the plan asks of work item 9.
+
+## 1649. Small findings of the review of the built transport of the client
+
+Found on 2026-11-26, by the review after the build of work item 1 of the plan `go-s3-client-link`. The report is `.plans/plans/go-s3-client-link/attack/post-build-a.md`. Its verdict was to ship. These minor findings are open.
+
+1. The wrapper of the server's address has no test that can fail, and the check that no proxy is taken from the environment cannot fail.
+2. Two layers of defence and the case of a stolen certificate have no test.
+3. Host names are loosely bounded, and a trailing dot gives a second spelling of one host.
+4. The design says the join token carries the fingerprint of the server's certificate and that a machine presents its own certificate. The contract and the code pin the public key of the certificate, and the machine presents none. The design's sentence waits for the owner (issue 1633).
+
+## 1650. Small findings of the review of the built installer of the client on Linux
+
+Found on 2026-11-26, by the review after the build of work item 2 of the plan `go-s3-stack-client`. The report is `.plans/plans/go-s3-stack-client/attack/post-build-a.md`. Its one major finding is that the user-flow script `deploy/test/checks.sh` and its guide still use `XDG_STATE_HOME`, which went to the test writer of that script on the same day. These minor findings are open.
+
+1. No test fails when the installer never waits for the service, or prints the client's output without removing the token.
+2. No test fixes the lines of the service unit's template.
+3. `XDG_CONFIG_HOME` is not checked, and a relative value writes the unit into the checkout.
+4. The search path of the service keeps empty and relative entries.
+5. The messages about the state folder and its comparison are too coarse.
+6. A relative `COMPOSE_FILE` is read from another folder than the launcher uses.
