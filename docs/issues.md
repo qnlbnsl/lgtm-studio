@@ -7723,3 +7723,18 @@ Found on 2026-11-26, by the review after the build of work item 3 of the plan `g
 3. An agent file in another layout makes the installer refuse the right state folder.
 4. The process type `Background` may slow the harnesses that the client starts.
 5. The installer does not wait for the old agent to stop before it loads the new one.
+
+## 1654. Small findings of the review of the built feed reader, follower and watch
+
+Found on 2026-11-26, by the review after the build of work items 7 to 9 of the plan `go-s1-server-store`. The report is `.plans/plans/go-s1-server-store/attack/post-build-c.md`. Its two major findings are gaps in the tests: the production timer for a stale stream has no test, and no test proves that a notification wakes the reader. Those went to a test writer on the same day. These minor findings are open.
+
+1. The feed reader swallows the errors of its listener. It sleeps and retries, and reports nothing.
+2. One snapshot is admitted at a time for the whole server, and that limit has no load budget.
+3. Every matching change takes one connection of the main pool for each watcher, so a saturated pool ends streams after two seconds.
+4. A callback that ignores its context blocks the serving of a watch for good.
+
+## 1655. Small findings of the review of the built web stack
+
+Found on 2026-11-26, by the review after the build of work items 1, 4 and 5 of the plan `go-s2-stack-web`. The report is `.plans/plans/go-s2-stack-web/attack/post-build-b.md`. Its one major finding went to a test writer and a builder on the same day: the launcher checks the settings file quietly at the start, and a later step reads the file again and passes the error text of Compose through, so a settings file that is damaged while the launcher waits for its lock can print the password. This minor finding is open.
+
+1. The suite of the server image does not check that the server program is the only file added to the base image.
