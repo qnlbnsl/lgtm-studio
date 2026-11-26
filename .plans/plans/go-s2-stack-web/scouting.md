@@ -231,3 +231,34 @@ The health listener answered inside the container and refused a connection from 
 | `COMPOSE_ENV_FILES=<file>` | Compose reads that file in place of `deploy/.env`, and a value in the shell still wins. |
 | `docker compose up -d --wait` of a service that exits 1 at once, with `restart: unless-stopped` and `start_period: 8m` | The command failed after 3 seconds with `container ... is unhealthy` and exit status 1. |
 
+
+## Round 2 probes
+
+These probes ran on 2026-11-26 with Docker Engine 29.7.2 and Docker Compose 5.5.0, in disposable projects that were removed afterwards.
+
+### How Compose reads the settings
+
+- `docker compose config --quiet` fails with `invalid hostPort: bad` when `LGTM_WEB_PORT=bad` is in the settings file, even though only the web service publishes that port. Compose validates the whole project before it selects a service.
+- The same call succeeds when the shell sets `LGTM_WEB_PORT=8787`, because a value in the shell wins over the settings file. The vault-only and removal routes of the launcher use this.
+- `docker compose config --environment` prints `LGTM_WEB_PORT=80-81` for a range in the file, and prints the shell's value when the shell and the file disagree. It prints no line for an unset port, and it fails on a port that is not a number.
+- A file holding `LGTM_WEB_PASSWORD="secretmark` without its closing quote makes Compose fail with `unterminated quoted value "secretmark`, so Compose's own message can hold a password.
+- With `COMPOSE_ENV_FILES` set to an empty value, Compose reads `deploy/.env`, the default.
+- With no `-f`, Compose reads the files named in `COMPOSE_FILE`, separated by `:`, and merges them in order. With `-f`, it ignores `COMPOSE_FILE`.
+- `docker compose run --rm --no-deps -e LGTM_WEB_PASSWORD= <service>` gives the container an empty `LGTM_WEB_PASSWORD`, even while the shell exports another value.
+
+### A body timeout on one route
+
+Caddy 2.11.9 holds the module `http.handlers.timeouts`, which its documentation marks experimental. Its Caddyfile form is `timeouts [<matcher>] { read_timeout <duration> }`. The subdirective `read_body_idle` belongs only to the global `servers` block, and inside the handler Caddy refuses it.
+
+The rules of item 2, with `timeouts /lgtm.link.v1.LinkService/Open { read_timeout 10m }` in the snippet and no server-wide timeout, were run with the stand-in of item 7:
+
+| Route and shape | Result |
+|---|---|
+| `/lgtm.link.v1.LinkService/Open`, `quiet-up` for 80 seconds | `ok`, 40 ticks down, and the trailer `up-closed`. |
+| `/lgtm.v1.ClientService/WatchClients`, `quiet-up` for 80 seconds | `not ok` after 60 seconds and 29 ticks, with an internal stream error. |
+| `/lgtm.link.v1.LinkService/Open`, `quiet-down` for 80 seconds | `ok`. |
+| `/lgtm.link.v1.LinkService/Open`, silent both ways for 6 minutes 10 seconds | `ok`, the stream lasted 6 minutes 14 seconds. |
+| `/lgtm.link.v1.LinkService/Open`, `quiet-up` for 6 minutes 30 seconds | `ok`, 195 ticks down, and the trailer `up-closed`. |
+| `/lgtm.link.v1.LinkService/Open`, `quiet-down` for 6 minutes 30 seconds | `ok`, 196 lines up. |
+
+So the handler keeps the link's route open, and every other route keeps the default limit of one minute.

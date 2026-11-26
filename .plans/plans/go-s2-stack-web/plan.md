@@ -28,7 +28,7 @@ Every check of wave 1 runs on the loopback address, so none of them needs a cert
 
 The link between the server and a machine is one long two-way stream, and issue 1633 asks for proof that the web server passes such a stream on without cutting it.
 The probes of 2026-11-26 found that Caddy 2.11.9, with its default settings, cuts a stream once the machine's side has been silent for about 60 seconds.
-The setting `read_body_idle 10m` removes that cut, so the plan keeps the current Caddy release and sets it.
+A ten-minute body timeout on the link's own route removes that cut, so the plan keeps the current Caddy release, and every other route keeps Caddy's default (threat-r2 6).
 The tests hold each direction silent for longer than a minute on every run, and a six-minute soak runs before sprint 3 builds the link.
 
 ## Key decisions
@@ -37,9 +37,11 @@ The tests hold each direction silent for longer than a minute on every run, and 
 
 **Loopback only in wave 1.** The published port binds to `127.0.0.1`, and no setting changes that. A public address waits for the owner's proxy (decisions row 27).
 
-**The server holds every rule about settings.** The launcher reads no setting. The server refuses a missing password, Compose refuses a malformed port, and Docker reports a port that is taken; the launcher only names the setting to change (decisions row 29).
+**The launcher checks only what it uses.** It checks that the settings files are private and readable, and that the port is one number, and it hands that one port to Compose. The server refuses a missing password, and Docker reports a port that is taken (decisions row 37).
 
-**The ordinary command also removes a password.** The owner deletes the password and runs the launcher again. The server then ends every session and refuses to start, and the launcher stops it (decisions row 31).
+**One command removes the password.** `deploy/up.sh --remove-password` stops the server and runs it once with no password, whatever the shell or the settings files still hold, so every session ends (decisions row 38).
+
+**The sprint's deployed checks are joint gates.** The checks C1 to C4 and C13 need this plan's stack and the Server team's program together, so the orchestrator runs them once the items of both plans are in the branch. Each work item is gated on its own tests (decisions row 40).
 
 **Images are built from an allow-list.** Each image builds from the repository, but a list next to its build file lets in only the folders it needs. The state folder, which holds the vault's key and credentials, therefore never reaches an image.
 
@@ -72,9 +74,9 @@ When this is done, the stream test passes, and the soak has passed once on the m
 ## Rollout order
 
 1. Build the web server rules, and the stream test in its rules-only form. Neither needs another plan.
-2. Build the website image. Build the server image once the Server team's item 9 has merged its command.
+2. Build the website image. Build the server image once the files of the Server team's item 9 are in the branch.
 3. Add the two services to the compose file and extend the launcher, once the sprint 1 stack is merged.
-4. Run the sign-in checks of the user-flow script on a clean machine once the Server team's plan is merged, and extend the guide in `deploy/README.md`.
+4. Extend the guide in `deploy/README.md`. Once the items of this plan and of the Server team's plan are in the branch, the orchestrator runs the sign-in checks of the user-flow script on a clean machine as a joint gate of the sprint.
 5. Run the stream test against the merged website image, then the six-minute soak, before sprint 3 builds the link, and record the result in the sprint's report.
 
 ---
@@ -87,7 +89,8 @@ Every test file named here is a Bash script under `deploy/test/` that prints one
 This is the format of the sprint 1 suites.
 A test that needs a disposable stack uses `web_fixture_create` and `web_fixture_cleanup` from `deploy/test/web-testlib.sh`, which work item 4 writes (architect-r1 2, critic-r1 4, logic-r1 4, threat-r1 5).
 A test never reads or changes the developer's own `deploy/.env` or `deploy/.state/`.
-The image digests are those of decisions rows 8 and 32.
+A work item is gated on its own named tests. The deployed checks C1 to C4 and C13 of `deploy/test/checks.sh` are joint gates of the sprint, which the orchestrator runs once the items of this plan and of `go-s2-server-signin` are in the branch (architect-r2 1).
+The image digests are those of decisions rows 8 and 39.
 Each workstream below is named WS-1 to WS-3, for workstream 1 to 3.
 
 The design statements are numbered as the task assignment asks: D1 to D23 are the rows of the design's decisions table, R1 to R11 its rules, and C1 to C13 its checks, in the order of the design file on `master`.
@@ -120,7 +123,7 @@ The web server's rules come first, because the website image copies them in, and
 **Work item 1. The server image**
 
 - **Files:** creates `deploy/server.Dockerfile`, `deploy/server.Dockerfile.dockerignore` and `deploy/test/server-image.sh`.
-- **Needs:** nothing to write its tests. Its build and its last test need `src/server/cmd/lgtm-server/main.go`, which item 9 of `go-s2-server-signin` creates, so it merges after that item (architect-r1 6). It can run at the same time as items 2 and 7.
+- **Needs:** nothing to write its tests. Its build and its last test need the files of item 9 of `go-s2-server-signin` in the branch: `src/server/cmd/lgtm-server/main.go` and the packages under `src/server/` that it imports. It does not wait for that item's gate (architect-r2 1). It can run at the same time as items 2 and 7.
 - **Work area and complexity:** `infra`, low. It is one Dockerfile of a known shape, and its acceptance is one script.
 - **Scope:** `stack/infra`.
 - **Statements:** D1, D2, C2, R9, and the design's sections "Where the code lives" (`deploy/` holds the two images) and "The compose stack".
@@ -149,7 +152,7 @@ Tests written first, in `deploy/test/server-image.sh`:
 - **Work area and complexity:** `infra`, medium. The rules are short, but they decide which requests reach the server and how a stream is passed on.
 - **Scope:** `stack/infra`.
 - **Statements:** D1, C1, C3, C9, R8, and the design's section "The compose stack" (the website and the server share one address, and the website's server address is `/`).
-- **What the rules say:** `deploy/Caddyfile` is one file. Its global block holds `admin off`, `auto_https off`, `persist_config off`, `grace_period 5s`, and `servers { protocols h1 h2 h2c timeouts { read_body_idle 10m } }` (threat-r1 7). It sets no other timeout. It defines the snippet `(app)`, in which the matcher `@server path /lgtm.v1.* /lgtm.link.v1.*` is handled by `reverse_proxy h2c://server:8080 { flush_interval -1 }`, which passes each call on as cleartext HTTP/2 (h2c), and every other path is handled by `root * /srv/site` and `file_server`. It then defines the site `http://:8081` with `bind 127.0.0.1` and `respond /healthz 200`, the site `http://127.0.0.1:8080, http://localhost:8080, http://[::1]:8080` with `import app`, and the site `http://:8080` with `respond 421`. No access log is written, because requests carry the session cookie. Scouting, "Round 1 probes", records the probe of this exact text on Caddy 2.11.9.
+- **What the rules say:** `deploy/Caddyfile` is one file. Its global block holds `admin off`, `auto_https off`, `persist_config off`, `grace_period 5s`, and `servers { protocols h1 h2 h2c }`. It sets no server-wide timeout. It defines the snippet `(app)`. The snippet starts with `timeouts /lgtm.link.v1.LinkService/Open { read_timeout 10m }`, Caddy's handler for one route's body timeout, so only the link's stream may stay silent for ten minutes, and every other request keeps the default of one minute (threat-r2 6). Caddy marks that handler experimental, so the pinned digest and item 7's tests guard it. In the snippet, the matcher `@server path /lgtm.v1.* /lgtm.link.v1.*` is handled by `reverse_proxy h2c://server:8080 { flush_interval -1 }`, which passes each call on as cleartext HTTP/2 (h2c), and every other path is handled by `root * /srv/site` and `file_server`. It then defines the site `http://:8081` with `bind 127.0.0.1` and `respond /healthz 200`, the site `http://127.0.0.1:8080, http://localhost:8080, http://[::1]:8080` with `import app`, and the site `http://:8080` with `respond 421`. No access log is written, because requests carry the session cookie. Scouting, "Round 1 probes" and "Round 2 probes", records the probes of these rules on Caddy 2.11.9.
 
 Tests written first, in `deploy/test/web-rules.sh`.
 Each test runs the pinned Caddy image as user `10003:10003`, with `--read-only`, `--cap-drop ALL`, `--security-opt no-new-privileges:true`, a temporary file system at `/tmp`, `XDG_DATA_HOME=/tmp` and `XDG_CONFIG_HOME=/tmp`.
@@ -163,7 +166,7 @@ A stub server, a second container of the pinned Caddy image with the network ali
 | `rules_pass_contract_paths_on` | `POST /lgtm.v1.SessionService/GetServer` and `POST /lgtm.link.v1.LinkService/Join` each return 200 with a body that starts with `HTTP/2.0`, followed by the method and the same path. `POST /lgtm.v2.X` and `GET /frames/x` each return 404 and do not reach the stub. |
 | `rules_keep_status_and_body` | `POST /lgtm.v1.SessionService/SignOut` returns 401, `Content-Type: application/json`, and the stub's body byte for byte. |
 | `rules_keep_host_and_set_forwarded_proto` | The stub sees `host=127.0.0.1`. A request that sends `X-Forwarded-Proto: https` reaches the stub with `xfp=http`. |
-| `rules_refuse_other_host_names` | With the header `Host: lgtm.test:8787`, `GET /` and `POST /lgtm.v1.SessionService/SignIn` each return 421, and the stub's log gains no line. With `Host: localhost:8787`, `GET /` returns 200. |
+| `rules_refuse_other_host_names` | With the header `Host: lgtm.test:8787`, `GET /` and `POST /lgtm.v1.SessionService/SignIn` each return 421, and the stub's log gains no line. With `Host: localhost:8787` and with `Host: [::1]:8787`, `GET /` returns 200. |
 | `rules_answer_health_inside_only` | Inside the web container, `wget -qO- http://127.0.0.1:8081/healthz` exits 0. From the stub's container, a request to port 8081 of the web container fails to connect. |
 
 - **Risky:** yes, because these rules decide which requests carry the password to the server. The mutation that must turn `rules_refuse_other_host_names` red: replace the three loopback site addresses and the 421 site with one site `http://:8080 { import app }`. A second mutation: change `h2c://server:8080` to `http://server:8080`, which must turn `rules_pass_contract_paths_on` red, because the stub then reports `HTTP/1.1`.
@@ -177,14 +180,14 @@ A stub server, a second container of the pinned Caddy image with the network ali
 - **Work area and complexity:** `infra`, medium. The build reads several folders of the workspace, and its allow-list must name each one.
 - **Scope:** `stack/infra`.
 - **Statements:** D1, C1, R9, and the design's section "The compose stack".
-- **What it builds:** the stage `site` starts from `node:26.13.0-alpine@sha256:8996bb58…` and runs `npm install --global pnpm@12.16.1`, because Node 26 ships without Corepack. It copies the allowed context to `/repo`, runs `pnpm install --frozen-lockfile --filter @lgtm/frontend...` with a cache mount on the store of pnpm, and runs `VITE_LGTM_SERVER=/ pnpm --filter @lgtm/frontend build`. The stage `runtime` starts from `caddy:2.11.9-alpine@sha256:003a9780…` (decisions row 32). It copies `/repo/src/frontend/dist` to `/srv/site` and `deploy/Caddyfile` to `/etc/caddy/Caddyfile`. It sets `USER 10003:10003`, `ENV XDG_DATA_HOME=/tmp XDG_CONFIG_HOME=/tmp`, and `CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]`.
+- **What it builds:** the stage `site` starts from `node:26.13.0-alpine@sha256:8996bb58…` and runs `npm install --global pnpm@12.16.1`, because Node 26 ships without Corepack. It copies the allowed context to `/repo`, runs `pnpm install --frozen-lockfile --filter @lgtm/frontend...` with a cache mount on the store of pnpm, and runs `VITE_LGTM_SERVER=/ pnpm --filter @lgtm/frontend build`. The stage `runtime` starts from `caddy:2.11.9-alpine@sha256:003a9780…` (decisions row 39). It copies `/repo/src/frontend/dist` to `/srv/site` and `deploy/Caddyfile` to `/etc/caddy/Caddyfile`. It sets `USER 10003:10003`, `ENV XDG_DATA_HOME=/tmp XDG_CONFIG_HOME=/tmp`, and `CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile"]`.
 - **The allow-list:** `deploy/website.Dockerfile.dockerignore` holds `*`, then `!package.json`, `!pnpm-lock.yaml`, `!pnpm-workspace.yaml`, `!tsconfig.base.json`, `!src/frontend/**`, `!src/contracts/**`, `!src/mock-server/**`, `!design/mock/**`, `!design/fonts/**`, `!third_party/inter/**`, `!third_party/jetbrains-mono/**`, `!third_party/codemirror/**`, `!deploy/Caddyfile`, and then `**/node_modules`, `**/dist` and `**/.cert`. A probe build with this list passed on 2026-11-26 (scouting, "Website build").
 
 Tests written first, in `deploy/test/web-image.sh`:
 
 | Test | What it asserts |
 |---|---|
-| `web_image_bases_are_pinned` | Every `FROM` line of `deploy/website.Dockerfile` names an image followed by `@sha256:` and 64 lowercase hexadecimal characters, and the digests equal those of decisions rows 8 and 32. |
+| `web_image_bases_are_pinned` | Every `FROM` line of `deploy/website.Dockerfile` names an image followed by `@sha256:` and 64 lowercase hexadecimal characters, and the digests equal those of decisions rows 8 and 39. |
 | `web_image_context_is_allow_listed` | The ignore file's lines, with comments and blank lines removed, equal the list above exactly. |
 | `web_image_leaves_out_state` | In a temporary copy of the tracked files, the test adds `deploy/.state/sentinel-<random>`, `deploy/.env` and `src/frontend/.cert/key.pem`, each with a random marker. In the stage `site`, `find / -xdev -name 'sentinel-*'` and `find / -xdev -path '*/.cert/*'` find nothing. `docker save` of the final image contains none of the markers. |
 | `web_image_serves_the_built_site` | The image, run with no stub server, answers `GET /` with 200, `id="app"` and at least one `<script` element. Every `src` and `href` in that page that starts with `/` returns 200. |
@@ -208,23 +211,24 @@ Tests written first, in `deploy/test/web-image.sh`:
 
 **Verify:** `bash deploy/test/server-image.sh`, `bash deploy/test/web-rules.sh` and `bash deploy/test/web-image.sh` on Linux with Docker. A person opens the website image once in a browser. No other device is needed.
 
-**Rollout detail:** step 1 builds item 2. Step 2 builds item 3, and item 1 after Server item 9. Each runs `docker build -f deploy/<name>.Dockerfile -t <tag> .` from the repository root.
+**Rollout detail:** step 1 builds item 2. Step 2 builds item 3, and item 1 once the files of Server item 9 are in the branch. Each runs `docker build -f deploy/<name>.Dockerfile -t <tag> .` from the repository root.
 
 **WS-2: One command starts everything, and the owner signs in**
 
 The compose file of sprint 1 holds `postgres`, `openbao` and the one-shot setup jobs.
 This workstream adds `server` and `web`, two networks, and the settings file, and it extends `deploy/up.sh`, which sprint 1 writes.
-Compose alone reads the settings: a value in the shell wins, and the settings file supplies the rest (scouting, "Compose settings").
+Compose reads the settings: a value in the shell wins, and the settings file supplies the rest (scouting, "Compose settings").
 The settings file is `deploy/.env`, unless `COMPOSE_ENV_FILES` names another one, which is how the fixtures keep their own file (scouting, "Round 1 probes").
+The launcher asks Compose for the one value it checks, the port, and never prints a value (decisions row 37).
 
 **Done when:**
 
 | # | Criterion | Observed by (test id / command / on-device step) |
 |---|---|---|
 | 2a | The resolved compose file publishes only the web port, on `127.0.0.1`, keeps the server off any network with a route out, mounts credentials read-only, and gives the server exactly the settings of the Server plan. | `bash deploy/test/stack-web.sh` prints `ok` for its nine tests. |
-| 2b | The launcher stops after the vault when asked, starts no server before the vault is ready, waits through a slow first start, stops on a failed one, names a taken port, ends every session when the password is removed, and changes nothing on a second run. | `bash deploy/test/stack-up.sh` prints `ok` for its nine tests. |
-| 2c | On a clean machine, one command starts the stack, the server refuses to start without a password, the owner signs in, the session survives a restart, a changed password ends it, and the vault opens again after a restart of everything. | `deploy/test/checks.sh --only C1,C2,C3,C4,C13` prints five `ok` lines and exits 0. |
-| 2d | The owner signs in through the browser at a port other than 8787. | A person runs `LGTM_WEB_PORT=18787 deploy/up.sh`, opens `http://localhost:18787/`, types a wrong password and sees it refused, then types the right one and sees the sign-in form give way. After a reload the sign-in form does not return. (critic-r1 2) **UNREVIEWED MECHANISM:** Home needs the server's first `WatchClients` snapshot, which sprint 2 does not serve, so Home is check PB2. |
+| 2b | The launcher stops after the vault when asked, even with a bad web port, refuses bad settings without printing them, starts no server before the vault is ready, waits through a slow first start, stops on a failed one, names a taken port, removes the password with one command, and changes nothing on a second run. | `bash deploy/test/stack-up.sh` prints `ok` for its ten tests. |
+| 2c | On a clean machine, one command starts the stack, the server refuses to start without a password, the owner signs in, the session survives a restart, a changed password ends it, and the vault opens again after a restart of everything. This is a joint gate of the sprint, which the orchestrator runs once the items of this plan and of `go-s2-server-signin` are in the branch (architect-r2 1). | `deploy/test/checks.sh --only C1,C2,C3,C4,C13` prints five `ok` lines and exits 0. |
+| 2d | The owner signs in through the browser at a port other than 8787, and the browser keeps the session. | A person runs `LGTM_WEB_PORT=18787 deploy/up.sh`, opens `http://localhost:18787/` with the browser's network panel open, types a wrong password and sees it refused, then types the right one. After a reload, the reply of `/lgtm.v1.SessionService/GetServer` shows `signedIn: true`. A private window at the same address gets `signedIn: false` and shows the sign-in form. (architect-r2 5, logic-r2 3, threat-r2 7) Home and the browser's sign-out need the first `WatchClients` snapshot, which sprint 2 does not serve, so both are check PB2 at the Machines gate of sprint 3 (decisions row 34). |
 
 **Tasks:**
 
@@ -232,14 +236,14 @@ The settings file is `deploy/.env`, unless `COMPOSE_ENV_FILES` names another one
 |---|---|---|
 | 4 | Add `server`, `web`, the networks, the settings file and the test fixtures. | `deploy/compose.yaml`, `services.postgres` and the networks `data` and `vault`, which sprint 1 creates (`.plans/plans/go-s1-stack-vault/plan.md`, work items 2 and 3, and its "Contract for sprint 2"). The settings: `.plans/plans/go-s2-server-signin/plan.md`, item 1, the table of settings. Target `deploy/example.env`. Target `deploy/test/web-testlib.sh`. The names the check script reads: `deploy/test/checks.sh`, `compose_file`, `check_c2` and `check_c4`. |
 | 5 | Extend the launcher. | `deploy/up.sh`, its phases `database`, `seal`, `vault` and `ready`, its lock and its line `postgres and openbao are healthy` (sprint 1, work item 6). The suite to keep green: `deploy/test/stack-vault.sh`. The server's startup: `.plans/plans/go-s2-server-signin/plan.md`, item 9, the startup order and the table of sentences. |
-| 6 | Extend the operator guide and run the sign-in checks. | `deploy/README.md`, which sprint 1 creates. `deploy/test/checks.sh`, functions `check_c1` to `check_c4` and `check_c13`. `deploy/test/README.md`, table "Names and observations the checks expect". |
+| 6 | Extend the operator guide. | `deploy/README.md`, which sprint 1 creates. `deploy/test/checks.sh`, functions `check_c1` to `check_c4` and `check_c13`. `deploy/test/README.md`, table "Names and observations the checks expect". |
 
 **Design artifact:** none. No screen changes.
 
 **Work item 4. The compose services, the networks, the settings file and the fixtures**
 
 - **Files:** changes `deploy/compose.yaml`. Creates `deploy/example.env`, `deploy/test/web-testlib.sh` and `deploy/test/stack-web.sh`.
-- **Needs:** items 1 and 3, and the merged sprint 1 plan `go-s1-stack-vault`. It can run at the same time as item 7.
+- **Needs:** the merged sprint 1 plan `go-s1-stack-vault`, and the files `deploy/server.Dockerfile` and `deploy/website.Dockerfile` of items 1 and 3, which its compose file names. Its tests render the compose file and need no image. It can run at the same time as item 7.
 - **Work area and complexity:** `infra`, medium. It adds two services to a file that follows a set pattern, and it wires credentials that sprint 1 already makes.
 - **Scope:** `stack/infra`.
 - **Statements:** D4, D10, C1, C2, C3, C4, C13, R9, and the design's section "The compose stack" (loopback by default, the port as a variable with the default 8787, the server reachable only inside the stack).
@@ -266,13 +270,14 @@ The settings file is `deploy/.env`, unless `COMPOSE_ENV_FILES` names another one
 - **The networks:** `edge` is an ordinary bridge network. `app` has `internal: true`. The sprint 1 networks `data` and `vault` stay as they are.
 - **`deploy/example.env`:** two setting lines, each after one comment sentence: `LGTM_WEB_PASSWORD=` (empty) and `LGTM_WEB_PORT=8787`. Git already ignores `deploy/.env` through the root `.gitignore`, and it tracks `deploy/example.env`.
 - **`deploy/test/web-testlib.sh`:** the fixtures of this plan's suites (architect-r1 2, critic-r1 4, logic-r1 4, threat-r1 5). It is sourced by items 4, 5 and 7. Its functions:
-  - `web_fixture_create` exports `COMPOSE_PROJECT_NAME=lgtmtest-<8 random hexadecimal characters>`, `LGTM_STACK_STATE_DIR=<a new folder from mktemp -d>` and `COMPOSE_ENV_FILES=<fixture>/settings.env`. It writes that settings file with mode `0600`, holding `LGTM_WEB_PORT=<port>` and `LGTM_WEB_PASSWORD=<32 random hexadecimal characters>`. The port is a random number from 20000 to 39999 to which a Bash `/dev/tcp` connection fails. It unsets any `LGTM_WEB_PASSWORD` and `LGTM_WEB_PORT` inherited from the shell, and it refuses to run when `COMPOSE_PROJECT_NAME` would equal `lgtm`.
-  - `web_fixture_cleanup` runs `docker compose -f deploy/compose.yaml down -v --remove-orphans -t 5` for the fixture's project alone, then removes the fixture's state folder through `docker run --rm` of the pinned Caddy image as user 0, with only that folder's parent mounted, because sprint 1's jobs leave files owned by other users there.
-  - `web_fixture_stat <path>` prints the owner, the group and the mode of a path in the fixture's state folder through the same disposable container.
+  - `web_fixture_create` makes a fixture folder with `mktemp -d` and exports `COMPOSE_PROJECT_NAME=lgtmtest-<8 random hexadecimal characters>`, `LGTM_STACK_STATE_DIR=<fixture>/state`, `COMPOSE_ENV_FILES=<fixture>/settings.env` and `COMPOSE_FILE=<repository root>/deploy/compose.yaml` (threat-r2 8). It writes that settings file with mode `0600`, holding `LGTM_WEB_PORT=<port>` and `LGTM_WEB_PASSWORD=<32 random hexadecimal characters>`. The port is a random number from 20000 to 39999 to which a Bash `/dev/tcp` connection fails. It unsets any `LGTM_WEB_PASSWORD` and `LGTM_WEB_PORT` inherited from the shell, and it refuses to run when `COMPOSE_PROJECT_NAME` would equal `lgtm`.
+  - `web_fixture_override <file>` appends an override file of the test to `COMPOSE_FILE`, separated by `:`, so that every Compose call of the launcher and of the test reads the same list of files (architect-r2 2, logic-r2 5).
+  - `web_fixture_cleanup` runs `docker compose down -v --remove-orphans -t 5` for the fixture's project alone. It then checks that the fixture folder is a direct child of the temporary folder and that its name starts with `tmp.`, and removes the folder's contents through `docker run --rm` of the pinned Caddy image as user 0, with only the fixture folder mounted, because sprint 1's jobs leave files owned by other users there (threat-r2 8).
+  - `web_fixture_stat <path>` prints the owner, the group and the mode of a path in the fixture's state folder through the same disposable container, with the fixture folder mounted read-only.
   - Every suite calls `web_fixture_cleanup` from a `trap` on exit.
 
 Tests written first, in `deploy/test/stack-web.sh`.
-Each test reads `docker compose -f deploy/compose.yaml config --format json` inside a fixture, unless it says otherwise.
+Each test reads `docker compose config --format json` inside a fixture, unless it says otherwise.
 
 | Test | What it asserts |
 |---|---|
@@ -288,22 +293,30 @@ Each test reads `docker compose -f deploy/compose.yaml config --format json` ins
 
 - **Risky:** yes, because it publishes the port and mounts the credentials. The mutation that must turn `web_publishes_on_loopback_only` red: change `127.0.0.1` in the port to `0.0.0.0`. A second mutation: add `edge` to the server's networks, which must turn `server_has_no_route_out` red. A third mutation: remove `LGTM_ALLOW_PRIVATE_STACK`, which must turn `server_settings_are_named` red.
 - **Acceptance:** `bash deploy/test/stack-web.sh` prints nine `ok` lines and exits 0.
-- **Public names:** the services `server` and `web`; the networks `edge` and `app`; the settings `LGTM_WEB_PASSWORD` and `LGTM_WEB_PORT`; the eleven server keys above; the mounts `/run/lgtm/openbao.json` and `/run/lgtm/postgres.password`; the file `deploy/example.env`; the file `deploy/test/web-testlib.sh` and its three functions.
+- **Public names:** the services `server` and `web`; the networks `edge` and `app`; the settings `LGTM_WEB_PASSWORD` and `LGTM_WEB_PORT`; the eleven server keys above; the mounts `/run/lgtm/openbao.json` and `/run/lgtm/postgres.password`; the file `deploy/example.env`; the file `deploy/test/web-testlib.sh` and its four functions. This item writes the fixture functions, and items 5 and 7 read them.
 
 **Work item 5. The launcher starts everything**
 
 - **Files:** changes `deploy/up.sh` and `deploy/test/stack-vault.sh`. Creates `deploy/test/stack-up.sh`.
-- **Needs:** item 4, the merged sprint 1 plan, and item 9 of `go-s2-server-signin` for the tests that run the real server. It can run at the same time as item 7.
+- **Needs:** item 4 and the merged sprint 1 plan. Its tests that run the real server, `up_starts_everything_in_order`, `up_is_idempotent` and `up_remove_password_ends_sessions`, need the files of item 9 of `go-s2-server-signin` in the branch: `src/server/cmd/lgtm-server/main.go` and the packages under `src/server/` that it imports. It does not wait for that item's gate (architect-r2 1). It can run at the same time as item 7.
 - **Work area and complexity:** `infra`, medium. It adds three phases to a launcher that already has a fixed shape, and its failure paths decide what the owner sees.
 - **Scope:** `stack/infra`.
 - **Statements:** C1, C2, C4, C13, R9, the design's section "Sign-in and web sessions" (removing the password ends every session), and the design's section "The compose stack" (one command starts the stack).
-- **What it reads:** the launcher reads no setting (decisions row 29; architect-r1 11, logic-r1 9, logic-r1 10, threat-r1 10). Its arguments come first: none, or `--until vault`. Any other argument exits 2 with `usage: deploy/up.sh [--until vault]`. It then looks at each file that `COMPOSE_ENV_FILES` names, comma-separated, or at `deploy/.env` when that is unset. When such a file exists and is a symbolic link, or grants any permission to its group or to others, the launcher exits 2 with `<file> must be readable only by its owner; run chmod 600 <file>` before any phase (threat-r1 2). It never prints a setting's value, and it runs with shell tracing off.
-- **The phases:** every phase prints `phase <name> start` and `phase <name> done`, as in sprint 1, and the whole run holds sprint 1's lock on the state folder. The order is sprint 1's `database`, `seal` and `vault`, then `images`, `server`, `web` and `ready` (critic-r1 6). With `--until vault`, the launcher runs only `database`, `seal`, `vault` and `ready`, and `ready` prints only sprint 1's line `postgres and openbao are healthy`. That route needs no password, no port and no image of this plan.
-  - `images` runs `docker compose -f deploy/compose.yaml build server web`.
-  - `server` runs `docker compose -f deploy/compose.yaml up -d --wait --wait-timeout 540 --no-deps server`. A process that exits ends this wait within seconds (scouting, "Round 1 probes"). On a failure the launcher prints `docker compose logs --no-log-prefix --tail 20 server`, runs `docker compose stop server`, and exits 1.
-  - `web` runs `docker compose -f deploy/compose.yaml up -d --wait --wait-timeout 90 --no-deps web`. On a failure whose output contains `address already in use`, it prints `the web port is in use; set LGTM_WEB_PORT in deploy/.env`. On any failure it exits 1 and leaves the other services running (logic-r1 9).
-  - `ready` prints sprint 1's line, then `the website is at http://<address>/`, where `<address>` is what `docker compose -f deploy/compose.yaml port web 8080` prints (critic-r1 9).
-- **Removing the password:** **UNREVIEWED MECHANISM** (architect-r1 4, critic-r1 7, logic-r1 5, threat-r1 4). The ordinary launcher is the removal path. When the owner deletes the password and runs it, Compose recreates `server` because its settings changed. The server then commits the end of every session, prints `Session revocation committed.` and `LGTM_WEB_PASSWORD is missing or invalid.`, and exits, as step 4 of the Server plan's item 9 promises. The phase `server` fails, prints those lines, and stops the server. A run with a password starts the server again, and no cookie from before the removal works. A failed revocation prints the Server plan's `Session revocation was not confirmed.`, and the server stays stopped.
+- **The settings check:** before any phase, and before it takes no other action (decisions row 37). Its arguments come first: none, `--until vault` or `--remove-password`. Any other argument exits 2 with `usage: deploy/up.sh [--until vault | --remove-password]`. The launcher runs from the repository root, sets `COMPOSE_FILE` to `deploy/compose.yaml` when it is unset or empty, and calls `docker compose` without `-f`, so a fixture's list of files reaches every call (architect-r2 2, logic-r2 5). It runs with shell tracing off and never prints a setting's value.
+  1. When `docker version --format '{{.Server.Version}}'` prints a major version below 28, it exits 2 with `Docker Engine 28 or newer is needed; this host has <version>`, because an older engine lets a neighbour on the network reach a port published on loopback (architect-r2 9, threat-r2 5).
+  2. It takes the list of settings files as `${COMPOSE_ENV_FILES:-deploy/.env}`, split at commas, so an empty selector means `deploy/.env`, as it does for Compose (logic-r2 7). When such a file exists and is a symbolic link, or grants any permission to its group or to others, it exits 2 with `<file> must be readable only by its owner; run chmod 600 <file>` (threat-r1 2).
+  3. It asks Compose for the effective port with `docker compose config --environment`, keeping only the line that starts with `LGTM_WEB_PORT=` and discarding every other line and all of standard error. With `--until vault` and `--remove-password`, it instead runs `docker compose config --quiet` with `LGTM_WEB_PORT=8787` in that call's environment, and every later Compose call of those routes gets the same value, so a bad web port cannot stop them (architect-r2 3, logic-r2 2, threat-r2 3). When the Compose call fails, it exits 2 with `the settings in <files> cannot be read; check their quoting and LGTM_WEB_PORT`, because Compose's own message can hold a value (threat-r2 2).
+  4. On the full route, an absent or empty port is 8787. Any other value must be decimal digits without a leading zero, from 1 to 65535, or the launcher exits 2 with `LGTM_WEB_PORT must be one port number from 1 to 65535`. A range and `0` are refused (threat-r2 4, logic-r2 8). It exports the checked number as `LGTM_WEB_PORT`, so the published port and the server's origin come from one value.
+- **The phases:** every phase prints `phase <name> start` and `phase <name> done`, as in sprint 1, and the whole run holds sprint 1's lock on the state folder. The order is sprint 1's `database`, `seal` and `vault`, then `images`, `server`, `web` and `ready` (critic-r1 6). With `--until vault`, the launcher runs only `database`, `seal`, `vault` and `ready`, and `ready` prints only sprint 1's line `postgres and openbao are healthy`. That route needs no password, no valid port and no image of this plan.
+  - `images` runs `docker compose build server web`.
+  - `server` runs `docker compose up -d --wait --wait-timeout 540 --no-deps server`. A process that exits ends this wait within seconds (scouting, "Round 1 probes"). On a failure the launcher prints `docker compose logs --no-log-prefix --tail 20 server`, runs `docker compose stop server`, and exits 1.
+  - `web` runs `docker compose up -d --wait --wait-timeout 90 --no-deps web`. On a failure whose output contains `address already in use`, it prints `the web port is in use; set LGTM_WEB_PORT in deploy/.env`. On any failure it exits 1 and leaves the other services running (logic-r1 9).
+  - `ready` prints sprint 1's line, then `the website is at http://<address>/`, where `<address>` is what `docker compose port web 8080` prints (critic-r1 9).
+- **Removing the password:** `deploy/up.sh --remove-password` (decisions row 38; architect-r2 4, logic-r2 1, threat-r2 1). It replaces the ordinary launcher as the removal path, because a password still in the shell or in another settings file kept the old server and its sessions, and an earlier phase could fail before the server was touched. Under the lock it runs these phases:
+  - `stop` runs `docker compose stop web server`, so the old server no longer serves before anything else can fail.
+  - `database` is sprint 1's phase. No other phase runs, so neither the vault nor an image build can stop the removal.
+  - `revoke` runs `docker compose run --rm --no-deps -e LGTM_WEB_PASSWORD= server` with the installed image `lgtm-server:local`, so the password is empty whatever the shell and the settings files hold. The server ends every session before it reads the vault, as step 4 of the Server plan's item 9 promises, and exits. The launcher prints the server's lines.
+  - When this run printed `Session revocation committed.`, the launcher prints `every session has ended; remove the password from deploy/.env and the shell, or set a new one, then run deploy/up.sh` and exits 0. Otherwise it prints `session revocation was not confirmed; the server stays stopped; run deploy/up.sh --remove-password again` and exits 1. In both cases `server` and `web` stay stopped.
 - **`stack-vault.sh`:** its calls of `deploy/up.sh` become `deploy/up.sh --until vault`, as the sprint 1 contract assigns to this plan.
 
 Tests written first, in `deploy/test/stack-up.sh`.
@@ -311,36 +324,39 @@ Each runs in its own fixture of `deploy/test/web-testlib.sh`.
 
 | Test | What it asserts |
 |---|---|
-| `up_until_vault_needs_no_web_settings` | With no password in the shell or the settings file, `deploy/up.sh --until vault` exits 0. Its `phase` lines name exactly `database`, `seal`, `vault` and `ready`, and its last line is `postgres and openbao are healthy`. The project has no `server` and no `web` container, and no image was built during the run. (critic-r1 6, logic-r1 4, threat-r1 5) |
+| `up_until_vault_needs_no_web_settings` | With no password in the shell or the settings file, and with `LGTM_WEB_PORT=bad` first in the settings file and then in the shell, `deploy/up.sh --until vault` exits 0 each time. Its `phase` lines name exactly `database`, `seal`, `vault` and `ready`, and its last line is `postgres and openbao are healthy`. The project has no `server` and no `web` container, and no image was built during the run. (critic-r1 6, logic-r1 4, threat-r1 5, architect-r2 3, logic-r2 2, threat-r2 3) |
 | `up_starts_everything_in_order` | From an empty fixture, with the password only in the shell and a settings file that holds only the port, the launcher exits 0. Its `phase` lines come in the order `database`, `seal`, `vault`, `images`, `server`, `web`, `ready`, each `start` before its `done`. Its last line is `the website is at http://127.0.0.1:<port>/`. `docker compose ps` shows the four services running and healthy. `GET /` on the port contains `id="app"`. `POST /lgtm.v1.SessionService/SignIn` with the password, with `Origin: http://127.0.0.1:<port>` and again with `Origin: http://localhost:<port>`, each returns a `Set-Cookie` header. (architect-r1 3, critic-r1 3, logic-r1 2) |
 | `up_starts_no_server_before_the_vault` | In a fixture whose published vault credential is malformed, the launcher exits with a status other than 0 during the phase `vault`, prints sprint 1's line `server vault credential needs repair`, and `docker compose ps -a` lists no `server` and no `web` container. This is check PB8 of the sprint 1 plan. |
-| `up_waits_for_a_slow_server` | An override file replaces `server` with the pinned Caddy image, whose command sleeps 150 seconds before it answers `/healthz` on port 8080, and whose health check test is a `wget` of that address, with the timings unchanged. The launcher exits 0, and more than 150 seconds pass between `phase server start` and `phase server done`. (architect-r1 5, critic-r1 5, logic-r1 3, threat-r1 6) |
-| `up_stops_on_a_failed_server` | An override file replaces the server's command with one that prints `LGTM_WEB_PASSWORD is missing or invalid.` on standard error and exits 1. The launcher exits 1 within 60 seconds of `phase server start`, prints that sentence, leaves `server` stopped, and leaves no `web` container. |
+| `up_waits_for_a_slow_server` | An override file passed through `web_fixture_override` sets on `server`: `build: !reset null`, `image:` the pinned Caddy image, and `entrypoint` and `command` together, as `/bin/sh -c` with a script that prints `slow-stand-in`, sleeps 150 seconds and then answers `/healthz` on port 8080. Its health check test is a `wget` of that address, with the timings unchanged. Before the timed run, the test requires that the rendered `server` has that image, entry point and command and no `build`. The launcher exits 0, more than 150 seconds pass between `phase server start` and `phase server done`, and the server's log holds `slow-stand-in`. (architect-r1 5, architect-r2 2, logic-r2 5) |
+| `up_stops_on_a_failed_server` | An override file of the same kind keeps `restart: unless-stopped`, and its script prints `failed-stand-in` and `LGTM_WEB_PASSWORD is missing or invalid.` on standard error and exits 1. The test checks the rendered service as above. The launcher exits 1 within 60 seconds of `phase server start` and prints both lines. Twenty seconds later, `server` is still `exited` and its restart count has not grown, which only `docker compose stop` explains, and no `web` container exists. (architect-r2 2, logic-r2 5) |
 | `up_names_a_taken_port` | While a test container publishes the fixture's port on `127.0.0.1`, the launcher exits 1 during the phase `web` and prints `the web port is in use; set LGTM_WEB_PORT in deploy/.env`. `postgres`, `openbao` and `server` stay healthy. After the test container stops, a second run reaches the last line. (architect-r1 11, logic-r1 9) |
-| `up_refuses_an_open_settings_file` | With the settings file at mode `0644`, and again as a symbolic link to a file at mode `0600`, the launcher exits 2, prints the mode line above naming that file, prints no `phase` line, and leaves no container. (threat-r1 2) |
+| `up_refuses_bad_settings` | Each case exits 2, prints its named line, prints no `phase` line and leaves no container. A settings file at mode `0644`, and a symbolic link to a file at mode `0600`, each print the mode line, once with `COMPOSE_ENV_FILES` naming the file and once with `COMPOSE_ENV_FILES` empty and `COMPOSE_FILE` unset, with the file at `deploy/.env` of a copy of the repository made by `git worktree add` in the fixture folder, whose own launcher runs. A file at mode `0600` holding `LGTM_WEB_PASSWORD="<marker>` without its closing quote prints the settings line, and no output holds the marker. `LGTM_WEB_PORT` set to `18787-18788`, to `0` and to `08787` each print the port line. A `docker` on the path that reports server version `27.5.1` prints the engine line. (threat-r1 2, logic-r2 7, threat-r2 2, threat-r2 4, logic-r2 8, threat-r2 5) |
 | `up_is_idempotent` | A second run exits 0. The container identifiers of `server` and `web`, and the identifiers of their images, are the same as after the first run. |
-| `up_password_removal_ends_sessions` | After a full start, the test signs in and keeps the cookie, and `POST /lgtm.v1.ClientService/WatchClients` with that cookie returns the Connect code `unimplemented`. It removes the password from the settings file and runs the launcher, which exits 1 and prints `Session revocation committed.`. It restores the same password and runs the launcher, which exits 0. The same call with the old cookie now returns `unauthenticated`. |
+| `up_remove_password_ends_sessions` | After a full start with the password both exported in the shell and written in the settings file, the test signs in and keeps the cookie, and `POST /lgtm.v1.SessionService/GetServer` with that cookie reports `signedIn: true`. It stops `openbao`, so the vault cannot answer. `deploy/up.sh --remove-password` exits 0, prints `Session revocation committed.` and the line `every session has ended`, and leaves `server` and `web` stopped. With the same password still in the shell and the file, the ordinary launcher exits 0, and `GetServer` with the old cookie now reports `signedIn: false`. (architect-r2 4, logic-r2 1, threat-r2 1, logic-r2 3, threat-r2 7) |
+| `up_remove_password_reports_unconfirmed` | An override file of the kind above replaces `server` with a script that prints `unconfirmed-stand-in` and exits 1. `deploy/up.sh --remove-password` exits 1, prints `session revocation was not confirmed`, and leaves `server` and `web` stopped. |
 
-- **Risky:** yes, because it decides the order in which the server receives its credential and what happens to sessions. The mutation that must turn `up_until_vault_needs_no_web_settings` red: run `images` before `database`. A second mutation: set `--wait-timeout 120` in the phase `server`, which must turn `up_waits_for_a_slow_server` red. A third mutation: remove `docker compose stop server` from the failure path, which must turn `up_stops_on_a_failed_server` red.
-- **Acceptance:** `bash deploy/test/stack-up.sh` prints nine `ok` lines and exits 0, and `bash deploy/test/stack-vault.sh` still passes.
-- **Public names:** the phase names `images`, `server` and `web`; the option `--until vault`; the usage line; the mode line; the port line; the final line `the website is at http://<address>/`.
+- **Risky:** yes, because it decides the order in which the server receives its credential and what happens to sessions. The mutation that must turn `up_until_vault_needs_no_web_settings` red: run `images` before `database`. A second mutation: set `--wait-timeout 120` in the phase `server`, which must turn `up_waits_for_a_slow_server` red. A third mutation: remove `docker compose stop server` from the failure path, which must turn `up_stops_on_a_failed_server` red. A fourth mutation: drop `-e LGTM_WEB_PASSWORD=` from the phase `revoke`, which must turn `up_remove_password_ends_sessions` red. A fifth mutation: run `config --quiet` without the fixed port on `--until vault`, which must turn `up_until_vault_needs_no_web_settings` red.
+- **Acceptance:** `bash deploy/test/stack-up.sh` prints ten `ok` lines and exits 0, and `bash deploy/test/stack-vault.sh` still passes.
+- **Public names:** the phase names `images`, `server`, `web`, `stop` and `revoke`; the options `--until vault` and `--remove-password`; the usage line; the engine line; the mode line; the settings line; the port lines; the two removal lines; the final line `the website is at http://<address>/`. This item writes them, and the guide of item 6, `stack-vault.sh` and the Server plan's check PB3 read them.
 
 **Work item 6. The operator guide and the sign-in checks**
 
 - **Files:** changes `deploy/README.md`. It changes no test.
-- **Needs:** items 4 and 5, and the merged plan `go-s2-server-signin`.
-- **Work area and complexity:** `infra`, low. It writes a guide, and it runs checks that already exist.
+- **Needs:** item 5, whose lines the guide quotes. It does not wait for `go-s2-server-signin` (architect-r2 1).
+- **Work area and complexity:** `infra`, low. It writes a guide.
 - **Scope:** `stack/infra`.
 - **Statements:** C1, C2, C3, C4 and C13.
 - **The guide:** `deploy/README.md` gains these sections, after sprint 1's.
+  - "What the host needs" says Linux with Docker Engine 28 or newer and Docker Compose 5.5 or newer, the versions the launcher's checks were run on (architect-r2 9, threat-r2 5).
   - "Start everything" says to run `install -m 600 deploy/example.env deploy/.env`, set the password in it, run `deploy/up.sh`, and open the printed address.
   - "Settings" is a table of the two settings, their defaults and their effect. It says that `LGTM_WEB_PORT=0` is not supported.
   - "When port 8787 is taken" says that the old engine uses 8787 and that `LGTM_WEB_PORT` picks another.
-  - "Remove the password" says to delete it from `deploy/.env` and run `deploy/up.sh`. The launcher then prints `Session revocation committed.` and stops the server. If it prints `Session revocation was not confirmed.`, the owner runs it again before setting any password.
-  - "Reach the stack from another computer" says to forward the loopback port, for example with a Secure Shell (SSH) port forward, and that a public address comes with a later proxy.
-- **Tests written first:** the user-flow script `deploy/test/checks.sh`, which the orchestrator's test writer wrote before any plan. Its checks C1 to C4 and C13 are red today, because `deploy/up.sh` and the services do not exist. This item changes no line of it (decisions row 24).
+  - "Remove the password" says to run `deploy/up.sh --remove-password`, which ends every session whatever the shell and the settings files hold. Only after the line `every session has ended` does the owner remove the password from `deploy/.env` and the shell, or set a new one, and run `deploy/up.sh`. After `session revocation was not confirmed`, the owner runs the removal again (architect-r2 4, logic-r2 1, threat-r2 1).
+  - "Reach the stack from another computer" says to forward the loopback port, for example with a Secure Shell (SSH) port forward, with the same port number on both ends, because the server accepts a browser only at its own port (logic-r2 4). A public address comes with a later proxy.
+  - "The port in other tools" says that a tool needing the port reads it from `docker compose -p lgtm port web 8080`, which reports the port even when only `deploy/.env` sets it (logic-r2 4).
+- **Tests written first:** none of its own. The user-flow script `deploy/test/checks.sh`, which the orchestrator's test writer wrote before any plan, holds the joint gates C1 to C4 and C13, and this item changes no line of it (decisions rows 24 and 40).
 - **Risky:** no. It adds no code.
-- **Acceptance:** on a clean machine, which means a fresh clone at the merge commit, with no image tagged `lgtm-server:local` or `lgtm-web:local`, no Compose project `lgtm` and no state folder:
+- **Acceptance:** each line that the guide quotes is a public name of item 5, which `grep -F` of each quoted line in `deploy/up.sh` confirms. The joint gate of the sprint, which the orchestrator runs on a clean machine once the items of both plans are in the branch (architect-r2 1), is: on a fresh clone at that commit, with no image tagged `lgtm-server:local` or `lgtm-web:local`, no Compose project `lgtm` and no state folder:
   1. `install -m 600 deploy/example.env deploy/.env`.
   2. Set a password made only for the check, `export LGTM_WEB_PASSWORD=$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')`, write the same value into `deploy/.env`, and run `deploy/test/checks.sh --only C1,C2,C3,C4,C13`. It prints `ok 1`, `ok 2`, `ok 3`, `ok 4` and `ok 13` and exits 0 (threat-r1 2).
   3. A person performs criterion 2d.
@@ -350,15 +366,16 @@ Each runs in its own fixture of `deploy/test/web-testlib.sh`.
 | Risk | Severity | Mitigation |
 |---|---|---|
 | The server gives up or is declared unhealthy while a first start migrates its database. | High | The health check's eight-minute start period, the launcher's 540-second wait, and `up_waits_for_a_slow_server`. |
-| A password removal leaves the old sessions alive. | High | The ordinary launcher recreates the server, which ends the sessions before it exits, and `up_password_removal_ends_sessions`. |
+| A password removal leaves the old sessions alive. | High | `deploy/up.sh --remove-password` stops the server first and runs it with an empty password, and `up_remove_password_ends_sessions` keeps the old password in the shell and the file. |
 | The server starts before the vault has published its credential, or with another installation's credential. | High | `depends_on` with `service_healthy`, the launcher's phase order, the sprint 1 binding checks, and `up_starts_no_server_before_the_vault`. |
 | The Server team changes a setting name. | Medium | `server_settings_are_named` pins the eleven keys, and a change of the Server plan's table is a change of that test. |
 | Another user of the same host reads the password from the settings file. | Low | The guide makes the file with mode `0600`, and the launcher refuses a file that others can read. Wave 1 has one user. |
 | Port 8787 is taken by the old engine on the development machine. | Low | The launcher names the setting, and the checks honour `LGTM_WEB_PORT`. |
+| Compose prints a password from a malformed settings file. | Medium | The launcher's settings check discards Compose's message and prints a fixed line, and `up_refuses_bad_settings` plants a marker. |
 
-**Verify:** `bash deploy/test/stack-web.sh`, `bash deploy/test/stack-up.sh`, `bash deploy/test/stack-vault.sh` and `deploy/test/checks.sh --only C1,C2,C3,C4,C13` on Linux with Docker, against real PostgreSQL and OpenBao. A person signs in once in a browser (criterion 2d).
+**Verify:** `bash deploy/test/stack-web.sh`, `bash deploy/test/stack-up.sh` and `bash deploy/test/stack-vault.sh` on Linux with Docker Engine 28 or newer, against real PostgreSQL and OpenBao. The orchestrator runs the joint gate `deploy/test/checks.sh --only C1,C2,C3,C4,C13`, and a person signs in once in a browser (criterion 2d).
 
-**Rollout detail:** step 3 builds items 4 and 5 after `go-s1-stack-vault` is merged, and item 5's tests of the real server pass after Server item 9. Step 4 runs item 6 after `go-s2-server-signin` is merged.
+**Rollout detail:** step 3 builds items 4 and 5 after `go-s1-stack-vault` is merged, and item 5's tests of the real server run once the files of Server item 9 are in the branch. Step 4 writes item 6, and the orchestrator then runs the joint gate.
 
 **WS-3: The link's long stream passes through the web server**
 
@@ -369,7 +386,7 @@ A stand-in program, built from the standard library of Go alone, plays the serve
 
 The probes of 2026-11-26 found a real limit (scouting, "Which limit cuts a silent stream" and "Round 1 probes").
 Caddy 2.11.9 with default settings cut a stream whose upward direction, from the machine to the server, stayed silent for 60 seconds, even while the server kept sending down.
-The setting `read_body_idle 10m` of item 2 removes that cut, and a six-minute soak passed with it.
+A body timeout of ten minutes on the route `/lgtm.link.v1.LinkService/Open` alone, in item 2, removes that cut, and six-minute soaks passed with it (scouting, "Round 2 probes"; threat-r2 6).
 The link's client sends a heartbeat every 10 seconds, so the real link would stay inside even the default limit.
 The tests still hold each direction silent for longer than a minute, so that a later image or rule that brings the limit back fails them before it ships.
 
@@ -377,58 +394,60 @@ The tests still hold each direction silent for longer than a minute, so that a l
 
 | # | Criterion | Observed by (test id / command / on-device step) |
 |---|---|---|
-| 3a | A two-way stream through the real web server rules carries messages both ways, survives 35 seconds of silence in both directions, ends with its trailer, and uses HTTP/2 on both hops. Each direction alone stays silent for 80 seconds while the other keeps sending, and the stream then still carries a message both ways and ends with its trailer. A one-way stream to a browser arrives message by message for 80 seconds. | `bash deploy/test/link-stream.sh` prints `ok` for its six tests, with the soak test reported as skipped. The early form, `bash deploy/test/link-stream.sh --rules-only`, does the same against the rules of item 2. |
-| 3b | On the merged website image, a stream stays open through 6 minutes of silence in both directions, and through 6 minutes and 30 seconds of silence in each direction alone, before sprint 3 starts. | `LGTM_STREAM_SOAK=1 bash deploy/test/link-stream.sh` prints `ok` for all six tests, and the sprint's report records the output. |
+| 3a | A two-way stream through the real web server rules carries messages both ways, survives 35 seconds of silence in both directions, ends with its trailer, and uses HTTP/2 on both hops. Each direction alone stays silent for 80 seconds while the other keeps sending, and the stream then still carries a message both ways and ends with its trailer. Another route keeps the default limit of one minute. A one-way stream to a browser arrives message by message for 80 seconds. | `bash deploy/test/link-stream.sh` prints `ok` for its seven tests, with the soak test reported as skipped. The early form, `bash deploy/test/link-stream.sh --rules-only`, does the same against the rules of item 2. |
+| 3b | On the merged website image, a stream stays open through 6 minutes of silence in both directions, and through 6 minutes and 30 seconds of silence in each direction alone, before sprint 3 starts. | `LGTM_STREAM_SOAK=1 bash deploy/test/link-stream.sh` prints `ok` for all seven tests, and the sprint's report records the output. |
 
 **Tasks:**
 
 | # | Task | Anchor (file + symbol; line optional) |
 |---|---|---|
-| 7 | Write the stand-in program and the stream test. | Target `deploy/test/streamprobe/main.go`, functions `serve`, `dial` and `shaped`; the nearest pattern is the probe in scouting, "Stream probe". Target `deploy/test/link-stream.sh`. The procedure name: `.plans/plans/go-s0-contract/plan.md`, item 6, `rpc lgtm.link.v1.LinkService.Open`. The rules under test: `deploy/Caddyfile`, snippet `(app)` and the global `timeouts`. |
+| 7 | Write the stand-in program and the stream test. | Target `deploy/test/streamprobe/main.go`, functions `serve`, `dial` and `shaped`; the nearest pattern is the probe in scouting, "Stream probe". Target `deploy/test/link-stream.sh`. The procedure name: `.plans/plans/go-s0-contract/plan.md`, item 6, `rpc lgtm.link.v1.LinkService.Open`. The rules under test: `deploy/Caddyfile`, snippet `(app)` and its `timeouts` handler. |
 
 **Design artifact:** none.
 
 **Work item 7. The stream test**
 
 - **Files:** creates `deploy/test/streamprobe/main.go` and `deploy/test/link-stream.sh`. Its builder may change `deploy/Caddyfile` when a test fails, once item 2 is merged, and no other file of another item.
-- **Needs:** item 2 for `--rules-only`, and items 3 and 4 for the full run (architect-r1 6, critic-r1 8, logic-r1 6, threat-r1 8). Its tests can be written at once. It can run at the same time as items 1, 4 and 5.
+- **Needs:** item 2 for `--rules-only`, and items 3 and 4 for the full run (architect-r1 6, critic-r1 8, logic-r1 6, threat-r1 8). Its tests can be written at once. Its gate is both runs on its exact commit, so it merges after items 3 and 4 (architect-r2 7).
 - **Work area and complexity:** `infra`, medium. The program is small, but the test drives a real proxy through timing.
 - **Scope:** `stack/infra`.
 - **Statements:** the design's sections "One connection, dialled by the machine", "Knowing whether a machine is there" (a heartbeat every 10 seconds) and "Encryption on the link", C8 and C9, and issue 1633, point 4.
 - **The stand-in program:** package `main`, standard library only, in the root module, so `go build ./...` and `go vet ./...` include it. The test builds it inside `golang:1.26.11-alpine@sha256:ecb67f98…` with `CGO_ENABLED=0`, so the host's Go version does not matter. Its flags:
   - `-mode serve -addr :8080` listens with HTTP/1.1 and cleartext HTTP/2 through `http.Server.Protocols`. It logs `upstream proto=<protocol> path=<path>` for each request. The header `Probe-Shape` selects what it does:
     - With no header, it enables full duplex, sends status 200 with the header `Trailer: Probe-End`, echoes each line of the request body as `echo <line>` with a flush, and sets the trailer `Probe-End` to the number of lines when the body ends.
-    - With `quiet-down`, it reads every line and writes nothing until the body ends, then writes `count <n>`.
+    - With `quiet-down`, it reads every line and writes nothing until the line `mark` arrives. It then writes `count <n>`, the number of lines before `mark`, with a flush, while the request body is still open. When the body ends, it sets the trailer `Probe-End` to `down-closed` (logic-r2 6, threat-r2 9).
     - With `quiet-up`, it writes `tick <n>` every 2 seconds, with a flush. When a line arrives after the first, it writes `ack <line>` with a flush. When the request body ends, it sets the trailer `Probe-End` to `up-closed`.
     - With `ticks`, it reads the whole body first, then writes `tick <n>` every 2 seconds with a flush after each, as many times as the header `Probe-Ticks` says, with 5 as the default.
-  - `-mode dial -url <address>` sends `m0` and reads its echo, then sends `m<n>` every `-every` until `-total` has passed, reading each echo before the next send. It then stays silent for `-gap`, sends one more line, reads its echo, closes its side, and checks that nothing more arrives and that the trailer equals the number of lines. It prints `proto <protocol>` and, at the end, `ok stream lasted <duration> with <n> messages each way`. Any missing or wrong echo prints `not ok` with the message number and exits 1.
-  - `-mode shaped -shape quiet-down -total <d> -url <address>` sends a line every 2 seconds for the duration, closes its side, and expects `count <n>` with the right number. `-mode shaped -shape quiet-up -total <d> -url <address>` sends one line, stays silent and reads ticks for the duration, then sends `m1`, waits up to 5 seconds for `ack m1`, closes its side, and requires the trailer `up-closed` (logic-r1 6, threat-r1 8). Each prints one `ok` or `not ok` line and exits 0 or 1.
+  - `-mode dial -url <address>` sends `m<k>` at k times `-every` after its start, measured on Go's monotonic clock, for each k from 0 while that time is below `-total`, and reads each echo before the next send. With `-every 2s -total 20s`, that is `m0` to `m9`. It then stays silent for `-gap`, sends one more line, reads its echo, closes its side, and checks that nothing more arrives and that the trailer equals the number of lines (logic-r2 6). It prints `proto <protocol>` and, at the end, `ok stream lasted <duration> with <n> messages each way`. Any missing or wrong echo prints `not ok` with the message number and exits 1.
+  - `-mode shaped -shape quiet-down -total <d> -url <address>` sends a line every 2 seconds for the duration and fails if any byte of the response arrives meanwhile. It then sends `mark`, waits up to 5 seconds for `count <n>` with the right number while its side is still open, closes its side, and requires a clean end of the stream and the trailer `down-closed` (logic-r2 6, threat-r2 9). `-mode shaped -shape quiet-up -total <d> -url <address>` sends one line, stays silent and reads ticks for the duration, then sends `m1`, waits up to 5 seconds for `ack m1`, closes its side, and requires the trailer `up-closed` (logic-r1 6, threat-r1 8). Each prints one `ok` or `not ok` line and exits 0 or 1.
 - **The two fixtures:**
   - `--rules-only` runs the pinned Caddy image with `deploy/Caddyfile` mounted, as item 2's tests do, and the stand-in in the pinned distroless image with the network alias `server`, on a disposable network that the test creates and removes. It needs no Compose file and no image of this plan.
-  - The full run uses a fixture of `deploy/test/web-testlib.sh` and an override file of the test (architect-r1 7, logic-r1 6, threat-r1 8). The override sets on `server`: `build: !reset null`; `image:` the pinned distroless image; `entrypoint: ["/probe"]`; `command: ["-mode", "serve", "-addr", ":8080"]`; `depends_on: !reset []`; `environment: !reset {}`; `healthcheck: !reset null`; and `volumes:` replaced by one read-only bind of the built program at `/probe`. It sets `depends_on: !reset []` on `web`. The test runs `docker compose up -d --no-deps server web` and requires that `docker compose config --format json` shows no `build` on `server`. `web` is the real image of item 3.
+  - The full run uses a fixture of `deploy/test/web-testlib.sh` and an override file of the test, passed through `web_fixture_override` (architect-r1 7, logic-r1 6, threat-r1 8). The override sets on `server`: `build: !reset null`; `image:` the pinned distroless image; `entrypoint: ["/probe"]`; `command: ["-mode", "serve", "-addr", ":8080"]`; `depends_on: !reset []`; `environment: !reset {}`; `healthcheck: !reset null`; and `volumes: !override` with one read-only bind of the built program at `/probe`. It sets `depends_on: !reset []` on `web`. The test first runs `docker compose build web` from the checkout under test and records the image identifier. It requires that `docker compose config --format json` shows on `server` no `build`, no `depends_on`, no `environment`, the entry point `/probe` and exactly one mount, at `/probe` (architect-r2 7). It then runs `docker compose up -d --no-deps server web` and requires that the `web` container runs the recorded image and that `docker compose exec web cat /etc/caddy/Caddyfile` equals `deploy/Caddyfile` of the checkout byte for byte.
   - Every client run uses the host's network and the published loopback port, so the path through Docker's published port is part of the test. Every run of the program has a `timeout` of its expected duration plus 60 seconds, and a run that reaches it is `not ok`.
 
 Tests written first, in `deploy/test/link-stream.sh`:
 
 | Test | What it asserts |
 |---|---|
-| `stream_passes_both_ways_loopback` | `dial` against `http://127.0.0.1:<port>/lgtm.link.v1.LinkService/Open` with `-every 2s -total 20s -gap 35s` exits 0 and prints `ok`, with at least 12 messages each way. |
+| `stream_passes_both_ways_loopback` | `dial` against `http://127.0.0.1:<port>/lgtm.link.v1.LinkService/Open` with `-every 2s -total 20s -gap 35s` exits 0 and prints `ok`, with exactly 11 messages each way and the trailer `11` (logic-r2 6). |
 | `stream_hops_speak_http2` | `dial` prints `proto HTTP/2.0`, and the stand-in's log holds `upstream proto=HTTP/2.0 path=/lgtm.link.v1.LinkService/Open`. |
-| `stream_survives_upward_silence` | `shaped -shape quiet-up -total 80s` exits 0 and prints `ok` with at least 38 ticks, the `ack m1` and the trailer. This is the test that fails at 60 seconds on Caddy 2.11.9 without `read_body_idle`. |
-| `stream_survives_downward_silence` | `shaped -shape quiet-down -total 80s` exits 0 and prints `ok`. |
+| `stream_survives_upward_silence` | `shaped -shape quiet-up -total 80s` exits 0 and prints `ok` with at least 38 ticks, the `ack m1` and the trailer. This is the test that fails at 60 seconds on Caddy 2.11.9 without the route's `timeouts` handler. |
+| `stream_survives_downward_silence` | `shaped -shape quiet-down -total 80s` exits 0 and prints `ok`, with no early byte, the `count` before the close and the trailer `down-closed`. |
+| `other_routes_keep_the_default_limit` | `shaped -shape quiet-up -total 80s` against `/lgtm.v1.ClientService/WatchClients` prints `not ok` after 55 to 70 seconds, so only the link's route has the longer limit (threat-r2 6). |
 | `server_stream_arrives_message_by_message` | `curl --http1.1 --no-buffer` posts an empty body with `Probe-Shape: ticks` and `Probe-Ticks: 40` to `/lgtm.v1.ClientService/WatchClients`. The test records the arrival time of each line. All 40 `tick` lines arrive, with at least 1.5 seconds between each pair. This is how the website receives `WatchClients`. |
-| `stream_survives_soak` | Only when `LGTM_STREAM_SOAK=1`: `dial` with `-every 2s -total 4s -gap 6m`, `shaped -shape quiet-up -total 6m30s` and `shaped -shape quiet-down -total 6m30s` run at the same time, and each exits 0 and prints `ok`. Otherwise the line is `ok 6 - stream_survives_soak # SKIP soak not requested`. |
+| `stream_survives_soak` | Only when `LGTM_STREAM_SOAK=1`: `dial` with `-every 2s -total 4s -gap 6m`, `shaped -shape quiet-up -total 6m30s` and `shaped -shape quiet-down -total 6m30s` run at the same time, and each exits 0 and prints `ok`. Otherwise the line is `ok 7 - stream_survives_soak # SKIP soak not requested`. |
 
-- **Risky:** no. It touches no key, token or order of records. Its strength is still checked once by the build lead: removing `read_body_idle 10m` from `deploy/Caddyfile` must turn `stream_survives_upward_silence` red within its deadline.
-- **Acceptance:** `bash deploy/test/link-stream.sh --rules-only` and `bash deploy/test/link-stream.sh` each print six `ok` lines, one of them skipped, and exit 0. Before sprint 3 starts, `LGTM_STREAM_SOAK=1 bash deploy/test/link-stream.sh` prints six `ok` lines with none skipped.
-- **Public names:** the program path `deploy/test/streamprobe/`, its modes and flags above, the trailer `Probe-End`, the headers `Probe-Shape` and `Probe-Ticks`, the option `--rules-only`, and the setting `LGTM_STREAM_SOAK`. Sprint 3 may reuse the program and the override to test the real link through the web server.
+- **Risky:** no. It touches no key, token or order of records. Its strength is still checked once by the build lead: removing the `timeouts` handler from `deploy/Caddyfile` must turn `stream_survives_upward_silence` red within its deadline, and writing it without its path must turn `other_routes_keep_the_default_limit` red.
+- **Acceptance:** `bash deploy/test/link-stream.sh --rules-only` and `bash deploy/test/link-stream.sh` each print seven `ok` lines, one of them skipped, and exit 0. Before sprint 3 starts, `LGTM_STREAM_SOAK=1 bash deploy/test/link-stream.sh` prints seven `ok` lines with none skipped.
+- **Public names:** the program path `deploy/test/streamprobe/`, its modes and flags above, the trailer `Probe-End` and its values `up-closed` and `down-closed`, the line `mark`, the headers `Probe-Shape` and `Probe-Ticks`, the option `--rules-only`, and the setting `LGTM_STREAM_SOAK`. Sprint 3 may reuse the program and the override to test the real link through the web server.
 
 **Risks:**
 
 | Risk | Severity | Mitigation |
 |---|---|---|
-| A limit of the web server cuts a stream whose upward direction is silent. Caddy 2.11.9 does so at 60 seconds by default. | High | `read_body_idle 10m` in the rules, `stream_survives_upward_silence` on every run, and the link's 10-second heartbeat. Request L1 asks the link plans to keep that heartbeat. |
+| A limit of the web server cuts a stream whose upward direction is silent. Caddy 2.11.9 does so at 60 seconds by default. | High | The ten-minute `timeouts` handler on the link's route, `stream_survives_upward_silence` on every run, and the link's 10-second heartbeat. Request L1 asks the link plans to keep that heartbeat. |
 | The web server buffers a one-way stream, and the website sees changes late. | Medium | `flush_interval -1` and `server_stream_arrives_message_by_message`. |
+| Caddy removes or changes its experimental `timeouts` handler. | Medium | The image is pinned by digest, and a newer image must pass `stream_survives_upward_silence` and `other_routes_keep_the_default_limit` before it ships. |
 | The stand-in behaves unlike the real link. | Medium | It uses the same transport, path, protocol and full duplex. Sprint 3's link tests run the real client through the same rules, and check PB3 covers the loss of a peer. |
 
 **Verify:** `bash deploy/test/link-stream.sh --rules-only` and `bash deploy/test/link-stream.sh` on Linux with Docker, and once with `LGTM_STREAM_SOAK=1` before sprint 3. No device is needed.
@@ -437,23 +456,25 @@ Tests written first, in `deploy/test/link-stream.sh`:
 
 </details>
 
-<details><summary><b>Post-build checks from round 1</b></summary>
+<details><summary><b>Post-build checks from rounds 1 and 2</b></summary>
 
 Each check is named PB, for post-build, with a number. The checks run once the code exists.
 
 | Check | Scenario | Expected observation |
 |---|---|---|
-| PB1. Clean launch and the rollout driver's deadlines. | Stack and Server run `deploy/test/checks.sh --only C1,C2,C3,C4,C13` from a fresh clone with an empty Docker cache, then once more at `LGTM_WEB_PORT=18787`. They record how long C2's exit and the restarts of C4 and C13 take. (architect-r1 5, critic-r1 5) | Five passing lines each time. C2 exits within the driver's 20 seconds and each restart is healthy within its 60 seconds, because the database is already migrated. A longer time becomes a request to the driver's owner. |
-| PB2. Home in the browser. | Once a `WatchClients` handler serves its first snapshot, a person signs in at `http://localhost:18787/`. (critic-r1 2) | The Home screen appears, with `localhost:18787` at the foot of the sidebar. |
+| PB1. Clean launch and the rollout driver's deadlines. | Stack and Server run `deploy/test/checks.sh --only C1,C2,C3,C4,C13` from a fresh clone with an empty Docker cache, then once more at `LGTM_WEB_PORT=18787`. They record how long C2's exit and the restarts of C4 and C13 take, and how long each Compose recreation inside the driver takes. They repeat C2 while a test holds a lock on the sessions table for 30 seconds, inside the Server plan's two-minute budget for later prerequisites. (architect-r1 5, critic-r1 5, architect-r2 8) | Five passing lines each time. C2 exits within the driver's 20 seconds and each restart is healthy within its 60 seconds, because the database is already migrated. With the held lock, the server still commits revocation and refuses to listen, and the driver's result is recorded. A driver deadline shorter than the server's budget becomes request D4 to the driver's owner. |
+| PB2. Home and sign-out in the browser, at the Machines gate. | Once a `WatchClients` handler serves its first snapshot, in sprint 3 or earlier if the Server team serves an empty one, a person signs in at `http://localhost:18787/`, reloads, and signs out. (critic-r1 2, architect-r2 5, logic-r2 3) | The Home screen appears, with `localhost:18787` at the foot of the sidebar, and stays after the reload. After sign-out, the sign-in form returns, and a protected call with the old cookie returns `unauthenticated`. |
 | PB3. A stream that loses a peer. | During a long stand-in stream through the merged web image, the test stops the stand-in server, and in another run it kills the stand-in client. (architect-r1 8) | The client sees its stream end within 10 seconds of the server's stop. The stand-in server's request ends within 10 seconds of the client's death. Sprint 3 repeats this with the real link. |
-| PB4. Secrets on the host. | With a fixture password and a running fixture, read `ps` output during startup and sign-in, the image histories, the launcher's output and both services' logs. (threat-r1 2) | None contains the fixture password or the content of a credential file. |
-| PB5. The C4 replacement password at the size limit. | Run C4 with an original password of 4,096 bytes. (architect-r1 12, logic-r1 11) | The driver's replacement stays within the server's limit, or the driver's owner changes its generator. Request D2 in the result file asks for that. |
+| PB4. Secrets on the host. | After request D3 lands, run the driver and the launcher with a fixture password, with a wrapper for `jq` and `curl` first on the path that writes its own argument vector to a file. Read that file, the image histories, the launcher's output and both services' logs. (threat-r1 2, logic-r2 9, threat-r2 2) | None contains the fixture password or the content of a credential file. Reading the arguments where each program starts does not depend on the moment `ps` samples. |
+| PB5. The C4 replacement password at the size limit. | Run C3 and C4 with an original password of 4,096 bytes. (architect-r1 12, logic-r1 11, architect-r2 10) | C3's wrong password and C4's replacement each stay within the server's limit, or the driver's owner changes its generator. Request D2 in the result file asks for that. |
+| PB6. The loopback boundary on the supported engine. | On Docker Engine 28 or newer, a person starts the stack, then connects to the host's own network address at the web port from a second computer on the same network segment. They then sign in through a port forward with the same port number on both ends. (architect-r2 9, threat-r2 5) | The direct connection fails to connect. The forwarded sign-in succeeds. The report names the engine version. |
+| PB7. A stalled ordinary request. | On the merged website image, a test holds the body of a sign-in request unfinished, and meanwhile sends a normal sign-in. (threat-r2 6) | The normal sign-in succeeds. The stalled request ends after about 60 seconds without a cookie, while a link stream on `/lgtm.link.v1.LinkService/Open` stays open. |
 
 </details>
 
 <details><summary><b>Traceability (gate 4)</b></summary>
 
-Source universe: the brief's four work items, its three observations and its two points to settle (`.plans/plans/go-s2-stack-web/plan.md` as written on 2026-11-25, preserved in `scouting.md`); the task file's three specific demands (`.foundry/go-rewrite/tasks/plan-go-s2-stack-web.md`); the design's section "The compose stack"; issue 1633, points 1 to 4; the names in `deploy/test/README.md` that touch this plan; the sprint 1 plan's "Contract for sprint 2" and its checks PB4 and PB8; the Server plan's settings table and startup order; and the statements C1, C2, C3, C4, C9, C13, D1, D17 and R9 of the design.
+Source universe: the brief's four work items, its three observations and its two points to settle (`.plans/plans/go-s2-stack-web/plan.md` as written on 2026-11-25, preserved in `scouting.md`); the task file's three specific demands (`.foundry/go-rewrite/tasks/plan-go-s2-stack-web.md`); the design's section "The compose stack"; issue 1633, points 1 to 4; the names in `deploy/test/README.md` that touch this plan; the sprint 1 plan's "Contract for sprint 2" and its checks PB4 and PB8; the Server plan's settings table and startup order; and the statements C1, C2, C3, C4, C6, C9, C13, D1, D17 and R9 of the design.
 
 | Source item | Workstream | Status |
 |---|---|---|
@@ -462,10 +483,10 @@ Source universe: the brief's four work items, its three observations and its two
 | Brief item 3, the compose services, the settings file and the port variable | WS-2 | Item 4. |
 | Brief item 4, the one command and the sign-in part of the user-flow script | WS-2 | Items 5 and 6. |
 | Observation: one command starts the stack, and the website opens on port 8787 | WS-2 | Items 5 and 6, check C1. |
-| Observation: the owner signs in | WS-2 | Item 6, check C3 and criterion 2d; Home is PB2. |
+| Observation: the owner signs in | WS-2 | Check C3 as a joint gate and criterion 2d; Home and the browser's sign-out are PB2 (decisions row 34). |
 | Observation: loopback only unless a public address is set, which must be HTTPS | WS-2 | Item 4 publishes on `127.0.0.1` only. A public address is outside wave 1 (decisions row 27). |
 | Point 1: how a public HTTPS address is turned on, and where its certificate comes from | none | Outside wave 1, decisions row 27. |
-| Point 2: where encryption ends for the link | none | Wave 1 has no encryption on loopback. The choice is for the owner, decisions row 36. |
+| Point 2: where encryption ends for the link | none | Wave 1 has no encryption on loopback. The choice is for the owner, decisions row 36. The encrypted cases of the contract, Server and Machines plans move to the later proxy work, which request E1 asks of those plans (decisions row 41; architect-r2 6). |
 | Task: issue 1633, a check that the web server passes the long stream on before sprint 3 | WS-3 | Item 7, criteria 3a and 3b. |
 | Task: one command on a clean machine, and the website at the loopback address | WS-2 | Item 6 acceptance. |
 | Task: pin every image, and bind ports to loopback | WS-1, WS-2 | Items 1, 3 and 4; decisions rows 8 and 32. |
@@ -478,16 +499,18 @@ Source universe: the brief's four work items, its three observations and its two
 | Sprint 1 check PB8: the web launcher's hand-over | WS-2 | `up_until_vault_needs_no_web_settings`, `up_starts_everything_in_order`, `up_starts_no_server_before_the_vault`. |
 | Sprint 1 check PB4: the restart of the whole stack | WS-2 | Item 6, check C13. |
 | Server plan item 1, the settings table | WS-2 | `server_settings_are_named`. |
-| Server plan item 9, the startup order and the eight-minute wait | WS-2 | Item 4's health check and item 5's phase `server`. |
-| C1 | WS-2 | Items 5 and 6. |
-| C2 | WS-1, WS-2 | `server_image_refuses_without_password`, `password_follows_the_checks`, `up_stops_on_a_failed_server`, item 6. |
-| C3 | WS-1, WS-2 | `rules_keep_status_and_body`, `up_starts_everything_in_order`, item 6, criterion 2d. |
-| C4 | WS-2 | `password_follows_the_checks`, `up_password_removal_ends_sessions`, item 6. |
+| Server plan item 9, the startup order and the eight-minute wait | WS-2 | Item 4's health check, and item 5's phases `server` and `revoke`. |
+| Server plan check PB3, the maintenance call that removes the password | WS-2 | `deploy/up.sh --remove-password` and `up_remove_password_ends_sessions`. |
+| C1 | WS-2 | Item 5, and the joint gate. |
+| C2 | WS-1, WS-2 | `server_image_refuses_without_password`, `password_follows_the_checks`, `up_stops_on_a_failed_server`, and the joint gate. |
+| C3 | WS-1, WS-2 | `rules_keep_status_and_body`, `up_starts_everything_in_order`, the joint gate, and criterion 2d. |
+| C4 | WS-2 | `password_follows_the_checks`, `up_remove_password_ends_sessions`, and the joint gate. |
+| C6, the machine installer reaches the published port | none | The guide's "The port in other tools", and request P1 to `go-s3-stack-client` and D5 to the driver's owner (logic-r2 4). |
 | C9 | WS-3 | Item 7. |
-| C13 | WS-2 | Item 6. |
+| C13 | WS-2 | The joint gate. |
 | D1, three parts that meet only through the contract | WS-1 | Items 1 to 3. |
 | D17, no certificate needs a public authority | none | No certificate exists in wave 1 (decisions row 27). |
-| R9, secrets never reach a log or the website | WS-1, WS-2 | The allow-lists, the read-only mounts, no access log, the settings file's mode, and PB4. |
+| R9, secrets never reach a log or the website | WS-1, WS-2 | The allow-lists, the read-only mounts, no access log, the settings file's mode, the launcher's fixed settings line, `up_refuses_bad_settings`, and PB4. |
 
 </details>
 
@@ -511,17 +534,18 @@ Models come from the harness-sessions plugin's model sheet (its harness-session 
 
 | Unit | Work area | Scope | Complexity | Why this complexity | Attack pass | Depends on |
 |---|---|---|---|---|---|---|
-| 1. Server image | `infra` | `stack/infra` | low | One Dockerfile and its allow-list, in a known shape, with one test script. | no | Server item 9, for its build. |
+| 1. Server image | `infra` | `stack/infra` | low | One Dockerfile and its allow-list, in a known shape, with one test script. | no | The files of Server item 9 in the branch, for its build. |
 | 2. Web server rules | `infra` | `stack/infra` | medium | One short file that decides which requests reach the server, tested with a stub. | yes | Nothing. |
 | 3. Website image | `infra` | `stack/infra` | medium | A workspace build with an allow-list of thirteen paths. | no | Item 2. |
-| 4. Compose services, settings and fixtures | `infra` | `stack/infra` | medium | Two services in a set pattern, with credential mounts that sprint 1 defines, and the shared fixtures. | yes | Items 1 and 3, and `go-s1-stack-vault`. |
-| 5. Launcher | `infra` | `stack/infra` | medium | Three phases and their failure paths added to a launcher of fixed shape. | yes | Item 4, and Server item 9 for its tests of the real server. |
-| 6. Guide and sign-in checks | `infra` | `stack/infra` | low | A guide, and checks that already exist. | no | Items 4 and 5, and `go-s2-server-signin`. |
+| 4. Compose services, settings and fixtures | `infra` | `stack/infra` | medium | Two services in a set pattern, with credential mounts that sprint 1 defines, and the shared fixtures. | yes | The Dockerfiles of items 1 and 3, and `go-s1-stack-vault`. |
+| 5. Launcher | `infra` | `stack/infra` | medium | A settings check, five phases and a removal route added to a launcher of fixed shape. | yes | Item 4, and the files of Server item 9 in the branch for its tests of the real server. |
+| 6. Guide | `infra` | `stack/infra` | low | A guide whose lines item 5 prints. | no | Item 5. |
 | 7. Stream test | `infra` | `stack/infra` | medium | A small program and a timed test through a real proxy. | yes | Item 2 for `--rules-only`; items 3 and 4 for the full run. |
 
-Items 2 and 7 start at once. Item 3 follows item 2, and item 1 follows Server item 9.
-Item 4 follows items 1 and 3, item 5 follows item 4, and item 6 comes last.
-Item 7's full run follows items 3 and 4.
+Items 2 and 7 start at once. Item 3 follows item 2, and item 1 follows the files of Server item 9.
+Item 4 follows the Dockerfiles of items 1 and 3, item 5 follows item 4, and item 6 follows item 5.
+Item 7 merges after items 3 and 4, because its gate includes the full run.
+No item waits for an item of `go-s2-server-signin` to pass its gate. The orchestrator runs the joint gate C1 to C4 and C13 once the items of both plans are in the branch (architect-r2 1).
 
 Load: seven test writers and seven builders give 14 seats, and the mutation checks of items 1, 2, 3, 4, 5 and 7 add six, for 20 execution seats. Alternating the two primary vendors gives 10 seats to each. Every item is `infra` at low or medium, so no seat needs the strongest tier. The orchestrator reads each vendor's remaining weekly allowance at dispatch.
 
@@ -532,5 +556,6 @@ Load: seven test writers and seven builders give 14 seats, and the mutation chec
 | Round | New findings (B/M/m) | Outcome |
 |---|---|---|
 | 1 | 8 / 34 / 4 from four reviewers, 16 groups once duplicates are merged | Folded; see `attack/round-1-findings.md`. Public mode is cut to outside wave 1, the launcher no longer reads settings, and the stack keeps Caddy 2.11.9 with `read_body_idle 10m`. |
+| 2 | 1 / 21 / 6 from three reviewers, 17 groups once duplicates are merged | Folded; see `attack/round-2-findings.md`. The deployed checks are joint gates of the sprint, the password is removed by `deploy/up.sh --remove-password`, the launcher checks the settings files and the port, and the ten-minute limit covers the link's route only. |
 
 </details>
