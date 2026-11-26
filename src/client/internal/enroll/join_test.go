@@ -323,6 +323,7 @@ func TestJoinCommitVerifiedEnrollment(t *testing.T) {
 	pin := bytes.Repeat([]byte{0x44}, 32)
 	f2 := newFolder(t)
 	pinned := got
+	pinned.Address = "https://127.0.0.1:8787"
 	pinned.CertificateKeySHA256 = pin
 	if err := SaveServer(f2, pinned); err != nil {
 		t.Fatalf("SaveServer with a pin: %v", err)
@@ -364,6 +365,40 @@ func TestJoinCommitVerifiedEnrollment(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestEnrollmentRejectsCertificatePinWithPlainHTTP(t *testing.T) {
+	server := Server{
+		Address:              "http://127.0.0.1:8787",
+		MachineID:            fakeMachineID,
+		ClientPublicKey:      bytes.Repeat([]byte{0x07}, ed25519.PublicKeySize),
+		PublicKey:            serverKey.Public().(ed25519.PublicKey),
+		CertificateKeySHA256: bytes.Repeat([]byte{0x44}, sha256.Size),
+	}
+	t.Run("SaveServer", func(t *testing.T) {
+		f := newFolder(t)
+		if err := SaveServer(f, server); !errors.Is(err, ErrEnrollmentInvalid) {
+			t.Fatalf("SaveServer with a pin on plain HTTP gave %v, want ErrEnrollmentInvalid", err)
+		}
+	})
+	t.Run("LoadServer", func(t *testing.T) {
+		f := newFolder(t)
+		data, err := json.Marshal(map[string]any{
+			"version":              1,
+			"address":              server.Address,
+			"machineId":            server.MachineID,
+			"clientPublicKey":      base64.StdEncoding.EncodeToString(server.ClientPublicKey),
+			"serverPublicKey":      base64.StdEncoding.EncodeToString(server.PublicKey),
+			"certificateKeySHA256": base64.StdEncoding.EncodeToString(server.CertificateKeySHA256),
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		write(t, f, data, 0o600)
+		if _, err := LoadServer(f); !errors.Is(err, ErrEnrollmentInvalid) {
+			t.Fatalf("LoadServer with a pin on plain HTTP gave %v, want ErrEnrollmentInvalid", err)
+		}
+	})
 }
 
 func TestJoinReusesDurableKey(t *testing.T) {
