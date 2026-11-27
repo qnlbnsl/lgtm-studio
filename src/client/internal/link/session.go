@@ -35,7 +35,7 @@ type RunOutcome uint8
 const (
 	RunStopped RunOutcome = 1
 	RunRestart RunOutcome = 2
-	// RunRecoveryStop is a test writer stub for the terminal history outcome.
+	// RunRecoveryStop requires the owner to intervene before running again.
 	RunRecoveryStop RunOutcome = 3
 )
 
@@ -90,7 +90,7 @@ func Run(ctx context.Context, opts RunOptions) (RunOutcome, error) {
 		}
 		return stopForStore(logger, err)
 	}
-	if err := store.prepareRun(); err != nil {
+	if err := store.checkRunReceipts(); err != nil {
 		return stopForStore(logger, errors.Join(err, store.Close()))
 	}
 
@@ -99,14 +99,27 @@ func Run(ctx context.Context, opts RunOptions) (RunOutcome, error) {
 	r := clientRun{
 		ctx: ctx, cancel: cancel, opts: opts, logger: logger, store: store,
 		announcement: newRunIdentity(store.Next()),
-		reports:      newReporterWithContextAppend(opts.Settings, opts.Version, opts.ScanOptions, store.appendContext, logger, runReportProbes),
 	}
+	r.reports = newReporterWithContextAppend(opts.Settings, opts.Version, opts.ScanOptions, r.appendReport, logger, runReportProbes)
 	r.commands = newCommandHandler(store, r.reports.scanHarnesses, r.queueResult, nil, logger)
-	_ = supervise(ctx, r.attempt)
+	linkErr := supervise(ctx, r.attempt)
+	revisionStop := isRevisionRefusal(linkErr)
+	if revisionStop {
+		r.cancel()
+	}
 
 	outageErr := r.stopOutage()
-	_, _, scanErr := r.commands.settleScan(r.commands.stopScan())
+	completion := r.commands.stopScan()
+	recoveryErr := errors.Join(r.fault, outageErr)
+	var scanErr error
+	if !revisionStop && recoveryStoreCode(recoveryErr) == "" {
+		_, _, scanErr = r.commands.settleScan(completion)
+	}
 	closeErr := store.Close()
+	if revisionStop {
+		r.reportFailure(linkFailureCode(linkErr))
+		return RunRecoveryStop, nil
+	}
 	if err := errors.Join(r.fault, outageErr, scanErr, closeErr); err != nil {
 		return stopForStore(logger, err)
 	}
@@ -133,6 +146,7 @@ type clientRun struct {
 	endOutage   func() error
 	lastReason  string
 	sawApproval bool
+	prepared    bool
 	restart     bool
 	fault       error
 }
@@ -154,7 +168,9 @@ func (r *clientRun) attempt(ctx context.Context, welcomed func()) error {
 	}
 	s, err := openSession(ctx, client, r.opts.Server, r.opts.Credential, r.announcement)
 	if err != nil {
-		if r.ctx.Err() == nil {
+		if isRevisionRefusal(err) {
+			r.store.fenceWrites()
+		} else if r.ctx.Err() == nil {
 			r.reportFailure(linkFailureCode(err))
 		}
 		return err
@@ -171,7 +187,11 @@ func (r *clientRun) attempt(ctx context.Context, welcomed func()) error {
 	var local storeFault
 	switch {
 	case errors.As(err, &local):
-		r.stopLocal(local.err)
+		if r.fault == nil {
+			r.stopLocal(local.err)
+		}
+	case isRevisionRefusal(err):
+		// The supervisor returns the verified refusal to Run.
 	case restart:
 		r.restart = true
 		r.cancel()
@@ -191,8 +211,20 @@ func (r *clientRun) attempt(ctx context.Context, welcomed func()) error {
 }
 
 func (r *clientRun) stopLocal(err error) {
+	if recoveryStoreCode(err) != "" {
+		r.store.fenceWrites()
+	}
 	r.fault = err
 	r.cancel()
+}
+
+func (r *clientRun) appendReport(ctx context.Context, payload []byte) (uint64, error) {
+	number, err := r.store.appendContext(ctx, payload)
+	if errors.Is(err, ErrSequenceExhausted) && r.store.Len() != 0 {
+		// Keep pending reports queued until the last legal event drains.
+		return 0, ErrOutboxFull
+	}
+	return number, err
 }
 
 func (r *clientRun) captureFacts() error {
@@ -214,6 +246,9 @@ func (r *clientRun) startOutage() error {
 		defer ticks.Stop()
 		err := r.watchOutage(ctx, ticks.C)
 		if err != nil {
+			if recoveryStoreCode(err) != "" {
+				r.store.fenceWrites()
+			}
 			r.cancel()
 		}
 		done <- err
@@ -271,7 +306,7 @@ func (r *clientRun) reportFailure(code string) {
 	case "unknown_machine":
 		r.logger.Warn("link_refused", "code", code, "message", "Enroll this machine again.")
 	case "link_revision_mismatch", "invalid_welcome_revision":
-		r.logger.Warn("link_refused", "code", code, "message", "Upgrade the client to a compatible link revision.")
+		r.logger.Warn("link_refused", "code", code, "message", "Install a compatible client using the saved state.")
 	case "server_key_mismatch", "certificate_key_mismatch":
 		r.logger.Warn("link_refused", "code", code, "message", "Check the server key and enroll again if it changed.")
 	case "aborted":
@@ -319,21 +354,30 @@ type storeFault struct{ err error }
 
 func (storeFault) Error() string { return "link: client.db operation failed" }
 
-func stopForStore(logger *slog.Logger, err error) (RunOutcome, error) {
-	const recovery = "An owner must decide how to recover this machine's saved events before restarting."
+func recoveryStoreCode(err error) string {
 	switch {
-	case errors.Is(err, ErrSequenceExhausted):
-		logger.Error("link_stopped", "code", "sequence_exhausted", "message", recovery)
-		return RunStopped, nil
 	case errors.Is(err, ErrAckAhead):
-		logger.Error("link_stopped", "code", "impossible_ack", "message", recovery)
+		return "impossible_ack"
+	case errors.Is(err, ErrStoreDamaged), errors.Is(err, ErrStoreMissing):
+		return "store_failed"
+	default:
+		return ""
+	}
+}
+
+func stopForStore(logger *slog.Logger, err error) (RunOutcome, error) {
+	if code := recoveryStoreCode(err); code != "" {
+		logger.Error("link_stopped", "code", code, "message", "Restore the original client.db history or remove this machine and enroll again with fresh state.")
+		return RunRecoveryStop, nil
+	}
+	if errors.Is(err, ErrSequenceExhausted) {
+		logger.Error("link_stopped", "code", "sequence_exhausted", "message", "An owner must decide how to recover this machine's saved events before restarting.")
 		return RunStopped, nil
 	}
 
 	logger.Error("link_stopped", "code", "store_failed", "message", "Could not use client.db.")
 	// Keep the public store errors while dropping underlying paths and details.
-	for _, known := range []error{ErrStoreFailed, ErrStoreDamaged, ErrStoreUnsafe, ErrStoreMissing,
-		ErrStoreClosed, state.ErrStoreOpen, state.ErrFolderClosed} {
+	for _, known := range []error{ErrStoreFailed, ErrStoreUnsafe, ErrStoreClosed, state.ErrStoreOpen, state.ErrFolderClosed} {
 		if errors.Is(err, known) {
 			return RunStopped, fmt.Errorf("%s: %w", state.StoreFile, known)
 		}
@@ -394,6 +438,13 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 	timingMu.Unlock()
 
 	defer func() {
+		var local storeFault
+		recovering := errors.As(err, &local) && recoveryStoreCode(local.err) != ""
+		if recovering {
+			l.run.stopLocal(local.err)
+		} else if isRevisionRefusal(err) {
+			l.run.store.fenceWrites()
+		}
 		if l.ended.IsZero() {
 			l.ended = time.Now()
 		}
@@ -421,7 +472,9 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 		s.welcome.ConnectionToken = ""
 		select {
 		case reportErr := <-reportFailed:
-			err = storeFault{reportErr}
+			if !recovering && !isRevisionRefusal(err) {
+				err = storeFault{reportErr}
+			}
 		default:
 		}
 	}()
@@ -486,6 +539,12 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 	if err != nil {
 		return false, storeFault{err}
 	}
+	if !l.run.prepared {
+		if err := l.run.store.prepareRun(); err != nil {
+			return false, storeFault{err}
+		}
+		l.run.prepared = true
+	}
 	if ctx.Err() != nil {
 		return false, ctx.Err()
 	}
@@ -520,11 +579,6 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 	}
 
 	if l.approved() {
-		// Detect damage at the replay head before adding fresh reports.
-		preview := *l.replay
-		if _, err := preview.next(); err != nil {
-			return false, storeFault{err}
-		}
 		if err := freshReports(); err != nil {
 			return false, err
 		}

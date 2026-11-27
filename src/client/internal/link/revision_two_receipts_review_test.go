@@ -60,8 +60,8 @@ func TestRevisionTwoReceiptRunValidatesBeforeTransport(t *testing.T) {
 		cancel()
 		return nil, nil, errors.New("fixture transport unavailable")
 	}
-	if _, err := Run(ctx, f.opts); !errors.Is(err, ErrStoreDamaged) {
-		t.Error("Run did not report ErrStoreDamaged for the malformed receipt")
+	if outcome, err := Run(ctx, f.opts); outcome != RunRecoveryStop || err != nil {
+		t.Error("Run did not return RunRecoveryStop without an error for the malformed receipt")
 	}
 	if initializations != 0 {
 		t.Errorf("Run initialized transport %d times before reporting a damaged receipt, want zero", initializations)

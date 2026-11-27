@@ -77,8 +77,9 @@ func Run(ctx context.Context, opts Options) (status int) {
 		logger.Error("client_start_failed", "message", err.Error())
 		return 1
 	}
+	var outcome link.RunOutcome
 	defer func() {
-		if err := folder.Close(); err != nil {
+		if err := folder.Close(); err != nil && outcome != link.RunRecoveryStop {
 			logger.Error("client_stop_failed", "message", "Could not close the client state folder.")
 			status = 1
 		}
@@ -105,7 +106,7 @@ func Run(ctx context.Context, opts Options) (status int) {
 		return 1
 	}
 	logger.Info("client_starting", "state_dir", paths.Dir, "repositories_folder", settings.RepositoriesFolder)
-	outcome, err := runLink(ctx, link.RunOptions{
+	outcome, err = runLink(ctx, link.RunOptions{
 		Server: server, Credential: credential, Folder: folder, Settings: settings,
 		ScanOptions: harness.DefaultScanOptions(opts.Getenv), Version: opts.Version, Logger: logger,
 	})
@@ -113,7 +114,7 @@ func Run(ctx context.Context, opts Options) (status int) {
 		return 1
 	}
 	switch outcome {
-	case link.RunStopped:
+	case link.RunStopped, link.RunRecoveryStop:
 		return 0
 	case link.RunRestart:
 		logger.Info("link_restart_requested", "message", "The server requested a client restart.")

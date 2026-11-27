@@ -64,7 +64,13 @@ func TestRevisionTwoRunAnnouncement(t *testing.T) {
 			}
 
 			leg.refuse <- peerError(connect.CodeFailedPrecondition, refusalKey, "link_revision_mismatch")
-			f.stop(t, done, nil)
+			result := receiveNow(t, done, "the client did not return after the revision refusal")
+			if result.outcome != RunRecoveryStop || result.err != nil {
+				t.Error("the client did not return RunRecoveryStop without an error after the revision refusal")
+			}
+			if result.err != nil {
+				f.checkOutput(t, result.err.Error())
+			}
 			time.Sleep(15 * time.Second)
 			requireEmpty(t, f.peer.opens, "the client retried a signed revision refusal")
 			refusals := 0

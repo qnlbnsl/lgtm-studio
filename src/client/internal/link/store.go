@@ -42,6 +42,7 @@ type Store struct {
 	db      *bolt.DB
 	release func()
 	failed  error
+	fenced  bool
 	opts    StoreOptions
 	events  eventSnapshot
 	changed chan struct{}
@@ -327,7 +328,7 @@ func inspectBuckets(tx *bolt.Tx) (eventSnapshot, error) {
 		return eventSnapshot{}, ErrStoreDamaged
 	}
 	snapshot := eventSnapshot{next: binary.BigEndian.Uint64(next)}
-	if snapshot.next == 0 {
+	if snapshot.next == 0 || snapshot.next > math.MaxInt64+1 {
 		return eventSnapshot{}, ErrStoreDamaged
 	}
 	var previous uint64
@@ -349,6 +350,22 @@ func inspectBuckets(tx *bolt.Tx) (eventSnapshot, error) {
 		return eventSnapshot{}, ErrStoreDamaged
 	}
 	return snapshot, nil
+}
+
+// checkRunReceipts checks the saved envelopes before the first dial. Sealing
+// interrupted receipts waits for a Welcome that passes replay validation.
+func (s *Store) checkRunReceipts() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.db.View(func(tx *bolt.Tx) error {
+		return tx.Bucket(receiptsBucket).ForEach(func(key, data []byte) error {
+			r, _, valid := readReceipt(data, s.opts.MaxResultBytes)
+			if !validCommandID(string(key)) || !valid || r.watermark() >= s.events.next {
+				return ErrStoreDamaged
+			}
+			return nil
+		})
+	})
 }
 
 func storeOpenError(err error) error {
@@ -388,7 +405,16 @@ func (s *Store) update(fn func(*bolt.Tx) error) error {
 	return s.updateContext(context.Background(), fn)
 }
 
+func (s *Store) fenceWrites() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.fenced = true
+}
+
 func (s *Store) updateContext(ctx context.Context, fn func(*bolt.Tx) error) error {
+	if s.fenced {
+		return context.Canceled
+	}
 	var refused error
 	if err := commit(s.db, func(tx *bolt.Tx) error {
 		// The store lock is held. Check cancellation before admitting the write.

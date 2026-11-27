@@ -19,6 +19,11 @@ type streamEnd struct {
 
 func (e streamEnd) Unwrap() error { return e.error }
 
+func isRevisionRefusal(err error) bool {
+	var refusal terminalRefusal
+	return errors.As(err, &refusal) && refusal.Code == "link_revision_mismatch"
+}
+
 // supervise waits for an attempt to retire before starting another one.
 func supervise(ctx context.Context, attempt func(context.Context, func()) error) error {
 	delays := [...]time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 15 * time.Second}
@@ -36,6 +41,9 @@ func supervise(ctx context.Context, attempt func(context.Context, func()) error)
 		deadline.Stop()
 		cancel()
 
+		if isRevisionRefusal(err) {
+			return err
+		}
 		if ctx.Err() != nil {
 			break
 		}

@@ -227,6 +227,20 @@ func TestAppendRefusesWhenFull(t *testing.T) {
 			t.Fatal(err)
 		}
 		setNext(t, f2.Paths().Store, c.start)
+		if c.start > math.MaxInt64+1 {
+			before := readBytes(t, f2.Paths().Store)
+			opened, err := OpenStore(f2, StoreOptions{})
+			if opened != nil {
+				defer opened.Close()
+			}
+			if !errors.Is(err, ErrStoreDamaged) {
+				t.Fatalf("start %d: OpenStore gave %v, want ErrStoreDamaged", c.start, err)
+			}
+			if !bytes.Equal(before, readBytes(t, f2.Paths().Store)) {
+				t.Fatalf("start %d: OpenStore changed the damaged store", c.start)
+			}
+			continue
+		}
 		s2 = mustOpen(t, f2, StoreOptions{})
 		for i := 0; i < c.accepted; i++ {
 			if n, err := s2.Append([]byte("x")); err != nil || n != c.start+uint64(i) {

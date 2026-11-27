@@ -1,15 +1,20 @@
 package link
 
 import (
+	"bytes"
 	"errors"
 	"strings"
 	"unicode/utf8"
 
 	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1"
+	bolt "go.etcd.io/bbolt"
 	"google.golang.org/protobuf/proto"
 )
 
-const reportVersion byte = 1
+const (
+	reportVersion  byte = 1
+	eventWireLimit      = 48 << 10
+)
 
 var errInvalidReport = errors.New("link: invalid report")
 
@@ -21,29 +26,75 @@ type replay struct {
 }
 
 func newReplay(store *Store, through uint64) (*replay, error) {
+	if err := store.validateReplay(through); err != nil {
+		return nil, err
+	}
 	if err := store.Ack(through); err != nil {
 		return nil, err
 	}
 	return &replay{store: store, ceiling: through}, nil
 }
 
+func (s *Store) validateReplay(through uint64) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ready(); err != nil {
+		return err
+	}
+	floor := s.events.next - uint64(s.events.count)
+	if through >= s.events.next || through < floor-1 {
+		return ErrAckAhead
+	}
+	for first := through + 1; first < s.events.next; first += maxUnackedEvents {
+		if err := s.validateReplayBatch(first, maxUnackedEvents); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateReplayBatch checks consecutive rows while the store lock is held.
+func (s *Store) validateReplayBatch(first, limit uint64) error {
+	return s.db.View(func(tx *bolt.Tx) error {
+		cursor := tx.Bucket(eventsBucket).Cursor()
+		start := numberKey(first)
+		key, payload := cursor.Seek(start[:])
+		end := min(first+limit, s.events.next)
+		for number := first; number < end; number++ {
+			expected := numberKey(number)
+			if !bytes.Equal(key, expected[:]) {
+				return ErrStoreDamaged
+			}
+			if _, err := decodeNumberedReport(number, payload); err != nil {
+				return err
+			}
+			key, payload = cursor.Next()
+		}
+		return nil
+	})
+}
+
 func (r *replay) next() (*linkv1.Event, error) {
 	number := r.ceiling + 1
-	events, err := r.store.Read(number, 1)
-	if err != nil || len(events) == 0 {
+	rows, err := r.store.Read(number, 1)
+	if err == nil && len(rows) == 0 && number < r.store.Next() {
+		// The next number may have advanced since the read.
+		rows, err = r.store.Read(number, 1)
+		if err == nil && len(rows) == 0 {
+			return nil, ErrStoreDamaged
+		}
+	}
+	if err != nil || len(rows) == 0 {
 		return nil, err
 	}
-	event := events[0]
-	if event.Seq != number {
-		return nil, ErrAckAhead
+	if rows[0].Seq != number {
+		return nil, ErrStoreDamaged
 	}
-	report, err := decodeReport(event.Payload)
-	if err != nil {
-		return nil, err
+	event, err := decodeNumberedReport(number, rows[0].Payload)
+	if err == nil {
+		r.ceiling = number
 	}
-	report.Number = event.Seq
-	r.ceiling = event.Seq
-	return report, nil
+	return event, err
 }
 
 func (r *replay) ack(through uint64) error {
@@ -62,6 +113,18 @@ func encodeReport(event *linkv1.Event) ([]byte, error) {
 		return nil, errInvalidReport
 	}
 	return data, nil
+}
+
+func decodeNumberedReport(number uint64, data []byte) (*linkv1.Event, error) {
+	report, err := decodeReport(data)
+	if err != nil {
+		return nil, err
+	}
+	report.Number = number
+	if proto.Size(report) > eventWireLimit {
+		return nil, ErrStoreDamaged
+	}
+	return report, nil
 }
 
 func decodeReport(data []byte) (*linkv1.Event, error) {
