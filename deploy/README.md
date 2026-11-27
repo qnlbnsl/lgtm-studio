@@ -82,6 +82,72 @@ After startup it prints `postgres and openbao are healthy`. The next line
 starts with `the website is at` and gives the loopback address. Open that
 address in your browser and enter the configured password to sign in.
 
+## Installing the client
+
+Run `deploy/install-client.sh` from the repository root with the stack
+running on this computer. Use one account per computer.
+Run one installer at a time. Run it as the user who runs the coding agents.
+On Linux, that user needs a running systemd user manager.
+On macOS, run it from a logged-in desktop session.
+
+The installer needs `go`, `docker`, `curl`, and `jq` on your shell's search
+path. Use the same Docker Compose settings that you used to start the stack.
+The installer builds the client from this checkout. After a fresh install,
+approve the waiting machine on the Machines page. The page shows when the
+client comes online.
+
+The program is installed at `$HOME/.local/bin/lgtm-client`. The state folder
+defaults to `$HOME/.local/state/lgtm-client`. To use another folder, set
+`LGTM_CLIENT_STATE_DIR` to an absolute path on the first install.
+A later install uses the folder recorded in the installed service.
+Run the installer again to update the program. The installer restarts
+the service with the same machine identity. If a coding agent is installed
+in a new directory, add that directory to your shell's search path and run
+the installer again so the service can find it.
+
+### Linux service and logs
+
+The systemd user unit is installed at
+`$HOME/.config/systemd/user/lgtm-client.service` by default.
+If `XDG_CONFIG_HOME` is set, the unit is installed under that directory
+at `systemd/user/lgtm-client.service`.
+Read the client's output with `journalctl --user -u lgtm-client.service`.
+
+The client can reconnect after a reboot before you log in when lingering
+is enabled for its user and Docker starts at boot. Lingering lets the
+user's services start at boot. The installer reports an error if it cannot
+enable lingering, even though the client is installed.
+
+### macOS launch agent and logs
+
+The launch agent is installed at
+`$HOME/Library/LaunchAgents/dev.lgtmstudio.client.plist`.
+The agent starts the client when its user logs in.
+Read the client's output in `$HOME/Library/Logs/lgtm-client.log`.
+
+### Remove the client or join again
+
+Run `deploy/install-client.sh --remove` to stop the client and remove its
+program and service. This command keeps the state folder.
+
+Join again if the machine was removed on the Machines page, the published
+port changed, or a previous join did not finish.
+
+1. Run `deploy/install-client.sh --remove`.
+2. Remove the old machine on the Machines page if it is still listed.
+3. Move the state folder aside by hand. Keep the moved folder's private
+   permissions until you delete it, because it contains the machine's
+   private key.
+4. Run `deploy/install-client.sh` again. If you used a custom state folder,
+   set `LGTM_CLIENT_STATE_DIR` again when you install.
+
+### Join token access
+
+Anyone who can run a command inside the server's container can make a
+join token. The installer sends the token to the client on standard input.
+It passes a dash as the token argument. A manual join that supplies the
+token as an argument exposes it in the process list while the command runs.
+
 ## Change the password
 
 Edit `LGTM_WEB_PASSWORD` in `deploy/.env`. Run `unset LGTM_WEB_PASSWORD`
