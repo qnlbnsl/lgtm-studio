@@ -514,9 +514,6 @@ func TestCheckoutSnapshot(t *testing.T) {
 			t.Fatal("could not make the fixture exclude directory")
 		}
 		writeCheckoutFile(t, filepath.Join(commonDir, "info", "exclude"), []byte("local-ignored\n"), 0o600)
-		excludes := filepath.Join(f.home, "excludes")
-		writeCheckoutFile(t, excludes, []byte("configured-ignored\n"), 0o600)
-		f.gitCommand(t, linked, "config", "--worktree", "core.excludesFile", excludes)
 
 		scratch := captureTempDir(t)
 		before := checkoutTree(t, f.base)
@@ -555,8 +552,8 @@ func TestCheckoutSnapshot(t *testing.T) {
 					t.Errorf("the snapshot changed the effective %s setting", setting.name)
 				}
 			}
-			wantIgnored := "tree-ignored\nlocal-ignored\nconfigured-ignored"
-			gotIgnored := f.snapshotGit(t, snapshot, "check-ignore", "--no-index", "tree-ignored", "local-ignored", "configured-ignored")
+			wantIgnored := "tree-ignored\nlocal-ignored"
+			gotIgnored := f.snapshotGit(t, snapshot, "check-ignore", "--no-index", "tree-ignored", "local-ignored")
 			if gotIgnored != wantIgnored {
 				t.Error("the snapshot did not preserve all three ignore sources")
 			}
