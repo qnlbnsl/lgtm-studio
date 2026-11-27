@@ -17,11 +17,7 @@ import (
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/store"
 )
 
-var (
-	errRenameWaiting = store.NewDomainError("Approve this machine before you rename it.")
-	errNotOnline     = errors.New("This machine is not online.")
-	errNotConnected  = errors.New("This machine is not connected.")
-)
+var errRenameWaiting = store.NewDomainError("Approve this machine before you rename it.")
 
 // CreateClientToken issues a fresh join token for a machine that does not host the server.
 func (s *Service) CreateClientToken(ctx context.Context, req *connect.Request[lgtmv1.CreateClientTokenRequest]) (*connect.Response[lgtmv1.CreateClientTokenResponse], error) {
@@ -156,27 +152,6 @@ func (s *Service) enqueueStanding(ctx context.Context, tx *store.Tx, machine Mac
 	return s.commands.Enqueue(ctx, tx, machine.ID, command, time.Hour)
 }
 
-// ScanClientHarnesses refuses scans because the server has no online machines yet.
-func (s *Service) ScanClientHarnesses(ctx context.Context, req *connect.Request[lgtmv1.ScanClientHarnessesRequest]) (*connect.Response[lgtmv1.ScanClientHarnessesResponse], error) {
-	return nil, s.refuseOfflineCall(ctx, req.Msg.GetId(), errNotOnline)
-}
-
-// ReconnectClient refuses restarts because the server has no connected machines yet.
-func (s *Service) ReconnectClient(ctx context.Context, req *connect.Request[lgtmv1.ReconnectClientRequest]) (*connect.Response[lgtmv1.ReconnectClientResponse], error) {
-	return nil, s.refuseOfflineCall(ctx, req.Msg.GetId(), errNotConnected)
-}
-
-func (s *Service) refuseOfflineCall(ctx context.Context, id string, refusal error) error {
-	err := s.store.Read(ctx, func(ctx context.Context, tx *store.ReadTx) error {
-		_, err := s.registry.Get(ctx, tx, id)
-		return err
-	})
-	if err != nil {
-		return recordError(err)
-	}
-	return connect.NewError(connect.CodeFailedPrecondition, refusal)
-}
-
 func recordRequest(header http.Header, procedure string, fields ...string) store.Request {
 	key := header.Get(store.RequestKeyHeader)
 	if key == "" {
@@ -210,7 +185,7 @@ func recordError(err error) error {
 		return connect.NewError(connect.CodeNotFound, err)
 	case ErrNameTaken, store.ErrRequestKeyConflict:
 		return connect.NewError(connect.CodeAlreadyExists, err)
-	case ErrNotWaiting, errRenameWaiting, store.ErrRequestFingerprintUnavailable:
+	case ErrNotWaiting, errRenameWaiting, errNotOnline, errNotConnected, store.ErrRequestFingerprintUnavailable:
 		return connect.NewError(connect.CodeFailedPrecondition, err)
 	case ErrInvalidName, store.ErrInvalidRequestKey, store.ErrInvalidRequest:
 		return connect.NewError(connect.CodeInvalidArgument, err)
