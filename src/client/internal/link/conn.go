@@ -54,7 +54,7 @@ type session struct {
 	sentAt   time.Duration
 	sentAtOK bool
 
-	// receivedAt and receivedAtOK are stubs of the test writer.
+	// receivedAt is the elapsed time sampled when the Welcome arrives.
 	receivedAt   time.Duration
 	receivedAtOK bool
 
@@ -140,6 +140,8 @@ func openSession(ctx context.Context, client linkv1connect.LinkServiceClient, se
 		return nil, err
 	}
 	s.welcomedAt = time.Now()
+	receivedAt, clockErr := elapsedClock()
+	s.receivedAt, s.receivedAtOK = receivedAt, clockErr == nil
 	welcome := second.GetWelcome()
 	if err := validateWelcome(welcome); err != nil {
 		return nil, err

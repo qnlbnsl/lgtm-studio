@@ -132,7 +132,7 @@ func TestHelperStoreProcess(t *testing.T) {
 			}
 			fmt.Fprintf(effects, "%d\n", i)
 			effects.Sync()
-			if err := s.Finish(c.ID, []byte("ok")); err != nil {
+			if err := s.Finish(c.ID, []byte{byte(commandDone)}); err != nil {
 				fmt.Println("error:", err)
 				os.Exit(5)
 			}

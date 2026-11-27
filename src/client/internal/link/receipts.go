@@ -1,11 +1,13 @@
 package link
 
 import (
-	"encoding/base64"
 	"encoding/json"
+	"math"
 	"time"
 
 	bolt "go.etcd.io/bbolt"
+
+	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1"
 )
 
 // Command is what the store needs to know about a command from the server.
@@ -26,50 +28,169 @@ const (
 )
 
 const (
-	receiptStarted  = "started"
-	receiptFinished = "finished"
-	receiptAge      = 24 * time.Hour
+	receiptStarted     = "started"
+	receiptInterrupted = "interrupted"
+	receiptFinished    = "finished"
+	receiptAge         = 24 * time.Hour
 )
 
 type receipt struct {
-	Version   int             `json:"version"`
-	ExpiresAt time.Time       `json:"expires_at"`
-	State     string          `json:"state"`
-	Result    json.RawMessage `json:"result,omitempty"`
+	Version         int       `json:"version"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	State           string    `json:"state"`
+	Standing        bool      `json:"standing"`
+	LastEventNumber *uint64   `json:"last_event_number"`
+	Result          []byte    `json:"result,omitempty"`
+}
+
+type savedResult struct {
+	outcome         linkv1.CommandOutcome
+	lastEventNumber uint64
+}
+
+func (r savedResult) replayBytes(decision Decision) []byte {
+	if decision == DecisionReplay {
+		return []byte{byte(r.outcome)}
+	}
+	return nil
 }
 
 func readReceipt(data []byte, maxResult int) (receipt, []byte, bool) {
-	var r receipt
-	if err := json.Unmarshal(data, &r); err != nil || r.Version != 1 || r.ExpiresAt.IsZero() {
+	// Raw fields distinguish absence from explicit null in both formats.
+	var fields struct {
+		receipt
+		Standing        json.RawMessage `json:"standing"`
+		LastEventNumber json.RawMessage `json:"last_event_number"`
+		Result          json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(data, &fields); err != nil || fields.ExpiresAt.IsZero() {
 		return receipt{}, nil, false
 	}
+	r := fields.receipt
+	switch r.Version {
+	case 1:
+		if fields.Standing != nil || fields.LastEventNumber != nil || r.State == receiptInterrupted {
+			return receipt{}, nil, false
+		}
+	case 2:
+		switch string(fields.Standing) {
+		case "true":
+			r.Standing = true
+		case "false":
+		default:
+			return receipt{}, nil, false
+		}
+		if r.State == receiptStarted {
+			if string(fields.LastEventNumber) != "null" || r.Standing {
+				return receipt{}, nil, false
+			}
+		} else {
+			err := json.Unmarshal(fields.LastEventNumber, &r.LastEventNumber)
+			if err != nil || r.LastEventNumber == nil || *r.LastEventNumber > math.MaxInt64 {
+				return receipt{}, nil, false
+			}
+		}
+	default:
+		return receipt{}, nil, false
+	}
+
 	switch r.State {
-	case receiptStarted:
-		return r, nil, len(r.Result) == 0
+	case receiptStarted, receiptInterrupted:
+		return r, nil, fields.Result == nil && !r.Standing
 	case receiptFinished:
-		if len(r.Result) == 0 || r.Result[0] != '"' {
+		if len(fields.Result) == 0 || fields.Result[0] != '"' {
 			return receipt{}, nil, false
 		}
-		var encoded string
-		if err := json.Unmarshal(r.Result, &encoded); err != nil {
+		if err := json.Unmarshal(fields.Result, &r.Result); err != nil ||
+			len(r.Result) > maxResult || !validReceiptOutcome(r.Result) {
 			return receipt{}, nil, false
 		}
-		result, err := base64.StdEncoding.DecodeString(encoded)
-		return r, result, err == nil && len(result) <= maxResult
+		if r.Standing && linkv1.CommandOutcome(r.Result[0]) != outcomeDone {
+			return receipt{}, nil, false
+		}
+		return r, r.Result, true
 	default:
 		return receipt{}, nil, false
 	}
 }
 
-// Begin records a new command before returning DecisionRun.
-func (s *Store) Begin(c Command, now time.Time) (Decision, []byte, error) {
+func validReceiptOutcome(result []byte) bool {
+	return len(result) == 1 && result[0] >= byte(outcomeDone) && result[0] <= byte(outcomeInterrupted)
+}
+
+func (r receipt) watermark() uint64 {
+	if r.LastEventNumber != nil {
+		return *r.LastEventNumber
+	}
+	return 0
+}
+
+// prepareRun seals the starts left by the previous process before new appends.
+func (s *Store) prepareRun() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ready(); err != nil {
-		return 0, nil, err
+		return err
+	}
+	watermark := s.events.next - 1
+	if watermark > math.MaxInt64 {
+		return ErrStoreDamaged
+	}
+
+	type pendingReceipt struct {
+		key  string
+		data []byte
+	}
+	var pending []pendingReceipt
+	if err := s.db.View(func(tx *bolt.Tx) error {
+		return tx.Bucket(receiptsBucket).ForEach(func(key, data []byte) error {
+			r, _, valid := readReceipt(data, s.opts.MaxResultBytes)
+			if !validCommandID(string(key)) || !valid || r.watermark() > watermark {
+				return ErrStoreDamaged
+			}
+			if _, running := s.running[string(key)]; running || r.Version != 2 || r.State != receiptStarted {
+				return nil
+			}
+			r.State = receiptInterrupted
+			r.LastEventNumber = &watermark
+			sealed, err := json.Marshal(r)
+			if err != nil {
+				return ErrStoreDamaged
+			}
+			pending = append(pending, pendingReceipt{key: string(key), data: sealed})
+			return nil
+		})
+	}); err != nil {
+		return err
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+	return s.update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket(receiptsBucket)
+		for _, r := range pending {
+			if err := bucket.Put([]byte(r.key), r.data); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// Begin records a new command before returning DecisionRun.
+func (s *Store) Begin(c Command, now time.Time) (Decision, []byte, error) {
+	decision, result, err := s.begin(c, now)
+	return decision, result.replayBytes(decision), err
+}
+
+func (s *Store) begin(c Command, now time.Time) (Decision, savedResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ready(); err != nil {
+		return 0, savedResult{}, err
 	}
 	if !validReceiptCommand(c) || now.IsZero() {
-		return 0, nil, ErrInvalidCommand
+		return 0, savedResult{}, ErrInvalidCommand
 	}
 
 	decision, result, err := s.findReceipt(c.ID)
@@ -77,59 +198,80 @@ func (s *Store) Begin(c Command, now time.Time) (Decision, []byte, error) {
 		return decision, result, err
 	}
 	if !now.Before(c.ExpiresAt) {
-		return DecisionExpired, nil, nil
+		return DecisionExpired, savedResult{}, nil
 	}
 
-	data, err := json.Marshal(receipt{Version: 1, ExpiresAt: c.ExpiresAt.UTC(), State: receiptStarted})
+	data, err := json.Marshal(receipt{Version: 2, ExpiresAt: c.ExpiresAt.UTC(), State: receiptStarted})
 	if err != nil {
-		return 0, nil, ErrInvalidCommand
+		return 0, savedResult{}, ErrInvalidCommand
 	}
 	if err := s.update(func(tx *bolt.Tx) error {
 		return tx.Bucket(receiptsBucket).Put([]byte(c.ID), data)
 	}); err != nil {
-		return 0, nil, err
+		return 0, savedResult{}, err
 	}
 	s.running[c.ID] = c.ExpiresAt
-	return DecisionRun, nil, nil
+	return DecisionRun, savedResult{}, nil
 }
 
 // Decline records an expired command without reserving a start.
 func (s *Store) Decline(c Command, result []byte) (Decision, []byte, error) {
+	decision, saved, err := s.recordResult(c, result, false, time.Time{})
+	if decision == 0 && err == nil {
+		decision = DecisionExpired
+	}
+	return decision, saved.replayBytes(decision), err
+}
+
+// recordResult returns an existing decision or records a result without a start.
+func (s *Store) recordResult(c Command, result []byte, standing bool, pruneTime time.Time) (Decision, savedResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ready(); err != nil {
-		return 0, nil, err
+		return 0, savedResult{}, err
 	}
 	if !validReceiptCommand(c) {
-		return 0, nil, ErrInvalidCommand
+		return 0, savedResult{}, ErrInvalidCommand
 	}
 	decision, saved, err := s.findReceipt(c.ID)
 	if err != nil || decision != 0 {
 		return decision, saved, err
 	}
-	if err := s.writeFinishedReceipt(c.ID, c.ExpiresAt, result); err != nil {
-		return 0, nil, err
-	}
-	return DecisionExpired, nil, nil
+	saved, err = s.writeFinishedReceipt(c.ID, c.ExpiresAt, result, standing, pruneTime)
+	return 0, saved, err
 }
 
 // findReceipt looks up a receipt while the store lock is held.
-func (s *Store) findReceipt(id string) (Decision, []byte, error) {
+func (s *Store) findReceipt(id string) (Decision, savedResult, error) {
 	key := []byte(id)
 	var decision Decision
-	var result []byte
+	var result savedResult
 	err := s.db.View(func(tx *bolt.Tx) error {
 		bucket := tx.Bucket(receiptsBucket)
 		data := bucket.Get(key)
 		if data == nil && bucket.Bucket(key) == nil {
 			return nil
 		}
-		decision = DecisionInterrupted
-		if r, payload, valid := readReceipt(data, s.opts.MaxResultBytes); valid {
-			if r.State == receiptFinished {
-				decision, result = DecisionReplay, payload
-			} else if _, running := s.running[id]; running {
+		r, payload, valid := readReceipt(data, s.opts.MaxResultBytes)
+		if !valid || r.watermark() >= s.events.next {
+			return ErrStoreDamaged
+		}
+		switch r.State {
+		case receiptFinished:
+			decision = DecisionReplay
+			result = savedResult{outcome: linkv1.CommandOutcome(payload[0]), lastEventNumber: r.watermark()}
+		case receiptInterrupted:
+			decision = DecisionInterrupted
+			result = savedResult{outcome: outcomeInterrupted, lastEventNumber: r.watermark()}
+		case receiptStarted:
+			if _, running := s.running[id]; running {
 				decision = DecisionRunning
+			} else {
+				decision = DecisionInterrupted
+				if r.Version == 1 {
+					result.outcome = outcomeInterrupted
+				}
+				// An unsealed revision 2 start has no result to send until preparation.
 			}
 		}
 		return nil
@@ -137,51 +279,71 @@ func (s *Store) findReceipt(id string) (Decision, []byte, error) {
 	return decision, result, err
 }
 
-// Finish stores the command result and prunes expired finished receipts.
+// Finish stores the command result.
 func (s *Store) Finish(id string, result []byte) error {
+	_, err := s.finish(id, result, time.Time{})
+	return err
+}
+
+func (s *Store) finish(id string, result []byte, pruneTime time.Time) (savedResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ready(); err != nil {
-		return err
+		return savedResult{}, err
 	}
 	expires, running := s.running[id]
 	if !running {
-		return ErrNotRunning
+		return savedResult{}, ErrNotRunning
 	}
-	if err := s.writeFinishedReceipt(id, expires, result); err != nil {
-		return err
+	saved, err := s.writeFinishedReceipt(id, expires, result, false, pruneTime)
+	if err != nil {
+		return savedResult{}, err
 	}
 	delete(s.running, id)
-	return nil
+	return saved, nil
 }
 
 // writeFinishedReceipt saves and prunes receipts in one commit with the lock held.
-func (s *Store) writeFinishedReceipt(id string, expires time.Time, result []byte) error {
+func (s *Store) writeFinishedReceipt(id string, expires time.Time, result []byte, standing bool, pruneTime time.Time) (savedResult, error) {
 	if len(result) > s.opts.MaxResultBytes {
-		return ErrResultTooLarge
+		return savedResult{}, ErrResultTooLarge
 	}
-	encoded, err := json.Marshal(base64.StdEncoding.EncodeToString(result))
-	if err != nil {
-		return err
+	if !validReceiptOutcome(result) || (standing && linkv1.CommandOutcome(result[0]) != outcomeDone) {
+		return savedResult{}, ErrInvalidCommand
 	}
-	data, err := json.Marshal(receipt{Version: 1, ExpiresAt: expires.UTC(), State: receiptFinished, Result: encoded})
-	if err != nil {
-		return err
+	watermark := s.events.next - 1
+	if watermark > math.MaxInt64 {
+		return savedResult{}, ErrStoreDamaged
 	}
-	cutoff := wallClock().Add(-receiptAge)
-	return s.update(func(tx *bolt.Tx) error {
-		bucket := tx.Bucket(receiptsBucket)
-		if err := bucket.Put([]byte(id), data); err != nil {
-			return err
-		}
-		return pruneReceipts(bucket, cutoff, s.opts.MaxResultBytes)
+	data, err := json.Marshal(receipt{
+		Version: 2, ExpiresAt: expires.UTC(), State: receiptFinished,
+		Standing: standing, LastEventNumber: &watermark, Result: result,
 	})
+	if err != nil {
+		return savedResult{}, ErrInvalidCommand
+	}
+	if err := s.update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket(receiptsBucket)
+		if !pruneTime.IsZero() {
+			if err := pruneReceipts(bucket, pruneTime.Add(-receiptAge), s.opts.MaxResultBytes, watermark); err != nil {
+				return err
+			}
+		}
+		return bucket.Put([]byte(id), data)
+	}); err != nil {
+		return savedResult{}, err
+	}
+	return savedResult{outcome: linkv1.CommandOutcome(result[0]), lastEventNumber: watermark}, nil
 }
 
-func pruneReceipts(bucket *bolt.Bucket, cutoff time.Time, maxResult int) error {
+func pruneReceipts(bucket *bolt.Bucket, cutoff time.Time, maxResult int, watermark uint64) error {
 	var expired []string
 	err := bucket.ForEach(func(key, data []byte) error {
-		if r, _, valid := readReceipt(data, maxResult); valid && r.State == receiptFinished && r.ExpiresAt.Before(cutoff) {
+		r, _, valid := readReceipt(data, maxResult)
+		if !valid || r.watermark() > watermark {
+			return ErrStoreDamaged
+		}
+		if r.State == receiptFinished && !r.Standing && r.ExpiresAt.Before(cutoff) {
 			expired = append(expired, string(key))
 		}
 		return nil
@@ -220,6 +382,3 @@ func validCommandID(id string) bool {
 	}
 	return true
 }
-
-// prepareRun is a stub of the test writer.
-func (s *Store) prepareRun() error { return nil }

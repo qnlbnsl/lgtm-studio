@@ -26,23 +26,36 @@ var (
 	errCommandWhileWaiting = errors.New("link: received work while waiting for approval")
 )
 
-// serverClock bounds server time using the elapsed time since proof send.
+// serverClock bounds server time from samples around the verified exchange.
 type serverClock struct {
-	serverTime time.Time
-	proofTime  time.Duration
-	valid      bool
-	elapsed    func() (time.Duration, error)
+	serverTime   time.Time
+	proofTime    time.Duration
+	proofOK      bool
+	receivedTime time.Duration
+	receivedOK   bool
+	elapsed      func() (time.Duration, error)
 }
 
 func (c serverClock) upperBound() time.Time {
-	if !c.valid {
+	if !c.proofOK {
 		return time.Time{}
 	}
+	return c.advance(c.proofTime)
+}
+
+func (c serverClock) lowerBound() time.Time {
+	if !c.receivedOK {
+		return time.Time{}
+	}
+	return c.advance(c.receivedTime)
+}
+
+func (c serverClock) advance(sample time.Duration) time.Time {
 	now, err := c.elapsed()
-	if err != nil || now < c.proofTime {
+	if err != nil || now < sample {
 		return time.Time{}
 	}
-	return c.serverTime.Add(now - c.proofTime)
+	return c.serverTime.Add(now - sample)
 }
 
 func (c serverClock) canStart(admission, expiry time.Time) bool {
@@ -103,9 +116,14 @@ func (h *commandHandler) setSession(s *session) {
 		return
 	}
 	h.applyState(s.welcome.GetState())
-	if sample := s.welcome.GetServerTime(); s.sentAtOK && s.sentAt >= 0 && sample.IsValid() {
+	if sample := s.welcome.GetServerTime(); sample.IsValid() {
 		h.clock = serverClock{
-			serverTime: sample.AsTime(), proofTime: s.sentAt, valid: true, elapsed: h.elapsed,
+			serverTime:   sample.AsTime(),
+			proofTime:    s.sentAt,
+			proofOK:      s.sentAtOK && s.sentAt >= 0,
+			receivedTime: s.receivedAt,
+			receivedOK:   s.receivedAtOK && s.receivedAt >= 0,
+			elapsed:      h.elapsed,
 		}
 	}
 }
@@ -139,13 +157,20 @@ func (h *commandHandler) handle(ctx context.Context, msg *linkv1.Command) (resta
 		return false, errStream
 	}
 	attempt := commandAttempt{id: id, number: msg.GetAttempt(), session: h.current}
+	cmd := Command{ID: id, ExpiresAt: expiry.AsTime()}
 	if _, isSetState := msg.GetAction().(*linkv1.Command_SetState); isSetState {
 		state := msg.GetSetState().GetState()
 		if state.GetRevision() == 0 || !utf8.ValidString(state.GetName()) || strings.ContainsRune(state.GetName(), 0) {
 			return false, ErrInvalidCommand
 		}
-		h.applyState(state)
-		return false, h.reply(ctx, attempt, outcomeDone)
+		_, result, err := h.store.recordResult(cmd, []byte{byte(outcomeDone)}, true, h.clock.lowerBound())
+		if err != nil {
+			return false, err
+		}
+		if result.outcome == outcomeDone {
+			h.applyState(state)
+		}
+		return false, h.reply(ctx, attempt, result)
 	}
 	if h.state.GetApproval() != linkv1.Approval_APPROVAL_APPROVED {
 		return false, errCommandWhileWaiting
@@ -153,7 +178,6 @@ func (h *commandHandler) handle(ctx context.Context, msg *linkv1.Command) (resta
 
 	_, isScan := msg.GetAction().(*linkv1.Command_ScanHarnesses)
 	_, isRestart := msg.GetAction().(*linkv1.Command_Restart)
-	cmd := Command{ID: id, ExpiresAt: expiry.AsTime()}
 	clock := h.clock
 	admission := clock.upperBound()
 	if admission.IsZero() {
@@ -176,7 +200,7 @@ func (h *commandHandler) handle(ctx context.Context, msg *linkv1.Command) (resta
 			lookupTime = cmd.ExpiresAt
 		}
 	}
-	decision, saved, err := h.store.Begin(cmd, lookupTime)
+	decision, saved, err := h.store.begin(cmd, lookupTime)
 	if err != nil {
 		return false, err
 	}
@@ -184,19 +208,18 @@ func (h *commandHandler) handle(ctx context.Context, msg *linkv1.Command) (resta
 		if isScan && reserved == nil && admission.Before(cmd.ExpiresAt) {
 			return false, errScanBusy
 		}
-		decision, saved, err = h.store.Decline(cmd, []byte{byte(outcomeExpired)})
+		decision, saved, err = h.store.recordResult(cmd, []byte{byte(outcomeExpired)}, false, clock.lowerBound())
 		if err != nil {
 			return false, err
+		}
+		if decision == 0 {
+			return false, h.reply(ctx, attempt, saved)
 		}
 	}
 
 	switch decision {
-	case DecisionReplay:
-		return false, h.reply(ctx, attempt, savedOutcome(saved))
-	case DecisionInterrupted:
-		return false, h.reply(ctx, attempt, outcomeInterrupted)
-	case DecisionExpired:
-		return false, h.reply(ctx, attempt, outcomeExpired)
+	case DecisionReplay, DecisionInterrupted:
+		return false, h.reply(ctx, attempt, saved)
 	case DecisionRunning:
 		if scan := h.active; scan != nil && scan != reserved &&
 			scan.attempt.id == id && attempt.number >= scan.attempt.number {
@@ -218,13 +241,6 @@ func (h *commandHandler) handle(ctx context.Context, msg *linkv1.Command) (resta
 	default:
 		return false, ErrStoreDamaged
 	}
-}
-
-func savedOutcome(saved []byte) linkv1.CommandOutcome {
-	if len(saved) == 1 && saved[0] >= byte(outcomeDone) && saved[0] <= byte(outcomeInterrupted) {
-		return linkv1.CommandOutcome(saved[0])
-	}
-	return outcomeInterrupted
 }
 
 func (h *commandHandler) startScan(ctx context.Context, scan *activeScan, clock serverClock, admission, expiry time.Time) {
@@ -250,24 +266,25 @@ func (h *commandHandler) startScan(ctx context.Context, scan *activeScan, clock 
 func (h *commandHandler) completions() <-chan scanCompletion { return h.completed }
 
 func (h *commandHandler) finishScan(ctx context.Context, completion scanCompletion) error {
-	attempt, err := h.settleScan(completion)
+	attempt, result, err := h.settleScan(completion)
 	if err != nil {
 		return err
 	}
-	return h.reply(ctx, attempt, completion.outcome)
+	return h.reply(ctx, attempt, result)
 }
 
-func (h *commandHandler) settleScan(completion scanCompletion) (commandAttempt, error) {
+func (h *commandHandler) settleScan(completion scanCompletion) (commandAttempt, savedResult, error) {
 	if h.active == nil || completion.scan != h.active {
-		return commandAttempt{}, nil
+		return commandAttempt{}, savedResult{}, nil
 	}
 	h.active.cancel()
 	attempt := h.active.attempt
 	h.active = nil
 	if completion.err != nil {
-		return commandAttempt{}, completion.err
+		return commandAttempt{}, savedResult{}, completion.err
 	}
-	return attempt, h.store.Finish(attempt.id, []byte{byte(completion.outcome)})
+	result, err := h.store.finish(attempt.id, []byte{byte(completion.outcome)}, h.clock.lowerBound())
+	return attempt, result, err
 }
 
 // stopScan joins an active worker and leaves its result for the owner to settle.
@@ -281,33 +298,39 @@ func (h *commandHandler) stopScan() scanCompletion {
 
 func (h *commandHandler) restart(ctx context.Context, attempt commandAttempt) (bool, error) {
 	completion := h.stopScan()
-	scanAttempt, err := h.settleScan(completion)
+	scanAttempt, scanResult, err := h.settleScan(completion)
 	if err != nil {
 		return false, err
 	}
-	if err := h.store.Finish(attempt.id, []byte{byte(outcomeDone)}); err != nil {
+	result, err := h.store.finish(attempt.id, []byte{byte(outcomeDone)}, h.clock.lowerBound())
+	if err != nil {
 		return false, err
 	}
 
 	budget, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	_ = h.reply(budget, scanAttempt, completion.outcome)
-	_ = h.reply(budget, attempt, outcomeDone)
+	_ = h.reply(budget, scanAttempt, scanResult)
+	_ = h.reply(budget, attempt, result)
 	return true, nil
 }
 
 func (h *commandHandler) finishCommand(ctx context.Context, attempt commandAttempt, outcome linkv1.CommandOutcome) error {
-	if err := h.store.Finish(attempt.id, []byte{byte(outcome)}); err != nil {
+	result, err := h.store.finish(attempt.id, []byte{byte(outcome)}, h.clock.lowerBound())
+	if err != nil {
 		return err
 	}
-	return h.reply(ctx, attempt, outcome)
+	return h.reply(ctx, attempt, result)
 }
 
-func (h *commandHandler) reply(ctx context.Context, attempt commandAttempt, outcome linkv1.CommandOutcome) error {
+func (h *commandHandler) reply(ctx context.Context, attempt commandAttempt, result savedResult) error {
 	if attempt.session == nil || attempt.session != h.current {
 		return nil
 	}
+	if result.outcome == linkv1.CommandOutcome_COMMAND_OUTCOME_UNSPECIFIED {
+		return ErrStoreDamaged
+	}
 	return h.send(ctx, attempt.session, &linkv1.CommandResult{
-		CommandId: attempt.id, Attempt: attempt.number, Outcome: outcome,
+		CommandId: attempt.id, Attempt: attempt.number, Outcome: result.outcome,
+		LastEventNumber: result.lastEventNumber,
 	})
 }

@@ -75,7 +75,7 @@ var (
 // commit is the one way every application transaction writes the file. Tests replace it.
 var commit = func(db *bolt.DB, fn func(*bolt.Tx) error) error { return db.Update(fn) }
 
-// wallClock is the machine's clock, used for pruning. Tests replace it.
+// wallClock lets the receipt tests set a local time independently of the server's time.
 var wallClock = time.Now
 
 // createHook observes the four steps of store creation in the crash tests.

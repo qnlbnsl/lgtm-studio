@@ -38,7 +38,7 @@ func TestBeginRunsAndReplays(t *testing.T) {
 	if d, _, err := s.Begin(c, tNow); err != nil || d != DecisionRunning {
 		t.Fatalf("second Begin gave %v, %v", d, err)
 	}
-	result := []byte("the result \x00 with bytes")
+	result := []byte{byte(commandDone)}
 	if err := s.Finish(c.ID, result); err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestOnlyRunAndFinishWrite(t *testing.T) {
 	if count() != 1 {
 		t.Fatalf("a Begin that gave Expired made a commit")
 	}
-	if err := s.Finish(c.ID, []byte("r")); err != nil {
+	if err := s.Finish(c.ID, []byte{byte(commandDone)}); err != nil {
 		t.Fatal(err)
 	}
 	if count() != 2 {
@@ -212,7 +212,7 @@ func TestOnlyRunAndFinishWrite(t *testing.T) {
 
 func TestBeginRefusesExpiredAndBadInput(t *testing.T) {
 	f, _ := newState(t)
-	s := mustCreate(t, f, StoreOptions{MaxResultBytes: 8})
+	s := mustCreate(t, f, StoreOptions{MaxResultBytes: 1})
 	if d, _, err := s.Begin(Command{ID: uid(1), ExpiresAt: tNow.Add(-time.Second)}, tNow); err != nil || d != DecisionExpired {
 		t.Fatalf("an expired command gave %v, %v", d, err)
 	}
@@ -244,13 +244,13 @@ func TestBeginRefusesExpiredAndBadInput(t *testing.T) {
 		t.Error("Finish with an invalid id gave no error")
 	}
 	// Finish rules.
-	if err := s.Finish(uid(1), bytes.Repeat([]byte{'x'}, 9)); !errors.Is(err, ErrResultTooLarge) {
-		t.Errorf("a result of 9 bytes gave %v", err)
+	if err := s.Finish(uid(1), bytes.Repeat([]byte{'x'}, 2)); !errors.Is(err, ErrResultTooLarge) {
+		t.Errorf("a result of 2 bytes gave %v", err)
 	}
-	if err := s.Finish(uid(1), bytes.Repeat([]byte{'x'}, 8)); err != nil {
-		t.Errorf("a result of 8 bytes gave %v", err)
+	if err := s.Finish(uid(1), []byte{byte(commandDone)}); err != nil {
+		t.Errorf("a result of 1 byte gave %v", err)
 	}
-	if err := s.Finish(uid(1), []byte("again")); !errors.Is(err, ErrNotRunning) {
+	if err := s.Finish(uid(1), []byte{byte(commandFailed)}); !errors.Is(err, ErrNotRunning) {
 		t.Errorf("a second Finish gave %v", err)
 	}
 	if err := s.Finish(uid(77), nil); !errors.Is(err, ErrNotRunning) {
@@ -344,7 +344,7 @@ func TestFinishCommitErrorKeepsStoredState(t *testing.T) {
 	restore := swapCommit(func(db *bolt.DB, fn func(*bolt.Tx) error) error {
 		return errors.New("the commit failed")
 	})
-	err := s.Finish(c.ID, []byte("r"))
+	err := s.Finish(c.ID, []byte{byte(commandDone)})
 	restore()
 	if !errors.Is(err, ErrStoreFailed) {
 		t.Fatalf("Finish gave %v", err)

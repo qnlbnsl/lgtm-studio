@@ -88,6 +88,9 @@ func Run(ctx context.Context, opts RunOptions) (RunOutcome, error) {
 		}
 		return stopForStore(logger, err)
 	}
+	if err := store.prepareRun(); err != nil {
+		return stopForStore(logger, errors.Join(err, store.Close()))
+	}
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
@@ -100,7 +103,7 @@ func Run(ctx context.Context, opts RunOptions) (RunOutcome, error) {
 	_ = supervise(ctx, r.attempt)
 
 	outageErr := r.stopOutage()
-	_, scanErr := r.commands.settleScan(r.commands.stopScan())
+	_, _, scanErr := r.commands.settleScan(r.commands.stopScan())
 	closeErr := store.Close()
 	if err := errors.Join(r.fault, outageErr, scanErr, closeErr); err != nil {
 		return stopForStore(logger, err)
