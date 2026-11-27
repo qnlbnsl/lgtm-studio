@@ -48,6 +48,7 @@ The tab "Chat" exists only in the mode of the old engine, and this design does n
 | 2026-11-27 | A repository on a machine and the first agent are two sprints, not one. |
 | 2026-11-27 | The owner approved this design, and the four visible changes of sprint 4 that its section lists. |
 | 2026-11-27 | A machine whose saved event history is behind the server's shows the status "Out of sync" on the Machines page, with one line of reason in its opened row: "This machine's saved history is older than the server's." The page gives no instruction. The existing action "Remove machine" is the way out on the website. This is a fifth visible change of sprint 4. |
+| 2026-11-27 | The owner approved the seventeen refusal sentences that the contract of sprint 4 fixes, as the text that the "Add repository" dialog shows when the server refuses a folder. Each states what happened and gives no instruction. The list is in the plan `go-s4-web-repositories`, in the table of website text. |
 
 ## The sprints
 
