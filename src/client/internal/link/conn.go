@@ -54,6 +54,10 @@ type session struct {
 	sentAt   time.Duration
 	sentAtOK bool
 
+	// receivedAt and receivedAtOK are stubs of the test writer.
+	receivedAt   time.Duration
+	receivedAtOK bool
+
 	closeOnce sync.Once
 	closeErr  error
 }

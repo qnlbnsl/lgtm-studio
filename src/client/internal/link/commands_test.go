@@ -110,17 +110,24 @@ func requireContinues(t *testing.T, f *commandFixture, cmd *linkv1.Command) {
 	}
 }
 
-func requireCommandResult(t *testing.T, got *linkv1.CommandResult, cmd *linkv1.Command, outcome linkv1.CommandOutcome) {
+func requireCommandResult(t *testing.T, got *linkv1.CommandResult, cmd *linkv1.Command, outcome linkv1.CommandOutcome, watermark ...uint64) {
 	t.Helper()
 	want := &linkv1.CommandResult{CommandId: cmd.GetId(), Attempt: cmd.GetAttempt(), Outcome: outcome}
+	switch len(watermark) {
+	case 0:
+	case 1:
+		want.LastEventNumber = watermark[0]
+	default:
+		t.Fatal("a command result must have one expected watermark")
+	}
 	if !proto.Equal(got, want) {
-		t.Fatalf("command result id = %q, attempt = %d, outcome = %s; want id %q, attempt %d, outcome %s",
-			got.GetCommandId(), got.GetAttempt(), got.GetOutcome(), want.GetCommandId(), want.GetAttempt(), want.GetOutcome())
+		t.Fatalf("command result id = %q, attempt = %d, outcome = %s, watermark = %d; want id %q, attempt %d, outcome %s, watermark = %d",
+			got.GetCommandId(), got.GetAttempt(), got.GetOutcome(), got.GetLastEventNumber(), want.GetCommandId(), want.GetAttempt(), want.GetOutcome(), want.GetLastEventNumber())
 	}
 	fields, err := proto.Marshal(got)
 	wantFields, wantErr := proto.Marshal(want)
 	if err != nil || wantErr != nil || !bytes.Equal(fields, wantFields) {
-		t.Fatal("command result carried fields beyond the identifier, attempt and outcome")
+		t.Fatal("command result did not match the expected identifier, attempt, outcome and watermark on the wire")
 	}
 }
 
@@ -285,6 +292,7 @@ func TestCommandBusySlotWritesNoReceipt(t *testing.T) {
 			t.Fatal(err)
 		}
 		store = reopen(t, folder, store, StoreOptions{})
+		requireReceiptPreparation(t, store)
 		scan, starts, release := blockScan(t)
 		f := newCommandFixture(t, store, scan, nil, nil)
 		active := scanCommand(1, 1, future)
@@ -304,21 +312,34 @@ func TestCommandBusySlotWritesNoReceipt(t *testing.T) {
 			{replayed, commandDone},
 			{recovered, commandInterrupted},
 			{savedExpiry, commandExpired},
-			{stateCommand(5, past, 4, linkv1.Approval_APPROVAL_APPROVED, "updated"), commandDone},
 		} {
 			requireContinues(t, f, tc.cmd)
 			f.reply(t, tc.cmd, tc.outcome)
 		}
 		if writes != 0 {
-			t.Fatalf("replaying receipts or changing standing while busy wrote %d receipts", writes)
+			t.Fatalf("replaying ordinary receipts while busy wrote %d receipts", writes)
+		}
+
+		standing := stateCommand(5, past, 4, approvedApproval, "updated")
+		requireContinues(t, f, standing)
+		f.reply(t, standing, commandDone)
+		requireReceipt(t, store, receiptCommand(standing), DecisionReplay, []byte{byte(commandDone)})
+		if writes != 1 {
+			t.Errorf("the first expired standing notice used %d writes, want one", writes)
+		}
+		replayedStanding := attemptCommand(standing, 2)
+		requireContinues(t, f, replayedStanding)
+		f.reply(t, replayedStanding, commandDone)
+		if writes != 1 {
+			t.Error("replaying the expired standing notice wrote again")
 		}
 
 		newExpired := scanCommand(6, 1, past)
 		requireContinues(t, f, newExpired)
 		f.reply(t, newExpired, commandExpired)
 		requireReceipt(t, store, receiptCommand(newExpired), DecisionReplay, []byte{byte(commandExpired)})
-		if writes != 1 {
-			t.Fatalf("new expiry while busy performed %d writes, want 1", writes)
+		if writes != 2 {
+			t.Fatalf("new expiry while busy performed %d cumulative writes, want 2", writes)
 		}
 		busy := scanCommand(7, 1, future)
 		if restart, err := f.handler.handle(t.Context(), busy); restart || err == nil {
@@ -326,7 +347,7 @@ func TestCommandBusySlotWritesNoReceipt(t *testing.T) {
 		}
 		f.noReply(t)
 		requireReceipt(t, store, receiptCommand(busy), DecisionExpired, nil)
-		if writes != 1 {
+		if writes != 2 {
 			t.Fatal("runnable scan while busy wrote a receipt")
 		}
 		f.handler.setSession(nil)
@@ -576,6 +597,8 @@ func TestCommandRestartAndRecoveredReceipt(t *testing.T) {
 			t.Fatalf("seeding recovered start: %v, %v", d, err)
 		}
 		store = reopen(t, folder, store, StoreOptions{})
+		requireReceiptPreparation(t, store)
+		requireRevisionTwoReceipt(t, receiptOnDisk(t, store, recovered.GetId()), "interrupted", false, recovered.GetExpiresAt().AsTime(), 0, "")
 		scan, starts, _ := blockScan(t)
 
 		checkRestartSent := false
@@ -625,6 +648,7 @@ func TestCommandRestartAndRecoveredReceipt(t *testing.T) {
 			t.Fatalf("restart after dropped result: restart %v, send attempted %v, error %v", stop, checkRestartSent, err)
 		}
 		store = reopen(t, folder, store, StoreOptions{})
+		requireReceiptPreparation(t, store)
 		f = newCommandFixture(t, store, scan, nil, nil)
 		for _, tc := range []struct {
 			cmd     *linkv1.Command
@@ -673,7 +697,7 @@ func TestCommandStateAndUnknownAction(t *testing.T) {
 				if !proto.Equal(f.handler.standing(), changed.GetSetState().GetState()) {
 					t.Fatal("late update, older revision or identical revision left the wrong standing")
 				}
-				requireReceipt(t, store, receiptCommand(cmd), DecisionExpired, nil)
+				requireReceipt(t, store, receiptCommand(cmd), DecisionReplay, []byte{byte(commandDone)})
 			}
 			before := logs.String()
 			conflict := stateCommand(4, past, 4, approved, "conflicting")
@@ -682,7 +706,7 @@ func TestCommandStateAndUnknownAction(t *testing.T) {
 			if !proto.Equal(f.handler.standing(), changed.GetSetState().GetState()) || logs.String() == before {
 				t.Error("conflicting revision did not keep standing and log the conflict")
 			}
-			requireReceipt(t, store, receiptCommand(conflict), DecisionExpired, nil)
+			requireReceipt(t, store, receiptCommand(conflict), DecisionReplay, []byte{byte(commandDone)})
 
 			unknown := scanCommand(9, 1, tNow.Add(time.Minute))
 			unknown.Action = nil
@@ -727,6 +751,7 @@ func TestCommandStateAndUnknownAction(t *testing.T) {
 					t.Error("removal used a retired stream or an exit deadline")
 				}
 				requireCommandResult(t, msg.result, notice, commandDone)
+				requireReceipt(t, store, receiptCommand(notice), DecisionReplay, []byte{byte(commandDone)})
 			default:
 				t.Fatal("removal notice did not take the regular result path")
 			}
@@ -746,7 +771,7 @@ func TestCommandStateAndUnknownAction(t *testing.T) {
 			if got := <-finished; got.err != nil || got.restart {
 				t.Errorf("removal notice ended the stream: restart %v, error %v", got.restart, got.err)
 			}
-			requireReceipt(t, store, receiptCommand(notice), DecisionExpired, nil)
+			requireReceipt(t, store, receiptCommand(notice), DecisionReplay, []byte{byte(commandDone)})
 		})
 	})
 	t.Run("invalid commands", func(t *testing.T) {
@@ -846,6 +871,10 @@ func TestCommandScanRequiresDurableReport(t *testing.T) {
 					t.Fatal(err)
 				}
 				want := commandFailed
+				wantWatermark := uint64(1)
+				if scenario == "cancelled before commit" {
+					wantWatermark = 0
+				}
 				if scenario == "committed" {
 					want = commandDone
 					if event, _ := readReport(t, store, 1); event.GetHarnessesFound() == nil {
@@ -856,7 +885,11 @@ func TestCommandScanRequiresDurableReport(t *testing.T) {
 					(scenario == "full" || scenario == "overtaken") && store.Next() != 2 {
 					t.Error("refused scan acquired an outbox number")
 				}
-				f.reply(t, cmd, want)
+				reply := receiveNow(t, f.replies, "the scan did not send a result")
+				if reply.session != f.stream {
+					t.Fatal("the scan replied on the wrong stream")
+				}
+				requireCommandResult(t, reply.result, cmd, want, wantWatermark)
 				requireReceipt(t, store, receiptCommand(cmd), DecisionReplay, []byte{byte(want)})
 				if scenario == "full" {
 					if err := store.Ack(1); err != nil {
@@ -1030,11 +1063,11 @@ func TestDeclineDecisions(t *testing.T) {
 	}
 	putReceipts(t, folder.Paths().Store, map[string]string{
 		recovered.ID: receiptJSON(recovered.ExpiresAt, receiptStarted, nil),
-		malformed.ID: "{",
-		prunable.ID:  receiptJSON(prunable.ExpiresAt, receiptFinished, []byte("o")),
-		cutoff.ID:    receiptJSON(cutoff.ExpiresAt, receiptFinished, []byte("o")),
+		prunable.ID:  receiptJSON(prunable.ExpiresAt, receiptFinished, []byte{byte(commandDone)}),
+		cutoff.ID:    receiptJSON(cutoff.ExpiresAt, receiptFinished, []byte{byte(commandDone)}),
 	})
 	store = mustOpen(t, folder, opts)
+	requireReceiptPreparation(t, store)
 	running := cmdAt(5, time.Hour)
 	if d, _, err := store.Begin(running, tNow); d != DecisionRun || err != nil {
 		t.Fatalf("seeding running receipt: %v, %v", d, err)
@@ -1048,13 +1081,18 @@ func TestDeclineDecisions(t *testing.T) {
 	defer restore()
 	expired := cmdAt(6, -time.Minute)
 	expiredResult := []byte{byte(commandExpired)}
-	decision, _, err := store.Decline(expired, expiredResult)
-	if err != nil || decision != DecisionExpired || writes != 1 {
-		t.Fatalf("decline of new command: decision %v, writes %d, error %v", decision, writes, err)
+	f := newCommandFixture(t, store, nil, nil, nil)
+	setReceiptClock(f, tNow, 5*time.Second, 7*time.Second, true)
+	msg := scanCommand(6, 1, expired.ExpiresAt)
+	expired = receiptCommand(msg)
+	requireContinues(t, f, msg)
+	f.reply(t, msg, commandExpired)
+	if writes != 1 {
+		t.Fatalf("decline of new command used %d writes, want one", writes)
 	}
 	requireReceipt(t, store, expired, DecisionReplay, expiredResult)
 	requireReceipt(t, store, prunable, DecisionExpired, nil)
-	requireReceipt(t, store, cutoff, DecisionReplay, []byte("o"))
+	requireReceipt(t, store, cutoff, DecisionReplay, []byte{byte(commandDone)})
 	for _, tc := range []struct {
 		cmd  Command
 		want Decision
@@ -1063,7 +1101,6 @@ func TestDeclineDecisions(t *testing.T) {
 		{expired, DecisionReplay, expiredResult},
 		{running, DecisionRunning, nil},
 		{recovered, DecisionInterrupted, nil},
-		{malformed, DecisionInterrupted, nil},
 	} {
 		got, body, err := store.Decline(tc.cmd, []byte("x"))
 		if err != nil || got != tc.want || !bytes.Equal(body, tc.body) {
@@ -1086,7 +1123,24 @@ func TestDeclineDecisions(t *testing.T) {
 	if writes != 1 {
 		t.Errorf("existing and invalid declines performed %d additional writes", writes-1)
 	}
+	if err := store.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(receiptsBucket).Put([]byte(malformed.ID), []byte("{"))
+	}); err != nil {
+		t.Fatal("could not plant the malformed receipt")
+	}
+	if _, _, err := store.Decline(malformed, expiredResult); !errors.Is(err, ErrStoreDamaged) || writes != 1 {
+		t.Errorf("decline of a malformed receipt returned %v with %d total writes, want ErrStoreDamaged with no new write", err, writes)
+	}
+	if receiptOnDisk(t, store, malformed.ID) != "{" {
+		t.Error("decline rewrote the malformed receipt")
+	}
+	if err := store.db.Update(func(tx *bolt.Tx) error {
+		return tx.Bucket(receiptsBucket).Delete([]byte(malformed.ID))
+	}); err != nil {
+		t.Fatal("could not clear the malformed fixture before reopening")
+	}
 	store = reopen(t, folder, store, opts)
+	requireReceiptPreparation(t, store)
 	requireReceipt(t, store, expired, DecisionReplay, expiredResult)
 	requireReceipt(t, store, running, DecisionInterrupted, nil)
 }
@@ -1229,10 +1283,9 @@ func TestDeclineClockOffsets(t *testing.T) {
 		name        string
 		machineTime time.Time
 		serverTime  time.Time
-		expired     bool
 	}{
-		{"two hours fast at last retry", tNow.Add(25 * time.Hour), tNow.Add(23 * time.Hour), true},
-		{"thirty hours fast with an hour left", tNow.Add(29 * time.Hour), tNow.Add(-time.Hour), false},
+		{"two hours fast at last retry", tNow.Add(25 * time.Hour), tNow.Add(23 * time.Hour)},
+		{"thirty hours fast with an hour left", tNow.Add(29 * time.Hour), tNow.Add(-time.Hour)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			folder, _ := newState(t)
@@ -1241,33 +1294,32 @@ func TestDeclineClockOffsets(t *testing.T) {
 			now := tNow
 			wallClock = func() time.Time { return now }
 			defer func() { wallClock = oldClock }()
-			original := Command{ID: uid(1), ExpiresAt: tNow}
-			if d, _, err := store.Begin(original, tNow.Add(-2*time.Hour)); d != DecisionRun || err != nil {
-				t.Fatalf("original start: %v, %v", d, err)
+			payload := storedReport(t, replayFacts(tNow))
+			appendLinkFixture(t, store, payload)
+			original := scanCommand(1, 1, tNow)
+			original.Action = &linkv1.Command_Restart{Restart: &linkv1.Restart{}}
+			f := newCommandFixture(t, store, nil, nil, nil)
+			setReceiptClock(f, tNow.Add(-2*time.Hour), 5*time.Second, 7*time.Second, true)
+			if restart, err := f.handler.handle(t.Context(), original); err != nil || !restart {
+				t.Fatal("the original restart did not run")
 			}
-			if err := store.Finish(original.ID, []byte{byte(commandDone)}); err != nil {
-				t.Fatal(err)
-			}
+			requireReceiptReply(t, f, original, commandDone, 1)
+
 			now = tc.machineTime
-			later := Command{ID: uid(2), ExpiresAt: now.Add(time.Minute)}
-			if d, _, err := store.Begin(later, tc.serverTime); d != DecisionRun || err != nil {
-				t.Fatalf("start of pruning command: %v, %v", d, err)
+			store = reopen(t, folder, store, StoreOptions{})
+			requireReceiptPreparation(t, store)
+			appendLinkFixture(t, store, payload)
+			f = newCommandFixture(t, store, nil, nil, nil)
+			setReceiptClock(f, tc.serverTime, 5*time.Second, 7*time.Second, true)
+			later := scanCommand(2, 1, tc.serverTime.Add(-time.Minute))
+			requireContinues(t, f, later)
+			requireReceiptReply(t, f, later, commandExpired, 2)
+			if receiptOnDisk(t, store, original.GetId()) == "" {
+				t.Error("an unrelated receipt write pruned the first result by the fast local clock")
 			}
-			if err := store.Finish(later.ID, []byte{byte(commandDone)}); err != nil {
-				t.Fatal(err)
-			}
-			want := DecisionRun
-			if tc.expired {
-				want = DecisionExpired
-			}
-			if d, _, err := store.Begin(original, tc.serverTime); err != nil || d != want {
-				t.Fatalf("retry after early prune: %v, %v; want %v", d, err, want)
-			}
-			if tc.expired {
-				if d, _, err := store.Decline(original, []byte{byte(commandExpired)}); d != DecisionExpired || err != nil {
-					t.Fatalf("declining last retry after early prune: %v, %v", d, err)
-				}
-			}
+			retry := attemptCommand(original, 2)
+			requireContinues(t, f, retry)
+			requireReceiptReply(t, f, retry, commandDone, 1)
 		})
 	}
 }

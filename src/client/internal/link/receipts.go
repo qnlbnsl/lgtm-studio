@@ -220,3 +220,6 @@ func validCommandID(id string) bool {
 	}
 	return true
 }
+
+// prepareRun is a stub of the test writer.
+func (s *Store) prepareRun() error { return nil }

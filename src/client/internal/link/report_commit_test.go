@@ -35,14 +35,15 @@ func interceptScanAppend(t *testing.T, intercept func(*bolt.DB, func(*bolt.Tx) e
 
 func TestCommandScanCancellationAtReportCommit(t *testing.T) {
 	for _, tc := range []struct {
-		name         string
-		cancelBefore bool
-		wantOutcome  linkv1.CommandOutcome
-		wantNext     uint64
-		wantLength   int
+		name          string
+		cancelBefore  bool
+		wantOutcome   linkv1.CommandOutcome
+		wantNext      uint64
+		wantLength    int
+		wantWatermark uint64
 	}{
-		{name: "before write admission", cancelBefore: true, wantOutcome: commandFailed, wantNext: 1, wantLength: 0},
-		{name: "after successful commit", wantOutcome: commandDone, wantNext: 2, wantLength: 1},
+		{name: "before write admission", cancelBefore: true, wantOutcome: commandFailed, wantNext: 1, wantLength: 0, wantWatermark: 0},
+		{name: "after successful commit", wantOutcome: commandDone, wantNext: 2, wantLength: 1, wantWatermark: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -78,7 +79,11 @@ func TestCommandScanCancellationAtReportCommit(t *testing.T) {
 				if next, length := store.Next(), store.Len(); next != tc.wantNext || length != tc.wantLength {
 					t.Errorf("reopened outbox next = %d, length = %d. Want %d, %d", next, length, tc.wantNext, tc.wantLength)
 				}
-				f.reply(t, cmd, tc.wantOutcome)
+				reply := receiveNow(t, f.replies, "the scan did not send a result")
+				if reply.session != f.stream {
+					t.Fatal("the scan replied on the wrong stream")
+				}
+				requireCommandResult(t, reply.result, cmd, tc.wantOutcome, tc.wantWatermark)
 				requireReceipt(t, store, receiptCommand(cmd), DecisionReplay, []byte{byte(tc.wantOutcome)})
 				if tc.cancelBefore {
 					log.sequences(t)

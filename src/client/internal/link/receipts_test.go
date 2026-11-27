@@ -11,6 +11,8 @@ import (
 	"time"
 
 	bolt "go.etcd.io/bbolt"
+
+	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1"
 )
 
 func receiptJSON(expires time.Time, state string, result []byte) string {
@@ -67,89 +69,100 @@ func TestBeginWritesStartedBeforeReturn(t *testing.T) {
 	if d, _, err := s.Begin(c, tNow); err != nil || d != DecisionRun {
 		t.Fatalf("Begin gave %v, %v", d, err)
 	}
-	// The file is read while the store is still open, through a copy.
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	got := readReceipts(t, f.Paths().Store)
-	raw, ok := got[c.ID]
+	raw, ok := readReceipts(t, f.Paths().Store)[c.ID]
 	if !ok {
 		t.Fatal("no receipt was stored when Begin returned DecisionRun")
 	}
-	var v struct {
-		Version   int    `json:"version"`
-		ExpiresAt string `json:"expires_at"`
-		State     string `json:"state"`
-		Result    string `json:"result"`
+	var got map[string]json.RawMessage
+	if json.Unmarshal([]byte(raw), &got) != nil {
+		t.Fatal("the receipt is not valid JSON")
 	}
-	if err := json.Unmarshal([]byte(raw), &v); err != nil {
-		t.Fatalf("the receipt is not JSON: %v", err)
+	if string(got["version"]) != "2" || string(got["state"]) != `"started"` ||
+		string(got["standing"]) != "false" || string(got["last_event_number"]) != "null" || got["result"] != nil {
+		t.Error("the start did not store revision 2, nonstanding status and an explicit null watermark without a result")
 	}
-	if v.Version != 1 || v.State != "started" || v.Result != "" {
-		t.Fatalf("the receipt is %s", raw)
-	}
-	if exp, err := time.Parse(time.RFC3339, v.ExpiresAt); err != nil || !exp.Equal(c.ExpiresAt) || v.ExpiresAt[len(v.ExpiresAt)-1] != 'Z' {
-		t.Fatalf("expires_at is %q: %v", v.ExpiresAt, err)
+	if string(got["expires_at"]) != fmt.Sprintf("%q", c.ExpiresAt.UTC().Format(time.RFC3339)) {
+		t.Error("the start did not store the expiry in Coordinated Universal Time")
 	}
 }
 
 func TestStartedFromEarlierRunIsInterrupted(t *testing.T) {
-	f, _ := newState(t)
-	s := mustCreate(t, f, StoreOptions{})
-	started := cmdAt(1, time.Hour)
-	if d, _, _ := s.Begin(started, tNow); d != DecisionRun {
-		t.Fatalf("Begin gave %v", d)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	bigResult := bytes.Repeat([]byte{'r'}, 64*1024)
+	t.Run("recovered start", func(t *testing.T) {
+		folder, _ := newState(t)
+		store := mustCreate(t, folder, StoreOptions{})
+		expiry := tNow.Add(time.Hour)
+		started := scanCommand(1, 1, expiry)
+		if d, _, err := store.Begin(receiptCommand(started), tNow); err != nil || d != DecisionRun {
+			t.Fatalf("Begin gave %v, %v", d, err)
+		}
+		appendLinkFixture(t, store, storedReport(t, replayFacts(tNow)))
+		if err := store.Close(); err != nil {
+			t.Fatal(err)
+		}
+		legacy := scanCommand(2, 1, expiry)
+		legacyRaw := receiptJSON(expiry, "started", nil)
+		putReceipts(t, folder.Paths().Store, map[string]string{legacy.GetId(): legacyRaw})
+		store = mustOpen(t, folder, StoreOptions{})
+		requireReceiptPreparation(t, store)
+		fixture := newCommandFixture(t, store, nil, nil, nil)
+		for _, tc := range []struct {
+			cmd  *linkv1.Command
+			mark uint64
+		}{{started, 1}, {legacy, 0}} {
+			cmd := attemptCommand(tc.cmd, 2)
+			requireContinues(t, fixture, cmd)
+			requireReceiptReply(t, fixture, cmd, commandInterrupted, tc.mark)
+			if err := store.Finish(cmd.GetId(), []byte{byte(commandDone)}); !errors.Is(err, ErrNotRunning) {
+				t.Errorf("Finish of an interrupted command gave %v", err)
+			}
+		}
+		requireRevisionTwoReceipt(t, receiptOnDisk(t, store, started.GetId()), "interrupted", false, expiry, 1, "")
+		if receiptOnDisk(t, store, legacy.GetId()) != legacyRaw {
+			t.Error("the original revision 1 started receipt was rewritten")
+		}
+	})
+
 	exp := tNow.Add(time.Hour)
-	bad := map[string]string{
-		uid(10): `{`,
-		uid(11): fmt.Sprintf(`{"version":2,"expires_at":%q,"state":"started","result":""}`, exp.Format(time.RFC3339)),
-		uid(12): fmt.Sprintf(`{"version":1,"expires_at":%q,"state":"done","result":""}`, exp.Format(time.RFC3339)),
-		uid(13): `{"version":1,"expires_at":"0001-01-01T00:00:00Z","state":"started","result":""}`,
-		uid(14): receiptJSON(exp, "started", []byte("a result")),
-		uid(15): fmt.Sprintf(`{"version":1,"expires_at":%q,"state":"finished","result":"!!not base64!!"}`, exp.Format(time.RFC3339)),
-		uid(16): receiptJSON(exp, "finished", bigResult),
-		uid(17): `{"version":1,"state":"started","result":""}`,
-		uid(18): ``,
-	}
-	putReceipts(t, f.Paths().Store, bad)
-
-	// The clock is far ahead, so that a wrong pruner would remove every one of these receipts.
-	old := wallClock
-	wallClock = func() time.Time { return tNow.Add(10 * 365 * 24 * time.Hour) }
-	t.Cleanup(func() { wallClock = old })
-
-	s = mustOpen(t, f, StoreOptions{MaxResultBytes: 1024})
-	d, _, err := s.Begin(started, tNow)
-	if err != nil || d != DecisionInterrupted {
-		t.Fatalf("a started receipt of an earlier run gave %v, %v", d, err)
-	}
-	for id := range bad {
-		d, r, err := s.Begin(Command{ID: id, ExpiresAt: exp}, tNow)
-		if err != nil || d != DecisionInterrupted || len(r) != 0 {
-			t.Errorf("the invalid receipt %.12s gave %v, %q, %v", id, d, r, err)
-		}
-	}
-	// Finish is not allowed for a command that this process did not start.
-	if err := s.Finish(started.ID, []byte("late")); !errors.Is(err, ErrNotRunning) {
-		t.Errorf("Finish of an interrupted command gave %v", err)
-	}
-	// Interrupted is computed, so the stored value does not change.
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	stored := readReceipts(t, f.Paths().Store)
-	if stored[started.ID] != receiptJSON(started.ExpiresAt, "started", nil) && !bytes.Contains([]byte(stored[started.ID]), []byte(`"started"`)) {
-		t.Errorf("the started receipt was changed to %s", stored[started.ID])
-	}
-	for id, v := range bad {
-		if stored[id] != v {
-			t.Errorf("the invalid receipt %.12s was changed or removed", id)
-		}
+	bigResult := bytes.Repeat([]byte{'r'}, 64*1024)
+	for _, tc := range []struct {
+		name, raw string
+	}{
+		{"invalid JSON", `{`},
+		{"revision two start with a result", fmt.Sprintf(`{"version":2,"expires_at":%q,"state":"started","result":""}`, exp.Format(time.RFC3339))},
+		{"legacy unknown state", fmt.Sprintf(`{"version":1,"expires_at":%q,"state":"done","result":""}`, exp.Format(time.RFC3339))},
+		{"legacy zero expiry", `{"version":1,"expires_at":"0001-01-01T00:00:00Z","state":"started","result":""}`},
+		{"legacy unexpected result", receiptJSON(exp, "started", []byte("a result"))},
+		{"legacy invalid base64", fmt.Sprintf(`{"version":1,"expires_at":%q,"state":"finished","result":"!!not base64!!"}`, exp.Format(time.RFC3339))},
+		{"legacy oversized result", receiptJSON(exp, "finished", bigResult)},
+		{"legacy missing expiry", `{"version":1,"state":"started","result":""}`},
+		{"empty value", ``},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			folder, _ := newState(t)
+			opts := StoreOptions{MaxResultBytes: 1024}
+			store := mustCreate(t, folder, opts)
+			if err := store.Close(); err != nil {
+				t.Fatal(err)
+			}
+			id := scanCommand(1, 1, exp).GetId()
+			putReceipts(t, folder.Paths().Store, map[string]string{id: tc.raw})
+			store, err := OpenStore(folder, opts)
+			if err == nil {
+				err = store.prepareRun()
+				if closeErr := store.Close(); closeErr != nil {
+					t.Fatal(closeErr)
+				}
+			}
+			if !errors.Is(err, ErrStoreDamaged) {
+				t.Error("damaged metadata did not fault with ErrStoreDamaged")
+			}
+			if got, ok := readReceipts(t, folder.Paths().Store)[id]; !ok || got != tc.raw {
+				t.Error("the damaged receipt was changed or removed")
+			}
+		})
 	}
 }
 
@@ -246,60 +259,77 @@ func TestBeginRefusesExpiredAndBadInput(t *testing.T) {
 }
 
 func TestFinishPrunesByAge(t *testing.T) {
-	f, _ := newState(t)
-	s := mustCreate(t, f, StoreOptions{})
-	if err := s.Close(); err != nil {
+	folder, _ := newState(t)
+	store := mustCreate(t, folder, StoreOptions{})
+	if err := store.Close(); err != nil {
 		t.Fatal(err)
 	}
-	now := tNow
 	old := wallClock
-	wallClock = func() time.Time { return now }
+	wallClock = func() time.Time { return tNow.Add(365 * 24 * time.Hour) }
 	t.Cleanup(func() { wallClock = old })
-	fin := func(exp time.Time) string { return receiptJSON(exp, "finished", []byte("r")) }
+	finished := func(age time.Duration) string {
+		return receiptJSON(tNow.Add(-age), "finished", []byte{byte(commandDone)})
+	}
 	fixtures := map[string]string{
-		uid(1): fin(now.Add(-25 * time.Hour)),
-		uid(2): fin(now.Add(-23 * time.Hour)),
-		uid(3): fin(now.Add(-24 * time.Hour)),
-		uid(4): receiptJSON(now.Add(-48*time.Hour), "started", nil),
-		uid(5): fin(now.Add(-72 * time.Hour)),
-		uid(6): `{`,
+		uid(1): finished(25 * time.Hour),
+		uid(2): finished(23 * time.Hour),
+		uid(3): finished(24 * time.Hour),
+		uid(4): receiptJSON(tNow.Add(-48*time.Hour), "started", nil),
+		uid(5): finished(72 * time.Hour),
 	}
-	// A large number of receipts inside the day must all stay.
 	for i := 0; i < 2000; i++ {
-		fixtures[uid(1000+i)] = fin(now.Add(-time.Duration(i%1400) * time.Minute))
+		fixtures[uid(1000+i)] = finished(time.Duration(i%1400) * time.Minute)
 	}
-	putReceipts(t, f.Paths().Store, fixtures)
-	s = mustOpen(t, f, StoreOptions{})
-	c := cmdAt(5000, time.Hour)
-	if d, _, err := s.Begin(c, now); err != nil || d != DecisionRun {
-		t.Fatalf("Begin gave %v, %v", d, err)
+	putReceipts(t, folder.Paths().Store, fixtures)
+	store = mustOpen(t, folder, StoreOptions{})
+	requireReceiptPreparation(t, store)
+	f := newCommandFixture(t, store, nil, nil, nil)
+	write := func(n int) {
+		t.Helper()
+		cmd := scanCommand(n, 1, tNow.Add(2*365*24*time.Hour))
+		cmd.Action = &linkv1.Command_Restart{Restart: &linkv1.Restart{}}
+		if restart, err := f.handler.handle(t.Context(), cmd); err != nil || !restart {
+			t.Fatal("the receipt age trigger did not finish")
+		}
+		f.reply(t, cmd, commandDone)
+		requireReceipt(t, store, receiptCommand(cmd), DecisionReplay, []byte{byte(commandDone)})
 	}
-	if err := s.Finish(c.ID, []byte("ok")); err != nil {
-		t.Fatal(err)
+
+	setReceiptClock(f, tNow, 5*time.Second, 7*time.Second, false)
+	write(5000)
+	for id, raw := range fixtures {
+		if receiptOnDisk(t, store, id) != raw {
+			t.Error("a write before a trusted sample pruned or changed a receipt")
+			break
+		}
 	}
-	if err := s.Close(); err != nil {
-		t.Fatal(err)
-	}
-	stored := readReceipts(t, f.Paths().Store)
-	// The started receipt of 48 hours ago is valid, so it must still give Interrupted.
-	s = mustOpen(t, f, StoreOptions{})
-	if d, _, err := s.Begin(Command{ID: uid(4), ExpiresAt: now.Add(time.Hour)}, now); err != nil || d != DecisionInterrupted {
-		t.Errorf("the old started receipt gave %v, %v after the prune", d, err)
-	}
-	s.Close()
+
+	setReceiptClock(f, tNow, 5*time.Second, 7*time.Second, true)
+	write(5001)
 	for _, id := range []string{uid(1), uid(5)} {
-		if _, ok := stored[id]; ok {
-			t.Errorf("the finished receipt %.12s, over a day old, was kept", id)
+		if receiptOnDisk(t, store, id) != "" {
+			t.Error("the verified lower bound did not prune an ordinary receipt over a day old")
 		}
 	}
-	for _, id := range []string{uid(2), uid(3), uid(4), uid(6), c.ID} {
-		if _, ok := stored[id]; !ok {
-			t.Errorf("the receipt %.12s was removed", id)
+	for _, id := range []string{uid(2), uid(3), uid(4)} {
+		if receiptOnDisk(t, store, id) != fixtures[id] {
+			t.Error("pruning crossed the 24-hour equality boundary or removed the old started receipt")
 		}
 	}
+
+	f.elapsed.Add(int64(time.Second))
+	write(5002)
+	if receiptOnDisk(t, store, uid(3)) != "" {
+		t.Error("pruning did not advance with elapsed time after receipt of Welcome")
+	}
+	if receiptOnDisk(t, store, uid(4)) != fixtures[uid(4)] {
+		t.Error("pruning removed the old started receipt")
+	}
+	requireReceipt(t, store, Command{ID: uid(4), ExpiresAt: tNow.Add(time.Hour)}, DecisionInterrupted, nil)
 	for i := 0; i < 2000; i++ {
-		if _, ok := stored[uid(1000+i)]; !ok {
-			t.Fatalf("the receipt %d within a day was removed", i)
+		id := uid(1000 + i)
+		if receiptOnDisk(t, store, id) != fixtures[id] {
+			t.Fatalf("the receipt %d within a day was removed or changed", i)
 		}
 	}
 }
