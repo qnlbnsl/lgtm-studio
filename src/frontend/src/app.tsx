@@ -5,7 +5,7 @@ import * as liveGit from './live/git';
 import * as chat from './live/chat';
 // The application shell: sidebar, top bar, the project tab row, the lead panel, and routing.
 import { render, type ComponentChildren, type ComponentType } from 'preact';
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import {
   Icon, cx, clamp, store, update, useStore, useRoute, go, href, ago, useNow, useKey, useMedia, HOUR, plural, isMac, live, guardStore, engineWrite, refusal, refuse, swap, parseRoute,
 } from './lib';
@@ -15,7 +15,7 @@ import {
 } from './data';
 import * as act from './actions';
 import * as engine from './engine';
-import { Avatar, Menu, DialogHost, Toasts, Resizer, Thread, Composer, Tabs, Kbd, StateWord, canMessage, ReadOnlyBar, Empty, type TabItem } from './ui';
+import { Avatar, Menu, DialogHost, Toasts, Resizer, Thread, Composer, Tabs, Kbd, StateWord, canMessage, ReadOnlyBar, Empty, NotConnected, type TabItem } from './ui';
 import './dialogs';
 import { Home, AllProjects } from './screens/home';
 import { Board, SprintPage, TaskPage, TeamPage, AgentPage, RepoPage } from './screens/project';
@@ -132,7 +132,11 @@ function terminalHere(s: State, route: Route): { fixed: boolean; place: Project 
   return own ? { fixed: true, place: own } : { fixed: false, place: termPlace(s, s.ui.termPlace) };
 }
 const terminalShown = (s: State, route: Route): boolean => { const t = terminalHere(s, route); return !!s.prefs.termOpen && !!t.place; };
-function toggleTerminal(s: State, route: Route): void {
+function toggleTerminal(s: State, route: Route, toggleUnavailable: () => void): void {
+  if (s.server.repositoryMode) {
+    if (s.server.synced && s.session.status === 'in') toggleUnavailable();
+    return;
+  }
   const t = terminalHere(s, route);
   if (t.fixed || terminalShown(s, route)) act.setPref('termOpen', !s.prefs.termOpen);
   else act.openDialog({ type: 'terminal-where' });
@@ -158,8 +162,8 @@ function MockControls({ s }: { s: State }) {
 }
 // The pointer rests on the left edge for this long before the folded sidebar peeks, so a pass over the edge opens nothing.
 const PEEK_DWELL = 1500;
-interface SidebarProps { s: State; route: Route; onNavigate?: () => void; peek: boolean; setPeek: (on: boolean) => void }
-function Sidebar({ s, route, onNavigate, peek, setPeek }: SidebarProps) {
+interface SidebarProps { s: State; route: Route; onNavigate?: () => void; peek: boolean; setPeek: (on: boolean) => void; terminalOpen: boolean; onTerminal: () => void }
+function Sidebar({ s, route, onNavigate, peek, setPeek, terminalOpen, onTerminal }: SidebarProps) {
   const n = answerableRequests(s).length; const failedNotes = (s.notifications || []).filter((x) => x.delivery === 'failed').length;
   const is = (p: string) => route.path === p || route.path.startsWith(p + '/');
   const nav = (to: string, icon: string, label: string, extra?: ComponentChildren) => <a class="nav-item" href={href(to)} aria-current={is(to) ? 'page' : undefined}>
@@ -170,7 +174,7 @@ function Sidebar({ s, route, onNavigate, peek, setPeek }: SidebarProps) {
   const folded = s.prefs.sidebarFolded;
   const inSettings = ['settings', 'machines', 'harnesses', 'subscriptions', 'notifications', 'workflows'].includes(route.parts[0] || '');
   // The terminal sits with Home and the search, above the repositories.
-  const terminalItem = !live.on && <button type="button" class="nav-item" aria-pressed={terminalShown(s, route)} onClick={() => toggleTerminal(s, route)}>
+  const terminalItem = !live.on && <button type="button" class="nav-item" aria-pressed={terminalOpen} onClick={onTerminal}>
     <Icon name="square-terminal" size={15} />
     <span class="truncate">Terminal</span>
     <kbd style="margin-left:auto">Ctrl `</kbd>
@@ -238,7 +242,7 @@ function Sidebar({ s, route, onNavigate, peek, setPeek }: SidebarProps) {
       {!live.on && rail('/usage', 'gauge', 'Usage')}
       {live.on && rail('/notifications', 'smartphone', 'Notifications', failedNotes > 0)}
       {live.on ? rail('/settings', 'settings', 'Service settings') : <a class="icon-btn" href={href('/settings')} aria-label="Settings" data-tip="Settings" data-tip-side="right" aria-current={inSettings ? 'page' : undefined}><Icon name="settings" size={16} />{failedNotes > 0 && <i class="pip" />}</a>}
-      {!live.on && <button type="button" class="icon-btn" aria-label="Terminal" data-tip="Terminal" data-tip-side="right" aria-pressed={terminalShown(s, route)} onClick={() => toggleTerminal(s, route)}><Icon name="square-terminal" size={16} /></button>}
+      {!live.on && <button type="button" class="icon-btn" aria-label="Terminal" data-tip="Terminal" data-tip-side="right" aria-pressed={terminalOpen} onClick={onTerminal}><Icon name="square-terminal" size={16} /></button>}
     </div>
     <div class="side-top">
       {nav('/home', 'house', 'Home', n > 0 && <span class="count warn">{n}</span>)}
@@ -321,15 +325,19 @@ function Bell({ s }: { s: State }) {
 function Live({ s }: { s: State }) {
   const now = useNow(5000); const c = s.conn;
   const word = connectionWord(c);
+  const host = s.machines.find((m) => m.here);
+  const serviceOn = s.server.repositoryMode ? host?.name : (host || s.machines[0])?.name || 'this computer';
+  const connected = serviceOn ? `Connected to the service on ${serviceOn}.` : 'Connected to the service.';
+  const lastHeard = c.lastHeard ? `Last heard from the service ${ago(c.lastHeard, now)} ago.` : 'The service has not answered yet.';
   return <Menu class={cx('live', c.status)} align="end" width={280} label={'Connection: ' + word} trigger={<>
       <i class={cx('dot', c.status === 'live' ? 'working' : c.status === 'reconnecting' ? 'waiting' : 'failed')} />
       <span class="not-phone">{word}</span>
     </>} header={<div style="padding:8px 8px 6px;line-height:1.5">
       <b>{word}</b>
       <div class="muted" style="font-size:var(--text-sm)">
-        {c.notice || (c.status === 'live' ? `Connected to the service on ${(s.machines.find((m) => m.here) || s.machines[0])?.name || 'this computer'}.` : c.lastHeard ? `Last heard from the service ${ago(c.lastHeard, now)} ago. You can read, and changes wait until it is back.` : 'The service has not answered yet.')}
+        {c.notice || (c.status === 'live' ? connected : lastHeard + (c.lastHeard && !s.server.repositoryMode ? ' You can read, and changes wait until it is back.' : ''))}
       </div>
-    </div>} items={c.status === 'live' ? [{ label: 'Service settings', icon: 'settings', onSelect: () => go('/settings') }] : [{ label: 'Reconnect now', icon: 'refresh-cw', onSelect: () => { act.setConnection('live'); if (!live.on) act.toast('Connected'); } }]} />;
+    </div>} items={c.status === 'live' ? [{ label: 'Service settings', icon: 'settings', onSelect: () => go('/settings') }] : s.server.repositoryMode ? [] : [{ label: 'Reconnect now', icon: 'refresh-cw', onSelect: () => { act.setConnection('live'); if (!live.on) act.toast('Connected'); } }]} />;
 }
 function TopBar({ s, route, project, onMenu }: { s: State; route: Route; project: Project | null; onMenu: () => void }) {
   const crumbs: { to: string; label: ComponentChildren; cls?: string }[] = [];
@@ -594,24 +602,27 @@ function ProjectView({ s, route, project }: { s: State; route: Route; project: P
   </div>;
 }
 
-// A screen whose records the engine cannot give yet, in live mode. It never shows the sample.
-function NotConnected({ what }: { what: string }) {
-  return <div class="page"><Empty title={`${what} is not connected yet`}>The service does not send this to the website yet.</Empty></div>;
-}
-
 // ---- the app --------------------------------------------------------------------
 function App() {
   const s = useStore(); const route = useRoute();
+  const top = route.parts[0] || 'home';
   const compatibility = !live.on && !s.server.repositoryMode;
   // The mock has the Questions view, so a question's card opens there.
   questionsView.on = compatibility;
   const [drawer, setDrawer] = useState(false); const [peek, setPeek] = useState(false);
+  const [repositoryTerminal, setRepositoryTerminal] = useState(false);
+  const repositoryReady = s.server.repositoryMode && s.server.status === 'ready' && s.session.status === 'in' && s.server.synced;
+  useEffect(() => { if (!repositoryReady) setRepositoryTerminal(false); }, [repositoryReady]);
+  const onTerminal = () => toggleTerminal(store.state, parseRoute(), () => {
+    setRepositoryTerminal((open) => !open);
+    setDrawer(false);
+  });
   useKey((e) => {
     const mod = isMac ? e.metaKey : e.ctrlKey;
     if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); act.openDialog({ type: 'switcher' }); }
     if (mod && e.key.toLowerCase() === 'b') { e.preventDefault(); act.setPref('sidebarFolded', !store.state.prefs.sidebarFolded); }
     // Control and the backtick key open and close the terminal, on every keyboard, as in a code editor.
-    if (!live.on && !store.state.server.repositoryMode && e.ctrlKey && e.code === 'Backquote') { e.preventDefault(); toggleTerminal(store.state, parseRoute()); }
+    if (!live.on && e.ctrlKey && e.code === 'Backquote') { e.preventDefault(); onTerminal(); }
   }, []);
   useEffect(() => {
     if (!route.parts.length) go('/home');
@@ -624,7 +635,18 @@ function App() {
   useEffect(() => { if (route.parts[0] !== 'p' && (live.on || route.parts[0] !== 'r')) document.title = 'LGTM Studio'; }, [route.parts[0]]);
   // The live website opens Home once the engine says this browser is signed in.
   useEffect(() => { if (live.on && s.session.status === 'in' && (route.parts[0] === 'login' || s.session.firstRun && route.parts[0] !== 'setup')) go(s.session.firstRun ? '/setup' : '/home'); }, [s.session.status, s.session.firstRun, route.path]);
-  const top = route.parts[0] || 'home';
+  const setupHash = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    // Login normally opens Home. Keep the setup address when that sign-in completes.
+    if (s.server.repositoryMode && s.session.status !== 'in' && top === 'setup') {
+      setupHash.current = location.hash;
+      return;
+    }
+    if (s.server.repositoryMode && s.session.status === 'in' && top === 'setup' && setupHash.current && location.hash === '#/home') {
+      history.replaceState(history.state, '', setupHash.current);
+    }
+    setupHash.current = null;
+  }, [s.server.repositoryMode, s.session.status, route]);
   // A signed-in page reads the server's records before it shows a screen that needs them.
   useEffect(() => { if (!live.on && s.server.status === 'ready' && s.session.status === 'in' && !s.server.synced) server.ensureReading(); }, [s.server.status, s.session.status, s.server.synced]);
   // The website has no server until one answers at an address.
@@ -642,6 +664,7 @@ function App() {
       <Empty title={!s.conn.starting && s.conn.notice || 'Loading…'} />
     </div>
   </div>;
+  else if (top === 'setup' && s.server.repositoryMode) content = <div class="view-body"><NotConnected what="This page" /></div>;
   else if (top === 'p' && project) content = <ProjectView s={s} route={route} project={project} />;
   else if (top === 'p') content = <div class="view-body">
     <div class="page">
@@ -655,11 +678,11 @@ function App() {
   else if (top === 'r') content = !live.on ? <RepoView s={s} repoId={route.parts[1]!} route={route} /> : route.parts[2] === 'design' ? <RepoDesign s={s} repoId={route.parts[1]!} route={route} /> : <RepoPage s={s} repoId={route.parts[1]!} />;
   else if (top === 'projects') content = <AllProjects s={s} />;
   else if (!live.on && ['machines', 'subscriptions', 'harnesses', 'notifications', 'workflows'].includes(top)) content = <SettingsShell s={s} current={top === 'subscriptions' ? 'harnesses' : top}>
-    <div class="svc-page">{top === 'machines' ? <Machines s={s} /> : top === 'notifications' ? <Notifications s={s} /> : top === 'workflows' ? <Workflows s={s} /> : <Harnesses s={s} />}</div>
+    <div class="svc-page">{top === 'machines' ? <Machines s={s} /> : top === 'notifications' ? <Notifications s={s} /> : s.server.repositoryMode ? <NotConnected what="This page" /> : top === 'workflows' ? <Workflows s={s} /> : <Harnesses s={s} />}</div>
   </SettingsShell>;
   else if (top === 'machines') content = <Machines s={s} />;
   else if (top === 'subscriptions' || top === 'harnesses') content = <Harnesses s={s} />;
-  else if (top === 'usage' && !live.on) content = <Usage s={s} />;
+  else if (top === 'usage' && !live.on) content = s.server.repositoryMode ? <div class="view-body"><NotConnected what="This page" /></div> : <Usage s={s} />;
   else if (top === 'notifications') content = <Notifications s={s} />;
   else if (top === 'workflows') content = <Workflows s={s} />;
   else if (top === 'settings') content = <ServiceSettings s={s} route={route} />;
@@ -672,13 +695,14 @@ function App() {
   // Outside a project and a repository, the terminal opens under the page, in the place the owner chose.
   const loose = compatibility && !waiting && top !== 'p' && !terminalHere(s, route).fixed && terminalShown(s, route) ? terminalHere(s, route).place : null;
   if (loose) content = <div class="with-term"><div class="wt-view fill">{content}</div><TerminalPanel s={s} place={loose} /></div>;
+  if (repositoryReady && repositoryTerminal) content = <div class="with-term"><div class="wt-view fill">{content}</div><NotConnected what="The terminal" /></div>;
   // Focus hides the sidebar, the top bar, the tab row and the lead panel, so the board fills the window.
   const focus = s.ui.focus && (top === 'p' && ((route.parts[2] || homeTab()) === 'board' || route.parts[2] === 'design' && route.parts[3] === 'architecture') || top === 'r' && route.parts[2] === 'board');
   return <div class={cx('app', s.prefs.sidebarFolded && 'folded', s.prefs.sidebarFolded && peek && 'peek', drawer && 'drawer-open', focus && 'focus')} style={{ '--sidebar-w': s.prefs.sidebarWidth + 'px' }}>
     <button type="button" class="btn skip" onClick={() => { const m = document.querySelector<HTMLElement>('.view-body'); m?.setAttribute('tabindex', '-1'); m?.focus(); }}>
       Skip to content
     </button>
-    <Sidebar s={s} route={route} onNavigate={() => setDrawer(false)} peek={peek} setPeek={setPeek} />
+    <Sidebar s={s} route={route} onNavigate={() => setDrawer(false)} peek={peek} setPeek={setPeek} terminalOpen={s.server.repositoryMode ? repositoryTerminal : terminalShown(s, route)} onTerminal={onTerminal} />
     {drawer && <div class="drawer-scrim" onClick={() => setDrawer(false)} />}
     <div class="main"><TopBar s={s} route={route} project={project} onMenu={() => setDrawer(true)} />{content}</div>
     <DialogHost s={s} />

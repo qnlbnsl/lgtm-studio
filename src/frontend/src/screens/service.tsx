@@ -18,7 +18,7 @@ import * as act from '../actions';
 import * as board from '../live/board';
 import * as mocks from '../live/mocks';
 import * as server from '../server/sync';
-import { Avatar, Menu, Dialog, registerDialog, Empty, StateWord, CodeBox, SettingHelp } from '../ui';
+import { Avatar, Menu, Dialog, registerDialog, Empty, NotConnected, StateWord, CodeBox, SettingHelp } from '../ui';
 import type { ComponentChildren, ComponentType, TargetedEvent } from 'preact';
 import type { Agent, DialogState, Harness, HarnessRecipe, Id, Loose, Machine, Ms, Notification, Project, ProjectAssignment, Route, Settings, State, Subscription, Team } from '../types';
 import type { SignInCheck } from '../live/signin';
@@ -163,27 +163,40 @@ function Command({ text }: { text: string }) {
 }
 
 // ---- machines --------------------------------------------------------------------
+function reportedInstallations(m: Machine) {
+  // A watched harness without a version is not installed.
+  return Object.entries(m.harnesses ?? {}).filter(([, version]) => version !== null);
+}
+
 function MachineDetail({ s, m, now }: { s: State; m: Machine; now: Ms }) {
+  const repositoryMode = s.server.repositoryMode;
   const ags = machineAgents(s, m.id); const runningAgents = ags.filter(running);
   const details = s.machineDetails;
-  const repos = s.repos.filter((r) => r.folders[m.id]);
+  const folders = s.repos.flatMap((r) => {
+    if (repositoryMode) return (r.folderRecords ?? []).filter((f) => f.clientId === m.id)
+      .map((f) => ({ key: f.id, repo: r, path: f.resolvedPath }));
+    const path = r.folders[m.id];
+    return path ? [{ key: r.id, repo: r, path }] : [];
+  });
   const trees = s.projects.filter((p) => p.machine === m.id && !p.archived);
   const subs = s.subscriptions.filter((x) => x.machine === m.id);
   return <div class="svc-detail">
-    {m.status === 'offline' && <div class="callout warn" style="grid-column:1/-1">
+    {m.status === 'offline' && (!repositoryMode || m.lastSeen > 0) && <div class="callout warn" style="grid-column:1/-1">
       <Icon name="wifi-off" size={15} />
       <span class="grow">
         {m.name}
         {' stopped answering at '}
         {clock(m.lastSeen)}
-        {'. Its agents are paused, and they start again when it reconnects. On '}
-        {m.name}
-        {', run '}
-        <code>lgtm connect</code>
+        {!repositoryMode && <>
+          {'. Its agents are paused, and they start again when it reconnects. On '}
+          {m.name}
+          {', run '}
+          <code>lgtm connect</code>
+        </>}
         .
       </span>
     </div>}
-    {m.status === 'pairing' && <div class="callout info" style="grid-column:1/-1">
+    {!repositoryMode && m.status === 'pairing' && <div class="callout info" style="grid-column:1/-1">
       <Icon name="loader-circle" size={15} class="svc-spin" />
       <span class="grow">{m.name} is connected. LGTM Studio is scanning it for harnesses and repositories.</span>
     </div>}
@@ -197,12 +210,12 @@ function MachineDetail({ s, m, now }: { s: State; m: Machine; now: Ms }) {
         <dt>LGTM Studio</dt>
         <dd>
           {!live.on && m.version}
-          {!live.on && m.version !== s.settings.version ? <> <span class="warn-text">· older than the service ({s.settings.version})</span></> : ''}
+          {!live.on && !repositoryMode && m.version !== s.settings.version ? <> <span class="warn-text">· older than the service ({s.settings.version})</span></> : ''}
         </dd>
         {m.connectedFor && m.status === 'online' && <><dt>Connected</dt><dd>{ago(now - m.connectedFor!, now)}</dd></>}
         <dt>Agent limit</dt>
         <dd>
-          <Num id={'lim-' + m.id} value={live.on ? '' : m.slots.limit} min={1} max={64} unit="at once" onChange={(v) => update(() => { m.slots.limit = v; })} />
+          {repositoryMode ? <>{m.slots.limit} at once</> : <Num id={'lim-' + m.id} value={live.on ? '' : m.slots.limit} min={1} max={64} unit="at once" onChange={(v) => update(() => { m.slots.limit = v; })} />}
         </dd>
       </dl>
     </div>
@@ -213,6 +226,10 @@ function MachineDetail({ s, m, now }: { s: State; m: Machine; now: Ms }) {
         <Icon name={h.installed ? 'circle-check' : 'circle-alert'} size={14} />
         <b>{HARNESSES[h.id]?.name || h.id}</b>
         <span class="muted">{h.installed ? `Installed · ${h.signedIn} signed in` : 'Not installed'}</span>
+      </li>) : repositoryMode ? reportedInstallations(m).map(([h, version]) => <li key={h}>
+        <Icon name="circle-check" size={14} class="success-text" />
+        <b>{HARNESSES[h]?.name || h}</b>
+        <span class="muted">{version}</span>
       </li>) : Object.keys(HARNESSES).map((h) => { const v = m.harnesses?.[h]; const n = subs.filter((x) => x.harness === h && x.signedIn).length;
         return <>
           <li key={h}>
@@ -225,12 +242,12 @@ function MachineDetail({ s, m, now }: { s: State; m: Machine; now: Ms }) {
       </ul>
       <h3 style="margin-top:var(--space-4)">Repositories</h3>
       <ul class="svc-lines">
-        {repos.map((r) => <li key={r.id}>
+        {folders.map(({ key, repo, path }) => <li key={key}>
         <Icon name="folder-git-2" size={14} class="faint" />
-        <a class="link mono" href={href('/r/' + r.id)}>{r.name}</a>
-        <span class="mono muted truncate">{r.folders[m.id]}</span>
+        <a class="link mono" href={href('/r/' + repo.id)}>{repo.name}</a>
+        <span class="mono muted truncate" title={repositoryMode ? path : undefined}>{path}</span>
       </li>)}
-        {repos.length === 0 && <li class="muted">No repositories</li>}
+        {folders.length === 0 && <li class="muted">No repositories</li>}
       </ul>
       <button type="button" class="btn sm" style="margin-top:6px" disabled={m.status !== 'online'} onClick={() => act.openDialog({ type: 'add-repository', machine: m.id })}>
         <Icon name="plus" size={13} />
@@ -346,7 +363,7 @@ export function Machines({ s }: ScreenProps) {
             </td>
             <td class="mono muted c-wide">{live.on ? s.machineDetails?.port ?? '' : m.address}</td>
             <td class="c-wide">
-              {live.on ? (s.machineDetails?.harnesses || []).filter((h: Loose) => h.installed).map((h: Loose) => <span key={h.id} class="tag" style="margin-right:4px">{HARNESSES[h.id]?.name || h.id}</span>) : <>
+              {live.on ? (s.machineDetails?.harnesses || []).filter((h: Loose) => h.installed).map((h: Loose) => <span key={h.id} class="tag" style="margin-right:4px">{HARNESSES[h.id]?.name || h.id}</span>) : s.server.repositoryMode ? reportedInstallations(m).map(([h]) => <span key={h} class="tag" style="margin-right:4px">{HARNESSES[h]?.name || h}</span>) : <>
               {Object.keys(HARNESSES).map((h) => m.harnesses?.[h] ? <span key={h} class="tag" style="margin-right:4px">{HARNESSES[h]!.name}</span> : null)}
               {m.harnesses && !m.harnesses.codex && <span class="warn-text" style="font-size:var(--text-sm)">Codex missing</span>}
               {!m.harnesses && <span class="muted">Scanning…</span>}
@@ -363,7 +380,7 @@ export function Machines({ s }: ScreenProps) {
               <Menu class="icon-btn sm" label={'Actions for ' + m.name} align="end" width={230} trigger={<Icon name="ellipsis" size={15} />} items={[
                 { label: 'Rename', icon: 'pencil', onSelect: () => rename(m) },
                 { label: 'Scan harnesses again', icon: 'scan-search', disabled: off || live.on && mocks.busy('read-machines'), why: off ? `${m.name} is offline.` : null,
-                  onSelect: () => live.on ? mocks.loadMachines() : machineAction(server.captureSession(), (scope) => server.scanClientHarnesses(scope, m.id), () => act.toast(`Scanned ${m.name}. Nothing changed.`)) },
+                  onSelect: () => live.on ? mocks.loadMachines() : machineAction(server.captureSession(), (scope) => server.scanClientHarnesses(scope, m.id), s.server.repositoryMode ? undefined : () => act.toast(`Scanned ${m.name}. Nothing changed.`)) },
                 { label: 'Add repository', icon: 'folder-git-2', disabled: off, why: off ? `${m.name} is offline.` : null, onSelect: () => act.openDialog({ type: 'add-repository', machine: m.id }) },
                 off && { label: 'Try to reconnect', icon: 'refresh-cw', onSelect: () => { if (act.refused()) return; act.toast(`Calling ${m.name}…`); machineAction(server.captureSession(), (scope) => server.reconnectClient(scope, m.id)); } },
                 { sep: true },
@@ -1193,6 +1210,16 @@ function QuietForm({ s }: ScreenProps) {
 }
 
 export function Notifications({ s }: ScreenProps) {
+  if (s.server.repositoryMode) return <div class="view-body">
+    <div class="page">
+      <div class="page-head"><h1 class="page-title">Notifications</h1></div>
+      <Empty title="No notifications" icon="bell" />
+    </div>
+  </div>;
+  return <NotificationSettings s={s} />;
+}
+
+function NotificationSettings({ s }: ScreenProps) {
   useEffect(() => liveGit.openScreen('notifications'), []);
   const now = useNow(); const set = s.settings; const on = (!!set.ntfyServer && set.ntfyEnabled !== false) || !!set.email?.enabled;
   const list = s.notifications; const unread = list.filter((n) => !n.read).length; const failed = list.filter((n) => n.delivery === 'failed').length;
@@ -1674,8 +1701,10 @@ export function ServiceSettings({ s, route }: { s: State; route: Route }) {
   const cur = sections.find((x) => x[0] === want) || sections[0]!; const Body = cur[3];
   if (!live.on) return <SettingsShell s={s} current={cur[0]}>
     <div class="svc-pane" data-main>
-      <div class="page-head"><h1 class="page-title">{cur[1]}</h1><span class="sub">{cur[4]}</span><Saved s={s} /></div>
-      <Body key={cur[0]} s={s} />
+      {s.server.repositoryMode && cur[0] !== 'appearance' ? <NotConnected what="This page" /> : <>
+        <div class="page-head"><h1 class="page-title">{cur[1]}</h1><span class="sub">{cur[4]}</span><Saved s={s} /></div>
+        <Body key={cur[0]} s={s} />
+      </>}
     </div>
   </SettingsShell>;
   return <div class="view-body">

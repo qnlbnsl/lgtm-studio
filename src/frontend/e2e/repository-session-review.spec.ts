@@ -93,8 +93,8 @@ test('post-1b 4: the Codex row uses the first available watched version', async 
   const alternatives: Discovery[] = [];
   try {
     const cases = [
-      { first: '1.2.3', second: '9.8.7', expected: '1.2.3' },
-      { first: undefined, second: '9.8.7', expected: '9.8.7' },
+      { first: '1.2.3', second: '9.8.7' },
+      { first: undefined, second: '9.8.7' },
     ];
     for (const { first, second } of cases) {
       alternatives.push(await serveRepositoryDiscovery(web.origin, { services: [ProjectService.typeName] }, [
@@ -104,16 +104,26 @@ test('post-1b 4: the Codex row uses the first available watched version', async 
     }
     const trace = await observeWebsite(page, [web.origin, ...alternatives.map((server) => server.origin)]);
     await page.goto(web.origin + '/#/home');
-    for (const [index, { first, second, expected }] of cases.entries()) {
+    for (const [index, { first, second }] of cases.entries()) {
       await test.step(first ? 'Both workers report versions' : 'The first worker omits its version', async () => {
         const server = alternatives[index]!;
         await selectServer(page, server);
         expect(await page.evaluate(() => window.lgtm.store.state.machines.map(({ harnesses }) => harnesses?.codex)))
           .toEqual([first ?? null, second]);
-        await navigate(page, '/harnesses');
-        const codex = page.getByRole('region', { name: 'Codex', exact: true });
-        await expect(codex).toHaveCount(1);
-        await expect.soft(codex.getByText(/^Installed(?: · .+)?$/)).toHaveText(`Installed · ${expected}`);
+        await navigate(page, '/machines');
+        const detail = page.locator('.svc-detail');
+        const installed = detail.locator('h3:text-is("Harnesses") + ul').getByRole('listitem');
+        for (const [name, version] of [['First watched worker', first], ['Second watched worker', second]] as const) {
+          await page.getByRole('button', { name: `Show details for ${name}`, exact: true }).click();
+          await expect(detail.getByRole('heading', { name: 'Harnesses', exact: true })).toBeVisible();
+          await expect(installed).toHaveCount(version === undefined ? 0 : 1);
+          if (version !== undefined) {
+            await expect(installed.getByText('Codex', { exact: true })).toBeVisible();
+            await expect(installed.getByText(version, { exact: true })).toBeVisible();
+          }
+          await page.getByRole('button', { name: `Hide details for ${name}`, exact: true }).click();
+          await expect(detail).toHaveCount(0);
+        }
         if (index === 0) await leaveServer(page);
       });
     }

@@ -1170,6 +1170,9 @@ export function Back({ path, class: cls, or = null }: { path: string; class?: st
 export function Empty({ title, children, icon }: EmptyProps) {
   return <div class="empty" data-empty>{icon && <Icon name={icon} size={18} />}<strong>{title}</strong>{children != null && children !== false && <span>{children}</span>}</div>;
 }
+export function NotConnected({ what }: { what: string }) {
+  return <div class="page"><Empty title={`${what} is not connected yet`}>The service does not send this to the website yet.</Empty></div>;
+}
 export function StateWord({ status }: { status: Status }) { return <span class={cx(status.tone === 'warn' && 'warn-text', status.tone === 'error' && 'error-text', !status.tone && 'muted')} style={status.tone ? 'font-weight:var(--weight-medium)' : ''}>
   {status.word}
 </span>; }

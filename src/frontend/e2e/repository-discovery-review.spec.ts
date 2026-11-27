@@ -140,13 +140,13 @@ for (const timing of ['before switching', 'while discovery is held'] as const) {
       expect(server.calls).toEqual([{ path: procedure.discovery, signedIn: false }]);
     }
     await openWatchedWorkspace(page, server);
-    await navigate(page, '/harnesses');
-    await expect(page.getByRole('heading', { name: 'Harnesses', exact: true })).toBeVisible();
-    const installed = page.getByText(/^Installed(?: · .+)?$/);
+    await navigate(page, '/machines');
+    await page.getByRole('button', { name: 'Show details for Review worker', exact: true }).click();
+    const installed = page.locator('.svc-detail h3:text-is("Harnesses") + ul').getByRole('listitem');
     await expect(installed, 'Only the installation from the machine watch is displayed.')
-      .toHaveText([`Installed · ${watchedVersion}`]);
-    await expect(page.getByRole('region', { name: 'Codex', exact: true }).getByText(`Installed · ${watchedVersion}`, { exact: true }))
-      .toBeVisible();
+      .toHaveCount(1);
+    await expect(installed.getByText('Codex', { exact: true })).toBeVisible();
+    await expect(installed.getByText(watchedVersion, { exact: true })).toBeVisible();
     expect(trace.errors).toEqual([]);
   });
 }
