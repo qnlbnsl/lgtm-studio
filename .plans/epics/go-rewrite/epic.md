@@ -198,6 +198,10 @@ They stay red until phase 5 of the sprint that makes them pass.
 The script is `deploy/test/checks.sh`. It was written on 2026-11-26 from the design alone, and all 13 checks fail today, as intended.
 The Go tests of the link wait until sprint 0 has frozen the contract, because they cannot compile before the generated code exists.
 
+For sprint 4, the script `deploy/test/checks-s4.sh` was written on 2026-11-27 from the design and the contract alone. It holds the checks R1, R2, R4, R12 and R13, and the refusal of a client of revision 1 from R11, and all six fail today, as intended.
+The checks R3 and R5 to R10, and the second half of R11, need an interruption at an exact point. They are Go tests that run both programs in one process, and they are written when the contract of sprint 4 is built.
+R14 is a step that the owner performs on the deployed stack.
+
 ## What the teams must agree on
 
 The orchestrator compares the plans on these points at the end of phase 3.
