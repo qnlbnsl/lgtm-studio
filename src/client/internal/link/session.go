@@ -93,7 +93,8 @@ func Run(ctx context.Context, opts RunOptions) (RunOutcome, error) {
 	defer cancel()
 	r := clientRun{
 		ctx: ctx, cancel: cancel, opts: opts, logger: logger, store: store,
-		reports: newReporterWithContextAppend(opts.Settings, opts.Version, opts.ScanOptions, store.appendContext, logger, runReportProbes),
+		announcement: newRunIdentity(store.Next()),
+		reports:      newReporterWithContextAppend(opts.Settings, opts.Version, opts.ScanOptions, store.appendContext, logger, runReportProbes),
 	}
 	r.commands = newCommandHandler(store, r.reports.scanHarnesses, r.queueResult, nil, logger)
 	_ = supervise(ctx, r.attempt)
@@ -121,6 +122,8 @@ type clientRun struct {
 	reports  *reporter
 	commands *commandHandler
 
+	announcement runIdentity
+
 	live        *liveSession
 	endOutage   func() error
 	lastReason  string
@@ -144,8 +147,7 @@ func (r *clientRun) attempt(ctx context.Context, welcomed func()) error {
 		retire = sync.OnceFunc(retire)
 		defer retire()
 	}
-	// The test writer's stub supplies an empty process announcement.
-	s, err := openSession(ctx, client, r.opts.Server, r.opts.Credential, runIdentity{})
+	s, err := openSession(ctx, client, r.opts.Server, r.opts.Credential, r.announcement)
 	if err != nil {
 		if r.ctx.Err() == nil {
 			r.reportFailure(linkFailureCode(err))
@@ -537,7 +539,8 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 
 	busy, haveEvents := false, true
 	canSendEvent := func() bool {
-		return l.approved() && haveEvents && handedThrough-ackedThrough < maxUnackedEvents
+		retained := handedThrough+1 < l.run.announcement.firstEventNumber
+		return (l.approved() || retained) && haveEvents && handedThrough-ackedThrough < maxUnackedEvents
 	}
 	handle := func(reply streamReply) error {
 		if ctx.Err() != nil {

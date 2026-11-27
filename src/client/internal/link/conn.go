@@ -19,7 +19,7 @@ import (
 	"github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1/linkv1connect"
 )
 
-const linkRevision = 1
+const linkRevision = 2
 
 // handshakeTimeout caps each exchange of the handshake. The tests shorten it.
 var handshakeTimeout = 10 * time.Second
@@ -79,8 +79,7 @@ func (s *session) close() error {
 
 // openSession proves both ends on a new stream. Its client must be configured
 // with connect.WithReadMaxBytes(64 << 10) when it is constructed.
-// The test writer's stub accepts the process announcement without using it.
-func openSession(ctx context.Context, client linkv1connect.LinkServiceClient, server enroll.Server, credential *enroll.Credential, _ runIdentity) (_ *session, err error) {
+func openSession(ctx context.Context, client linkv1connect.LinkServiceClient, server enroll.Server, credential *enroll.Credential, announcement runIdentity) (_ *session, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -107,6 +106,7 @@ func openSession(ctx context.Context, client linkv1connect.LinkServiceClient, se
 	rand.Read(machineNonce[:])
 	hello := &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Hello{Hello: &linkv1.Hello{
 		MachineId: server.MachineID, MachineNonce: machineNonce[:], LinkRevision: linkRevision,
+		RunId: announcement.id, FirstEventNumber: announcement.firstEventNumber,
 	}}}
 	first, err := s.exchange(streamCtx, hello, false)
 	if err != nil {
