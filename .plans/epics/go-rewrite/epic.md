@@ -154,9 +154,9 @@ The work items are listed in the brief of each plan.
 | 6 | go-s2-stack-web | The images of the server and the website, and one command that starts everything. | linked | 9a4dacf4 |
 | 7 | go-s3-server-machines | The machine registry, join tokens, and the Machines page's calls that need no stream: a machine can join, wait, be approved and be listed. | linked | aa633e16 |
 | 8 | go-s3-client-link | The `join` and `run` commands, and the client end of the link. | linked | ff36e948 |
-| 9 | go-s3-stack-client | The installer of the client, and the server's own command that makes a join token. | linked | |
+| 9 | go-s3-stack-client | The installer of the client, and the server's own command that makes a join token. | linked | a82e6e16 |
 | 10 | go-s3-server-stream | The server end of the link: admission of a stream, presence, and the events a machine sends. Written on 2026-11-26 against the built code of plans 5 and 7 and the frozen link. | linked | 2b615a11 |
-| 11 | go-s3-server-commands | Stored commands and the calls of the Machines page that send one. Written on 2026-11-26 against plan 10 and the frozen link. | linked | |
+| 11 | go-s3-server-commands | Stored commands and the calls of the Machines page that send one. Written on 2026-11-26 against plan 10 and the frozen link. | linked | 02f9aab0 |
 
 `planned` — named slice, no `.plans/plans/<slug>/plan.md` yet.
 `linked` — that plan exists and its `epic:` is this slug.
