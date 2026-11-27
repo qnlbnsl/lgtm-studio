@@ -155,31 +155,46 @@ func TestLinkSeamsReachTheService(t *testing.T) {
 			storetest.Receive(t, "AfterAdmission reaching the fixture", admissions) != machine.ID {
 			t.Fatal("A handshake seam reported a different machine.")
 		}
+		type answer struct {
+			frame *linkv1.OpenResponse
+			err   error
+		}
+		receiveEventReply := func() answer {
+			for {
+				frame, err := stream.Receive()
+				command := frame.GetCommand()
+				if err != nil || command == nil || command.GetSetState().GetState() == nil {
+					return answer{frame: frame, err: err}
+				}
+				// Welcome already gave the fixture its approval state.
+				result := &linkv1.CommandResult{
+					CommandId: command.GetId(),
+					Attempt:   command.GetAttempt(),
+					Outcome:   linkv1.CommandOutcome_COMMAND_OUTCOME_DONE,
+				}
+				if err := stream.Send(&linkv1.OpenRequest{Kind: &linkv1.OpenRequest_CommandResult{CommandResult: result}}); err != nil {
+					return answer{frame: frame, err: err}
+				}
+			}
+		}
 		if mark == 2 {
 			repeat := &linkv1.Event{Number: 1,
 				Report: &linkv1.Event_Facts{Facts: &linkv1.Facts{Os: "Replay sentinel", Cores: 1}}}
 			if err := stream.Send(&linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Event{Event: repeat}}); err != nil {
 				t.Fatal("The fixture could not replay the report that committed before the cut.")
 			}
-			type repeatResponse struct {
-				ack uint64
-				err error
-			}
-			replay := storetest.Start(t, func() repeatResponse {
-				r, err := stream.Receive()
-				return repeatResponse{r.GetEventAck().GetThrough(), err}
-			})
-			var answer repeatResponse
+			replay := storetest.Start(t, receiveEventReply)
+			var reply answer
 			select {
 			case <-replay.Done():
-				answer = replay.Result()
+				reply = replay.Result()
 			case b := <-acks:
 				close(b.release)
 				t.Fatal("A repeated report invoked the mark-advancing acknowledgement seam.")
 			case <-ctx.Done():
 				t.Fatal("A repeated report did not finish before the request deadline.")
 			}
-			if answer.err != nil || answer.ack != 1 {
+			if reply.err != nil || reply.frame.GetEventAck().GetThrough() != 1 {
 				t.Fatal("A repeated report did not receive the previous committed mark.")
 			}
 		}
@@ -187,11 +202,7 @@ func TestLinkSeamsReachTheService(t *testing.T) {
 		if err := stream.Send(&linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Event{Event: event}}); err != nil {
 			t.Fatal("The fixture could not send its event.")
 		}
-		type answer struct {
-			frame *linkv1.OpenResponse
-			err   error
-		}
-		read := storetest.Start(t, func() answer { r, e := stream.Receive(); return answer{r, e} })
+		read := storetest.Start(t, receiveEventReply)
 		barrier := storetest.Receive(t, "the committed acknowledgement barrier", acks)
 		var release sync.Once
 		resume := func() { release.Do(func() { close(barrier.release) }) }

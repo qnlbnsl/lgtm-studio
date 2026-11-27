@@ -111,8 +111,10 @@ type integrationSweepKey struct{}
 type integrationSweepQueryKey struct{}
 
 type integrationSweepTrace struct {
-	dueRows   chan int64
-	lockCodes chan string
+	dueRows                chan int64
+	lockCodes              chan string
+	followupClaimLocked    atomic.Bool
+	followupClaimCommitted chan struct{}
 }
 
 func newIntegrationSweepTrace() *integrationSweepTrace {
@@ -123,7 +125,10 @@ func (trace *integrationSweepTrace) configure(cfg *pgxpool.Config) {
 	cfg.ConnConfig.Tracer = trace
 }
 
-func (*integrationSweepTrace) TraceQueryStart(ctx context.Context, _ *pgx.Conn, query pgx.TraceQueryStartData) context.Context {
+func (trace *integrationSweepTrace) TraceQueryStart(ctx context.Context, _ *pgx.Conn, query pgx.TraceQueryStartData) context.Context {
+	if trace.followupClaimLocked.Load() && ctx.Value(commandSessionKey{}) != nil && strings.EqualFold(query.SQL, "commit") {
+		return context.WithValue(ctx, integrationSweepQueryKey{}, "follow-up claim commit")
+	}
 	if ctx.Value(integrationSweepKey{}) != true {
 		return ctx
 	}
@@ -140,6 +145,13 @@ func (*integrationSweepTrace) TraceQueryStart(ctx context.Context, _ *pgx.Conn, 
 
 func (trace *integrationSweepTrace) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, query pgx.TraceQueryEndData) {
 	switch ctx.Value(integrationSweepQueryKey{}) {
+	case "follow-up claim commit":
+		if query.Err == nil && trace.followupClaimLocked.Swap(false) {
+			select {
+			case trace.followupClaimCommitted <- struct{}{}:
+			default:
+			}
+		}
 	case "due":
 		trace.dueRows <- query.CommandTag.RowsAffected()
 	case "registry lock":
@@ -158,6 +170,7 @@ func (*integrationSweepTrace) sweep(ctx context.Context, state *State) error {
 
 func testSweepDuringCommandFlush(t *testing.T) {
 	trace := newIntegrationSweepTrace()
+	trace.followupClaimCommitted = make(chan struct{}, 1)
 	f := newServerStreamFixture(t, handshakeFixtureOptions{configure: trace.configure})
 	m, key := f.register(t, "held flush")
 	control, _ := f.register(t, "control sweep")
@@ -172,6 +185,11 @@ func testSweepDuringCommandFlush(t *testing.T) {
 	due := seedClaimRow(t, f.presenceFixture, m.ID, restartAction(), now.Add(-26*time.Hour))
 	controlDue := seedClaimRow(t, f.presenceFixture, control.ID, restartAction(), now.Add(-25*time.Hour))
 	probe := newCommandWireProbe()
+	f.state.afterLock = func(ctx context.Context, _ string) {
+		if ctx.Value(commandSessionKey{}) != nil && probe.didFlush.Load() {
+			trace.followupClaimLocked.Store(true)
+		}
+	}
 	server := commandListener(t, f, map[string]*commandWireProbe{"held flush": probe})
 	peer := openCommandPeer(t, f, server, m, key, "held flush")
 	flush := watchCommandFlush(t, probe)
@@ -215,7 +233,9 @@ func testSweepDuringCommandFlush(t *testing.T) {
 		t.Fatal("Granting credit did not complete the held command flush.")
 	}
 	streamID := f.current(t, m.ID).StreamID
-	waitIntegrationDispatch(t, f.presenceFixture, row, streamID, 1)
+	// The writer makes one more claim after dispatch. Its commit releases the registry lock again.
+	storetest.Receive(t, "the post-dispatch claim committing", trace.followupClaimCommitted)
+	requireDispatch(t, f.presenceFixture, row, streamID, 1, true)
 	if f.state.SweepCommands(t.Context()) != nil {
 		t.Fatal("The sweep failed after the command released the machine lock.")
 	}
