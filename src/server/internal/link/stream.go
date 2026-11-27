@@ -31,8 +31,29 @@ func (s *Service) serve(ctx context.Context, handle *Handle, frames <-chan recei
 	send := func(response *linkv1.OpenResponse) error {
 		return transport.Send(ctx, func() error { return stream.Send(response) })
 	}
+	var session *commandSession
+	var continuation <-chan struct{}
+	if _, persistent := hooks.(*State); persistent {
+		session = &commandSession{handle: handle, continuation: make(chan struct{}, 1)}
+		continuation = session.continuation
+		defer s.commandSlots.release(session)
+	}
+	sendCommand := func(command *linkv1.Command) error {
+		writeContext := ctx
+		if session != nil {
+			writeContext = session.writeContext
+		}
+		return transport.Send(writeContext, func() error {
+			return stream.Send(&linkv1.OpenResponse{Kind: &linkv1.OpenResponse_Command{Command: command}})
+		})
+	}
 	checkIdentity, tryCommand := true, true
 	for ctx.Err() == nil {
+		select {
+		case <-continuation:
+			tryCommand = true
+		default:
+		}
 		select {
 		case <-handle.Wake():
 			checkIdentity = true
@@ -77,10 +98,18 @@ func (s *Service) serve(ctx context.Context, handle *Handle, frames <-chan recei
 
 		tryCommand = false
 		if hooks != nil && ctx.Err() == nil {
+			turn := ctx
+			if session != nil {
+				if !s.commandSlots.acquire(session) {
+					continue
+				}
+				turn = context.WithValue(ctx, commandSessionKey{}, session)
+			}
 			var err error
-			tryCommand, err = hooks.SendNext(ctx, machineID, streamID, func(command *linkv1.Command) error {
-				return send(&linkv1.OpenResponse{Kind: &linkv1.OpenResponse_Command{Command: command}})
-			})
+			tryCommand, err = hooks.SendNext(turn, machineID, streamID, sendCommand)
+			if session != nil {
+				s.commandSlots.release(session)
+			}
 			if err != nil {
 				return err
 			}

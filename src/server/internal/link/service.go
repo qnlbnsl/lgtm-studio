@@ -14,10 +14,11 @@ import (
 
 // Service handles machine joins and streams.
 type Service struct {
-	store     *store.Store
-	tokens    *machines.Tokens
-	serverKey ed25519.PublicKey
-	streaming *streamingService
+	store        *store.Store
+	tokens       *machines.Tokens
+	serverKey    ed25519.PublicKey
+	streaming    *streamingService
+	commandSlots commandSlots
 }
 
 type streamingService struct {
