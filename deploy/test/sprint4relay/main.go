@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/hex"
@@ -25,6 +26,7 @@ import (
 	"connectrpc.com/connect"
 	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1"
 	"github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1/linkv1connect"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -32,6 +34,9 @@ const (
 	joinRefusal  = "Lgtm-Join-Refusal"
 	linkRefusal  = "Lgtm-Link-Refusal"
 	messageLimit = 64 << 10
+
+	invalidLinkMessage = "The link message broke a rule of the contract."
+	malformedJoinHost  = "\xff"
 )
 
 var (
@@ -81,9 +86,12 @@ func main() {
 		upstream:    linkv1connect.NewLinkServiceClient(client, target.String(), connect.WithReadMaxBytes(messageLimit)),
 		controlPath: filepath.Join(*controlDir, "control.json"),
 		output:      json.NewEncoder(output),
-		streams:     make(map[uint64]*relayStream),
+		streams:     make(map[string]*relayStream),
 	}
-	_, handler := linkv1connect.NewLinkServiceHandler(r, connect.WithReadMaxBytes(messageLimit))
+	_, handler := linkv1connect.NewLinkServiceHandler(r,
+		connect.WithReadMaxBytes(messageLimit),
+		connect.WithConditionalHandlerOptions(joinDecodeOptions),
+	)
 	var protocols http.Protocols
 	protocols.SetHTTP1(true)
 	server := &http.Server{
@@ -136,6 +144,58 @@ func stopRelay(message string) {
 	os.Exit(1)
 }
 
+func joinDecodeOptions(spec connect.Spec) []connect.HandlerOption {
+	if spec.Procedure != linkv1connect.LinkServiceJoinProcedure {
+		return nil
+	}
+	return []connect.HandlerOption{
+		connect.WithCodec(joinCodec{"proto"}),
+		connect.WithCodec(joinCodec{"json"}),
+		connect.WithCodec(joinCodec{"json; charset=utf-8"}),
+		connect.WithInterceptors(connect.UnaryInterceptorFunc(func(next connect.UnaryFunc) connect.UnaryFunc {
+			return func(ctx context.Context, req connect.AnyRequest) (connect.AnyResponse, error) {
+				if req.Any().(*linkv1.JoinRequest).GetHostName() == malformedJoinHost {
+					return nil, connect.NewError(connect.CodeInvalidArgument, errors.New(invalidLinkMessage))
+				}
+				return next(ctx, req)
+			}
+		})),
+	}
+}
+
+type joinCodec struct{ name string }
+
+func (c joinCodec) Name() string { return c.name }
+
+func (c joinCodec) Marshal(message any) ([]byte, error) {
+	msg := message.(proto.Message)
+	if c.name == "proto" {
+		return proto.Marshal(msg)
+	}
+	return protojson.Marshal(msg)
+}
+
+func (c joinCodec) Unmarshal(data []byte, message any) error {
+	msg := message.(proto.Message)
+	var err error
+	if c.name == "proto" {
+		err = proto.Unmarshal(data, msg)
+	} else {
+		err = (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(data, msg)
+	}
+	if err != nil {
+		join, ok := msg.(*linkv1.JoinRequest)
+		if !ok {
+			return errors.New(invalidLinkMessage)
+		}
+		// Both decoders reject invalid UTF-8 in the host name. The interceptor can
+		// recognize this marker and return the public sentence without a decoder prefix.
+		proto.Reset(join)
+		join.HostName = malformedJoinHost
+	}
+	return nil
+}
+
 type relaySelector struct {
 	MachineID   string `json:"machine_id"`
 	Direction   string `json:"direction"`
@@ -156,7 +216,7 @@ type relayFrame struct {
 type relayObservation struct {
 	relayFrame
 	ConnectionID uint64 `json:"connection_id"`
-	StreamID     uint64 `json:"stream_id"`
+	StreamID     string `json:"stream_id"`
 	Generation   uint64 `json:"generation"`
 	Action       string `json:"action"`
 }
@@ -167,7 +227,7 @@ type relayRule struct {
 }
 
 type relayStream struct {
-	id           uint64
+	id           string
 	connectionID uint64
 	machine      string
 	generation   uint64
@@ -176,7 +236,7 @@ type relayStream struct {
 
 type relayControl struct {
 	Generation uint64          `json:"generation"`
-	StreamID   uint64          `json:"stream_id"`
+	StreamID   string          `json:"stream_id"`
 	Action     string          `json:"action"`
 	Rules      []relaySelector `json:"rules"`
 }
@@ -187,8 +247,7 @@ type frameRelay struct {
 	output      *json.Encoder
 
 	mu             sync.Mutex
-	streams        map[uint64]*relayStream
-	nextStream     uint64
+	streams        map[string]*relayStream
 	nextConnection uint64
 	lastGeneration uint64
 }
@@ -364,13 +423,11 @@ func safeIdentifier(id string) string {
 }
 
 func relayOpenError(downstream *relayDownstream, upstream *relayUpstream, err error) error {
-	var wireErr *connect.Error
-	if connect.IsWireError(err) && errors.As(err, &wireErr) {
+	if connect.IsWireError(err) && connect.CodeOf(err) == connect.CodeFailedPrecondition {
 		reasons := upstream.ResponseTrailer().Values(linkRefusal)
-		if len(reasons) == 0 {
-			reasons = wireErr.Meta().Values(linkRefusal)
+		if len(reasons) == 1 {
+			copyRefusal(downstream.ResponseTrailer(), linkRefusal, reasons)
 		}
-		copyRefusal(downstream.ResponseTrailer(), linkRefusal, reasons)
 	}
 	return publicLinkError(err)
 }
@@ -407,7 +464,7 @@ func publicLinkError(err error) *connect.Error {
 	var wireErr *connect.Error
 	if connect.IsWireError(err) && errors.As(err, &wireErr) {
 		switch wireErr.Message() {
-		case "The link message broke a rule of the contract.",
+		case invalidLinkMessage,
 			"The server cannot reach its database, try again.",
 			"The server does not know this join token.",
 			"This join token has expired. Make a new one.",
@@ -432,8 +489,7 @@ func (r *frameRelay) startStream(ctx context.Context) *relayStream {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	connectionID, _ := ctx.Value(relayConnectionKey{}).(uint64)
-	r.nextStream++
-	leg := &relayStream{id: r.nextStream, connectionID: connectionID}
+	leg := &relayStream{id: rand.Text(), connectionID: connectionID}
 	r.streams[leg.id] = leg
 	return leg
 }
@@ -444,10 +500,14 @@ func (r *frameRelay) closeStream(leg *relayStream) {
 	delete(r.streams, leg.id)
 	for _, rule := range leg.rules {
 		if rule.held != nil {
-			_ = r.record(leg, "discarded", *rule.held)
+			if err := r.record(leg, "discarded", *rule.held); err != nil {
+				stopRelay(errObservation.Error())
+			}
 		}
 	}
-	_ = r.record(leg, "closed", relayFrame{})
+	if err := r.record(leg, "closed", relayFrame{}); err != nil {
+		stopRelay(errObservation.Error())
+	}
 }
 
 func (r *frameRelay) forwarded(leg *relayStream, frame relayFrame) error {
@@ -478,11 +538,11 @@ func (r *frameRelay) hold(leg *relayStream, frame relayFrame) (bool, error) {
 	if r.streams[leg.id] == nil {
 		return true, nil
 	}
-	if frame.Frame == "open" {
-		leg.machine = frame.MachineID
-	}
 	if err := r.reconcileControl(); err != nil {
 		return false, err
+	}
+	if frame.Frame == "open" {
+		leg.machine = frame.MachineID
 	}
 	frame.MachineID = leg.machine
 	for i := range leg.rules {
@@ -534,21 +594,29 @@ func (r *frameRelay) reconcileControl() error {
 	decoder.DisallowUnknownFields()
 	var control relayControl
 	if decoder.Decode(&control) != nil || decoder.Decode(new(json.RawMessage)) != io.EOF ||
-		control.Action != "arm" || control.Generation <= r.lastGeneration || len(control.Rules) == 0 {
+		control.Action != "arm" || control.Generation <= r.lastGeneration || control.StreamID == "" || len(control.Rules) == 0 {
 		return nil
 	}
-	leg := r.streams[control.StreamID]
-	if leg == nil || leg.machine == "" || leg.generation != 0 {
+	machine := control.Rules[0].MachineID
+	if safeIdentifier(machine) == "" {
 		return nil
 	}
 	seen := make(map[relaySelector]bool, len(control.Rules))
 	for _, rule := range control.Rules {
-		if rule.MachineID != leg.machine || !validRule(rule) || seen[rule] {
+		if rule.MachineID != machine || !validRule(rule) || seen[rule] {
 			return nil
 		}
 		seen[rule] = true
 	}
+	leg := r.streams[control.StreamID]
+	if leg != nil && leg.machine != "" && (leg.machine != machine || leg.generation != 0) {
+		return nil
+	}
 	r.lastGeneration = control.Generation
+	if leg == nil || leg.machine == "" {
+		// A control observed before its stream is live retires without arming.
+		return nil
+	}
 	// A stream keeps its original rules through closure. The relay-wide high
 	// water mark still rejects their generation after the stream is gone.
 	leg.generation = control.Generation
