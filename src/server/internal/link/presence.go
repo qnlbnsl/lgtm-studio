@@ -242,6 +242,12 @@ FROM link_connections WHERE machine_id = ANY($1)`, ids)
 }
 
 func (s *State) Forget(ctx context.Context, tx *store.Tx, machineID string) error {
+	if _, err := tx.Exec(ctx, `
+UPDATE link_commands
+SET outcome = 'removed', finished_at = clock_timestamp(), payload = NULL
+WHERE machine_id = $1 AND outcome IS NULL`, machineID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM link_connections WHERE machine_id = $1`, machineID); err != nil {
 		return err
 	}
