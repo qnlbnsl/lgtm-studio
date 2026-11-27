@@ -7892,3 +7892,15 @@ Found on 2026-11-27, in the review by another vendor of the client's repairs (`.
 5. The test of the acknowledgement ceiling finds its wait point by reading goroutine stacks, which a change of the Go runtime can break (post-g 5).
 
 Points 1 and 2 have their tests since 2026-11-27: `TestReviewGUnacknowledgedEventWindow` and `TestReadJoinTokenAcceptsFullLengthWithFinalCarriageReturn`. Open are one paragraph in the plan for point 3, point 4 with the contract of sprint 4, and point 5, which waits until that test breaks or its file is changed.
+
+## 1675. Five controls of the real website promise more than they do
+
+Found on 2026-11-27 by reading the source, while the list of website features was made ([website-checklist.md](website-checklist.md)). None was run against the stack.
+
+1. "Reconnect now" in the connection menu changes the badge in the browser. The watch of the machines retries by itself, so the entry does nothing real.
+2. "Try to reconnect" is offered for an offline machine. The server refuses a restart of a machine that is not connected, so the entry can only fail.
+3. "Scan harnesses again" on the Harnesses page reports that nothing changed. It does not compare with the scan that follows.
+4. The sign-in screen says that the owner returns to where they were after an expired session. The owner lands on Home.
+5. Logging out clears the browser's view also when the server did not confirm the logout.
+
+The next step is to run each one against the stack, and to bring the visible changes to the owner, because the visible website changes only with the owner's approval.
