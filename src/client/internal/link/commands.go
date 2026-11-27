@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -88,6 +89,7 @@ type commandHandler struct {
 	send    func(context.Context, *session, *linkv1.CommandResult) error
 	elapsed func() (time.Duration, error)
 	logger  *slog.Logger
+	filter  *OutgoingFilter
 
 	current   *session
 	state     *linkv1.MachineState
@@ -149,12 +151,16 @@ func (h *commandHandler) standing() *linkv1.MachineState {
 // handle uses the process context so scans can finish across stream changes.
 func (h *commandHandler) handle(ctx context.Context, msg *linkv1.Command) (restart bool, err error) {
 	id, expiry := msg.GetId(), msg.GetExpiresAt()
-	if !validCommandID(id) || id[14] != '7' || !strings.ContainsRune("89ab", rune(id[19])) ||
-		msg.GetAttempt() == 0 || !expiry.IsValid() {
+	if !validLinkCommandID(id) || msg.GetAttempt() == 0 || !expiry.IsValid() {
 		return false, ErrInvalidCommand
 	}
 	if h.current == nil {
 		return false, errStream
+	}
+	unlock := sync.OnceFunc(h.filter.lockSecrets())
+	defer unlock()
+	if h.filter.containsSecret(id) {
+		return false, ErrInvalidCommand
 	}
 	attempt := commandAttempt{id: id, number: msg.GetAttempt(), session: h.current}
 	cmd := Command{ID: id, ExpiresAt: expiry.AsTime()}
@@ -164,6 +170,7 @@ func (h *commandHandler) handle(ctx context.Context, msg *linkv1.Command) (resta
 			return false, ErrInvalidCommand
 		}
 		_, result, err := h.store.recordResult(cmd, []byte{byte(outcomeDone)}, true, h.clock.lowerBound())
+		unlock()
 		if err != nil {
 			return false, err
 		}
@@ -235,12 +242,18 @@ func (h *commandHandler) handle(ctx context.Context, msg *linkv1.Command) (resta
 			return false, h.finishCommand(ctx, attempt, outcomeExpired)
 		}
 		if isRestart {
+			// A scan being joined can still need the filter at its report gate.
+			unlock()
 			return h.restart(ctx, attempt)
 		}
 		return false, h.finishCommand(ctx, attempt, outcomeUnsupported)
 	default:
 		return false, ErrStoreDamaged
 	}
+}
+
+func validLinkCommandID(id string) bool {
+	return validCommandID(id) && id[14] == '7' && strings.ContainsRune("89ab", rune(id[19]))
 }
 
 func (h *commandHandler) startScan(ctx context.Context, scan *activeScan, clock serverClock, admission, expiry time.Time) {

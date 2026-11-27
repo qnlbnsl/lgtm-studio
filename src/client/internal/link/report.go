@@ -36,8 +36,8 @@ const (
 )
 
 type snapshot struct {
-	order   uint64
-	payload []byte
+	order uint64
+	event *linkv1.Event
 }
 
 type reportQueue struct {
@@ -49,7 +49,7 @@ type reporter struct {
 	settings config.Settings
 	version  string
 	options  harness.ScanOptions
-	append   func(context.Context, []byte) (uint64, error)
+	append   func(context.Context, *linkv1.Event) (uint64, error)
 	logger   *slog.Logger
 	probes   reportProbes
 	order    atomic.Uint64
@@ -69,6 +69,16 @@ func newReporter(settings config.Settings, version string, options harness.ScanO
 }
 
 func newReporterWithContextAppend(settings config.Settings, version string, options harness.ScanOptions, appendReport func(context.Context, []byte) (uint64, error), logger *slog.Logger, probes reportProbes) *reporter {
+	return newReporterWithEventAppend(settings, version, options, func(ctx context.Context, event *linkv1.Event) (uint64, error) {
+		payload, err := (*OutgoingFilter)(nil).encodeFilteredReport(event)
+		if err != nil {
+			return 0, err
+		}
+		return appendReport(ctx, payload)
+	}, logger, probes)
+}
+
+func newReporterWithEventAppend(settings config.Settings, version string, options harness.ScanOptions, appendReport func(context.Context, *linkv1.Event) (uint64, error), logger *slog.Logger, probes reportProbes) *reporter {
 	if probes.now == nil {
 		probes.now = time.Now
 	}
@@ -100,10 +110,10 @@ func (r *reporter) captureFacts() error {
 	event := &linkv1.Event{
 		HappenedAt: captured,
 		Report: &linkv1.Event_Facts{Facts: &linkv1.Facts{
-			Os:            reportString(facts.OS, 64),
+			Os:            facts.OS,
 			Cores:         max(facts.Cores, 1),
 			MemoryBytes:   facts.MemoryBytes,
-			ClientVersion: reportString(facts.ClientVersion, 64),
+			ClientVersion: facts.ClientVersion,
 			Workspace:     reportWorkspace(r.settings.RepositoriesFolder, r.options.Home),
 			AgentLimit:    r.settings.AgentLimit,
 		}},
@@ -140,7 +150,7 @@ func (r *reporter) scanHarnesses(ctx context.Context, requested bool) (bool, err
 	versions := make(map[string]string, len(found))
 	for _, row := range found {
 		if row.Installed {
-			versions[reportString(string(row.Harness), 32)] = reportString(row.Version, 64)
+			versions[string(row.Harness)] = row.Version
 		}
 	}
 	defs := harness.Definitions()
@@ -171,14 +181,7 @@ func (r *reporter) publish(ctx context.Context, kind reportKind, order uint64, e
 	if ctx.Err() != nil || order <= queue.committed {
 		return false, nil
 	}
-	payload, err := encodeReport(event)
-	if err != nil {
-		return false, err
-	}
-	if ctx.Err() != nil {
-		return false, nil
-	}
-	candidate := snapshot{order: order, payload: payload}
+	candidate := snapshot{order: order, event: event}
 	committed, err := r.appendSnapshot(ctx, queue, candidate)
 	if err == context.Canceled || err == context.DeadlineExceeded {
 		return false, nil
@@ -210,7 +213,7 @@ func (r *reporter) flush() error {
 }
 
 func (r *reporter) appendSnapshot(ctx context.Context, queue *reportQueue, candidate snapshot) (bool, error) {
-	sequence, err := r.append(ctx, candidate.payload)
+	sequence, err := r.append(ctx, candidate.event)
 	if errors.Is(err, ErrOutboxFull) {
 		return false, nil
 	}
@@ -234,7 +237,14 @@ func (r *reporter) appendSnapshot(ctx context.Context, queue *reportQueue, candi
 }
 
 func reportString(value string, limit int) string {
-	value = strings.ReplaceAll(strings.ToValidUTF8(value, ""), "\x00", "")
+	return truncateReportString(normalizeReportString(value), limit)
+}
+
+func normalizeReportString(value string) string {
+	return strings.ReplaceAll(strings.ToValidUTF8(value, ""), "\x00", "")
+}
+
+func truncateReportString(value string, limit int) string {
 	if len(value) <= limit {
 		return value
 	}

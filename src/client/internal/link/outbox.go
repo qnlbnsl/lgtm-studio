@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"math"
 
+	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1"
 	bolt "go.etcd.io/bbolt"
 )
 
@@ -18,6 +19,16 @@ type Event struct {
 // Append stores a payload and returns its number after the commit.
 func (s *Store) Append(payload []byte) (uint64, error) {
 	return s.appendContext(context.Background(), payload)
+}
+
+func (s *Store) appendFilteredReport(ctx context.Context, filter *OutgoingFilter, event *linkv1.Event) (uint64, error) {
+	unlock := filter.lockSecrets()
+	defer unlock()
+	payload, err := filter.encodeFilteredReport(event)
+	if err != nil {
+		return 0, err
+	}
+	return s.appendContext(ctx, payload)
 }
 
 func (s *Store) appendContext(ctx context.Context, payload []byte) (uint64, error) {

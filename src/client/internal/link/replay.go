@@ -22,20 +22,27 @@ var errInvalidReport = errors.New("link: invalid report")
 // handed to the sender, which a server can acknowledge before send returns.
 type replay struct {
 	store   *Store
+	filter  *OutgoingFilter
 	ceiling uint64
 }
 
 func newReplay(store *Store, through uint64) (*replay, error) {
-	if err := store.validateReplay(through); err != nil {
+	return newReplayWithFilter(store, through, nil)
+}
+
+func newReplayWithFilter(store *Store, through uint64, filter *OutgoingFilter) (*replay, error) {
+	unlock := filter.lockSecrets()
+	defer unlock()
+	if err := store.validateReplay(through, filter); err != nil {
 		return nil, err
 	}
 	if err := store.Ack(through); err != nil {
 		return nil, err
 	}
-	return &replay{store: store, ceiling: through}, nil
+	return &replay{store: store, filter: filter, ceiling: through}, nil
 }
 
-func (s *Store) validateReplay(through uint64) error {
+func (s *Store) validateReplay(through uint64, filter *OutgoingFilter) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ready(); err != nil {
@@ -46,15 +53,15 @@ func (s *Store) validateReplay(through uint64) error {
 		return ErrAckAhead
 	}
 	for first := through + 1; first < s.events.next; first += maxUnackedEvents {
-		if err := s.validateReplayBatch(first, maxUnackedEvents); err != nil {
+		if err := s.validateReplayBatch(first, maxUnackedEvents, filter); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// validateReplayBatch checks consecutive rows while the store lock is held.
-func (s *Store) validateReplayBatch(first, limit uint64) error {
+// validateReplayBatch checks consecutive rows with the store and filter locked.
+func (s *Store) validateReplayBatch(first, limit uint64, filter *OutgoingFilter) error {
 	return s.db.View(func(tx *bolt.Tx) error {
 		cursor := tx.Bucket(eventsBucket).Cursor()
 		start := numberKey(first)
@@ -65,8 +72,9 @@ func (s *Store) validateReplayBatch(first, limit uint64) error {
 			if !bytes.Equal(key, expected[:]) {
 				return ErrStoreDamaged
 			}
-			if _, err := decodeNumberedReport(number, payload); err != nil {
-				return err
+			event, err := decodeNumberedReport(number, payload)
+			if err != nil || !filter.reportTextSafe(event.ProtoReflect()) {
+				return ErrStoreDamaged
 			}
 			key, payload = cursor.Next()
 		}
@@ -74,6 +82,7 @@ func (s *Store) validateReplayBatch(first, limit uint64) error {
 	})
 }
 
+// next checks the next event under the caller's filter lock through handoff.
 func (r *replay) next() (*linkv1.Event, error) {
 	number := r.ceiling + 1
 	rows, err := r.store.Read(number, 1)
@@ -91,10 +100,11 @@ func (r *replay) next() (*linkv1.Event, error) {
 		return nil, ErrStoreDamaged
 	}
 	event, err := decodeNumberedReport(number, rows[0].Payload)
-	if err == nil {
-		r.ceiling = number
+	if err != nil || !r.filter.reportTextSafe(event.ProtoReflect()) {
+		return nil, ErrStoreDamaged
 	}
-	return event, err
+	r.ceiling = number
+	return event, nil
 }
 
 func (r *replay) ack(through uint64) error {
@@ -128,11 +138,19 @@ func decodeNumberedReport(number uint64, data []byte) (*linkv1.Event, error) {
 }
 
 func decodeReport(data []byte) (*linkv1.Event, error) {
+	event, err := decodeReportCandidate(data)
+	if err != nil || !isUnnumberedReport(event) {
+		return nil, ErrStoreDamaged
+	}
+	return event, nil
+}
+
+func decodeReportCandidate(data []byte) (*linkv1.Event, error) {
 	if len(data) == 0 || data[0] != reportVersion {
 		return nil, ErrStoreDamaged
 	}
 	event := new(linkv1.Event)
-	if err := proto.Unmarshal(data[1:], event); err != nil || !isUnnumberedReport(event) {
+	if err := proto.Unmarshal(data[1:], event); err != nil {
 		return nil, ErrStoreDamaged
 	}
 	return event, nil
@@ -169,9 +187,39 @@ func isUnnumberedReport(event *linkv1.Event) bool {
 			}
 		}
 		return true
+	case *linkv1.Event_FolderSeen:
+		return report != nil && validFolderReport(report.FolderSeen)
 	default:
 		return false
 	}
+}
+
+func validFolderReport(seen *linkv1.FolderSeen) bool {
+	if !validLinkCommandID(seen.GetOperationId()) || !validLinkCommandID(seen.GetCommandId()) {
+		return false
+	}
+	switch result := seen.GetResult().(type) {
+	case *linkv1.FolderSeen_Facts:
+		if result == nil || result.Facts == nil {
+			return false
+		}
+		facts := result.Facts
+		return facts.GetResolvedPath() != "" && validReportString(facts.GetResolvedPath(), 8192) &&
+			facts.GetName() != "" && validReportString(facts.GetName(), eventWireLimit) &&
+			facts.GetMainBranch() != "" && validReportString(facts.GetMainBranch(), eventWireLimit) &&
+			validOptionalReportString(facts.CheckedOutBranch, eventWireLimit) &&
+			validOptionalReportString(facts.FirstCommit, eventWireLimit) &&
+			validOptionalReportString(facts.Remote, 2048) && (facts.Remote == nil || !facts.GetRemoteOmitted())
+	case *linkv1.FolderSeen_Refusal:
+		return result != nil && result.Refusal >= linkv1.FolderRefusal_FOLDER_REFUSAL_NOT_A_FOLDER &&
+			result.Refusal <= linkv1.FolderRefusal_FOLDER_REFUSAL_PATH_NOT_USABLE
+	default:
+		return false
+	}
+}
+
+func validOptionalReportString(value *string, limit int) bool {
+	return value == nil || *value != "" && validReportString(*value, limit)
 }
 
 func validReportString(value string, limit int) bool {

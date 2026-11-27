@@ -28,7 +28,7 @@ type RunOptions struct {
 	ScanOptions harness.ScanOptions
 	Version     string
 	Logger      *slog.Logger
-	// Filter is a stub of the test writer for the shared process filter.
+	// Filter shares known secrets with the process that owns this link.
 	Filter *OutgoingFilter
 }
 
@@ -85,6 +85,9 @@ func Run(ctx context.Context, opts RunOptions) (RunOutcome, error) {
 	if logger == nil {
 		logger = slog.New(slog.DiscardHandler)
 	}
+	if opts.Filter == nil {
+		opts.Filter = NewOutgoingFilter()
+	}
 	store, err := OpenStore(opts.Folder, StoreOptions{})
 	if err != nil {
 		if ctx.Err() != nil {
@@ -102,8 +105,9 @@ func Run(ctx context.Context, opts RunOptions) (RunOutcome, error) {
 		ctx: ctx, cancel: cancel, opts: opts, logger: logger, store: store,
 		announcement: newRunIdentity(store.Next()),
 	}
-	r.reports = newReporterWithContextAppend(opts.Settings, opts.Version, opts.ScanOptions, r.appendReport, logger, runReportProbes)
+	r.reports = newReporterWithEventAppend(opts.Settings, opts.Version, opts.ScanOptions, r.appendEvent, logger, runReportProbes)
 	r.commands = newCommandHandler(store, r.reports.scanHarnesses, r.queueResult, nil, logger)
+	r.commands.filter = opts.Filter
 	linkErr := supervise(ctx, r.attempt)
 	revisionStop := isRevisionRefusal(linkErr)
 	if revisionStop {
@@ -176,6 +180,7 @@ func (r *clientRun) attempt(ctx context.Context, welcomed func()) error {
 		return err
 	}
 	defer s.close()
+	r.opts.Filter.AddSecrets(s.welcome.GetConnectionToken())
 	welcomed()
 
 	live := &liveSession{run: r}
@@ -219,7 +224,15 @@ func (r *clientRun) stopLocal(err error) {
 }
 
 func (r *clientRun) appendReport(ctx context.Context, payload []byte) (uint64, error) {
-	number, err := r.store.appendContext(ctx, payload)
+	event, err := decodeReportCandidate(payload)
+	if err != nil {
+		return 0, errInvalidReport
+	}
+	return r.appendEvent(ctx, event)
+}
+
+func (r *clientRun) appendEvent(ctx context.Context, event *linkv1.Event) (uint64, error) {
+	number, err := r.store.appendFilteredReport(ctx, r.opts.Filter, event)
 	if errors.Is(err, ErrSequenceExhausted) && r.store.Len() != 0 {
 		// Keep pending reports queued until the last legal event drains.
 		return 0, ErrOutboxFull
@@ -535,7 +548,7 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 	if ctx.Err() != nil {
 		return false, ctx.Err()
 	}
-	cursor, err := newReplay(l.run.store, s.welcome.GetLastEventNumber())
+	cursor, err := newReplayWithFilter(l.run.store, s.welcome.GetLastEventNumber(), l.run.opts.Filter)
 	if err != nil {
 		return false, storeFault{err}
 	}
@@ -600,6 +613,19 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 	canSendEvent := func() bool {
 		retained := handedThrough+1 < l.run.announcement.firstEventNumber
 		return (l.approved() || retained) && haveEvents && handedThrough-ackedThrough < maxUnackedEvents
+	}
+	handoffEvent := func() (bool, error) {
+		unlock := l.run.opts.Filter.lockSecrets()
+		defer unlock()
+		event, err := l.replay.next()
+		if err != nil || event == nil {
+			return false, err
+		}
+		timingMu.Lock()
+		send <- &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Event{Event: event}}
+		handedThrough = event.GetNumber()
+		timingMu.Unlock()
+		return true, nil
 	}
 	handle := func(reply streamReply) error {
 		if ctx.Err() != nil {
@@ -696,7 +722,14 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 			now := time.Now()
 			switch {
 			case len(l.results) != 0:
-				send <- &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_CommandResult{CommandResult: l.results[0]}}
+				result := l.results[0]
+				unlock := l.run.opts.Filter.lockSecrets()
+				if l.run.opts.Filter.containsSecret(result.GetCommandId()) {
+					unlock()
+					return false, errInvalidFrame
+				}
+				send <- &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_CommandResult{CommandResult: result}}
+				unlock()
 				l.results[0] = nil
 				l.results = l.results[1:]
 			case restartDeadline != nil:
@@ -705,18 +738,14 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 				nextBeat = nextBeat.Add((now.Sub(nextBeat)/reportInterval + 1) * reportInterval)
 				send <- &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Heartbeat{Heartbeat: l.run.reports.heartbeat(l.approved())}}
 			case canSendEvent():
-				event, err := l.replay.next()
+				sent, err := handoffEvent()
 				if err != nil {
 					return false, storeFault{err}
 				}
-				if event == nil {
+				if !sent {
 					haveEvents = false
 					continue
 				}
-				timingMu.Lock()
-				send <- &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Event{Event: event}}
-				handedThrough = event.GetNumber()
-				timingMu.Unlock()
 			default:
 				continue
 			}
