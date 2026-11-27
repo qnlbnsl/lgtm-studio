@@ -173,11 +173,13 @@ The work items are listed in the brief of each plan.
 | 10 | go-s3-server-stream | The server end of the link: admission of a stream, presence, and the events a machine sends. Written on 2026-11-26 against the built code of plans 5 and 7 and the frozen link. | linked | 2b615a11 |
 | 11 | go-s3-server-commands | Stored commands and the calls of the Machines page that send one. Written on 2026-11-26 against plan 10 and the frozen link. | linked | 02f9aab0 |
 | 12 | go-s4-contract | Link revision 2 with the folder messages, and the website's contract for repositories. It was reviewed in two rounds on 2026-11-27, before any other plan of sprint 4 was written. | linked | |
-| 13 | go-s4-server-link | The link's Go interface for other parts: a stored command returns its identifier, a part is called when its command is settled or its report is applied, a result waits for the events before it, and a new client process gets no command before its past is applied. | planned | |
-| 14 | go-s4-server-projects | The Projects part: repositories, their folders on machines, folder operations that outlive their call, and the cleanup when a machine is removed. | planned | |
-| 15 | go-s4-client-folders | The client's run identifier, the event number on each result, the step from revision 1 on disk, and the Folders part that looks at a folder. | planned | |
-| 16 | go-s4-web-repositories | The website with a real server: repositories from the server, the two dialogs, no sample record, and the four visible changes that the owner approved. | planned | |
-| 17 | go-s4-stack-checks | The checks of sprint 4 against the running stack, and the step of an installed client to the new revision. | planned | |
+| 13 | go-s4-server-link | The link's Go interface for other parts: a stored command returns its identifier, a part is called when its command is settled or its report is applied, a result waits for the events before it, and a new client process gets no command before its past is applied. | linked | |
+| 14 | go-s4-server-projects | The Projects part: repositories, their folders on machines, folder operations that outlive their call, and the cleanup when a machine is removed. | linked | |
+| 15 | go-s4-client-folders | The client's run identifier, the event number on each result, the step from revision 1 on disk, and the Folders part that looks at a folder. | linked | |
+| 16 | go-s4-web-repositories | The website with a real server: repositories from the server, the two dialogs, no sample record, and the four visible changes that the owner approved. | linked | |
+| 17 | go-s4-stack-checks | The checks of sprint 4 against the running stack, and the step of an installed client to the new revision. | linked | |
+
+The six plans of sprint 4 were checked against each other on 2026-11-27. The report is [sprint-4-seams.md](sprint-4-seams.md). It holds the eleven disagreements that the plans then settled, the test that proves each check of the sprint, and one build order in thirteen waves.
 
 `planned` — named slice, no `.plans/plans/<slug>/plan.md` yet.
 `linked` — that plan exists and its `epic:` is this slug.

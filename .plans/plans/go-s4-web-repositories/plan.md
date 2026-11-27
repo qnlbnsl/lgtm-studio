@@ -1,6 +1,6 @@
 ---
 topic: go-s4-web-repositories
-status: attack
+status: done
 tier: M
 created: 2026-11-27
 updated: 2026-11-27
