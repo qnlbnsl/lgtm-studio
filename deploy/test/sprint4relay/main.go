@@ -43,6 +43,8 @@ var (
 	errDisconnected = errors.New("The test link was disconnected.")
 	errObservation  = errors.New("The relay could not record an observation.")
 	canonicalID     = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+	// The stream allocator uses the 26-character base32 output of rand.Text in Go 1.26.
+	streamIDFormat = regexp.MustCompile(`^[A-Z2-7]{26}$`)
 )
 
 func main() {
@@ -594,7 +596,8 @@ func (r *frameRelay) reconcileControl() error {
 	decoder.DisallowUnknownFields()
 	var control relayControl
 	if decoder.Decode(&control) != nil || decoder.Decode(new(json.RawMessage)) != io.EOF ||
-		control.Action != "arm" || control.Generation <= r.lastGeneration || control.StreamID == "" || len(control.Rules) == 0 {
+		control.Action != "arm" || control.Generation <= r.lastGeneration ||
+		!streamIDFormat.MatchString(control.StreamID) || len(control.Rules) == 0 {
 		return nil
 	}
 	machine := control.Rules[0].MachineID
