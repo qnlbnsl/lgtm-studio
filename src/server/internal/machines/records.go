@@ -5,11 +5,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"net/http"
+	"time"
 
 	"connectrpc.com/connect"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1"
 	lgtmv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1"
 	"github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1/lgtmv1connect"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/store"
@@ -93,6 +95,9 @@ func (s *Service) ApproveClient(ctx context.Context, req *connect.Request[lgtmv1
 		if err != nil {
 			return nil, err
 		}
+		if err := s.enqueueStanding(ctx, tx, machine); err != nil {
+			return nil, err
+		}
 		client, err := s.projectOne(ctx, tx, machine)
 		if err != nil {
 			return nil, err
@@ -118,20 +123,37 @@ func (s *Service) RenameClient(ctx context.Context, req *connect.Request[lgtmv1.
 	id := req.Msg.GetId()
 	write := recordRequest(req.Header(), lgtmv1connect.ClientServiceRenameClientProcedure, id, name)
 	err = s.writeRecordChange(ctx, write, func(ctx context.Context, tx *store.Tx) error {
-		machine, err := s.registry.Get(ctx, tx, id)
+		machine, err := s.registry.Lock(ctx, tx, id)
 		if err != nil {
 			return err
 		}
 		if machine.Approval == ApprovalWaiting {
 			return errRenameWaiting
 		}
-		_, err = s.registry.SetName(ctx, tx, id, name)
-		return err
+		changed, err := s.registry.SetName(ctx, tx, id, name)
+		if err != nil || !changed || s.commands == nil {
+			return err
+		}
+		machine, err = s.registry.Get(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		return s.enqueueStanding(ctx, tx, machine)
 	})
 	if err != nil {
 		return nil, err
 	}
 	return connect.NewResponse(&lgtmv1.RenameClientResponse{}), nil
+}
+
+func (s *Service) enqueueStanding(ctx context.Context, tx *store.Tx, machine Machine) error {
+	if s.commands == nil {
+		return nil
+	}
+	command := &linkv1.Command{Action: &linkv1.Command_SetState{
+		SetState: &linkv1.SetState{State: Standing(machine)},
+	}}
+	return s.commands.Enqueue(ctx, tx, machine.ID, command, time.Hour)
 }
 
 // ScanClientHarnesses refuses scans because the server has no online machines yet.

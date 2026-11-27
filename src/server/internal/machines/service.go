@@ -18,6 +18,7 @@ type Service struct {
 	tokens        *Tokens
 	follower      *store.Follower
 	link          Link
+	commands      CommandQueue
 	watchShutdown context.Context
 }
 
@@ -47,6 +48,13 @@ func (s *Service) WithLink(link Link) *Service {
 	return &service
 }
 
+// WithCommands returns a service that queues commands in owner writes.
+func (s *Service) WithCommands(queue CommandQueue) *Service {
+	service := *s
+	service.commands = queue
+	return &service
+}
+
 func (s *Service) loadPresence(ctx context.Context, q Querier, ids []string) (map[string]Presence, error) {
 	if s.link == nil || len(ids) == 0 {
 		return nil, nil
@@ -62,5 +70,3 @@ func (s *Service) projectOne(ctx context.Context, q Querier, machine Machine) (*
 	presence := rows[machine.ID]
 	return ProjectWithPresence(machine, &presence), nil
 }
-
-func (s *Service) WithCommands(CommandQueue) *Service { return s } // STUB s3-commands-tests-b

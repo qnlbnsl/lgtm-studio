@@ -4,8 +4,7 @@ import (
 	"context"
 	"time"
 
-	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1" // STUB s3-commands-tests-b
-
+	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/store"
 )
 
@@ -25,6 +24,7 @@ type Link interface {
 	Forget(context.Context, *store.Tx, string) error
 }
 
-type CommandQueue interface { // STUB s3-commands-tests-b
-	Enqueue(context.Context, *store.Tx, string, *linkv1.Command, time.Duration) error // STUB s3-commands-tests-b
-} // STUB s3-commands-tests-b
+// CommandQueue saves a command in the caller's machine write.
+type CommandQueue interface {
+	Enqueue(context.Context, *store.Tx, string, *linkv1.Command, time.Duration) error
+}
