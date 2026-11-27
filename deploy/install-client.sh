@@ -131,7 +131,19 @@ join_stack() {
         fail "The server's join-token command returned no token."
     unset BASH_REMATCH
 
-    if ! join_output=$(LGTM_CLIENT_STATE_DIR="$state_dir" "$tmp_bin" join "$address" "$token" 2>&1); then
+    local join_failed=0
+    # Bash can put a here-string in a temporary file.
+    # Probe with dummy data and keep the line within the minimum atomic pipe write size.
+    if (( ${#token} < 512 )) && [[ -p /dev/fd/0 ]] 2>/dev/null <<< "${token//?/x}"; then
+        if ! join_output=$(LGTM_CLIENT_STATE_DIR="$state_dir" "$tmp_bin" join "$address" - <<< "$token" 2>&1); then
+            join_failed=1
+        fi
+    elif ! join_output=$(builtin printf '%s\n' "$token" |
+        LGTM_CLIENT_STATE_DIR="$state_dir" "$tmp_bin" join "$address" - 2>&1); then
+        join_failed=1
+    fi
+
+    if (( join_failed )); then
         join_output=${join_output//"$token"/[redacted]}
         unset token
         if [[ -n $join_output ]]; then printf '%s\n' "$join_output" >&2; fi
