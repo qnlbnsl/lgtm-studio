@@ -102,3 +102,17 @@ The frontmatter, heading order, artifact folds, decision statuses, scenario cove
 | 10. Sizing | Six low or medium infrastructure units use `stack/infra`. The scope probe returned `ok: stack/infra`. The launch budget names the single vendor. Remaining allowance stays with the orchestrator before dispatch. |
 
 The selector probe returned status 2 for both old unsupported selection lists. The two revised selectors reached their own case assertions with a deliberately empty password, then returned status 1 without an application request. Bash and JavaScript syntax checks passed. The repository privacy check exited 0. These are plan and argument checks. Real stack, browser, upgrade and supervisor results are build acceptance. The orchestrator owns the epic’s existing planned row and its move to linked.
+
+## Cross-plan alignment and self-check
+
+Read the sprint seam report’s disagreements, frozen tests, check assignment, build order and fixture entry points. Compare the folded evidence with the approved design, current source and the adjacent Client, Link and Website plans.
+
+| Seam | Source anchor and observation |
+|---|---|
+| 2. R13 | `deploy/test/checks-s4.sh:480–496` invokes `modes` with the candidate origin and scratch directory. `deploy/test/checks-s4-browser.mjs:225–251` observes three contexts. The Website tests “discovery chooses the workspace and simulation” and “workspace waits for both snapshots” prove the capability-absent branch and complete snapshot gating. |
+| 3. R14 | `deploy/test/README-s4.md:47–54` saves once from Machines. The Website plan’s rollout requires distinct checkouts and two saves. Stack item 5 already owns `deploy/test/README.md`, which will hold the authoritative checklist. |
+| 4. Listeners | `deploy/test/checks-s4-browser.mjs:87–137` releases its probe socket before launching the mock, then polls the selected address. `src/mock-server/src/serve.ts:100–101` already prints readiness in the child’s listening callback. `deploy/test/with-postgres.sh:71–82,105–113` delegates port selection before handing a connection to the child. |
+| 11. Native stops | `src/client/internal/link/store.go` defines `metaBucket` and `nextKey`. Client Folders’ “Post-build checks” distinguishes zero admissions from the post-Welcome fault. `deploy/install-client.sh` writes the service search path through `service_path`. Stack’s relay and installed supervisor tests supply the neighboring patterns. |
+| Paired gate and cutover | `src/linktest/outbox_test.go` and `reserved_result_test.go` contain the two retained cases. Link item 8 publishes `BeforeEventAck` and the pre-commit seam. `89506b7c` is the landed contract ancestor. The local history pin still names the revision 1 baseline and is owned by the orchestrator. |
+
+The Tier M decision, acceptance, traceability, risks, environment, review, source-anchor, guardrail and sizing probes passed. The approved website text remains the design artifact. The plan has six sized tasks and is shorter than the folded plan. The privacy check, runner syntax checks and `stack/infra` scope probe passed. The three frozen release files match `22ca76c6`. The listener repairs and all runtime observations remain build evidence. The epic row is still `planned` and the orchestrator owns its update.
