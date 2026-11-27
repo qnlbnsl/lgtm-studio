@@ -37,7 +37,7 @@ var headerLine = regexp.MustCompile(`^(rpc|message|enum) (\S+)`)
 // TestEveryLinkNameIsDescribed makes sure that no message, enum or method of the link goes without a description (item 6).
 func TestEveryLinkNameIsDescribed(t *testing.T) {
 	named := map[string]int{}
-	for _, f := range []string{"events", "commands", "join", "open"} {
+	for _, f := range []string{"events", "commands", "join", "open", "folders"} {
 		raw, err := os.ReadFile(filepath.Join("testdata", "golden", f+".txt"))
 		if err != nil {
 			t.Fatalf("cannot read the description %s.txt: %v", f, err)
@@ -97,11 +97,15 @@ func isDeclaration(line string) bool {
 	return declaration.MatchString(line) || fieldLine.MatchString(line) || valueLine.MatchString(line)
 }
 
-// TestEveryLinkRuleIsWritten reads the three link files as text, because the generated Go keeps no comments (item 6).
+// TestEveryLinkRuleIsWritten reads the four link files as text, because the generated Go keeps no comments.
 func TestEveryLinkRuleIsWritten(t *testing.T) {
 	texts := map[string]string{}
-	for _, name := range []string{"link.proto", "commands.proto", "events.proto"} {
+	for _, name := range []string{"link.proto", "commands.proto", "events.proto", "folders.proto"} {
 		raw, err := os.ReadFile(filepath.Join("proto", "lgtm", "link", "v1", name))
+		if name == "folders.proto" && os.IsNotExist(err) {
+			t.Error("the contract does not declare or document the revision 2 folder messages in folders.proto")
+			continue
+		}
 		if err != nil {
 			t.Fatalf("cannot read %s: %v", name, err)
 		}

@@ -103,6 +103,9 @@ func TestEveryWatchCallHasTheSharedShape(t *testing.T) {
 	if !checked["lgtm.v1.ClientService.WatchClients"] {
 		t.Errorf("lgtm.v1.ClientService.WatchClients was not among the methods checked: %v", checked)
 	}
+	if !checked["lgtm.v1.ProjectService.WatchRepositories"] {
+		t.Errorf("lgtm.v1.ProjectService.WatchRepositories was not among the methods checked: %v", checked)
+	}
 }
 
 // TestOnlyMapAndPreviewsWaitForTheShape holds the waiting list to exactly two calls (item 3).

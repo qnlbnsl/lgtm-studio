@@ -1,0 +1,23 @@
+message lgtm.link.v1.LookAtFolder
+  1 operation_id string
+  2 path string
+message lgtm.link.v1.FolderSeen
+  1 operation_id string
+  2 command_id string
+  3 facts lgtm.link.v1.FolderFacts oneof=result
+  4 refusal lgtm.link.v1.FolderRefusal oneof=result
+message lgtm.link.v1.FolderFacts
+  1 resolved_path string
+  2 name string
+  3 main_branch string
+  4 checked_out_branch string optional
+  5 remote string optional
+  6 first_commit string optional
+  7 clean bool
+  8 remote_omitted bool
+enum lgtm.link.v1.FolderRefusal
+  0 FOLDER_REFUSAL_UNSPECIFIED
+  1 FOLDER_REFUSAL_NOT_A_FOLDER
+  2 FOLDER_REFUSAL_NOT_A_GIT_REPOSITORY
+  3 FOLDER_REFUSAL_NOT_READABLE
+  4 FOLDER_REFUSAL_PATH_NOT_USABLE

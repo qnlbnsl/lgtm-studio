@@ -27,7 +27,7 @@ type frozenRevision struct {
 	Files    map[string]string `json:"files"`
 }
 
-// TestLinkIsFrozenAtItsRevision holds the three files of the link to the last revision of the record.
+// TestLinkIsFrozenAtItsRevision holds every file in the link source directory to the last revision of the record.
 func TestLinkIsFrozenAtItsRevision(t *testing.T) {
 	raw, err := os.ReadFile(frozenRecord)
 	if err != nil {
@@ -109,11 +109,14 @@ func TestLinkIsFrozenAtItsRevision(t *testing.T) {
 }
 
 const frozenMessage = "The link is frozen, so set LGTM_LINK_BASE to the commit of the freeze."
+const frozenLineMessage = "The frozen link record must keep every revision line from LGTM_LINK_BASE in place."
 
-// TestFreezeCheckFailsClosed runs the real scripts/check-go.sh in a scratch repository, so that the
-// check of the record's history is seen to fail closed (UNREVIEWED FIX, logic-r5 08). The scratch
-// repository holds an empty Go module, so that the other steps of the script pass.
-func TestFreezeCheckFailsClosed(t *testing.T) {
+// newFreezeCheck runs the real history gate in a scratch repository with a minimal Go module.
+func newFreezeCheck(t *testing.T) (
+	write func(string, string, os.FileMode), git func(...string) string,
+	expect func(string, string, int, string),
+) {
+	t.Helper()
 	script, err := os.ReadFile("../../scripts/check-go.sh")
 	if err != nil {
 		t.Fatalf("cannot read scripts/check-go.sh: %v", err)
@@ -151,7 +154,7 @@ func TestFreezeCheckFailsClosed(t *testing.T) {
 			return "", -1
 		}
 	}
-	git := func(args ...string) string {
+	git = func(args ...string) string {
 		t.Helper()
 		out, code := run(nil, "git", append([]string{"-c", "user.name=Test", "-c", "user.email=test@example.invalid",
 			"-c", "commit.gpgsign=false", "-c", "core.hooksPath=/dev/null"}, args...)...)
@@ -160,7 +163,7 @@ func TestFreezeCheckFailsClosed(t *testing.T) {
 		}
 		return strings.TrimSpace(out)
 	}
-	write := func(rel, body string, mode os.FileMode) {
+	write = func(rel, body string, mode os.FileMode) {
 		t.Helper()
 		p := filepath.Join(dir, rel)
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -177,7 +180,7 @@ func TestFreezeCheckFailsClosed(t *testing.T) {
 		}
 		return run(extra, "bash", "scripts/check-go.sh")
 	}
-	expect := func(what string, base string, wantCode int, wantText string) {
+	expect = func(what string, base string, wantCode int, wantText string) {
 		t.Helper()
 		out, code := check(base)
 		if code != wantCode {
@@ -195,6 +198,12 @@ func TestFreezeCheckFailsClosed(t *testing.T) {
 	write("scripts/check-go.sh", string(script), 0o755)
 	git("add", "-A")
 	git("commit", "-q", "-m", "before the freeze")
+	return write, git, expect
+}
+
+// TestFreezeCheckFailsClosed checks that a missing or invalid baseline cannot bypass the freeze.
+func TestFreezeCheckFailsClosed(t *testing.T) {
+	write, git, expect := newFreezeCheck(t)
 	before := git("rev-parse", "HEAD")
 
 	one := strings.Repeat("a", 64)
@@ -223,4 +232,66 @@ func TestFreezeCheckFailsClosed(t *testing.T) {
 	git("commit", "-q", "-m", "change the hash of revision 1")
 	expect("a changed line of revision 1", freeze, 1, "")
 	expect("a changed line of revision 1 with no baseline", "", 1, frozenMessage)
+}
+
+func TestLinkFreezeAppendIsDocumented(t *testing.T) {
+	raw, err := os.ReadFile("README.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.ToLower(spaces.ReplaceAllString(strings.ReplaceAll(string(raw), "`", ""), " "))
+	for _, rule := range []struct{ name, pattern string }{
+		{"hashes include comments", `(hash|digest)[^.]*includ[^.]*comment`},
+		{"old lines keep their bytes and positions", `(old|prior|previous|existing|frozen)[^.]*line[^.]*byte[- ]for[- ]byte[^.]*original line number`},
+		{"the new line carries the comma", `(comma|separator) (goes|belongs|starts|appears|is placed) (on|at)[^.]*(the )?new (revision['’]s )?line|new (revision['’]s )?line[^.]* (starts|begins) with[^.]*(comma|separator)|start[^.]*new (revision['’]s )?line with[^.]*(comma|separator)`},
+		{"review uses the previous reviewed commit", `previous reviewed (commit|baseline)`},
+		{"the baseline advances after review", `(advance|move|update)[^.]*baseline[^.]*after (the )?review|after (the )?review[^.]*(advance|move|update)[^.]*baseline|baseline[^.]* (advances|moves)[^.]*after (the )?review`},
+	} {
+		if !regexp.MustCompile(rule.pattern).MatchString(text) {
+			t.Errorf("README.md does not explain that %s", rule.name)
+		}
+	}
+}
+
+func TestLinkFreezeAppendAgainstPriorBaseline(t *testing.T) {
+	write, git, expect := newFreezeCheck(t)
+	path := "src/contracts/" + frozenRecord
+	one := `  {"revision": 1, "files": {"link.proto": "` + strings.Repeat("a", 64) + `"}}`
+	two := `  ,{"revision": 2, "files": {"link.proto": "` + strings.Repeat("b", 64) + `"}}`
+	record := func(lines ...string) string {
+		return "[\n" + strings.Join(lines, "\n") + "\n]\n"
+	}
+	writeRecord := func(body string) {
+		t.Helper()
+		if !json.Valid([]byte(body)) {
+			t.Fatalf("the scratch freeze record is not valid JSON:\n%s", body)
+		}
+		write(path, body, 0o644)
+	}
+
+	writeRecord(record(one))
+	git("add", path)
+	git("commit", "-q", "-m", "freeze revision 1")
+	revisionOne := git("rev-parse", "HEAD")
+
+	writeRecord(record(one, two))
+	expect("the leading-comma append", revisionOne, 0, "")
+	git("add", path)
+	git("commit", "-q", "-m", "freeze revision 2")
+	revisionTwo := git("rev-parse", "HEAD")
+	expect("the revision 2 commit", revisionTwo, 0, "")
+	git("commit", "--allow-empty", "-q", "-m", "later work")
+	expect("the later unchanged commit", revisionTwo, 0, "")
+
+	changedOne := strings.Replace(one, strings.Repeat("a", 64), strings.Repeat("c", 64), 1)
+	changedTwo := strings.Replace(two, strings.Repeat("b", 64), strings.Repeat("d", 64), 1)
+	for _, tc := range []struct{ name, base, body string }{
+		{"a revision 1 hash edit", revisionOne, record(changedOne, two)},
+		{"a trailing comma on the old line", revisionOne, record(one+",", "  "+strings.TrimPrefix(two, "  ,"))},
+		{"a moved revision 1 line", revisionOne, record("", one, two)},
+		{"a revision 2 hash rewrite", revisionTwo, record(one, changedTwo)},
+	} {
+		writeRecord(tc.body)
+		expect(tc.name, tc.base, 1, frozenLineMessage)
+	}
 }

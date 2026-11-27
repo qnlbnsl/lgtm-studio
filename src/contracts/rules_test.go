@@ -335,3 +335,167 @@ func TestProofCommentMatchesTheExample(t *testing.T) {
 		}
 	}
 }
+
+// requireWrittenRules accepts wrapped comments and checks each rule independently.
+func requireWrittenRules(t *testing.T, source, text string, rules [][2]string) {
+	t.Helper()
+	text = strings.ToLower(strings.ReplaceAll(text, "`", ""))
+	for _, rule := range rules {
+		if !regexp.MustCompile(rule[1]).MatchString(text) {
+			t.Errorf("%s does not state %s", source, rule[0])
+		}
+	}
+}
+
+func TestRevisionTwoLinkRulesAreWritten(t *testing.T) {
+	link := readLines(t, "link.proto")
+	open := normalize(commentBefore(t, link, "rpc Open("))
+	requireWrittenRules(t, "LinkService.Open", open, [][2]string{
+		{"history validation follows verified proof and the revision check",
+			`history[^.]*(after|once)[^.]*((proof[^.]*verif|verified proof)[^.]*revision|revision[^.]*(proof[^.]*verif|verified proof))|after [^.]*((proof[^.]*verif|verified proof)[^.]*revision|revision[^.]*(proof[^.]*verif|verified proof))[^.]*history`},
+		{"only the latest admitted run may reconnect, even while draining",
+			`only the (latest|most recent) admitted run[^.]*reconnect[^.]*(drain|pending)`},
+		{"a reconnect repeats the immutable recorded boundary",
+			`reconnect[^.]*(same|saved|recorded|unchanged|exact)[^.]*boundar|reconnect[^.]*boundar[^.]*(immutable|unchanged)`},
+		{"superseded runs are refused before boundary validation, including after restart",
+			`superseded run[^.]*refus[^.]*before[^.]*boundar[^.]*after[^.]*restart|refus[^.]*superseded run[^.]*before[^.]*boundar[^.]*after[^.]*restart`},
+		{"an unseen run begins above the mark and staged watermarks",
+			`unseen run[^.]*above[^.]*mark[^.]*staged[^.]*watermark`},
+		{"an unseen run cannot move behind the pending boundary",
+			`unseen run[^.]*(at or above|at or after|cannot lower|at least)[^.]*pending boundar`},
+		{"a tie goes to the later successful admission",
+			`(tie|equal boundar)[^.]*later successful admission|later successful admission[^.]*(tie|equal boundar)`},
+		{"the run becomes ready once when the mark reaches first_event_number minus one",
+			`ready[^.]*once[^.]*mark[^.]*first_event_number\s*-\s*1|mark[^.]*first_event_number\s*-\s*1[^.]*ready[^.]*once`},
+		{"there is no command claim, send permit or cursor advance before readiness",
+			`(before readiness|before [^.]*ready|until [^.]*ready)[^.]*(no |without )[^.]*claim[^.]*permit[^.]*cursor|no [^.]*claim[^.]*permit[^.]*cursor[^.]*(before readiness|before [^.]*ready|until [^.]*ready)`},
+		{"waiting clients can replay retained events and send heartbeats",
+			`(waiting|waits?) for approval[^.]*replay[^.]*retained[^.]*event[^.]*heartbeat`},
+		{"during waiting replay, valid Facts apply and other eligible events are consumed without effect",
+			`(apply|applies)[^.]*valid facts[^.]*consum[^.]*other[^.]*event[^.]*without effect`},
+		{"replay acknowledgements precede the gated SetState",
+			`replay[^.]*(acknowledg|eventack)[^.]*(before|precede)[^.]*setstate`},
+		{"fresh reports wait for approval",
+			`fresh report[^.]*(wait[^.]*approval|only after approval)`},
+		{"history announcements are refused with the existing retryable invalid_argument",
+			`history[^.]*refus[^.]*invalid_argument|refus[^.]*history[^.]*invalid_argument`},
+		{"history refusal leaves the incumbent and command ledger intact",
+			`refus[^.]*leaves[^.]*incumbent[^.]*command ledger[^.]*(intact|unchanged)`},
+		{"the outer encoded message budget includes the wrapper and applies after decompression",
+			`(65,?536 bytes|64 kibibytes)[^.]*wrapper[^.]*after decompression|wrapper[^.]*(65,?536 bytes|64 kibibytes)[^.]*after decompression`},
+	})
+	hello := normalize(commentBefore(t, link, "string run_id"))
+	requireWrittenRules(t, "Hello.run_id", hello, [][2]string{
+		{"the client chooses a version 7 identifier once per process", `version 7[^.]* (once |each |per )[^.]*process`},
+	})
+	first := normalize(commentBefore(t, link, "uint64 first_event_number"))
+	requireWrittenRules(t, "Hello.first_event_number", first, [][2]string{
+		{"the first number is captured before append", `before[^.]*append`},
+		{"the first-number range includes 1 and 2^63", `(\[1, 2\^63\]|(from |between )1 (to|through|and) 2\^63)`},
+	})
+
+	events := readLines(t, "events.proto")
+	requireWrittenRules(t, "events.proto", normalize(events), [][2]string{
+		{"Welcome.last_event_number is the durable replay mark", `welcome\.last_event_number[^.]*durable[^.]*mark|durable[^.]*mark[^.]*welcome\.last_event_number`},
+		{"each repeat receives one cumulative acknowledgement", `repeat[^.]*\b(one|exactly one) (cumulative )?(eventack|acknowledgement)`},
+		{"each eligible next event receives one cumulative acknowledgement after commit", `next event[^.]*\b(one|exactly one) (cumulative )?(eventack|acknowledgement)[^.]*after[^.]*commit`},
+		{"a gap receives no acknowledgement", `gap[^.]*\b(no|none) (eventack|acknowledgement)|gap[^.]*receive none`},
+		{"bad numbers, undecodable frames, failed writes and obsolete streams receive no acknowledgement",
+			`(bad|invalid) number[^.]*undecodable[^.]*failed writ[^.]*(obsolete|noncurrent)[^.]*(no (eventack|acknowledgement)|receive none)`},
+		{"the client may hand over up to 32 events ahead of Welcome or the latest acknowledgement",
+			`(up to|at most) 32 event[^.]*ahead[^.]*welcome[^.]*(latest|last)[^.]*(acknowledg|eventack)`},
+		{"an incompatible Welcome mark is at or above local next or below the retained floor minus one",
+			`welcome[^.]*mark[^.]*at or above[^.]*local next[^.]*below[^.]*floor\s*(-\s*1|minus one)`},
+		{"missing or corrupt required history stops replay without fabricated advancement",
+			`missing or corrupt[^.]*history[^.]*stop[^.]*replay[^.]*without[^.]*(fabricat|invent|skip)[^.]*advance`},
+		{"recovery uses the real prefix or removal and new enrollment",
+			`(restore|recover)[^.]*real prefix[^.]*or[^.]*remov[^.]*enrol`},
+		{"the complete encoded command or event budget is 49,152 bytes",
+			`(command|event)[^.]*(49,?152 bytes|48 kibibytes)|(49,?152 bytes|48 kibibytes)[^.]*(command|event)`},
+	})
+	requireWrittenRules(t, "OpenResponse.event_ack", normalize(commentBefore(t, link, "EventAck event_ack")), [][2]string{
+		{"the acknowledgement is cumulative", `cumulative|through[^.]*last[^.]*number`},
+	})
+
+	commands := readLines(t, "commands.proto")
+	requireWrittenRules(t, "commands.proto", normalize(commands), [][2]string{
+		{"the hourly sweep uses server-only timed_out", `(hourly|every hour)[^.]*timed_out[^.]*server|server[^.]*(hourly|every hour)[^.]*timed_out`},
+		{"SetState keeps its expiry exception", `setstate[^.]*(whatever its expires_at|regardless of [^.]*expiry|without [^.]*expiry)`},
+		{"first results above the mark are staged and excluded from resend and sweep",
+			`stag[^.]*first[^.]*result[^.]*above[^.]*mark[^.]*resend[^.]*sweep|first[^.]*result[^.]*above[^.]*mark[^.]*stag[^.]*resend[^.]*sweep`},
+		{"a covered result settles in its result write", `result[^.]*covered[^.]*mark[^.]*settle[^.]*result write`},
+		{"an event write applies or consumes the report, advances the mark, then settles",
+			`(appl(y|ies)|consum(e|es))[^.]*or[^.]*(appl(y|ies)|consum(e|es))[^.]*advanc[^.]*mark[^.]*(then|before)[^.]*settl`},
+		{"a valid folder report in the same write wins over settlement",
+			`valid folder report[^.]*same write[^.]*wins[^.]*settlement|valid folder report[^.]*wins[^.]*settlement[^.]*same write`},
+		{"removal ends pending results as removed", `removal[^.]*pending result[^.]*as removed`},
+		{"expiry and unsupported are client declines and clock skew can decline a ran command",
+			`expired[^.]*unsupported[^.]*declin[^.]*(clock[^.]*(ran|execut))|clock[^.]*declin[^.]*(ran|execut)`},
+	})
+	result := normalize(commentBefore(t, commands, "message CommandResult {"))
+	watermark := normalize(commentBefore(t, commands, "uint64 last_event_number"))
+	requireWrittenRules(t, "CommandResult", result+" "+watermark, [][2]string{
+		{"the first result captures a durable high-water, from 0 through 2^63 - 1",
+			`(durable[^.]*high[- ]water[^.]*first result|first result[^.]*durable[^.]*high[- ]water)[^.]*\b0\b[^.]*2\^63\s*-\s*1`},
+		{"SetState, scans, restarts and declines all retain the first watermark",
+			`setstate[^.]*scan[^.]*restart[^.]*declin[^.]*(same|first|original)[^.]*watermark|(first|original)[^.]*watermark[^.]*setstate[^.]*scan[^.]*restart[^.]*declin`},
+		{"replayed results retain the watermark on the current attempt",
+			`replay[^.]*(same|original|first)[^.]*watermark[^.]*(current|newest)[^.]*attempt`},
+		{"an interrupted result uses the last durable number of the process that began the command",
+			`interrupt[^.]*last durable[^.]*number[^.]*process[^.]*(started|began)[^.]*command[^.]*restart`},
+		{"legacy zero is for positively identified revision 1 receipts",
+			`(positively identified|recognized)[^.]*revision 1[^.]*receipt[^.]*(zero|\b0\b)`},
+		{"revision 2 zero is valid for empty history",
+			`revision 2[^.]*receipt[^.]*empty history[^.]*(zero|\b0\b)`},
+		{"missing or damaged revision 2 metadata is a local fault",
+			`missing or (damaged|corrupt)[^.]*revision 2[^.]*metadata[^.]*local fault`},
+		{"result matching still requires the current stream and latest attempt",
+			`(only from|only on)[^.]*current stream[^.]*(attempt it sent last|latest attempt)`},
+		{"unspecified and unknown outcomes still mean failed",
+			`command_outcome_unspecified[^.]*(unknown|does not know)[^.]*command_outcome_failed`},
+	})
+
+	folders, err := os.ReadFile(filepath.Join(linkDir, "folders.proto"))
+	if os.IsNotExist(err) {
+		t.Error("the rules for folder reports and filtering are absent from the revision 2 contract")
+		return
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	folderText := normalize(strings.Split(string(folders), "\n"))
+	requireWrittenRules(t, "the outgoing report rules", normalize(link)+" "+normalize(events)+" "+folderText, [][2]string{
+		{"the shared filter covers existing Facts and harness inventory and new FolderSeen reports",
+			`(shared|one|same) filter[^.]*\bfacts\b[^.]*(harnessesfound|harness inventory)[^.]*folderseen`},
+		{"the filter screens the client key and connection token in every held form",
+			`client key[^.]*connection token[^.]*every form`},
+		{"unsafe display text is masked and unsafe workspace or identifier is omitted",
+			`mask[^.]*display text[^.]*omit[^.]*workspace[^.]*identifier|display text[^.]*mask[^.]*omit[^.]*workspace[^.]*identifier`},
+		{"safe legacy bytes replay unchanged and unsafe required legacy events stop without discarding bytes or numbers",
+			`safe legacy[^.]*replay[^.]*unchanged[^.]*\.\s*[^.]*unsafe[^.]*legacy[^.]*stop[^.]*bytes[^.]*number`},
+		{"account-relative Secure Shell origins, including URL home markers, are withheld",
+			`account-relative[^.]*(secure shell|ssh)[^.]*(home marker|tilde)[^.]*remote_omitted[^.]*true`},
+	})
+	requireWrittenRules(t, "folders.proto", folderText, [][2]string{
+		{"inspection reads only local facts without network or repository-controlled execution",
+			`(read-only[^.]*local|local[^.]*read-only)[^.]*without[^.]*network[^.]*repository-controlled[^.]*(execution|program)`},
+		{"an unsafe path, name, branch or commit uses the fixed path refusal",
+			`unsafe[^.]*path[^.]*name[^.]*branch[^.]*commit[^.]*folder_refusal_path_not_usable`},
+		{"a configured but withheld origin is absent with remote_omitted true",
+			`(withheld|over-limit|unsafe)[^.]*origin[^.]*absent[^.]*remote_omitted[^.]*true`},
+		{"an unconfigured origin is absent with remote_omitted false",
+			`unconfigured origin[^.]*absent[^.]*remote_omitted[^.]*false`},
+		{"a remote cannot be both present and omitted",
+			`present remote[^.]*(flag|remote_omitted)[^.]*invalid`},
+		{"origin user information is stripped before measuring and sending",
+			`strip[^.]*(user information|user info|credentials)[^.]*before[^.]*(measur|budget)[^.]*send`},
+		{"the resolved path is the absolute working-tree root after following links",
+			`(resolved path|resolv)[^.]*absolute[^.]*(top|root)[^.]*working tree[^.]*follow[^.]*links`},
+		{"the main branch uses the local remote head, then checked-out branch, then main",
+			`main branch[^.]*local[^.]*remote head[^.]*checked-out branch[^.]*\bmain\b`},
+		{"a folder report is committed before its result is recorded",
+			`commit[^.]*folderseen[^.]*before[^.]*result`},
+		{"an absent arm or zero or unknown refusal is consumed without effect",
+			`absent arm[^.]*zero[^.]*unknown refusal[^.]*consum[^.]*without effect`},
+	})
+}

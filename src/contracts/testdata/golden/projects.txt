@@ -1,0 +1,44 @@
+rpc lgtm.v1.ProjectService.WatchRepositories lgtm.v1.WatchRepositoriesRequest stream lgtm.v1.WatchRepositoriesResponse
+rpc lgtm.v1.ProjectService.InspectFolder lgtm.v1.InspectFolderRequest lgtm.v1.InspectFolderResponse
+rpc lgtm.v1.ProjectService.AddRepository lgtm.v1.AddRepositoryRequest lgtm.v1.AddRepositoryResponse
+message lgtm.v1.WatchRepositoriesRequest
+message lgtm.v1.WatchRepositoriesResponse
+  1 all lgtm.v1.RepositoryList oneof=change
+  2 saved lgtm.v1.Repository oneof=change
+  3 removed_id string oneof=change
+  4 position lgtm.v1.FeedPosition
+message lgtm.v1.RepositoryList
+  1 repositories lgtm.v1.Repository repeated
+message lgtm.v1.Repository
+  1 id string
+  2 name string
+  3 main_branch string
+  4 remote string optional
+  5 first_commit string optional
+  6 folders lgtm.v1.RepositoryFolder repeated
+  7 remote_omitted bool
+message lgtm.v1.RepositoryFolder
+  1 id string
+  2 client_id string
+  3 resolved_path string
+message lgtm.v1.InspectFolderRequest
+  1 client_id string
+  2 path string
+message lgtm.v1.InspectFolderResponse
+  1 facts lgtm.v1.FolderFacts
+message lgtm.v1.FolderFacts
+  1 resolved_path string
+  2 name string
+  3 main_branch string
+  4 checked_out_branch string optional
+  5 remote string optional
+  6 first_commit string optional
+  7 clean bool
+  8 remote_omitted bool
+message lgtm.v1.AddRepositoryRequest
+  1 client_id string
+  2 path string
+  3 repository_id string optional
+message lgtm.v1.AddRepositoryResponse
+  1 repository lgtm.v1.Repository
+  2 folder lgtm.v1.RepositoryFolder

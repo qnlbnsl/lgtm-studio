@@ -1,0 +1,8 @@
+{
+  "link_message_bytes": 65536,
+  "command_event_bytes": 49152,
+  "typed_path_bytes": 4096,
+  "resolved_path_bytes": 8192,
+  "remote_bytes": 2048,
+  "unacked_events": 32
+}
