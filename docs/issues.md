@@ -7881,15 +7881,6 @@ Nothing in sprint 5 looks for such a process.
 
 The next step belongs to sprint 8: decide whether the service manager's own cleanup covers this on Linux and on macOS, and test it.
 
-## 1673. A panic during an admission leaves a stream handle and can leave a connection row
-
-Found on 2026-11-27, in the review by another vendor of the repairs of issue 1668 (`.plans/plans/go-s3-server-stream/attack/post-build-g.md`, verdict REVISE, grade 8 out of 10, two minor findings).
-
-1. After a panic in the commit of an admission, the hub keeps the handle of the failed stream in memory, with its request context (post-g 1). Commands are not blocked. The reviewer saw two handles where one was expected, in a scratch copy.
-2. A panic right after the database accepted the commit skips the cleanup of that exact stream. Its connection row stays, and the client gets no welcome (post-g 2). The reviewer saw the row stay for three seconds in two runs, in a scratch copy.
-
-The next step is to register the teardown of a stream as soon as the handler owns resources, to note the cleanup before the commit begins, and one test for each point.
-
 ## 1674. Five minor findings of the review of the client's last repairs
 
 Found on 2026-11-27, in the review by another vendor of the client's repairs (`.plans/plans/go-s3-client-link/attack/post-build-g.md`, verdict SHIP, grade 8 out of 10).
@@ -7900,4 +7891,4 @@ Found on 2026-11-27, in the review by another vendor of the client's repairs (`.
 4. The window relies on one acknowledgement for each event. The contract implies it and does not state it. The design for running an agent adds the sentence in link revision 2 (post-g 4).
 5. The test of the acknowledgement ceiling finds its wait point by reading goroutine stacks, which a change of the Go runtime can break (post-g 5).
 
-The next step is two tests for points 1 and 2 and one paragraph in the plan for point 3. Point 4 is done with the contract of sprint 4. Point 5 waits until that test breaks or its file is changed.
+Points 1 and 2 have their tests since 2026-11-27: `TestReviewGUnacknowledgedEventWindow` and `TestReadJoinTokenAcceptsFullLengthWithFinalCarriageReturn`. Open are one paragraph in the plan for point 3, point 4 with the contract of sprint 4, and point 5, which waits until that test breaks or its file is changed.

@@ -78,7 +78,7 @@ type openHandshake struct {
 	publishPresence bool
 }
 
-func (s *Service) open(ctx context.Context, stream *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse], serve func(context.Context, *Handle, <-chan receivedFrame, *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse]) error) error {
+func (s *Service) open(ctx context.Context, stream *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse], serve func(context.Context, *Handle, <-chan receivedFrame, *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse]) error) (reply error) {
 	link := s.streaming
 	controls := openControls(ctx)
 	entered := controls.now()
@@ -87,10 +87,41 @@ func (s *Service) open(ctx context.Context, stream *connect.BidiStream[linkv1.Op
 		frames: make(chan receivedFrame, openQueueSize), readerDone: make(chan struct{}),
 	}
 	ctx, cancel := s.streamContext(ctx)
+	var watchdogDone chan struct{}
+	defer func() {
+		cancel(reply)
+		cause := context.Cause(ctx)
+		if watchdogDone != nil {
+			<-watchdogDone
+		}
+		if h.handle != nil {
+			link.hub.Unregister(h.handle)
+		}
+		if h.cleanup {
+			s.queueDisconnect(h.machineID, h.handle.streamID)
+			if h.controls.onQueueDisconnect != nil {
+				h.controls.onQueueDisconnect(h.machineID, h.handle.streamID)
+			}
+		}
+		_ = transport.CloseLinkRead(ctx)
+		<-h.readerDone
+		// A normal return supplies a cause. A panic continues after teardown.
+		if reply == nil {
+			return
+		}
+		transport.BoundLinkEnd(ctx, terminalWriteTimeout)
+		reply = openStatus(cause)
+		if h.machineID != "" {
+			code := "ok"
+			if reply != nil {
+				code = connect.CodeOf(reply).String()
+			}
+			link.options.Logger.Info("link_stream_closed", "machine_id", h.machineID, "code", code)
+		}
+	}()
 	go h.read(ctx)
 
 	err := s.handshake(ctx, cancel, h, entered)
-	var watchdogDone chan struct{}
 	if err == nil && context.Cause(ctx) == nil {
 		h.watchdog = &streamWatchdog{controls: h.steady, deadline: h.steady.now().Add(HeartbeatTimeout)}
 		watchdogDone = make(chan struct{})
@@ -112,32 +143,7 @@ func (s *Service) open(ctx context.Context, stream *connect.BidiStream[linkv1.Op
 	if h.handle != nil && errors.Is(err, ErrUnknownMachine) {
 		err = link.hub.removalCause(ctx, h.handle)
 	}
-	cancel(err)
-	cause := context.Cause(ctx)
-	if watchdogDone != nil {
-		<-watchdogDone
-	}
-	if h.handle != nil {
-		link.hub.Unregister(h.handle)
-	}
-	if h.cleanup {
-		s.queueDisconnect(h.machineID, h.handle.streamID)
-		if h.controls.onQueueDisconnect != nil {
-			h.controls.onQueueDisconnect(h.machineID, h.handle.streamID)
-		}
-	}
-	_ = transport.CloseLinkRead(ctx)
-	<-h.readerDone
-	transport.BoundLinkEnd(ctx, terminalWriteTimeout)
-	reply := openStatus(cause)
-	if h.machineID != "" {
-		code := "ok"
-		if reply != nil {
-			code = connect.CodeOf(reply).String()
-		}
-		link.options.Logger.Info("link_stream_closed", "machine_id", h.machineID, "code", code)
-	}
-	return reply
+	return err
 }
 
 func (s *Service) handshake(ctx context.Context, cancel context.CancelCauseFunc, h *openHandshake, entered time.Time) error {
@@ -219,6 +225,8 @@ func (s *Service) handshake(ctx context.Context, cancel context.CancelCauseFunc,
 	var admitted Stream
 	err = link.hub.Admit(h.handle, func() (int64, bool, error) {
 		var admissionErr error
+		// A panic can interrupt the call after the database commits.
+		h.cleanup = true
 		admitted, admissionErr = link.state.BecomeCurrent(ctx, machineID, streamID, peerAddress(h.stream.Peer().Addr, link.options.PrivateStack))
 		var dbErr *store.Error
 		unknown := errors.As(admissionErr, &dbErr) && dbErr.Outcome() == store.OutcomeUnknown

@@ -16951,3 +16951,14 @@ The next step is a change of the test alone: read saves until one carries the co
 The test file is frozen, so a test writer makes the change and the checksum is renewed.
 
 Closed on 2026-11-27. The test reads saves until one carries the connection time, and signs out after that. It passed 40 of 40 runs for the test writer and 20 of 20 for the orchestrator. In a scratch copy without the session check on each change, the test still fails, so it keeps catching what it is for.
+
+## 1673. A panic during an admission leaves a stream handle and can leave a connection row
+
+Found on 2026-11-27, in the review by another vendor of the repairs of issue 1668 (`.plans/plans/go-s3-server-stream/attack/post-build-g.md`, verdict REVISE, grade 8 out of 10, two minor findings).
+
+1. After a panic in the commit of an admission, the hub keeps the handle of the failed stream in memory, with its request context (post-g 1). Commands are not blocked. The reviewer saw two handles where one was expected, in a scratch copy.
+2. A panic right after the database accepted the commit skips the cleanup of that exact stream. Its connection row stays, and the client gets no welcome (post-g 2). The reviewer saw the row stay for three seconds in two runs, in a scratch copy.
+
+The next step is to register the teardown of a stream as soon as the handler owns resources, to note the cleanup before the commit begins, and one test for each point.
+
+Closed on 2026-11-27. The handler of a stream registers its teardown as soon as it owns the stream, so a panic unregisters the exact handle and releases its context. An admission notes the cleanup of its exact stream before the database call, and a panic queues it. The tests are `TestReviewGAdmissionCommitPanicUnregistersFailedHandle` and `TestReviewGCommittedAdmissionPanicCleansExactStream`. The builder did not fence the previous stream on an uncertain panic, as the review proposed, because the earlier test requires that stream to get its commands again after a rollback.
