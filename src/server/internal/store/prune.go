@@ -22,7 +22,7 @@ type PruneResult struct {
 	ReceiptRows int64
 }
 
-// Prune removes feed entries and receipts observed more than 24 hours before the database clock.
+// Prune removes feed entries and ordinary receipts observed more than 24 hours before the database clock.
 // It returns the counts of committed deletions. When a retained feed entry blocks the removal
 // of an entry older than twice the retention, it also returns a diagnostic error with those counts.
 func (s *Store) Prune(ctx context.Context) (PruneResult, error) {
@@ -219,14 +219,14 @@ UPDATE feed_retention SET pruned_through = greatest(pruned_through, $1) WHERE si
 	}
 }
 
-// stampReceipts records when each visible receipt was first observed.
+// stampReceipts records when each visible ordinary receipt was first observed.
 func (s *Store) stampReceipts(ctx context.Context) error {
 	for {
 		var count int
 		err := s.withMaintenance(ctx, func(ctx context.Context, tx pgx.Tx) error {
 			rows, err := tx.Query(ctx, `
 SELECT principal_hash, request_key FROM receipts
-WHERE retention_started_at IS NULL
+WHERE NOT held AND retention_started_at IS NULL
 ORDER BY retention_started_at NULLS FIRST, principal_hash, request_key
 LIMIT $1
 FOR UPDATE`, pruneBatchRows)
@@ -264,7 +264,7 @@ WHERE r.principal_hash = k.principal_hash AND r.request_key = k.request_key`, pr
 	}
 }
 
-// deleteReceipts deletes receipts observed before cutoff in index order.
+// deleteReceipts deletes ordinary receipts observed before cutoff in index order.
 // A replay that holds a receipt's row lock first completes with the saved reply.
 func (s *Store) deleteReceipts(ctx context.Context, cutoff time.Time) (int64, error) {
 	var deleted int64
@@ -274,7 +274,7 @@ func (s *Store) deleteReceipts(ctx context.Context, cutoff time.Time) (int64, er
 			tag, err := tx.Exec(ctx, `
 WITH expired AS (
     SELECT principal_hash, request_key FROM receipts
-    WHERE retention_started_at < $1
+    WHERE NOT held AND retention_started_at < $1
     ORDER BY retention_started_at NULLS FIRST, principal_hash, request_key
     LIMIT $2
     FOR UPDATE

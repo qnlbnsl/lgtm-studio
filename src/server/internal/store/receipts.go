@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -46,20 +47,38 @@ func (s *Store) WriteOnce(
 	req Request,
 	write func(context.Context, *Tx) ([]byte, error),
 ) ([]byte, error) {
-	var reply []byte
-	if req.Key == "" {
-		err := s.writeFeed(ctx, func(ctx context.Context, tx *Tx) error {
-			var err error
-			reply, err = write(ctx, tx)
-			return err
-		})
-		if err != nil {
-			return nil, err
-		}
-		return reply, nil
+	if req.Key != "" {
+		return s.writeOnceKeyed(ctx, req, false, write, nil)
 	}
+	var reply []byte
+	err := s.writeFeed(ctx, func(ctx context.Context, tx *Tx) error {
+		var err error
+		reply, err = write(ctx, tx)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return reply, nil
+}
 
-	if len(req.Key) > maxRequestKeyBytes || !validText(req.Key) {
+// WriteOnceRetained requires a request key and saves the operation identifier from start.
+// On a matching retry, it calls replay under the receipt lock with the saved identifier.
+// The receipt remains held until it is retired with the operation.
+func (s *Store) WriteOnceRetained(
+	ctx context.Context, req Request,
+	start func(context.Context, *Tx) ([]byte, error),
+	replay func(context.Context, *Tx, []byte) error,
+) ([]byte, error) {
+	return s.writeOnceKeyed(ctx, req, true, start, replay)
+}
+
+func (s *Store) writeOnceKeyed(
+	ctx context.Context, req Request, held bool,
+	write func(context.Context, *Tx) ([]byte, error),
+	replay func(context.Context, *Tx, []byte) error,
+) ([]byte, error) {
+	if !validReceiptKey(req.Key) {
 		return nil, ErrInvalidRequestKey
 	}
 	current := req.Fingerprints[req.FingerprintVersion]
@@ -68,11 +87,9 @@ func (s *Store) WriteOnce(
 	}
 	principal := sha256.Sum256([]byte(req.Caller))
 
+	var reply []byte
 	err := s.writeFeed(ctx, func(ctx context.Context, tx *Tx) error {
-		// The transaction-level key lock serializes callers that present the same key, including a first insert.
-		if _, err := tx.tx.Exec(ctx, `
-SELECT pg_advisory_xact_lock($1::int4, hashtext(encode($2::bytea, 'hex') || ':' || $3))`,
-			receiptLockNamespace, principal[:], req.Key); err != nil {
+		if err := lockReceiptKey(ctx, tx, principal, req.Key); err != nil {
 			return err
 		}
 		var version int16
@@ -90,6 +107,11 @@ FOR UPDATE`, principal[:], req.Key).Scan(&version, &saved, &savedReply)
 			digest := requestDigest(version, req.Caller, req.Procedure, fingerprint)
 			if subtle.ConstantTimeCompare(digest[:], saved) != 1 {
 				return ErrRequestKeyConflict
+			}
+			if replay != nil {
+				if err := replay(ctx, tx, bytes.Clone(savedReply)); err != nil {
+					return err
+				}
 			}
 			reply = savedReply
 			return nil
@@ -111,9 +133,16 @@ FOR UPDATE`, principal[:], req.Key).Scan(&version, &saved, &savedReply)
 			result = []byte{}
 		}
 		digest := requestDigest(req.FingerprintVersion, req.Caller, req.Procedure, current)
-		if _, err := tx.tx.Exec(ctx, `
+		// Ordinary inserts also work on the schema from before held receipts.
+		insert := `
 INSERT INTO receipts (principal_hash, request_key, fingerprint_version, request_hash, reply)
-VALUES ($1, $2, $3, $4, $5)`, principal[:], req.Key, req.FingerprintVersion, digest[:], result); err != nil {
+VALUES ($1, $2, $3, $4, $5)`
+		if held {
+			insert = `
+INSERT INTO receipts (principal_hash, request_key, fingerprint_version, request_hash, reply, held)
+VALUES ($1, $2, $3, $4, $5, true)`
+		}
+		if _, err := tx.tx.Exec(ctx, insert, principal[:], req.Key, req.FingerprintVersion, digest[:], result); err != nil {
 			return err
 		}
 		reply = result
@@ -125,21 +154,64 @@ VALUES ($1, $2, $3, $4, $5)`, principal[:], req.Key, req.FingerprintVersion, dig
 	return reply, nil
 }
 
-// WriteOnceRetained is a stub of the test writer.
-func (s *Store) WriteOnceRetained(
-	ctx context.Context, req Request,
-	start func(context.Context, *Tx) ([]byte, error),
-	replay func(context.Context, *Tx, []byte) error,
-) ([]byte, error) {
-	return nil, nil
-}
-
-// RetireReceipt is a stub of the test writer.
+// RetireReceipt calls remove under the receipt lock if the held receipt matches expectedReply.
+// When remove returns true, the operation removal and receipt deletion commit together.
+// A callback that returns false without an error must leave the operation unchanged.
 func (s *Store) RetireReceipt(
 	ctx context.Context, caller string, key string, expectedReply []byte,
 	remove func(context.Context, *Tx) (bool, error),
 ) (bool, error) {
-	return false, nil
+	if !validReceiptKey(key) {
+		return false, ErrInvalidRequestKey
+	}
+	if caller == "" {
+		return false, ErrInvalidRequest
+	}
+	principal := sha256.Sum256([]byte(caller))
+	var retired bool
+	err := s.writeFeed(ctx, func(ctx context.Context, tx *Tx) error {
+		if err := lockReceiptKey(ctx, tx, principal, key); err != nil {
+			return err
+		}
+		var held bool
+		var reply []byte
+		err := tx.tx.QueryRow(ctx, `
+SELECT held, reply FROM receipts
+WHERE principal_hash = $1 AND request_key = $2
+FOR UPDATE`, principal[:], key).Scan(&held, &reply)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		if err != nil || !held || !bytes.Equal(reply, expectedReply) {
+			return err
+		}
+		removed, err := remove(ctx, tx)
+		if err != nil || !removed {
+			return err
+		}
+		if _, err := tx.tx.Exec(ctx, `DELETE FROM receipts WHERE principal_hash = $1 AND request_key = $2`,
+			principal[:], key); err != nil {
+			return err
+		}
+		retired = true
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return retired, nil
+}
+
+func validReceiptKey(key string) bool {
+	return key != "" && len(key) <= maxRequestKeyBytes && validText(key)
+}
+
+// lockReceiptKey serializes all writes for a caller and key, including the first insert.
+func lockReceiptKey(ctx context.Context, tx *Tx, principal [sha256.Size]byte, key string) error {
+	_, err := tx.tx.Exec(ctx, `
+SELECT pg_advisory_xact_lock($1::int4, hashtext(encode($2::bytea, 'hex') || ':' || $3))`,
+		receiptLockNamespace, principal[:], key)
+	return err
 }
 
 // requestDigest hashes the version as two big-endian bytes,
