@@ -7925,3 +7925,11 @@ Found on 2026-11-27, in the review of the plan `go-s4-server-projects` (threat-r
 The one filter for what leaves a machine runs on the client. A path that the owner types into "Add repository" travels the other way: the website sends it to the server, and the server stores it in the folder operation and in the waiting command before the client reads it.
 What must hold: a credential that is pasted into the path field by mistake is not kept by the server longer than the operation needs it, and never reaches a log or a watch.
 Sprint 4 keeps the stored path as it is. The operation and its command are retired one day after they settle. Protecting the waiting payload needs encryption of stored commands, which is a design of its own.
+
+## 1678. Two tests of the longest resolved folder path skip on Linux
+
+Found on 2026-11-27, in the build of item 4 of the plan `go-s4-client-folders`.
+
+The contract allows a resolved folder path of up to 8,192 bytes. The subtests `resolved_path_of_8192_bytes` and `resolved_path_of_8193_bytes` of `TestInspectFolderRefusals` in `src/client/internal/folders/checkout_test.go` build a checkout at that depth, and skip when the file system refuses the folder. They skip on the Linux host of the build.
+The builder checked the rule that compares the length by itself, and it accepts 8,192 bytes and refuses 8,193.
+What is missing: a run of both subtests without a skip on a machine whose file system holds such a path, or a fixture that reaches the boundary another way. The plan asks for a run with no skip.
