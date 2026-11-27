@@ -15,12 +15,14 @@ import { BadAddress, SAMPLE, addressLabel, fixedAddress, rememberAddress, rememb
 import { WrongServer, api, onServer, openServer, selectServer, type Api, type ServerCandidate } from './api';
 import { applyRepositoryChange } from './repositories';
 
-const toMachine = (c: Client): Machine => ({
+const toMachine = (c: Client, repositoryMode: boolean): Machine => ({
   id: c.id, name: c.name, role: c.hostsServer ? 'master' : 'worker',
   status: c.state === ClientState.ONLINE ? 'online' : c.state === ClientState.OFFLINE ? 'offline' : 'pairing',
-  here: c.hostsServer, slots: { used: 0, limit: c.agentLimit }, lastSeen: c.lastSeen ? timestampMs(c.lastSeen) : 0,
+  here: c.hostsServer, slots: { used: 0, limit: c.agentLimit },
+  lastSeen: c.lastSeen ? timestampMs(c.lastSeen) : repositoryMode ? Number.NaN : 0,
   address: c.address, workspace: c.workspace, os: c.os, connectedFor: c.connectedAt ? Date.now() - timestampMs(c.connectedAt) : 0,
-  cpu: c.cpuPercent ?? 0, mem: c.memoryPercent ?? 0, cores: c.cores, ram: c.memoryGigabytes, version: c.version,
+  cpu: repositoryMode ? c.cpuPercent : c.cpuPercent ?? 0, mem: repositoryMode ? c.memoryPercent : c.memoryPercent ?? 0,
+  cores: c.cores, ram: c.memoryGigabytes, version: c.version,
   harnesses: c.harnessesScanned ? Object.fromEntries(c.harnesses.map((h) => [h.harness, h.version ?? null])) : null,
 });
 const toJoining = (c: Client): JoiningClient => ({ id: c.id, host: c.name, address: c.address, os: c.os, cores: c.cores, ram: c.memoryGigabytes, tokenId: c.tokenId });
@@ -146,14 +148,14 @@ function waitForRetry(signal: AbortSignal, delay: number): Promise<void> {
 
 function applyClientChange(s: State, { change }: WatchClientsResponse): void {
   if (change.case === 'all') {
-    s.machines = change.value.clients.filter((c) => !waits(c)).map(toMachine);
+    s.machines = change.value.clients.filter((c) => !waits(c)).map((c) => toMachine(c, s.server.repositoryMode));
     s.joining = change.value.clients.filter(waits).map(toJoining);
   } else if (change.case === 'saved') {
     const c = change.value;
     s.machines = s.machines.filter((m) => m.id !== c.id);
     s.joining = s.joining.filter((j) => j.id !== c.id);
     if (waits(c)) s.joining.push(toJoining(c));
-    else s.machines.push(toMachine(c));
+    else s.machines.push(toMachine(c, s.server.repositoryMode));
   } else if (change.case === 'removedId') {
     s.machines = s.machines.filter((m) => m.id !== change.value);
     s.joining = s.joining.filter((j) => j.id !== change.value);

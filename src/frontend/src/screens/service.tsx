@@ -181,7 +181,7 @@ function MachineDetail({ s, m, now }: { s: State; m: Machine; now: Ms }) {
   const trees = s.projects.filter((p) => p.machine === m.id && !p.archived);
   const subs = s.subscriptions.filter((x) => x.machine === m.id);
   return <div class="svc-detail">
-    {m.status === 'offline' && (!repositoryMode || m.lastSeen > 0) && <div class="callout warn" style="grid-column:1/-1">
+    {m.status === 'offline' && (!repositoryMode || Number.isFinite(m.lastSeen)) && <div class="callout warn" style="grid-column:1/-1">
       <Icon name="wifi-off" size={15} />
       <span class="grow">
         {m.name}
@@ -340,6 +340,14 @@ export function Machines({ s }: ScreenProps) {
           <tbody>
             {s.machines.filter((m) => !live.on || m.id === 'local').map((m) => { const k = 'machine:' + m.id; const open = !!s.expanded[k]; const off = m.status === 'offline'; const n = machineAgents(s, m.id).filter(running).length;
         const full = n >= m.slots.limit;
+        let lastSeen = '';
+        if (!live.on) {
+          if (!s.server.repositoryMode) lastSeen = off ? ago(m.lastSeen, now) + ' ago' : 'Now';
+          else if (Number.isFinite(m.lastSeen)) {
+            const age = ago(m.lastSeen, now);
+            lastSeen = age === 'now' ? 'Now' : age + ' ago';
+          }
+        }
         return <>
           <tr key={m.id} class={cx('click', off && 's-warn', off && 'off')} aria-expanded={open} onClick={() => act.toggleExpanded(k)}>
             <td class="state-cell">
@@ -375,14 +383,14 @@ export function Machines({ s }: ScreenProps) {
             </td>
             <td class="c-mid">{off || m.status === 'pairing' ? <span class="faint">—</span> : <Meter pct={m.cpu} />}</td>
             <td class="c-mid">{off || m.status === 'pairing' ? <span class="faint">—</span> : <Meter pct={m.mem} />}</td>
-            <td class={cx('c-mid', off ? 'warn-text' : 'muted')}>{live.on ? '' : off ? ago(m.lastSeen, now) + ' ago' : 'Now'}</td>
+            <td class={cx('c-mid', off ? 'warn-text' : 'muted')}>{lastSeen}</td>
             <td class="svc-acts" onClick={(e) => e.stopPropagation()}>
               <Menu class="icon-btn sm" label={'Actions for ' + m.name} align="end" width={230} trigger={<Icon name="ellipsis" size={15} />} items={[
                 { label: 'Rename', icon: 'pencil', onSelect: () => rename(m) },
                 { label: 'Scan harnesses again', icon: 'scan-search', disabled: off || live.on && mocks.busy('read-machines'), why: off ? `${m.name} is offline.` : null,
                   onSelect: () => live.on ? mocks.loadMachines() : machineAction(server.captureSession(), (scope) => server.scanClientHarnesses(scope, m.id), s.server.repositoryMode ? undefined : () => act.toast(`Scanned ${m.name}. Nothing changed.`)) },
                 { label: 'Add repository', icon: 'folder-git-2', disabled: off, why: off ? `${m.name} is offline.` : null, onSelect: () => act.openDialog({ type: 'add-repository', machine: m.id }) },
-                off && { label: 'Try to reconnect', icon: 'refresh-cw', onSelect: () => { if (act.refused()) return; act.toast(`Calling ${m.name}…`); machineAction(server.captureSession(), (scope) => server.reconnectClient(scope, m.id)); } },
+                off && !s.server.repositoryMode && { label: 'Try to reconnect', icon: 'refresh-cw', onSelect: () => { if (act.refused()) return; act.toast(`Calling ${m.name}…`); machineAction(server.captureSession(), (scope) => server.reconnectClient(scope, m.id)); } },
                 { sep: true },
                 { label: 'Remove machine', icon: 'trash-2', danger: true, disabled: !live.on && m.role === 'master', why: !live.on && m.role === 'master' ? 'The master runs the service and cannot be removed.' : null, onSelect: () => live.on ? refuse() : remove(m) },
               ].filter(Boolean)} />

@@ -16,7 +16,9 @@ export type Ms = number;
 // ---- the service and its machines -------------------------------------------------
 export interface Machine {
   id: Id; name: string; role: 'master' | 'worker' | string; status: 'online' | 'offline' | 'pairing' | string;
-  here?: boolean; slots: { used: number; limit: number }; lastSeen: Ms; address: string; workspace: string; os?: string;
+  here?: boolean; slots: { used: number; limit: number }; address: string; workspace: string; os?: string;
+  /** A missing timestamp in repository mode is represented by NaN. */
+  lastSeen: Ms;
   connectedFor?: number; cpu?: number; mem?: number; cores?: number; ram?: number; version?: string;
   /** The harness versions found on the machine: null for one that is missing, and null while it is scanned. */
   harnesses?: Record<string, string | null> | null; [more: string]: unknown;
