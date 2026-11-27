@@ -8058,3 +8058,10 @@ Found on 2026-11-27, in the review of items 3 and 5 of the plan `go-s4-web-repos
 2. No test lets a folder request start after its intent has expired. A change that sent such a request anyway would pass.
 
 Where: `src/frontend/e2e/repository-watch.spec.ts` and `src/frontend/e2e/folder-calls.spec.ts`. The test writer of item 6 of the plan, which calls the folder requests from the dialog, adds both.
+
+## 1693. The test of the staged result fence at admission uses one machine
+
+Found on 2026-11-27, in the review of item 3 of the plan `go-s4-server-link` (post-3 1). The review's verdict was to ship, and the code is right.
+
+When a client run is admitted, the server compares its first event number with the staged results of that machine. The test seeds the staged results on the same machine that asks for admission. A change that compared against the staged results of all machines would pass, and would refuse a valid run of another machine.
+Where: `TestRunAdmissionPersistsAcrossRestart` in `src/server/internal/link/admission_v2_test.go`. The test writer who finishes the settlement tests of item 6 adds a second signed peer.
