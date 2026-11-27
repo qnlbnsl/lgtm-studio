@@ -8074,16 +8074,6 @@ The machine detail shows every watched folder of a machine with its path. A long
 Where: the folder row of the machine detail in `src/frontend/src/screens/service.tsx`, and its tests in `src/frontend/e2e/repository-routes.spec.ts`, which use short paths.
 What must hold: the part of the path that tells two folders apart is readable on a phone. Wrapping the path changes how the screen looks, so the owner decides the form.
 
-## 1695. Three weaknesses in the tests of the server's recovery warning
-
-Found on 2026-11-27, in the review of item 4 of the plan `go-s4-server-link` (post-4 1 to post-4 3). The review's verdict was to ship, and the code is right.
-
-1. The test of a fault before the commit can fail although the server is right. The fixture signals the cut and returns the error at once, and the test then chooses between the cut signal and the reply. Five of twelve runs failed in the reviewer's scratch copy when the reply came first. The fixture must wait for the release signal after it announces the cut, as the fault after the commit already does.
-2. No test admits a different run that is ready at admission after a warning. A change that kept the warning in that case would pass.
-3. No test checks that the warning of one machine is absent on another machine. A change that showed the warning on every machine would pass.
-
-Where: `src/server/internal/link/recovery_v2_test.go`. The test writer of item 5 of the plan makes the three changes in a second step.
-
 ## 1696. Two smaller points of the client's stop for recovery
 
 Found on 2026-11-27, in the review of item 3 of the plan `go-s4-client-folders` (post-3c 2 and post-3c 3). The major finding of that review, that every failure to open the store counts as damaged history, is repaired in the build and is not part of this issue.
