@@ -79,7 +79,8 @@ function TreeRow({ kind, depth, open, onToggle, to, current, icon, label, state,
 }
 function ProjectTree({ s, route }: { s: State; route: Route }) {
   const path = route.path; const pinned = s.prefs.pinned || [];
-  const only = s.prefs.onlyNeedingYou;
+  const repositoryMode = s.server.repositoryMode;
+  const only = !repositoryMode && s.prefs.onlyNeedingYou;
   const repos = s.repos.map((r) => ({ r, projects: s.projects.filter((p) => p.repo === r.id && !p.archived && (!only || answerableRequests(s, { project: p.id }).length)) })).filter((x) => !only || x.projects.length);
   if (!repos.length) return <div class="empty" data-empty style="padding:12px 8px">
     <strong>No open requests</strong>
@@ -87,8 +88,9 @@ function ProjectTree({ s, route }: { s: State; route: Route }) {
   return repos.map(({ r, projects }) => {
     const rk = 'repo:' + r.id; const ropen = s.expanded[rk] ?? false;
     const rn = answerableRequests(s).filter((q) => projectOf(s, q.project).repo === r.id).length;
+    const hasFolders = repositoryMode ? !!r.folderRecords?.length : Object.keys(r.folders).length > 0;
     return <div key={r.id}>
-      <TreeRow kind="repo" depth={0} open={ropen} onToggle={() => act.toggleExpanded(rk)} to={'/r/' + r.id} current={path === '/r/' + r.id || path.startsWith(`/r/${r.id}/`)} icon={<Icon name="folder-git-2" size={14} class="faint" />} label={r.name} state={!Object.keys(r.folders).length ? <span class="faint">Not set up</span> : !ropen && rn ? rn : null} tone={Object.keys(r.folders).length ? 'warn' : null} action={Object.keys(r.folders).length > 0 && <button type="button" class="icon-btn sm hover-act" aria-label={'New project in ' + r.name} data-tip="New project here" data-tip-side="left" onClick={() => act.openDialog({ type: 'new-project', repo: r.id })}>
+      <TreeRow kind="repo" depth={0} open={ropen} onToggle={() => act.toggleExpanded(rk)} to={'/r/' + r.id} current={path === '/r/' + r.id || path.startsWith(`/r/${r.id}/`)} icon={<Icon name="folder-git-2" size={14} class="faint" />} label={r.name} state={!hasFolders && !repositoryMode ? <span class="faint">Not set up</span> : !ropen && rn ? rn : null} tone={hasFolders ? 'warn' : null} action={hasFolders && <button type="button" class="icon-btn sm hover-act" aria-label={'New project in ' + r.name} data-tip="New project here" data-tip-side="left" onClick={() => act.openDialog({ type: 'new-project', repo: r.id })}>
           <Icon name="plus" size={13} />
         </button>} />
       {ropen && <div class="tree-children" style="--guide:13px">

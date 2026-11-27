@@ -56,7 +56,10 @@ function Switcher({ s }: { s: State }) {
   const [q, setQ] = useState(''); const [i, setI] = useState(0); const list = useRef<HTMLDivElement>(null);
   const all: SearchItem[] = [];
   const text = live.on ? mocks.searchText(s) : null;
-  for (const r of s.repos) all.push({ kind: 'Repository', label: r.name, sub: r.remote || (live.on ? '' : 'No remote'), text: live.on ? text.repositories[r.id] : `${r.description || ''} ${r.remote || ''}`, to: '/r/' + r.id, icon: 'folder-git-2', mono: true });
+  for (const r of s.repos) {
+    const missingRemote = live.on ? '' : s.server.repositoryMode && r.remoteOmitted ? '—' : 'No remote';
+    all.push({ kind: 'Repository', label: r.name, sub: r.remote || missingRemote, text: live.on ? text.repositories[r.id] : `${r.description || ''} ${r.remote || ''}`, to: '/r/' + r.id, icon: 'folder-git-2', mono: true });
+  }
   for (const p of s.projects.filter((x) => !x.archived)) {
     const st = projectStatus(s, p); const sp = s.sprints.filter((x) => x.project === p.id);
     all.push({ kind: 'Project', label: p.name, sub: repoOf(s, p).name, text: live.on ? text.projects[p.id] : `${repoOf(s, p).name} ${p.goal || ''} ${p.branch || ''} ${sp.map((x) => x.name + ' ' + x.goal).join(' ')}`, note: st.tone === 'warn' ? st.word : p.stage, tone: st.tone, to: `/p/${p.id}/${homeTab()}`, icon: 'kanban' });

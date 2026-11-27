@@ -13,7 +13,7 @@ import {
   projectStatus, routeForAgent, routeForRequest, subLabel, defineQuestions, leadOf,
 } from '../data';
 import * as act from '../actions';
-import { Avatar, Menu } from '../ui';
+import { Avatar, Menu, NotConnected } from '../ui';
 import { workflowOf, agentGroups, lastFullRun } from './workflow';
 import type { Agent, Id, Project, Repo, State } from '../types';
 import { showCommit, type Worktree } from './git';
@@ -309,17 +309,17 @@ function repoFacts(s: State, r: Repo, now: number) {
   // Open questions of Define wait for the owner too. The sidebar and the Projects table count them.
   const defs = projects.map((p) => ({ p, n: defineQuestions(s, p.id) })).filter((x) => x.n > 0);
   const agent = r.agent ? byId(s.agents, r.agent) : undefined;
-  return { projects, rows, base, weekly, runs, failed, reqs, defs, agent };
+  return { rows, base, weekly, runs, failed, reqs, defs, agent };
 }
 type RepoFacts = ReturnType<typeof repoFacts>;
 interface RW { s: State; r: Repo; f: RepoFacts; now: number }
 
-function Projects({ s, r, f }: RW) {
-  return <Widget title="Projects" n={f.projects.length} wide end={<button type="button" class="btn sm" onClick={() => act.openDialog({ type: 'new-project', repo: r.id })}><Icon name="plus" size={13} />New project</button>}>
-    {f.rows.length === 0 ? <None>No projects</None> : <table class="cc-table">
+function Projects({ r, rows = [] }: { r: Repo; rows?: RepoFacts['rows'] }) {
+  return <Widget title="Projects" n={rows.length} wide end={<button type="button" class="btn sm" onClick={() => act.openDialog({ type: 'new-project', repo: r.id })}><Icon name="plus" size={13} />New project</button>}>
+    {rows.length === 0 ? <None>No projects</None> : <table class="cc-table">
       <thead><tr><th>Project</th><th>Phase</th><th>Sprints</th><th>Activity</th></tr></thead>
       <tbody>
-        {f.rows.map(({ p, f: pf, st }) => <tr key={p.id}>
+        {rows.map(({ p, f: pf, st }) => <tr key={p.id}>
           <td><a class="truncate" href={href(`/p/${p.id}/center`)} title={p.name}>{p.name}</a></td>
           <td class="muted">{PHASES[pf.cur]!.name}</td>
           <td>{pf.sps.length ? <span class="meter"><span class="progress"><i style={{ width: pf.done / pf.sps.length * 100 + '%' }} /></span><span class="num">{pf.done}/{pf.sps.length}</span></span> : <span class="muted">None</span>}</td>
@@ -374,11 +374,14 @@ function Base({ s, r, f, now }: RW) {
     </dl>
   </Widget>;
 }
+function NoRepoRequests({ name }: { name: string }) {
+  return <None>Nothing waits for you in {name}.</None>;
+}
 function RepoNeeds({ s, r, f, now }: RW) {
   const n = f.reqs.length + sum(f.defs.map((x) => x.n)); const rows = f.reqs.slice(0, 5); const defs = f.defs.slice(0, Math.max(1, 6 - rows.length));
   const more = f.reqs.length - rows.length + f.defs.length - defs.length;
   return <Widget title="Open requests" n={n} tone="warn" wide>
-    {n === 0 ? <None>Nothing waits for you in {r.name}.</None> : <ul class="cc-rows">
+    {n === 0 ? <NoRepoRequests name={r.name} /> : <ul class="cc-rows">
       {rows.map((q) => <li key={q.id}>
         <a class="cc-row" href={href(routeForRequest(s, q))}>
           <Avatar agent={agentOf(s, q.agent)} s={s} size="sm" status={false} />
@@ -407,13 +410,22 @@ function Runs({ f, now }: RW) {
     <Bars data={f.runs} labels={lastWeeks(now, 12)} last="This week" unit="run" label="Full runs of the base branch in each of the last 12 weeks" />
   </Widget>;
 }
-/** Where the repository lives: its remote, and its folder on each machine. */
-function Checkouts({ s, r }: RW) {
+/** The repository's remote and the folders where it lives. */
+function Checkouts({ s, r }: { s: State; r: Repo }) {
+  const repositoryMode = s.server.repositoryMode;
+  const folders = repositoryMode ? r.folderRecords ?? [] : Object.entries(r.folders).map(([clientId, resolvedPath]) => ({ id: clientId, clientId, resolvedPath }));
+  const origin = r.remote || <span class="muted">{repositoryMode && r.remoteOmitted ? '—' : 'None'}</span>;
+  const valueClass = cx('mono', !repositoryMode && 'truncate');
   return <Widget title="Checkouts" to="/machines" wide>
-    <dl class="cc-pairs">
-      <dt>Remote</dt><dd class="mono truncate">{r.remote || <span class="muted">None</span>}</dd>
-      {Object.entries(r.folders).map(([m, folder]) => { const mc = machineOf(s, m);
-        return [<dt key={m}>{mc?.name || m}</dt>, <dd key={m + 'f'}><span class="mono truncate">{folder}</span>{mc && mc.status !== 'online' && <span class="muted"> · {mc.status === 'offline' ? 'Offline' : 'Pairing'}</span>}</dd>]; })}
+    <dl class="cc-pairs" style={repositoryMode ? { gridTemplateColumns: 'fit-content(40%) minmax(0, 1fr)', overflowWrap: 'anywhere' } : undefined}>
+      <dt>Remote</dt><dd class={valueClass}>{origin}</dd>
+      {folders.map(({ id, clientId, resolvedPath }) => {
+        const mc = machineOf(s, clientId);
+        return [
+          <dt key={id}>{mc?.name || clientId}</dt>,
+          <dd key={id + 'f'}><span class={valueClass}>{resolvedPath}</span>{!repositoryMode && mc && mc.status !== 'online' && <span class="muted"> · {mc.status === 'offline' ? 'Offline' : 'Pairing'}</span>}</dd>,
+        ];
+      })}
     </dl>
   </Widget>;
 }
@@ -424,10 +436,24 @@ const REPO_WIDGETS: { id: string; name: string }[] = [
   { id: 'runs', name: 'Full runs' }, { id: 'usage', name: 'Usage by project' }, { id: 'base', name: 'Base branch' }, { id: 'about', name: 'Checkouts' },
 ];
 
-export function RepoCenter({ s, repo: r }: { s: State; repo: Repo }) {
+function SampleRepoCenter({ s, repo: r }: { s: State; repo: Repo }) {
   const now = useNow(); const f = repoFacts(s, r, now); const w: RW = { s, r, f, now };
   return <Grid s={s} k={REPO_KEYS} all={REPO_WIDGETS} parts={{
-    projects: <Projects {...w} />, needs: <RepoNeeds {...w} />, plan: <Plan {...w} />, merged: <Merged {...w} />,
-    runs: <Runs {...w} />, usage: <UsageBy {...w} />, base: <Base {...w} />, about: <Checkouts {...w} />,
+    projects: <Projects r={r} rows={f.rows} />, needs: <RepoNeeds {...w} />, plan: <Plan {...w} />, merged: <Merged {...w} />,
+    runs: <Runs {...w} />, usage: <UsageBy {...w} />, base: <Base {...w} />, about: <Checkouts s={s} r={r} />,
+  }} />;
+}
+
+export function RepoCenter({ s, repo: r }: { s: State; repo: Repo }) {
+  if (!s.server.repositoryMode) return <SampleRepoCenter s={s} repo={r} />;
+  return <Grid s={s} k={REPO_KEYS} all={REPO_WIDGETS} parts={{
+    projects: <Projects r={r} />,
+    needs: <Widget title="Open requests" wide><NoRepoRequests name={r.name} /></Widget>,
+    plan: <Widget title="Plan" wide><NotConnected what="This page" /></Widget>,
+    merged: <Widget title="Sprints merged"><NotConnected what="This page" /></Widget>,
+    runs: <Widget title="Full runs"><NotConnected what="This page" /></Widget>,
+    usage: <Widget title="Usage by project" to="/usage"><NotConnected what="This page" /></Widget>,
+    base: <Widget title="Base branch" to={`/r/${r.id}/git`}><NotConnected what="This page" /></Widget>,
+    about: <Checkouts s={s} r={r} />,
   }} />;
 }
