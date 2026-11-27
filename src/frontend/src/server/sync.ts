@@ -10,7 +10,7 @@ import { PreviewState } from '@lgtm/api/preview';
 import { ProjectService } from '@lgtm/api/projects';
 import { SignInResult } from '@lgtm/api/session';
 import { FRAMED, persist, store, update } from '../lib';
-import type { JoiningClient, Machine, State } from '../types';
+import type { JoiningClient, Machine, Repo, State } from '../types';
 import { BadAddress, SAMPLE, addressLabel, fixedAddress, rememberAddress, rememberedAddress, serverUrl } from './address';
 import { WrongServer, api, onServer, openServer, selectServer, type Api, type ServerCandidate } from './api';
 
@@ -62,6 +62,14 @@ let watching: SessionScope | null = null;
 
 /** Captures the clients and lifetime that own a protected operation. */
 export function captureSession(): SessionScope | null { return session; }
+
+// This is a stub of the test writer for the current repository snapshot.
+export function currentRepositorySnapshot(): { openedAt: number; repos: readonly Repo[] } | undefined {
+  return undefined;
+}
+
+// This is a stub of the test writer for the repository watch refresh.
+export function refreshRepositories(): void {}
 
 function stopWatching(): void {
   session = null;

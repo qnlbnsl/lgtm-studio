@@ -9,12 +9,14 @@ import { dirname, join, resolve, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
+import type { MessageInitShape } from '@bufbuild/protobuf';
 import { Code, ConnectError, cors, type ConnectRouter, type ConnectRouterOptions } from '@connectrpc/connect';
-import { ClientService, ClientState, type Client, type WatchClientsResponse } from '@lgtm/api/clients';
-import { ProjectService } from '@lgtm/api/projects';
+import { ClientService, ClientState, type Client, type WatchClientsResponse, type WatchClientsResponseSchema } from '@lgtm/api/clients';
+import { ProjectService, type WatchRepositoriesResponseSchema } from '@lgtm/api/projects';
 import { SessionService, SignInResult, type GetServerResponse } from '@lgtm/api/session';
 import { test as base, type Page } from '@playwright/test';
 import { build, type Plugin } from 'vite';
+import type { currentRepositorySnapshot, refreshRepositories } from '../../src/server/sync';
 
 const root = fileURLToPath(new URL('../../../../', import.meta.url));
 const frontend = join(root, 'src/frontend');
@@ -64,7 +66,23 @@ function observeBrowserCalls(): Plugin {
       const module = JSON.stringify(original.id);
       return `
         export * from ${module};
-        import { createRouterTransport as create } from ${module};
+        import { createClient as makeClient, createRouterTransport as create } from ${module};
+        export function createClient(service, transport) {
+          const client = makeClient(service, transport);
+          const probe = window.repositoryWatchProbe;
+          if (!probe || service.typeName !== ${JSON.stringify(ProjectService.typeName)}) return client;
+          return { ...client, watchRepositories(...args) {
+            const frames = client.watchRepositories(...args);
+            return { async *[Symbol.asyncIterator]() {
+              for await (const frame of frames) {
+                const held = probe.takeRepositoryFrame();
+                if (!held) { yield frame; continue; }
+                await held.gate;
+                try { yield frame; } finally { held.finished = true; }
+              }
+            } };
+          } };
+        }
         export function createRouterTransport(routes, options) {
           const transport = options?.transport;
           const observe = next => async request => {
@@ -86,6 +104,10 @@ function observeBrowserCalls(): Plugin {
       if (id === main) return source + `
         import { unmount } from './app';
         import { connect } from './server/sync';
+        import { currentRepositorySnapshot, refreshRepositories } from './server/sync';
+        if (window.repositoryWatchProbe) window.repositoryWatchProbe.bridge = {
+          connect, currentRepositorySnapshot, refreshRepositories,
+        };
         if (window.repositorySessionProbe) window.repositorySessionProbe.bridge = {
           connect,
           remount() {
@@ -376,7 +398,7 @@ export const sessionProcedure = {
   remove: `/${ClientService.typeName}/${ClientService.method.removeClient.name}`,
   scan: `/${ClientService.typeName}/${ClientService.method.scanClientHarnesses.name}`,
 } as const;
-type SessionMethod = keyof typeof sessionProcedure;
+type SessionMethod = keyof typeof sessionProcedure | 'repositories';
 type CookieObservation = 'missing' | 'accepted' | 'unexpected';
 interface SessionCall { listener: string; method: SessionMethod; cookie: CookieObservation }
 
@@ -385,9 +407,14 @@ export function sessionRegistry() {
 }
 
 // Each listener can hold one request per procedure. Call records contain only cookie classifications.
-export async function serveRepositorySession({ pageOrigin, hostname, listener, registry, clients = [], sample = false }: {
+export async function serveRepositorySession({ pageOrigin, hostname, listener, registry, clients = [], sample = false, controlled }: {
   pageOrigin: string; hostname: string; listener: string; registry: ReturnType<typeof sessionRegistry>;
   clients?: Client[]; sample?: boolean;
+  controlled?: {
+    services: string[];
+    machines: (signal: AbortSignal) => AsyncIterable<MessageInitShape<typeof WatchClientsResponseSchema>>;
+    repositories: (signal: AbortSignal) => AsyncIterable<MessageInitShape<typeof WatchRepositoriesResponseSchema>>;
+  };
 }) {
   const cookieName = 'lgtm-session-fixture';
   const cookieFlags = '; Path=/; HttpOnly; SameSite=Strict';
@@ -425,7 +452,7 @@ export async function serveRepositorySession({ pageOrigin, hostname, listener, r
       router.service(SessionService, {
         async getServer(_request, context) {
           const signedIn = await record('discovery', context.requestHeader, context.signal, false);
-          return { product: 'lgtm-studio', contract: 1, sample, signedIn, services: sample ? [] : [ProjectService.typeName] };
+          return { product: 'lgtm-studio', contract: 1, sample, signedIn, services: controlled?.services ?? (sample ? [] : [ProjectService.typeName]) };
         },
         async signIn(_request, context) {
           await record('signIn', context.requestHeader, context.signal, false);
@@ -443,6 +470,7 @@ export async function serveRepositorySession({ pageOrigin, hostname, listener, r
       router.service(ClientService, {
         async *watchClients(_request, context) {
           await record('watch', context.requestHeader, context.signal);
+          if (controlled) { yield* controlled.machines(context.signal); return; }
           const watch = ++watchCount;
           const aborted = untilAborted(context.signal);
           void aborted.then(() => watchAborts.push(watch));
@@ -481,6 +509,11 @@ export async function serveRepositorySession({ pageOrigin, hostname, listener, r
       });
       router.service(ProjectService, {
         async *watchRepositories(_request, context) {
+          if (controlled) {
+            await record('repositories', context.requestHeader, context.signal);
+            yield* controlled.repositories(context.signal);
+            return;
+          }
           if (!registry.active || !(context.requestHeader.get('cookie') ?? '').split(/; */).includes(cookieName + '=' + registry.value)) {
             throw new ConnectError('The fixture session is missing.', Code.Unauthenticated);
           }
@@ -572,5 +605,80 @@ export async function observeRepositorySession(page: Page, origins: string[]) {
       });
     };
   }, procedure.machines);
+  return trace;
+}
+
+// Each connected attempt receives its own frames, even when an older attempt is still open.
+export function controlledWatch<Frame extends object>() {
+  function newAttempt() {
+    const steps: (Frame | Code | 'end')[] = [];
+    let available = barrier();
+    return {
+      aborted: false,
+      send(step: Frame | Code | 'end') { steps.push(step); available.open(); },
+      async *read(signal: AbortSignal): AsyncGenerator<Frame> {
+        const aborted = untilAborted(signal).then(() => { this.aborted = true; });
+        while (!signal.aborted) {
+          if (steps.length === 0) await Promise.race([available.reached, aborted]);
+          if (signal.aborted) return;
+          const step = steps.shift();
+          if (steps.length === 0) available = barrier();
+          if (step === 'end') return;
+          if (typeof step === 'number') throw new ConnectError('The fixture ended the watch.', step);
+          if (step) yield step;
+        }
+      },
+    };
+  }
+  const attempts: ReturnType<typeof newAttempt>[] = [];
+  return {
+    attempts,
+    read(signal: AbortSignal) {
+      const attempt = newAttempt();
+      attempts.push(attempt);
+      return attempt.read(signal);
+    },
+  };
+}
+
+interface RepositoryWatchProbe {
+  bridge?: { connect: (address: string) => Promise<void>; currentRepositorySnapshot: typeof currentRepositorySnapshot; refreshRepositories: typeof refreshRepositories };
+  requests: { origin: string; path: string; signal: AbortSignal | null | undefined }[];
+  holdNextRepositoryFrame: () => HeldRepositoryFrame;
+  takeRepositoryFrame: () => HeldRepositoryFrame | undefined;
+}
+
+interface HeldRepositoryFrame { ready: boolean; release: () => void; finished: boolean; gate: Promise<void> }
+
+declare global { interface Window { repositoryWatchProbe: RepositoryWatchProbe } }
+
+export async function observeRepositoryWatch(page: Page, origins: string[]) {
+  const trace = await observeWebsite(page, origins);
+  await page.addInitScript(({ machines, repositories }) => {
+    const send = window.fetch.bind(window);
+    let hold: HeldRepositoryFrame | undefined;
+    window.repositoryWatchProbe = {
+      requests: [],
+      holdNextRepositoryFrame() {
+        let release!: () => void;
+        const gate = new Promise<void>((done) => { release = done; });
+        return hold = { ready: false, release, finished: false, gate };
+      },
+      takeRepositoryFrame() {
+        // Hold a decoded frame already queued for the application when a watch is replaced.
+        const held = hold;
+        hold = undefined;
+        if (held) held.ready = true;
+        return held;
+      },
+    };
+    window.fetch = (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      if (url.pathname === machines || url.pathname === repositories) {
+        window.repositoryWatchProbe.requests.push({ origin: url.origin, path: url.pathname, signal: init?.signal });
+      }
+      return send(input, init);
+    };
+  }, procedure);
   return trace;
 }
