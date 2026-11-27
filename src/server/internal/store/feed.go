@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -87,9 +88,15 @@ func (tx *Tx) Record(change ChangeRef) error {
 	return tx.err
 }
 
-// RecordOnce is a stub of the test writer.
+// RecordOnce records a reference if this write has not already recorded it.
 func (tx *Tx) RecordOnce(change ChangeRef) error {
-	return nil
+	if tx.err != nil {
+		return tx.err
+	}
+	if slices.Contains(tx.changes, change) {
+		return nil
+	}
+	return tx.Record(change)
 }
 
 // validText reports whether PostgreSQL can store the value as text.
