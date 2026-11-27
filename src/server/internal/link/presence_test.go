@@ -141,8 +141,8 @@ func TestBecomeCurrent(t *testing.T) {
 	f := newPresenceFixture(t, nil)
 	if !storetest.Scalar[bool](t, f.obs, `SELECT to_regclass('link_machines') IS NOT NULL
 		AND to_regclass('link_connections') IS NOT NULL
-		AND EXISTS (SELECT FROM schema_migrations WHERE part = 'link' AND version = 2)`) {
-		t.Error("Link migration revision 2 or the Part B tables were missing before admission.")
+		AND EXISTS (SELECT FROM schema_migrations WHERE part = 'link' AND version = 3)`) {
+		t.Error("Link migration version 3 or the Part B tables were missing before admission.")
 	}
 	m := f.machine(t, bytes.Repeat([]byte{1}, 32), "station")
 	before := f.head(t)

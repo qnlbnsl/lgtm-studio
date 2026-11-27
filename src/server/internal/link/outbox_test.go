@@ -4,10 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io/fs"
 	"strings"
 	"testing"
-	"testing/fstest"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -37,13 +35,8 @@ func TestCommandMigrationUpgradesPartB(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = obs.Close(context.Background()) })
 
-	full := Migrations()
-	const oldName = "0001_link.sql"
-	oldSQL, err := fs.ReadFile(full.Files, oldName)
-	if err != nil {
-		t.Fatal("The Part B migration was not available.")
-	}
-	old := store.Migrations{Part: "link", Files: fstest.MapFS{oldName: {Data: oldSQL}}}
+	full := linkMigrationManifestThrough(t, "0001_link.sql", "0002_link_commands.sql")
+	old := linkMigrationManifestThrough(t, "0001_link.sql")
 	if s.Migrate(ctx, machines.Migrations(), old) != nil {
 		t.Fatal("The Part B manifest did not apply.")
 	}
@@ -52,13 +45,11 @@ func TestCommandMigrationUpgradesPartB(t *testing.T) {
 		t.Fatal("The old manifest did not start at link revision 1 without a queue.")
 	}
 
-	r, hub := machines.NewRegistry(), NewHub()
-	f := &presenceFixture{s: s, r: r, obs: obs, hub: hub, state: NewState(s, r, hub)}
+	f := &presenceFixture{s: s, r: machines.NewRegistry(), obs: obs}
 	f.machine(t, bytes.Repeat([]byte{1}, 32), "waiting for upgrade")
 	connected := f.machine(t, bytes.Repeat([]byte{2}, 32), "connected before upgrade")
 	f.approve(t, connected.ID)
-	stream := f.admit(t, connected.ID, 1)
-	outboxFixtureExec(t, obs, "UPDATE link_machines SET event_mark = 42 WHERE machine_id = $1", connected.ID)
+	streamID := seedLinkMigrationConnection(t, f, connected.ID)
 
 	request := store.Request{
 		Key: "upgrade-request", Caller: "upgrade-owner", Procedure: "upgrade-fixture",
@@ -75,7 +66,7 @@ func TestCommandMigrationUpgradesPartB(t *testing.T) {
 		(SELECT count(*) FROM machines WHERE approval = 'waiting') = 1
 		AND EXISTS (SELECT FROM link_connections WHERE machine_id = $1 AND stream_id = $2)
 		AND EXISTS (SELECT FROM link_machines WHERE machine_id = $1 AND event_mark = 42)
-		AND (SELECT count(*) FROM receipts) = 1`, connected.ID, stream.ID) {
+		AND (SELECT count(*) FROM receipts) = 1`, connected.ID, streamID) {
 		t.Fatal("The Part B records to preserve were incomplete.")
 	}
 	before := outboxPartBRecords(t, f)
@@ -131,7 +122,7 @@ func TestCommandMigrationUpgradesPartB(t *testing.T) {
 			_, err := obs.Exec(t.Context(), `INSERT INTO link_commands
 				(id, machine_id, action, payload, created_at, expires_at, attempt, sent_stream_id, dispatched, finished_at, outcome)
 				VALUES ($1, $2, 'scan_harnesses', $3, $4, $4::timestamptz + interval '2 minutes', $5, $6, true, $7, $8)`,
-				fixtureStreamID(t), connected.ID, tc.payload, now, tc.attempt, stream.ID, tc.finished, tc.outcome)
+				fixtureStreamID(t), connected.ID, tc.payload, now, tc.attempt, streamID, tc.finished, tc.outcome)
 			var constraint *pgconn.PgError
 			if err == nil {
 				t.Fatal("PostgreSQL did not reject the invalid command with a check constraint.")

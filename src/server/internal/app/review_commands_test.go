@@ -230,9 +230,9 @@ func TestServerRestartsAfterInterruptedCommandMigration(t *testing.T) {
 				AND NOT l.granted AND l.mode = 'ShareRowExclusiveLock'
 				AND $1 = ANY(pg_blocking_pids(l.pid)))`, int32(locker.PgConn().PID()))
 	})
-	if !storetest.Scalar[bool](t, obs, `SELECT EXISTS (SELECT FROM schema_migrations WHERE part = 'link' AND version = 2)
+	if !storetest.Scalar[bool](t, obs, `SELECT EXISTS (SELECT FROM schema_migrations WHERE part = 'link' AND version = 3)
 		AND to_regclass('link_commands') IS NOT NULL`) {
-		t.Fatal("Startup reached the interruption point before command migration two committed.")
+		t.Fatal("Startup reached the interruption point before Link migration version 3 committed.")
 	}
 	requireCommandReviewListenerClosed(t, cfg.ListenAddr)
 	cancel()

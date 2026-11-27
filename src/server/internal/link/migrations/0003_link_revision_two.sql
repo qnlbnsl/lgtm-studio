@@ -1,0 +1,1 @@
+-- This is a stub of the test writer for Link migration version 3.

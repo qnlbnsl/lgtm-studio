@@ -267,9 +267,9 @@ func TestServerCommandSweepLifecycle(t *testing.T) {
 
 func seedStoppedCommandSweep(t *testing.T, server *servertest.Server, obs *pgx.Conn) (action, standing string) {
 	t.Helper()
-	if !storetest.Scalar[bool](t, obs, `SELECT EXISTS (SELECT FROM schema_migrations WHERE part = 'link' AND version = 2)
+	if !storetest.Scalar[bool](t, obs, `SELECT EXISTS (SELECT FROM schema_migrations WHERE part = 'link' AND version = 3)
 		AND to_regclass('link_commands') IS NOT NULL`) {
-		t.Fatal("The application did not apply command migration 2 during startup.")
+		t.Fatal("The application did not apply Link migration version 3 during startup.")
 	}
 	owner := server.Clients(t)
 	machine := joinAppLink(t, server, owner, "stopped sweep")
