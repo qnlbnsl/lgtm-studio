@@ -242,7 +242,7 @@ export interface State {
   // The page's own state.
   prefs: Prefs; drafts: Record<string, string>; pending: Record<string, any>; expanded: Record<string, boolean>;
   inspecting: Record<Id, string>; toasts: Toast[]; dialog: DialogState | null; phoneOffer: string | null;
-  settings: Settings; ui: UiState;
+  settings: Settings; ui: UiState; harnessCatalog: Record<string, Harness>;
   // The records.
   session: Session; conn: Connection;
   server: ServerState; joining: JoiningClient[];

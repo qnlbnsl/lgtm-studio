@@ -282,27 +282,39 @@ function synth(path: string, add: number, del: number, seed = 1, status = 'M'): 
   return out.join('\n');
 }
 
-let seq = 0;
 /** How a sample file is written: a hand-written diff by name, or counts for filler lines. */
 interface FileOpt { diff?: keyof typeof DIFFS; add?: number; del?: number; staged?: boolean; kind?: string; oldPath?: string; size?: string }
-function file(path: string, status: string, opt: FileOpt = {}): GitFile {
-  const f: GitFile & { diff?: string } = { id: 'f' + (++seq), path, status, staged: false, kind: 'text', ...opt };
-  if (f.kind === 'text') {
-    f.hunks = parseDiff(opt.diff ? DIFFS[opt.diff] : synth(path, opt.add ?? 6, opt.del ?? (status === 'A' ? 0 : 3), seq, status));
-    f.add = count(f.hunks, 'add'); f.del = count(f.hunks, 'del');
-  } else if (f.kind === 'large') { f.hunks = null; } else { f.add = 0; f.del = 0; }
-  delete f.diff;
-  return f;
+function createSampleGit() {
+  let fileNumber = 0;
+  let commitNumber = 0;
+  function file(path: string, status: string, opt: FileOpt = {}): GitFile {
+    const f: GitFile & { diff?: string } = { id: 'f' + (++fileNumber), path, status, staged: false, kind: 'text', ...opt };
+    if (f.kind === 'text') {
+      f.hunks = parseDiff(opt.diff ? DIFFS[opt.diff] : synth(path, opt.add ?? 6, opt.del ?? (status === 'A' ? 0 : 3), fileNumber, status));
+      f.add = count(f.hunks, 'add'); f.del = count(f.hunks, 'del');
+    } else if (f.kind === 'large') { f.hunks = null; } else { f.add = 0; f.del = 0; }
+    delete f.diff;
+    return f;
+  }
+  function hash(): string {
+    let x = (++commitNumber * 2654435761) >>> 0;
+    x ^= x >>> 13;
+    return ((x * 40503) >>> 0).toString(16).padStart(8, '0').slice(0, 7);
+  }
+  function commit(subject: string, author: Id, agoMs: number, files: [string, string, FileOpt?][], refs: string[] = []): GitCommit {
+    return { hash: hash(), subject, author, ts: Date.now() - agoMs, files: files.map(([p, st, o]) => file(p, st, o || {})), refs };
+  }
+  return { file, hash, commit };
 }
-let hseq = 0;
-function hash() { hseq += 1; let x = (hseq * 2654435761) >>> 0; x ^= x >>> 13; return ((x * 40503) >>> 0).toString(16).padStart(8, '0').slice(0, 7); }
-function commit(subject: string, author: Id, agoMs: number, files: [string, string, FileOpt?][], refs: string[] = []): GitCommit {
-  return { hash: hash(), subject, author, ts: Date.now() - agoMs, files: files.map(([p, st, o]) => file(p, st, o || {})), refs };
-}
+
+const sampleGit = new WeakMap<State, ReturnType<typeof createSampleGit>>();
 
 // ---- seed -------------------------------------------------------------------------
 type WorktreeSeed = Partial<Worktree> & Pick<Worktree, 'id' | 'repo' | 'kind' | 'branch' | 'parent' | 'machine' | 'folder'>;
 export function seedGit(state: State): void {
+  const git = createSampleGit();
+  sampleGit.set(state, git);
+  const { file, commit } = git;
   const wts: Worktree[] = []; const P = (id: Id) => byId(state.projects, id);
   const repoOf = (p: Project) => byId(state.repos, p.repo)!;
   const wt = (o: WorktreeSeed) => { const w: Worktree = { files: [], commits: [], ahead: 0, behind: 0, merge: null, owner: null, team: null, project: null, ...o }; wts.push(w); return w; };
@@ -489,6 +501,7 @@ function discard(s: State, w: Worktree, files: GitFile[]) { if (live.on) return 
 function doCommit(wid: Id, message: string) { if (live.on) return liveGit.commit(wid, message);
   let n = 0;
   update((s) => {
+    const { hash } = sampleGit.get(s)!;
     const w = findWt(s, wid); const staged = w.files.filter((f) => f.staged); n = staged.length;
     for (const k of w.commits) k.refs = k.refs.filter((r) => r !== w.branch);
     w.commits.unshift({ hash: hash(), subject: message.split('\n')[0], body: message.split('\n').slice(1).join('\n').trim(), author: 'owner', ts: Date.now(), files: staged.map((f) => ({ ...f, staged: false })), refs: [w.branch] });
@@ -498,6 +511,7 @@ function doCommit(wid: Id, message: string) { if (live.on) return liveGit.commit
 }
 function updateFromBase(wid: Id) { if (live.on) return refuse();
   update((s) => {
+    const { file, hash } = sampleGit.get(s)!;
     const w = findWt(s, wid); const n = w.behind!;
     for (const k of w.commits) k.refs = k.refs.filter((r) => r !== w.branch);
     w.commits.unshift({ hash: hash(), subject: `Merge ${w.parent} into ${w.branch}`, author: 'owner', ts: Date.now(), files: [file('packages/web/test/reconnect.test.ts', 'M', { diff: 'reconnect' })], refs: [w.branch], merge: true });
@@ -508,6 +522,7 @@ function updateFromBase(wid: Id) { if (live.on) return refuse();
 function integrate(wid: Id) { if (live.on) return liveGit.integrate(wid);
   let msg = '';
   update((s) => {
+    const { hash } = sampleGit.get(s)!;
     const w = findWt(s, wid); const parent = s.worktrees.find((x) => x.repo === w.repo && x.branch === w.parent);
     if (parent) {
       const mine = w.commits.slice(0, w.ahead).map((k) => ({ ...k, refs: [] }));
@@ -541,6 +556,7 @@ function choose(wid: Id, fid: Id, kid: string, choice: ConflictChoice | null) { 
 function markResolved(wid: Id, fid: Id, value = true) { if (live.on) return liveGit.resolve(wid, fid, value); update((s) => { findWt(s, wid).merge!.files.find((x) => x.id === fid)!.resolved = value; }); }
 function continueMerge(wid: Id) { if (live.on) return liveGit.continueMerge(wid);
   update((s) => {
+    const { file, hash } = sampleGit.get(s)!;
     const w = findWt(s, wid); const m = w.merge!;
     for (const k of w.commits) k.refs = k.refs.filter((r) => r !== w.branch);
     w.commits.unshift({ hash: hash(), subject: `Merge ${m.from} into ${w.branch}`, author: 'owner', ts: Date.now(), refs: [w.branch], merge: true, files: m.files.map((f) => file(f.path, 'M', { add: 5, del: 3 })) });
@@ -715,7 +731,15 @@ function Changes({ s, w, mode, phone }: ViewProps) {
   const can = staged.length > 0 && msg.trim().length > 0 && (live.on ? !w.files.some((f) => f.conflict) && w.ready : !w.merge);
   const commitNow = () => { if (!can) return; if (live.on) { doCommit(w.id, msg.trim()); return; } doCommit(w.id, msg.trim()); setUi({ message: '', file: null }); };
   const [writing, setWriting] = useState(false);
-  const generate = () => { if (live.on) return refuse(); if (!staged.length || writing) return; setWriting(true); setTimeout(() => { setWriting(false); setUi({ message: act.commitMessage(staged.map((f) => f.path)) }); }, 900); };
+  const generate = () => {
+    if (live.on) return refuse();
+    if (!staged.length || writing) return;
+    setWriting(true);
+    act.sampleLater(() => {
+      setWriting(false);
+      setUi({ message: act.commitMessage(staged.map((f) => f.path)) });
+    }, 900);
+  };
   const why = w.merge && !live.on ? 'Finish or abort the merge first' : w.files.some((f) => f.conflict) ? 'Resolve the conflicted files first' : !staged.length ? 'Stage a file first' : '';
   if (!w.files.length) {
     return <div class="git-clean">

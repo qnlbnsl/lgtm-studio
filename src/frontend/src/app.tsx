@@ -11,7 +11,7 @@ import {
 } from './lib';
 import {
   seed, emptyState, projectOf, repoOf, agentOf, teamOf, teamName, teamsOf, agentsOfTeam, leadOf, answerableRequests, agentStatus, projectStatus,
-  KIND_LABEL, routeForRequest, routeForAgent, byId, agentLabel, machineOf, HARNESSES, questionsView, MAIN,
+  KIND_LABEL, routeForRequest, routeForAgent, byId, agentLabel, machineOf, HARNESSES, selectHarnessCatalog, questionsView, MAIN,
 } from './data';
 import * as act from './actions';
 import * as engine from './engine';
@@ -693,14 +693,20 @@ function App() {
 //   slots        components for the named places above, by name
 export { App };
 export interface MountOptions { connection?: Connection | null; slots?: Record<string, SlotFill>; mode?: 'mock' | 'live' | string }
+function selectWorkspace(state: State): void {
+  store.state = state;
+  selectHarnessCatalog(state);
+}
+
 export function mount(el: Element, { connection, slots: fills, mode = 'mock' }: MountOptions = {}) {
+  server.stop();
   setDraftNotice(() => act.toast('This draft is too long to keep after a reload.', 'error'));
   engine.setConnection(connection);
   slots = fills || {};
   act.stopSimulation();
   live.on = mode === 'live';
   if (live.on) return mountLive(el);
-  store.state = emptyWorkspace();
+  selectWorkspace(emptyWorkspace());
   act.applyPrefs();
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', act.applyPrefs);
   let hasSampleWorkspace = false;
@@ -711,7 +717,7 @@ export function mount(el: Element, { connection, slots: fills, mode = 'mock' }: 
     const next = repositoryMode ? emptyWorkspace() : sampleWorkspace();
     next.server = { ...previous.server };
     next.prefs = { ...previous.prefs, pinned: next.prefs.pinned };
-    store.state = next;
+    selectWorkspace(next);
     hasSampleWorkspace = !repositoryMode;
     if (hasSampleWorkspace) {
       act.startSimulation();
@@ -753,7 +759,7 @@ function mountLive(el: Element) {
   const state = emptyWorkspace();
   for (const key of Object.keys(state.settings)) state.settings[key] = typeof state.settings[key] === 'boolean' || typeof state.settings[key] === 'number' ? null : typeof state.settings[key] === 'string' ? '' : {};
   state.settings.quiet = { on: null, from: '', to: '', failed: null };
-  store.state = guardStore(state);
+  selectWorkspace(guardStore(state));
   act.applyPrefs();
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', act.applyPrefs);
   // A screen that changes an engine record outside update() is refused the same way.
@@ -792,6 +798,7 @@ function onRefusedError(e: Event) {
 
 // Takes the website out of the element and returns to the default connection.
 export function unmount(el: Element): void {
+  server.stop();
   render(null, el);
   act.stopSimulation();
   if (live.on) { chat.reset(); engine.connection().close?.(); removeEventListener('error', onRefusedError); removeEventListener('unhandledrejection', onRefusedError); live.on = false; }

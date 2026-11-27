@@ -68,10 +68,12 @@ function watch(): void {
 /** Starts reading the server's records, when nothing reads them yet. */
 export function ensureReading(): void { if (!watching) watch(); }
 
-let selectWorkspace: (repositoryMode: boolean) => void;
+let selectWorkspace: ((repositoryMode: boolean) => void) | null = null;
 
 /** Connects to a server and, when the browser is signed in there, starts reading it. */
 export async function connect(text: string): Promise<void> {
+  const select = selectWorkspace;
+  if (!select) return;
   let url: string;
   try { url = serverUrl(text); } catch (e) { update((s) => { s.server = { ...s.server, status: 'ask', error: reason(e) }; }); return; }
   stopWatching();
@@ -79,12 +81,13 @@ export async function connect(text: string): Promise<void> {
   try {
     // The sample inside the page has no cookie, so it remembers the session the way the mock always did.
     const server = await openServer(url, { signedIn: persist('session', 'in') === 'in' });
+    if (selectWorkspace !== select) return;
     const sample = url === SAMPLE || server.sample;
     const repositoryMode = !sample && server.services.includes(ProjectService.typeName);
     if (!fixedAddress()) rememberAddress(text);
     // A framed copy of the website, in the Design view, may ask for a signed-out screen.
     const forced = FRAMED ? new URLSearchParams(location.hash.split('?')[1] || '').get('session') : null;
-    selectWorkspace(repositoryMode);
+    select(repositoryMode);
     update((s) => {
       s.server.status = 'ready';
       s.server.sample = sample;
@@ -93,6 +96,7 @@ export async function connect(text: string): Promise<void> {
     });
     if (store.state.session.status === 'in') watch();
   } catch (e) {
+    if (selectWorkspace !== select) return;
     update((s) => { s.server = { ...s.server, status: 'unreachable', error: e instanceof WrongServer ? e.message : `No LGTM Studio server answers at ${addressLabel(url)}.` }; });
   }
 }
@@ -104,6 +108,13 @@ export function start(select: (repositoryMode: boolean) => void): void {
   if (address) void connect(address);
   else update((s) => { s.server.status = 'ask'; });
 }
+
+/** Ends standalone discovery and reading when the website leaves its element. */
+export function stop(): void {
+  selectWorkspace = null;
+  stopWatching();
+}
+
 /** Forgets the server, and asks for an address again. */
 export function changeServer(): void {
   stopWatching(); rememberAddress(null);

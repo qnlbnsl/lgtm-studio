@@ -7961,3 +7961,10 @@ Found on 2026-11-27, in the review of item 1 of the plan `go-s4-stack-checks` (p
 4. Closing the fixture removes its two image tags and leaves the build cache and untagged layers. The check of the Compose model reads mounts and bindings only.
 
 Where: `deploy/test/sprint4-fixture.sh`. None of the four lets the fixture act on a stack that it did not create.
+
+## 1682. The Files editor keeps unsaved text outside the workspace
+
+Found on 2026-11-27, in the repair of item 1 of the plan `go-s4-web-repositories`.
+
+The Files editor of the website holds unsaved text in a map that belongs to the page and not to the workspace. The map is keyed by worktree and path. A second sample workspace reuses the identifiers of the first and can show its unsaved text.
+Where: `src/frontend/src/screens/files.tsx`. A real server sends no worktree in sprint 4, so the real workspace is not affected today. The map must move into the workspace before Files reads real data.

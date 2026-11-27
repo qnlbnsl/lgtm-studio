@@ -1,5 +1,5 @@
 import { errorText } from '../live/reads';
-import { AddHarness } from './harness-catalog';
+import { AddHarness, SUPPORTED } from './harness-catalog';
 import * as liveGit from '../live/git';
 import * as signInUi from '../live/signin';
 // The service pages: Machines, Harnesses, Notifications and Service settings,
@@ -51,11 +51,11 @@ export function seedService(st: State): void {
     usage: { pct: 67, resetsAt: T + 4 * DAY }, weekly: 67, window: { pct: 100, resetsAt: T + 1 * HOUR + 40 * MIN }, model: 'Sonnet 5.5',
   });
 
-  Object.assign(HARNESSES, {
+  Object.assign(st.harnessCatalog, {
     gemini: { name: 'Gemini CLI', models: [], efforts: [], noEffort: [], runMode: 'ACP' },
     cursor: { name: 'Cursor', models: [], efforts: [], noEffort: [], runMode: 'ACP' },
   });
-  for (const [id, h] of Object.entries(HARNESSES)) {
+  for (const [id, h] of Object.entries(st.harnessCatalog)) {
     const pkg = ({ claude: '@anthropic-ai/claude-code@2.1.325', gemini: '@google/gemini-cli@0.68.0' } as Record<string, string>)[id];
     Object.assign(h, { installed: ['claude', 'codex'].includes(id), version: ({ claude: '2.4.1', codex: '0.61.0' } as Record<string, string>)[id] ?? null, defaultModel: h.models[0] || '', defaultEffort: h.efforts[1] || '' });
     h.recipe = { automatic: id === 'gemini', packages: pkg ? [pkg] : [], commands: id === 'codex' ? [] : [id === 'claude' ? `npm install -g ${pkg}` : pkg ? `'/usr/local/bin/node' '/usr/local/lib/node_modules/npm/bin/npm-cli.js' 'ci' '--prefix' '/home/maya/.local/share/lgtm/harnesses/${id}' '--registry' 'https://registry.npmjs.org' '--ignore-scripts' '--no-audit' '--no-fund'` : 'curl https://cursor.com/install -fsS | bash'], source: ({ claude: 'https://code.claude.com/docs/en/setup', codex: '', gemini: 'https://geminicli.com/docs/get-started/installation/', cursor: 'https://cursor.com/docs/cli/installation' } as Record<string, string>)[id], signInCommand: ({ claude: 'claude auth login', codex: 'codex login', gemini: 'gemini', cursor: 'agent login' } as Record<string, string>)[id], reason: id === 'codex' ? 'Codex is bundled. There is nothing to install.' : ['claude', 'cursor'].includes(id) ? 'Run the official installer in your terminal, then check again.' : 'Install scripts are disabled. The committed lockfile fixes the dependency tree and integrity hashes.' };
@@ -82,15 +82,17 @@ const machineAgents = (s: State, mid: Id): Agent[] => s.agents.filter((a) => pro
 const running = (a: Agent): boolean => ['working', 'waiting', 'starting'].includes(a.state);
 const subAgents = (s: State, sid: Id): Agent[] => s.agents.filter((a) => a.subscription === sid && !projectOf(s, a.project)?.archived);
 
-let savedTimer: ReturnType<typeof setTimeout> | undefined;
+const savedTimers = new WeakMap<State, ReturnType<typeof setTimeout>>();
 export function markSaved() {
   const workspace = store.state;
   update((s) => { s.ui.saved = Date.now(); });
-  clearTimeout(savedTimer);
+  clearTimeout(savedTimers.get(workspace));
   const clear = () => {
+    savedTimers.delete(workspace);
     if (store.state === workspace) update((s) => { s.ui.saved = null; });
   };
-  savedTimer = live.on || workspace.server.repositoryMode ? setTimeout(clear, 1800) : act.sampleLater(clear, 1800);
+  const timer = live.on || workspace.server.repositoryMode ? setTimeout(clear, 1800) : act.sampleLater(clear, 1800);
+  savedTimers.set(workspace, timer);
 }
 const setS = (patch: Partial<Settings>) => { if (live.on) return liveGit.saveSettings(patch); update((s) => { Object.assign(s.settings, patch); }); markSaved(); };
 export function Saved({ s }: ScreenProps) {
@@ -744,9 +746,29 @@ function SubRow({ s, x, now }: { s: State; x: Subscription; now: Ms }) {
   </div>;
 }
 // This page keeps the account rows and the harness defaults together.
+function watchedHarnesses(s: State): [string, Harness][] {
+  const harnesses = new Map<string, Harness>();
+  for (const machine of s.machines) {
+    for (const [id, version] of Object.entries(machine.harnesses ?? {})) {
+      const existing = harnesses.get(id);
+      if (existing) {
+        existing.version ??= version;
+        continue;
+      }
+      harnesses.set(id, {
+        name: s.harnessCatalog[id]?.name || SUPPORTED[id]?.name || id,
+        installed: true, version, models: [], efforts: [], noEffort: [], runMode: '',
+      });
+    }
+  }
+  return [...harnesses];
+}
+
 export function Harnesses({ s }: ScreenProps) {
   useEffect(() => liveGit.openScreen('harnesses'), []);
   const now = useNow(30_000);
+  const ready = !live.on || s.ui.serviceReady;
+  const harnesses = ready ? s.server.repositoryMode ? watchedHarnesses(s) : Object.entries(s.harnessCatalog) : [];
   const unknown = s.subscriptions.filter((x) => x.signInKnown === false).length;
   const signed = s.subscriptions.filter((x) => x.signedIn).length, limited = s.subscriptions.filter((x) => /limit reached/i.test(subState(x).word)).length;
   return <div class="view-body">
@@ -756,7 +778,7 @@ export function Harnesses({ s }: ScreenProps) {
         <Saved s={s} />
         <span class="grow" />
         <AddHarness s={s} />
-        <button type="button" class="btn" disabled={live.on && liveGit.busy('read-service')} onClick={() => live.on ? liveGit.checkHarnesses() : act.toast('Sample harnesses checked.')}>
+        <button type="button" class="btn" disabled={s.server.repositoryMode || live.on && liveGit.busy('read-service')} onClick={() => live.on ? liveGit.checkHarnesses() : act.toast('Sample harnesses checked.')}>
           <Icon name="refresh-cw" size={14} />
           Check again
         </button>
@@ -764,8 +786,8 @@ export function Harnesses({ s }: ScreenProps) {
       <p class="muted">
         {s.subscriptions.length === unknown ? `${unknown} Not reported${limited ? `, ${limited} at its limit` : ''}` : `${signed} of ${s.subscriptions.length - unknown} signed in${unknown ? `, ${unknown} Not reported` : ''}, ${limited} at its limit`}
       </p>
-      {(!live.on || s.ui.serviceReady) && <nav class="svc-jump" aria-label="Harnesses on this page">
-      {Object.entries(HARNESSES).map(([hid, h]) => { const n = s.subscriptions.filter((x) => x.harness === hid).length;
+      {ready && <nav class="svc-jump" aria-label="Harnesses on this page">
+      {harnesses.map(([hid, h]) => { const n = s.subscriptions.filter((x) => x.harness === hid).length;
       return <a key={hid} class="svc-jump-item" href={'#harness-' + hid} onClick={(e) => { e.preventDefault(); document.getElementById('harness-' + hid)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}>
         <i class={cx('dot', !h.installed ? 'waiting' : n ? 'working' : 'idle')} />
         <b>{h.name}</b>
@@ -773,10 +795,10 @@ export function Harnesses({ s }: ScreenProps) {
       </a>; })}
     </nav>}
       {live.on && (liveGit.busy('subscriptions') || liveGit.busy('settings')) && <span role="status">Saving…</span>}
-      <fieldset disabled={live.on && liveGit.busy('subscriptions')} style="border:0;padding:0;margin:0;min-width:0" aria-busy={live.on && liveGit.busy('read-service')}>
+      <fieldset disabled={s.server.repositoryMode || live.on && liveGit.busy('subscriptions')} style="border:0;padding:0;margin:0;min-width:0" aria-busy={live.on && liveGit.busy('read-service')}>
         <div data-main>
-          {(!live.on || s.ui.serviceReady) && <div class="svc-card svc-card-defaults"><Section title="Defaults for new project leads"><HarnessDefaults s={s} /></Section></div>}
-          {(live.on && !s.ui.serviceReady ? [] : Object.entries(HARNESSES)).map(([hid, h]) => { const list = s.subscriptions.filter((x) => x.harness === hid);
+          {ready && <div class="svc-card svc-card-defaults"><Section title="Defaults for new project leads"><HarnessDefaults s={s} /></Section></div>}
+          {harnesses.map(([hid, h]) => { const list = s.subscriptions.filter((x) => x.harness === hid);
       const save = (patch: Partial<Harness>) => { if (live.on) return liveGit.harnessSetting(hid, patch); update(() => Object.assign(h, patch)); markSaved(); };
       return <section key={hid} id={'harness-' + hid} class="svc-harness svc-card" aria-label={h.name}>
         <div class="section-head svc-card-head">

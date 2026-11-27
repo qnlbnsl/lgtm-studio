@@ -4,7 +4,7 @@
 // registry and is named by at least two of the registry's agent list, T3 Code and Herdr.
 // Claude Code and Codex are not here, because the engine ships them.
 import { Icon, update, live, store } from '../lib';
-import { HARNESSES, machineOf } from '../data';
+import { machineOf } from '../data';
 import * as act from '../actions';
 import { Dialog, registerDialog, Menu, CodeBox } from '../ui';
 import type { State, DialogState } from '../types';
@@ -30,7 +30,7 @@ export const SUPPORTED: Record<string, Supported> = {
 
 /** The supported harnesses that are not on the machine. */
 export const addable = (s: State): [string, Supported][] =>
-  Object.entries(SUPPORTED).filter(([id]) => !HARNESSES[id]?.installed && s.ui.installing !== id);
+  Object.entries(SUPPORTED).filter(([id]) => !s.harnessCatalog[id]?.installed && s.ui.installing !== id);
 
 /** The commands the server runs to install a harness, as the dialog shows them. */
 export function installCommands(id: string, x: Supported): string[] {
@@ -49,8 +49,8 @@ function install(id: string) {
   const x = SUPPORTED[id]!;
   update((st) => { st.ui.installing = id; });
   act.sampleLater(() => update((st) => {
-    const base = HARNESSES[id] || { name: x.name, models: [], efforts: [], noEffort: [], runMode: 'ACP' };
-    HARNESSES[id] = { ...base, installed: true, version: x.version };
+    const base = st.harnessCatalog[id] || { name: x.name, models: [], efforts: [], noEffort: [], runMode: 'ACP' };
+    st.harnessCatalog[id] = { ...base, installed: true, version: x.version };
     const m = st.machines.find((y) => y.role === 'master') || st.machines[0]; if (m) { m.harnesses ||= {}; m.harnesses[id] = x.version; }
     st.ui.installing = null;
   }), 2200);
@@ -59,7 +59,7 @@ function install(id: string) {
 /** "Add harness": the supported harnesses that are not on the machine. Choosing one asks first. */
 export function AddHarness({ s }: { s: State }) {
   const list = addable(s);
-  if (live.on || !list.length) return null;
+  if (live.on || s.server.repositoryMode || !list.length) return null;
   return <Menu class="btn" label="Add harness" width={240} disabled={!!s.ui.installing} trigger={<><Icon name="plus" size={14} /><span>Add harness</span></>}
     items={[{ heading: 'Supported harnesses' }, ...list.map(([id, x]) => ({ label: x.name, onSelect: () => act.openDialog({ type: 'install-harness', id }) }))]} />;
 }

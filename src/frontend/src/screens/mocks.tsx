@@ -381,8 +381,11 @@ function Screens({ s, p, m }: MocksViewProps) {
   </div>;
 }
 
+interface PreviewStage { c: CanvasState | null; listeners: Set<() => void> }
+
 function ScreenView({ s, p, m, id }: MocksViewProps & { id: Id | undefined }) {
   const now = useNow(); const sc = byId(m.screens, id); const [vp, setVp] = useState('phone'); const [text, setText] = useState(''); const des = designerOf(s, p); const main = isMain(p);
+  const stage = useRef<PreviewStage>({ c: null, listeners: new Set() }).current;
   if (!sc) return <div class="page">
     <Empty title="This screen does not exist"><a class="link" href={href(`${placePath(p)}/design`)}>Screens</a></Empty>
   </div>;
@@ -401,7 +404,7 @@ function ScreenView({ s, p, m, id }: MocksViewProps & { id: Id | undefined }) {
           <Icon name={ic!} size={13} />
         </button>)}
         </div>
-        <StageZoom />
+        {!live.on && <StageZoom stage={stage} />}
         <a class="icon-btn" aria-label="Previous screen" aria-disabled={!prev} href={prev ? href(`${placePath(p)}/design/screen/${prev.id}`) : undefined}>
           <Icon name="chevron-left" size={16} />
         </a>
@@ -409,7 +412,7 @@ function ScreenView({ s, p, m, id }: MocksViewProps & { id: Id | undefined }) {
           <Icon name="chevron-right" size={16} />
         </a>
       </div>
-      {live.on ? <mocks.Display key={sc.id + sc.rev} selection={sc.selection} viewport={vp} title={sc.name + ' preview'} /> : <Stage key={vp + sc.id + sc.rev} kind={sc.kind} vp={vp} />}
+      {live.on ? <mocks.Display key={sc.id + sc.rev} selection={sc.selection} viewport={vp} title={sc.name + ' preview'} /> : <Stage key={vp + sc.id + sc.rev} stage={stage} kind={sc.kind} vp={vp} />}
     </div>
     {/* A screen of the main checkout is changed in a project, so it has no approval and no comments here. */}
     {main ? <aside class="mk-aside">
@@ -451,13 +454,12 @@ function ScreenView({ s, p, m, id }: MocksViewProps & { id: Id | undefined }) {
   </div>;
 }
 // The large preview uses the Design page's canvas: the screen at its real size, with zoom and Fit.
-const stage: { c: CanvasState | null; listeners: Set<() => void> } = { c: null, listeners: new Set() };
-function StageZoom() {
+function StageZoom({ stage }: { stage: PreviewStage }) {
   const [, force] = useState(0);
   useLayoutEffect(() => { const f = () => force((n) => n + 1); stage.listeners.add(f); return () => { stage.listeners.delete(f); }; }, []);
   return stage.c ? <ZoomControls c={stage.c} /> : null;
 }
-function Stage({ kind, vp }: { kind: string; vp: string }) {
+function Stage({ stage, kind, vp }: { stage: PreviewStage; kind: string; vp: string }) {
   const c = useCanvas({ initial: 'fit' }); stage.c = c;
   useLayoutEffect(() => { for (const f of stage.listeners) f(); });
   const [w, h] = VIEWPORTS[vp]!; const UI = DRAW[kind] || ListUI;

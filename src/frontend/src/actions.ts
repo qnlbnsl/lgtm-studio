@@ -40,10 +40,13 @@ export function toast(error: unknown, tone = 'ok', fallback?: string): void {
 // The notice is written directly, because every other change in a refused turn is dropped.
 export const NOT_CONNECTED = 'This is not connected to the service yet. Nothing was changed.';
 live.onRefuse = () => {
-  if (S().ui.saved) S().ui.saved = null;
+  const workspace = S();
+  if (workspace.ui.saved) workspace.ui.saved = null;
   const id = uid('toast');
-  S().toasts.push({ id, text: NOT_CONNECTED, tone: 'error' }); notify();
-  setTimeout(() => { S().toasts = S().toasts.filter((t) => t.id !== id); notify(); }, 3600);
+  workspace.toasts.push({ id, text: NOT_CONNECTED, tone: 'error' }); notify();
+  setTimeout(() => {
+    if (S() === workspace) { workspace.toasts = workspace.toasts.filter((t) => t.id !== id); notify(); }
+  }, 3600);
 };
 // True, after the notice, when the website is live and this action is not connected yet.
 export function refused(): boolean { if (!live.on) return false; refuse(); return true; }

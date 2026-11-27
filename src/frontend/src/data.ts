@@ -38,10 +38,16 @@ export const ROLES: Record<string, { label: string; icon: string }> = {
 };
 export const TASK_STATES: Record<string, string> = { queue: 'Queued', active: 'Active', review: 'In review', blocked: 'Blocked', done: 'Done' };
 export const KIND_LABEL: Record<string, string> = { question: 'Question', approval: 'Approval', merge: 'Merge', failed: 'Failed start' };
-export const HARNESSES: Record<string, Harness> = {
-  claude: { name: 'Claude Code', models: ['Fable 5.2', 'Opus 5.5', 'Sonnet 5.5', 'Haiku 5.5'], efforts: ['Low', 'Medium', 'High', 'Max'], noEffort: ['Haiku 5.5'], runMode: 'ACP' },
-  codex: { name: 'Codex', models: ['GPT-6.1 Sol', 'GPT-6 Luna'], efforts: ['Low', 'Medium', 'High'], noEffort: [], runMode: 'ACP' },
-};
+function createHarnessCatalog(): Record<string, Harness> {
+  return {
+    claude: { name: 'Claude Code', models: ['Fable 5.2', 'Opus 5.5', 'Sonnet 5.5', 'Haiku 5.5'], efforts: ['Low', 'Medium', 'High', 'Max'], noEffort: ['Haiku 5.5'], runMode: 'ACP' },
+    codex: { name: 'Codex', models: ['GPT-6.1 Sol', 'GPT-6 Luna'], efforts: ['Low', 'Medium', 'High'], noEffort: [], runMode: 'ACP' },
+  };
+}
+
+// Existing screen and engine readers use the catalog of the mounted workspace.
+export let HARNESSES = createHarnessCatalog();
+export function selectHarnessCatalog(state: State): void { HARNESSES = state.harnessCatalog; }
 export const PERMISSION_MODES = ['Read only', 'Ask before every change', 'Edit files without asking', 'Automatic review', 'Full access'];
 
 // ---- seed ------------------------------------------------------------------
@@ -405,8 +411,9 @@ export function seed(): Omit<State, SeededSlices> {
 
 // The parts of the store that hold no sample: the owner's preferences, the page's own state,
 // and the service settings at their defaults.
-function base(mode: 'sample' | 'empty' | 'live'): Pick<State, 'prefs' | 'drafts' | 'pending' | 'expanded' | 'inspecting' | 'toasts' | 'dialog' | 'phoneOffer' | 'settings'> {
+function base(mode: 'sample' | 'empty' | 'live'): Pick<State, 'prefs' | 'drafts' | 'pending' | 'expanded' | 'inspecting' | 'toasts' | 'dialog' | 'phoneOffer' | 'settings' | 'harnessCatalog'> {
   return {
+    harnessCatalog: createHarnessCatalog(),
     prefs: {
       theme: persist('theme', 'system'), density: persist('density', 'compact'),
       sidebarFolded: persist('sidebarFolded', false), sidebarWidth: persist('sidebarWidth', 264),
