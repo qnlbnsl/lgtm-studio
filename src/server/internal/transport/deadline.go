@@ -56,12 +56,17 @@ func Send(ctx context.Context, send func() error) (err error) {
 		_ = deadline.set(time.Now())
 	})
 	defer func() {
-		if !stop() {
+		var clearErr error
+		if stop() {
+			clearErr = deadline.set(time.Time{})
+		} else {
 			// The cancellation callback must finish before the handler releases the writer.
 			<-done
+		}
+		if err != nil {
 			return
 		}
-		if clearErr := deadline.set(time.Time{}); err == nil {
+		if err = ctx.Err(); err == nil {
 			err = clearErr
 		}
 	}()
@@ -76,8 +81,5 @@ func Send(ctx context.Context, send func() error) (err error) {
 	if err := send(); err != nil {
 		return err
 	}
-	if flushErr != nil {
-		return flushErr
-	}
-	return ctx.Err()
+	return flushErr
 }
