@@ -3,6 +3,7 @@ import { once } from 'node:events';
 import { copyFile, mkdir, stat, symlink, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { dirname, join, resolve, sep } from 'node:path';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 import { setTimeout as delay } from 'node:timers/promises';
 
@@ -93,8 +94,39 @@ async function listenPort() {
   return port;
 }
 
+async function waitForMock(child, origin) {
+  const pending = new AbortController();
+  const { signal } = pending;
+  const lines = createInterface({ input: child.stdout });
+  const readyLine = `The LGTM Studio mock server answers at ${origin}. It holds sample data only.`;
+  const readiness = (async () => {
+    for await (const line of lines) {
+      if (line === readyLine) return;
+    }
+    throw new Error('The mock closed its output before reporting readiness.');
+  })();
+  try {
+    await Promise.race([
+      readiness,
+      once(child, 'exit', { signal }).then(([code, exitSignal]) => {
+        throw new Error(`The mock exited before reporting readiness (${exitSignal ?? code}).`);
+      }),
+      delay(wait, undefined, { signal }).then(() => {
+        throw new Error('The mock did not report readiness in time.');
+      }),
+    ]);
+    requireObservation(child.exitCode === null && child.signalCode === null,
+      'The mock exited during setup.');
+  } finally {
+    pending.abort();
+    lines.close();
+    child.stdout.resume();
+  }
+}
+
 async function startMock() {
   const port = await listenPort();
+  requireObservation(port !== 8787, 'The probe selected reserved port 8787.');
   const origin = 'http://127.0.0.1:' + port;
   const child = spawn(process.execPath, ['src/serve.ts'], {
     cwd: join(root, 'src/mock-server'),
@@ -104,33 +136,17 @@ async function startMock() {
       LGTM_MOCK_PORT: String(port),
       LGTM_WEB_PASSWORD: fixturePassword,
     },
-    stdio: ['ignore', 'ignore', 'ignore'],
+    stdio: ['ignore', 'pipe', 'ignore'],
   });
-  let failed = false;
-  child.once('error', () => { failed = true; });
   const stop = async () => {
-    if (failed || child.exitCode !== null || child.signalCode !== null) return;
+    if (!child.pid || child.exitCode !== null || child.signalCode !== null) return;
     const exited = once(child, 'exit');
     child.kill('SIGKILL');
     await exited;
   };
   try {
-    const deadline = Date.now() + wait;
-    while (!failed && child.exitCode === null && Date.now() < deadline) {
-      try {
-        const response = await fetch(origin + getServer, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Connect-Protocol-Version': '1' },
-          body: '{}',
-          signal: AbortSignal.timeout(1000),
-        });
-        if (response.ok && (await response.json()).sample === true) return { origin, stop };
-      } catch {
-        // The mock process may still be loading.
-      }
-      await delay(100);
-    }
-    throw new Error('The mock did not return a sample GetServer reply.');
+    await waitForMock(child, origin);
+    return { origin, stop };
   } catch (error) {
     await stop();
     throw error;

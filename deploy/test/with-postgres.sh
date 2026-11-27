@@ -70,19 +70,23 @@ password=$(< "$scratch/credentials/test.password")
 
 volume=$(docker volume create --label "$label" "$name" 2>"$scratch/docker.err") ||
     fail 'Could not create the disposable PostgreSQL volume.'
+# Choose a port from the dynamic range. Docker rejects an occupied port at publish time.
+port=$((49152 + RANDOM % 16384))
 container_started=yes
-docker run --detach --name "$name" --label "$label" \
-    --publish 127.0.0.1::5432 \
+container=$(docker run --detach --name "$name" --label "$label" \
+    --publish "127.0.0.1:$port:5432" \
     --env POSTGRES_PASSWORD_FILE=/run/lgtm-test/admin.password \
     --env POSTGRES_INITDB_ARGS='--auth-host=scram-sha-256 --auth-local=scram-sha-256' \
     --env POSTGRES_HOST_AUTH_METHOD=scram-sha-256 \
     --mount "type=bind,source=$scratch/credentials,target=/run/lgtm-test,readonly" \
     --mount "type=volume,source=$volume,target=/var/lib/postgresql/data" "$image" \
-    > /dev/null 2>"$scratch/docker.err" ||
+    2>"$scratch/docker.err") ||
     fail 'Could not start disposable PostgreSQL.'
+[[ $container =~ ^[0-9a-f]{64}$ ]] ||
+    fail 'Could not identify disposable PostgreSQL.'
 
 admin_sql() {
-    timeout 5 docker exec -i "$name" sh -ec '
+    timeout 5 docker exec -i "$container" sh -ec '
         export PGPASSWORD="$(cat /run/lgtm-test/admin.password)"
         export TEST_PASSWORD="$(cat /run/lgtm-test/test.password)"
         exec psql -X -h 127.0.0.1 -U postgres -d postgres -v ON_ERROR_STOP=1 "$@"
@@ -102,11 +106,10 @@ CREATE DATABASE :"database" OWNER :"login";
 SQL
     fail 'Could not create the disposable PostgreSQL test login and database.'
 
-binding=$(docker port "$name" 5432/tcp 2>"$scratch/docker.err") ||
+binding=$(docker port "$container" 5432/tcp 2>"$scratch/docker.err") ||
     fail 'Could not find the disposable PostgreSQL port.'
-port=${binding##*:}
-[[ $port =~ ^[0-9]+$ && $port -gt 0 ]] ||
-    fail 'Could not find the disposable PostgreSQL port.'
+[[ $binding == "127.0.0.1:$port" ]] ||
+    fail 'Disposable PostgreSQL did not publish the selected loopback port.'
 
 # A separate session lets the wrapper stop the command and its descendants on interruption.
 LGTM_TEST_POSTGRES="postgresql://$login:$password@127.0.0.1:$port/$database?sslmode=disable" \
