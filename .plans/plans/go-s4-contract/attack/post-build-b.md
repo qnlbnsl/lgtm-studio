@@ -1,0 +1,47 @@
+# REVISE
+
+The full contract suite accepts a readiness callback after commit and an exception that leaves a previously ready run waiting when it reconnects after a server restart.
+
+The test writer, the builder and this reviewer are all OpenAI workers. I reviewed the four repairs from `89506b7c` through `699ce488` on `sprint-0`. [Test writer handoff](../../../../.foundry/go-rewrite/results/s4-contract-tests-c.md#L3) · [Builder handoff](../../../../.foundry/go-rewrite/results/s4-contract-build-d.md#L1)
+
+## Findings
+
+### post-b 1 — MAJOR — Foundation rule R4 and plan
+
+The run-readiness test permits the callback to run outside the write that makes the run ready. Its regular expression makes the transaction clause optional. I changed the comment to require the callback after commit, regenerated the bindings, and refreshed the revision 2 digest. The full contract suite exited 0 and printed `ok github.com/qnlbnsl/lgtm-studio/src/contracts 3.787s`. [Test](../../../../src/contracts/review_a_test.go#L29) · [Contract](../../../../src/contracts/proto/lgtm/link/v1/link.proto#L144) · [Foundation rule R4](../../../../docs/specs/2026-11-25-go-rewrite-foundation-design.md#L365)
+
+If the server dies after committing readiness and before the callback, the registered part misses the transition. The reconnect sees a ready run and has no first transition to deliver. Require the transaction clause in the contract assertion. In the paired runtime case, fail the callback after a write and check that its effect and the readiness transition roll back together. [First review](post-build-a.md#post-a-2--major--foundation-check-c11-and-sprint-check-r9) · [Link runtime case](../../go-s4-server-link/plan.md#L202)
+
+### post-b 2 — MAJOR — Plan
+
+The run-readiness test checks the inclusive comparison but allows an exception for reconnect after server restart. Its expression stops at the comma after the threshold. I changed the comment to say “except on a reconnect after a server restart,” regenerated the bindings, and refreshed the revision 2 digest. The full contract suite exited 0 and printed `ok github.com/qnlbnsl/lgtm-studio/src/contracts 3.651s`. [Test](../../../../src/contracts/review_a_test.go#L24) · [Contract](../../../../src/contracts/proto/lgtm/link/v1/link.proto#L140) · [Plan scenarios](../plan.md#L289)
+
+A run whose first event was 6 and whose committed mark is 8 can reconnect after the server restarts and remain gated indefinitely. Assert that the inclusive condition also applies after restart. In the paired case, reconnect with the same pair after restarting the server and require a queued command to arrive with the callback count unchanged. [First review](post-build-a.md#post-a-2--major--foundation-check-c11-and-sprint-check-r9) · [Link admission rule](../../go-s4-server-link/plan.md#L179)
+
+## Grade
+
+**8 out of 10.** The four repairs are present in the candidate. Two clauses of the run-readiness repair still need regression coverage.
+
+## Paired scenarios at the reviewed commit
+
+The final register points to the Machines recovery lifecycle, which the plan marks as an unreviewed mechanism. The prescribed PostgreSQL command, `bash deploy/test/with-postgres.sh -- go test -v ./src/linktest -run '^TestSprintFour' -count=1`, exited 0 and printed `testing: warning: no tests to run` and `ok github.com/qnlbnsl/lgtm-studio/src/linktest 0.008s [no tests to run]`. Both programs declare link revision 1 at the candidate. [Final register](round-2-findings.md#L42) · [Unreviewed mechanism and scenarios](../plan.md#L281) · [Client revision](../../../../src/client/internal/link/conn.go#L22) · [Server revision](../../../../src/server/internal/link/handshake.go#L24)
+
+The named fixtures therefore supplied no runtime evidence for the warning through incumbent progress and restart, the uncertain diagnostic commit, later ready admission or removal, or the waiting and offline warning display. The two incompatible Welcome boundaries still need a comparison of saved event bytes and acknowledgement before and after refusal. The reconnect and replaying-removal cases still need command and callback observations. The builder's handoff assigns those runtime checks to the dependent owners. The contract test and browser observations below cover the Machines watch representation. [Post-build cases](../plan.md#L289) · [Builder handoff](../../../../.foundry/go-rewrite/results/s4-contract-build-d.md#L60)
+
+## What the four repairs say and what the tests catch
+
+| First review finding | Candidate and mutation evidence |
+|---|---|
+| `post-a 1`. Validate Welcome before changing saved history. | The contract requires validation before deleting events or advancing the saved acknowledgement. An incompatible mark preserves the retained bytes and all disk state. Changing the ordering to validate afterward failed the focused test. [Contract](../../../../src/contracts/proto/lgtm/link/v1/events.proto#L11) · [Incompatible mark](../../../../src/contracts/proto/lgtm/link/v1/events.proto#L36) · [Test](../../../../src/contracts/review_a_test.go#L13) |
+| `post-a 2`. Make the latest run ready on reconnect above its boundary. | The contract specifies the inclusive threshold, reconnect after restart, and one transactional callback on the first transition. Changing the threshold to exact equality failed the focused test. The two independent mutations in the findings passed. [Contract](../../../../src/contracts/proto/lgtm/link/v1/link.proto#L140) · [Test](../../../../src/contracts/review_a_test.go#L24) |
+| `post-a 3`. Keep removal within the replay gate. | The contract ends a replaying stream with `failed_precondition` and `unknown_machine` without a command. It restricts the optional removal `SetState` to a ready stream. Allowing it on a replaying stream failed the focused test. [Contract](../../../../src/contracts/proto/lgtm/link/v1/link.proto#L191) · [Test](../../../../src/contracts/review_a_test.go#L34) |
+| `post-a 4`. Pin the recovery field in the watch. | The test pins `eventHistoryNeedsRecovery` in JavaScript Object Notation (JSON) and round-trips true in the snapshot and saved update. Renaming it to `historyRecovered` failed the descriptor assertion and both arms. The website's generated schema independently decoded true in both arms. [Field](../../../../src/contracts/proto/lgtm/v1/clients.proto#L73) · [Test](../../../../src/contracts/review_a_test.go#L44) |
+
+The two compiled Protocol Buffers descriptor sets, with source information excluded, matched byte for byte at 14,833 bytes each. Every message, field, and number stayed the same. Revision 1's line, including its line ending, matched `fcfa96c3` and `89506b7c` byte for byte. Only the `events.proto` and `link.proto` revision 2 digests changed, and all four revision 2 digests matched their source files. All 11 frozen input checksums matched. The production diff changes comments and matching generated documentation and introduces no new runtime transaction, file handling, or logging path. [Freeze record](../../../../src/contracts/testdata/link-frozen.json#L2) · [Append rule](../../../../src/contracts/README.md#L54)
+
+## Commands and browser observations
+
+- The focused freeze command printed `ok github.com/qnlbnsl/lgtm-studio/src/contracts 3.535s`. Bypassing the history comparison caused all four rejection assertions to fail. The three positive controls passed. A comment edit with its original digest failed `TestLinkIsFrozenAtItsRevision`. Changing the recovery field tag from 19 to 20 failed `TestClientHistoryRecoveryIsAdditive`. [Plan freeze check](../plan.md#L85) · [History assertions](../../../../src/contracts/freeze_test.go#L256)
+- `go test ./src/contracts -count=1` printed `ok github.com/qnlbnsl/lgtm-studio/src/contracts 3.468s`. All four review tests passed, including both JSON subtests. The focused Projects and discovery tests printed `ok github.com/qnlbnsl/lgtm-studio/src/contracts 0.027s`. The final `go test ./src/contracts/... -count=1` printed `ok github.com/qnlbnsl/lgtm-studio/src/contracts 3.897s` and four generated packages reported `[no test files]`.
+- `pnpm --filter @lgtm/api lint` exited 0 after `buf lint`. The committed candidate's `pnpm --filter @lgtm/api check` exited 0 after regeneration, tests at `2.431s`, and the generated-file cleanliness check. The package manager used installed dependencies after its store lock proved read-only. `LGTM_LINK_BASE=fcfa96c3 bash scripts/check-go.sh` exited 0 in a read-only Go 1.26.0 container. Its last package line was `ok github.com/qnlbnsl/lgtm-studio/src/server/servertest 0.011s`. [Generation gate](../../../../src/contracts/package.json#L13) · [Go gate](../../../../scripts/check-go.sh#L16)
+- Both consumer type checks exited 0 after `tsc --noEmit`. The website build printed `223 modules transformed` and `built in 827ms`, with a chunk-size warning. In fresh Chromium contexts, the in-page and mock transports both reported revision 1, sample mode, and an empty service list. Both signed in, opened the sample workspace, and decoded three false recovery flags. The in-page router recorded only `GetServer`, `SignIn`, and `WatchClients`, with zero network procedures. The mock recorded those same three procedures on the network. The sample probe used the planned mock start command with Node's type-stripping flag. [Sample scenarios](../plan.md#L266) · [Browser probe](../../../../deploy/test/checks-s4-browser.mjs#L193)
