@@ -83,7 +83,11 @@ func (s *session) close() error {
 
 // openSession proves both ends on a new stream. Its client must be configured
 // with connect.WithReadMaxBytes(64 << 10) when it is constructed.
-func openSession(ctx context.Context, client linkv1connect.LinkServiceClient, server enroll.Server, credential *enroll.Credential, announcement runIdentity) (_ *session, err error) {
+func openSession(ctx context.Context, client linkv1connect.LinkServiceClient, server enroll.Server, credential *enroll.Credential, announcement runIdentity) (*session, error) {
+	return openSessionWithRevisionFence(ctx, client, server, credential, announcement, nil)
+}
+
+func openSessionWithRevisionFence(ctx context.Context, client linkv1connect.LinkServiceClient, server enroll.Server, credential *enroll.Credential, announcement runIdentity, fenceWrites func()) (_ *session, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -102,6 +106,10 @@ func openSession(ctx context.Context, client linkv1connect.LinkServiceClient, se
 	context.AfterFunc(streamCtx, func() { _ = s.closeRequest() })
 	defer func() {
 		if err != nil {
+			// An earlier session may still have a worker writing to the store.
+			if fenceWrites != nil && isRevisionRefusal(err) {
+				fenceWrites()
+			}
 			_ = s.close()
 		}
 	}()

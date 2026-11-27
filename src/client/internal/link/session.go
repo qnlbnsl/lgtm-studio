@@ -166,11 +166,9 @@ func (r *clientRun) attempt(ctx context.Context, welcomed func()) error {
 		retire = sync.OnceFunc(retire)
 		defer retire()
 	}
-	s, err := openSession(ctx, client, r.opts.Server, r.opts.Credential, r.announcement)
+	s, err := openSessionWithRevisionFence(ctx, client, r.opts.Server, r.opts.Credential, r.announcement, r.store.fenceWrites)
 	if err != nil {
-		if isRevisionRefusal(err) {
-			r.store.fenceWrites()
-		} else if r.ctx.Err() == nil {
+		if !isRevisionRefusal(err) && r.ctx.Err() == nil {
 			r.reportFailure(linkFailureCode(err))
 		}
 		return err
