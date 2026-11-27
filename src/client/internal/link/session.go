@@ -43,6 +43,8 @@ const (
 	restartSendBudget = 2 * time.Second
 	maxPendingReplies = 256
 	maxPendingFrames  = 64
+	// Leave room in the receive queue for heartbeats and commands.
+	maxUnackedEvents = maxPendingFrames / 2
 )
 
 var (
@@ -362,6 +364,7 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 	var timingMu sync.Mutex
 	deadline := s.welcomedAt.Add(streamSilence)
 	handedThrough := s.welcome.GetLastEventNumber()
+	ackedThrough := handedThrough
 	var transportEnded time.Time
 	var receiveStop error
 	var silence *time.Timer
@@ -532,6 +535,9 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 	requestClosed := false
 
 	busy, haveEvents := false, true
+	canSendEvent := func() bool {
+		return l.approved() && haveEvents && handedThrough-ackedThrough < maxUnackedEvents
+	}
 	handle := func(reply streamReply) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -543,7 +549,8 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 			return nil
 		}
 		// A queued acknowledgement can only cover handoffs made before it arrived.
-		if ack := reply.frame.GetEventAck(); ack != nil && ack.GetThrough() > reply.ackCeiling {
+		ack := reply.frame.GetEventAck()
+		if ack != nil && ack.GetThrough() > reply.ackCeiling {
 			l.ended = reply.receivedAt
 			return storeFault{ErrAckAhead}
 		}
@@ -552,6 +559,9 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 		if err != nil {
 			l.ended = reply.receivedAt
 			return err
+		}
+		if ack != nil {
+			ackedThrough = max(ackedThrough, ack.GetThrough())
 		}
 		if restart {
 			restartDeadline = time.After(restartSendBudget)
@@ -578,7 +588,7 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 		}
 		var dispatch <-chan struct{}
 		if !busy && sendErr == nil && (len(l.results) != 0 ||
-			!restarting && (!time.Now().Before(nextBeat) || l.approved() && haveEvents)) {
+			!restarting && (!time.Now().Before(nextBeat) || canSendEvent())) {
 			dispatch = ready
 		}
 		select {
@@ -631,7 +641,7 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 			case !now.Before(nextBeat):
 				nextBeat = nextBeat.Add((now.Sub(nextBeat)/reportInterval + 1) * reportInterval)
 				send <- &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Heartbeat{Heartbeat: l.run.reports.heartbeat(l.approved())}}
-			case l.approved() && haveEvents:
+			case canSendEvent():
 				event, err := l.replay.next()
 				if err != nil {
 					return false, storeFault{err}
