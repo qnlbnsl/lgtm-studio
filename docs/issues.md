@@ -8018,3 +8018,21 @@ Found on 2026-11-27, in the review of item 8 of the plan `go-s4-server-link` (po
 
 Where: `src/server/servertest/link_v2_test.go`. The tests of the paired fixtures in `src/linktest/` use both observers in a later wave, and are the natural place to close the gaps.
 
+
+## 1689. Four minor findings on the website's session handling
+
+Found on 2026-11-27, in the review of item 2 of the plan `go-s4-web-repositories` (post-2c 1 to post-2c 4). The review's verdict was to ship.
+
+1. No test completes an approval while its own dialog is still open and then checks that the machine rows are exactly what the machine watch last sent. A change that let the approval write a row itself would pass.
+2. After an approval, the machine's row is expanded only when the watch delivered the row before the approval answered. The same action gives two different screens.
+3. A map or preview request that the server refuses as not signed in shows an error and retries. Only a machine request or the machine watch ends the session. Items 3 and 6 of the plan must send their requests through the same path.
+4. A sign-out request that fails or times out is dropped. The page shows Login, and the server may still hold the session. A message for this case is a visible change, and needs the owner's approval.
+
+Where: `src/frontend/src/actions.ts` and `src/frontend/src/server/sync.ts`. The test writer of item 3 adds the tests of points 1 and 2 and the case of point 3 that falls on item 3.
+
+## 1690. No test makes a report callback of a part fail
+
+Found on 2026-11-27, in the review of item 1 of the plan `go-s4-server-link` (post-1 1). The review's verdict was to ship, and the code is right.
+
+A part registers a function that the link calls for a report, inside the link's transaction. When that function fails, the link returns the error, and the write rolls back. The tests fail only an admission function. A change that dropped the error of a report function would pass.
+Where: `src/server/internal/link/parts_test.go`. Item 4 of the plan `go-s4-server-projects` wires the first real report function, and its tests are the natural place to close the gap.
