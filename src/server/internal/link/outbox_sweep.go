@@ -35,7 +35,7 @@ type commandSweepKey struct {
 const expiredCommandPage = `
 SELECT expires_at, machine_id, seq
 FROM link_commands
-WHERE outcome IS NULL AND action <> 'set_state' AND expires_at < $1
+WHERE outcome IS NULL AND staged_outcome IS NULL AND action <> 'set_state' AND expires_at < $1
   AND (expires_at, machine_id, seq) > ($2, $3, $4)
 ORDER BY expires_at, machine_id, seq LIMIT $5`
 

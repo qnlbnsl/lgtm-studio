@@ -92,7 +92,7 @@ func readClaimPage(ctx context.Context, tx *store.Tx, machineID string, after in
 	rows, err := tx.Query(ctx, `
 SELECT id, action, coalesce(sent_stream_id, ''), seq, attempt, expires_at, dispatched
 FROM link_commands
-WHERE machine_id = $1 AND outcome IS NULL AND seq > $2
+WHERE machine_id = $1 AND outcome IS NULL AND staged_outcome IS NULL AND seq > $2
 ORDER BY seq LIMIT $3`, machineID, after, claimPageSize)
 	if err != nil {
 		return nil, err
