@@ -69,6 +69,37 @@ function observeBrowserCalls(): Plugin {
         import { createClient as makeClient, createRouterTransport as create } from ${module};
         export function createClient(service, transport) {
           const client = makeClient(service, transport);
+          const folderProbe = window.addRepositoryProbe;
+          if (folderProbe && service.typeName === ${JSON.stringify(ClientService.typeName)}) {
+            return { ...client, watchClients(...args) {
+              const frames = client.watchClients(...args);
+              return { async *[Symbol.asyncIterator]() {
+                for await (const frame of frames) {
+                  const held = folderProbe.takeMachineFrame();
+                  if (!held) { yield frame; continue; }
+                  await held.gate;
+                  try { yield frame; } finally { held.finished = true; }
+                }
+              } };
+            } };
+          }
+          if (folderProbe && service.typeName === ${JSON.stringify(ProjectService.typeName)}) {
+            const holdReply = (procedure, invoke) => async (...args) => {
+              const held = folderProbe.takeFolderReply(procedure, args[1]?.signal);
+              if (!held) return invoke(...args);
+              const wait = async () => { held.ready = true; await held.gate; };
+              try {
+                const reply = await invoke(...args);
+                await wait();
+                return reply;
+              } catch (error) {
+                await wait();
+                throw error;
+              } finally { held.finished = true; }
+            };
+            client.inspectFolder = holdReply('inspect', client.inspectFolder);
+            client.addRepository = holdReply('add', client.addRepository);
+          }
           const probe = window.repositoryWatchProbe;
           if (!probe || service.typeName !== ${JSON.stringify(ProjectService.typeName)}) return client;
           return { ...client, watchRepositories(...args) {

@@ -142,11 +142,13 @@ for (const timing of ['before switching', 'while discovery is held'] as const) {
     await openWatchedWorkspace(page, server);
     await navigate(page, '/machines');
     await page.getByRole('button', { name: 'Show details for Review worker', exact: true }).click();
-    const installed = page.locator('.svc-detail h3:text-is("Harnesses") + ul').getByRole('listitem');
+    const harnesses = page.locator('.svc-detail').getByRole('heading', { name: 'Harnesses', exact: true }).locator('..');
+    const installed = harnesses.locator('h3:text-is("Harnesses") + ul').getByRole('listitem');
+    const expected = `Codex ${watchedVersion}`;
     await expect(installed, 'Only the installation from the machine watch is displayed.')
-      .toHaveCount(1);
-    await expect(installed.getByText('Codex', { exact: true })).toBeVisible();
-    await expect(installed.getByText(watchedVersion, { exact: true })).toBeVisible();
+      .toHaveText([expected], { useInnerText: true });
+    await expect(harnesses, 'The Harnesses section has no text outside the watched row and its heading.')
+      .toHaveText(`HARNESSES ${expected} REPOSITORIES No repositories Add repository`, { useInnerText: true });
     expect(trace.errors).toEqual([]);
   });
 }

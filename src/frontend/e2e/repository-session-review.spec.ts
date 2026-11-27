@@ -112,15 +112,17 @@ test('post-1b 4: the Codex row uses the first available watched version', async 
           .toEqual([first ?? null, second]);
         await navigate(page, '/machines');
         const detail = page.locator('.svc-detail');
-        const installed = detail.locator('h3:text-is("Harnesses") + ul').getByRole('listitem');
+        const heading = detail.getByRole('heading', { name: 'Harnesses', exact: true });
+        const harnesses = heading.locator('..');
+        const installed = harnesses.locator('h3:text-is("Harnesses") + ul').getByRole('listitem');
         for (const [name, version] of [['First watched worker', first], ['Second watched worker', second]] as const) {
           await page.getByRole('button', { name: `Show details for ${name}`, exact: true }).click();
-          await expect(detail.getByRole('heading', { name: 'Harnesses', exact: true })).toBeVisible();
-          await expect(installed).toHaveCount(version === undefined ? 0 : 1);
-          if (version !== undefined) {
-            await expect(installed.getByText('Codex', { exact: true })).toBeVisible();
-            await expect(installed.getByText(version, { exact: true })).toBeVisible();
-          }
+          await expect(heading).toBeVisible();
+          const expected = version === undefined ? [] : [`Codex ${version}`];
+          const renderedText = { useInnerText: true, timeout: 1800 };
+          await expect.soft(installed).toHaveText(expected, renderedText);
+          await expect.soft(harnesses, 'The Harnesses section has no text outside the watched rows and its heading.')
+            .toHaveText(['HARNESSES', ...expected, 'REPOSITORIES', 'No repositories', 'Add repository'].join(' '), renderedText);
           await page.getByRole('button', { name: `Hide details for ${name}`, exact: true }).click();
           await expect(detail).toHaveCount(0);
         }
