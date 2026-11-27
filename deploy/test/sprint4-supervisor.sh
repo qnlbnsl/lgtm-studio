@@ -9,15 +9,231 @@ export LC_ALL=C
 # The live observer must keep raw logs and credentials in its owned fixture.
 
 native_fixture_preflight() {
-    # This is a test-writer stub. Replace it with the read-only refusal checks.
-    # The arguments are the manager entry state, binary, unit, log and store paths.
-    return 0
+    local selector path
+    [[ $# == 5 && $1 == absent ]] || return 1
+    for selector in COMPOSE_FILE COMPOSE_ENV_FILES COMPOSE_PROJECT_NAME COMPOSE_PROFILES \
+        COMPOSE_DISABLE_ENV_FILE COMPOSE_PATH_SEPARATOR COMPOSE_REMOVE_ORPHANS COMPOSE_IGNORE_ORPHANS \
+        COMPOSE_COMPATIBILITY COMPOSE_CONVERT_WINDOWS_PATHS LGTM_STACK_STATE_DIR LGTM_STACK_COMPOSE_SNAPSHOT \
+        LGTM_IMAGE_TAG LGTM_WEB_PORT LGTM_WEB_PASSWORD LGTM_CLIENT_STATE_DIR; do
+        [[ ! ${!selector+x} ]] || return 1
+    done
+    [[ $2 == /* && $3 == /* && ( -z $4 || $4 == /* ) && $5 == /* ]] || return 1
+    shift
+    for path in "$@"; do
+        [[ ! -e $path && ! -L $path ]] || return 1
+    done
 }
 
 native_supervisor_observe() {
-    # This is a test-writer stub. Replace it with the owned native fixture and observations.
-    # The arguments are the manager, case and candidate commit. An empty commit is the offline lane.
-    native_observation='{}'
+    local manager=$1 name=$2 candidate=$3
+    native_observation=''
+    case $manager in systemd|launchd) ;; *) return 1 ;; esac
+    if [[ -z $candidate ]]; then
+        native_observation=$(native_offline_records "$name" | native_reduce_observation "$name")
+    elif [[ $name == native_fixture_owns_stack && ${LGTM_SPRINT4_LIVE:-} == 1 ]]; then
+        native_open_stack "$manager" "$candidate" || return 1
+        native_observation=$(native_read_stack | native_reduce_observation "$name")
+    else
+        # The integrated candidate needs native process, transport and store collectors.
+        return 1
+    fi
+}
+
+# Read the same Compose selection the installer uses, after checking the listener.
+native_read_stack() {
+    local owned_web current_web binding project daemon
+    sprint4_fixture_ready || return 1
+    owned_web=$(awk -v name="$s4_project-web-1" '$1 == "container" && $2 == name {print $3}' "$s4_dir/objects") &&
+        [[ $owned_web =~ ^[0-9a-f]{64}$ ]] &&
+        current_web=$("$s4_docker" compose ps --status running --quiet web) &&
+        binding=$("$s4_docker" compose port web 8080) &&
+        project=$("$s4_docker" compose config --format json | jq -er '.name') &&
+        daemon=$(s4_daemon) && sprint4_fixture_ready || return 1
+    jq -nc --arg project "$s4_project" --arg image_tag "$s4_tag" --arg state "$s4_state" \
+        --arg checkout "$s4_candidate" --arg ownership_record "$s4_dir/objects" \
+        --argjson reserved "$native_reserved_inventory" --argjson port "$s4_port" \
+        --arg daemon "$s4_daemon_id" --arg container "$owned_web" \
+        --arg installer_project "$project" --arg installer_daemon "$daemon" \
+        --arg installer_container "$current_web" --arg binding "$binding" '
+        {reservation: {$project, $image_tag, $state, $checkout, $ownership_record, $reserved, $port, $daemon},
+         owned_web: {$container},
+         installer: {project: $installer_project, daemon: $installer_daemon,
+                     container: $installer_container, $binding}}'
+}
+
+native_open_stack() {
+    local manager=$1 candidate=$2 root path parent
+    # The installer destinations are resolved by the native entry point.
+    [[ $(cd -- "$HOME" && pwd -P) == "$HOME" ]] || return 1
+    for path in "$bin" "$unit" "$log" "$state"; do
+        [[ -n $path ]] || continue
+        [[ $path == "$HOME/"* && $path != */../* && $path != */./* && $path != *//* &&
+            $path =~ ^/[a-zA-Z0-9._/+@-]+$ ]] || return 1
+        parent=${path%/*}
+        while [[ $parent != "$HOME" ]]; do
+            [[ $parent == "$HOME/"* && ! -L $parent &&
+                ( ! -e $parent || ( -d $parent && -O $parent ) ) ]] || return 1
+            parent=${parent%/*}
+        done
+    done
+    native_fixture_preflight "$(native_manager_entry "$manager")" "$bin" "$unit" "$log" "$state" || return 1
+    root=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd -P) || return 1
+    source "$root/deploy/test/sprint4-fixture.sh" &&
+        sprint4_fixture_open "$root" "$candidate" &&
+        native_reserved_inventory=$(awk 'NF {print}' "$s4_dir/objects" | jq -Rsc 'split("\n") | map(select(length > 0))') &&
+        sprint4_select 4 &&
+        sprint4_fixture_run bash "$S4_CANDIDATE_ROOT/deploy/up.sh"
+}
+
+native_reduce_observation() {
+    jq -ce --arg name "$1" '
+        def count($kind): [.records[] | select(.kind == $kind)] | length;
+        def starts_during($from; $through):
+            [.processes[] | select(.action == "start" and $from < .at and .at <= $through)] | length;
+        def process_at($action; $at):
+            [.processes[] | select(.action == $action and .at == $at)] | if length == 1 then .[0] else null end;
+        def terminal($run):
+            . as $input
+            | process_at("start"; $run.started) as $fault
+            | process_at("exit"; $run.exited) as $exit
+            | (process_at("start"; $run.recovered) | select(.at > $run.checked)) as $recovery
+            | {machine_before: .machine_before, enrollment: .enrollment, damage: .damage,
+               process: {fault_pid: $fault.pid, exit_pid: $exit.pid, exit_status: $exit.status,
+                         stopped_seconds: ($run.checked - $exit.at), pid_before_recovery: $run.checked_pid,
+                         automatic_starts: starts_during($fault.at; $run.checked)},
+               remedies: (.logs | map(select(.pid == $fault.pid and $fault.at <= .at and .at <= $exit.at))
+                          | {history: map(select(.diagnostic == "history")) | length,
+                             incompatible: map(select(.diagnostic == "incompatible")) | length}),
+               recovery: ($input.recovery + {pid: $recovery.pid})};
+        def during_fault:
+            .fault as $fault | .records |= map(select($fault.started <= .at and .at <= $fault.checked));
+        if $name == "native_fixture_owns_stack" then
+            {fixture: ((.reservation | del(.reserved)) + {
+                preexisting_resources: (.reservation.reserved | length),
+                web_container: .owned_web.container, binding: ("127.0.0.1:" + (.reservation.port | tostring)),
+                installer_daemon: .installer.daemon, installer_project: .installer.project,
+                installer_binding: .installer.binding, bound_container: .installer.container})}
+        elif $name == "requested_restart_restarts_service" then
+            process_at("start"; .request.prior_start) as $old
+            | process_at("exit"; .request.exit) as $exit
+            | .online.checked as $checked
+            | (process_at("start"; .online.start) | select($exit.at < .at and .at <= $checked)) as $replacement
+            | {reconnect_status: .request.status, enrollment: .enrollment,
+               machine_before: .request.machine, online_machine_after: .online.machine,
+               process: {old_pid: $old.pid, exit_pid: $exit.pid, exit_status: $exit.status,
+                         replacement_pid: $replacement.pid,
+                         automatic_starts: starts_during($old.at; .online.checked)}}
+        elif $name == "invalid_history_counter_stops_before_dial" then
+            during_fault | terminal(.fault) + {counter: .store.meta,
+                link: {dials: count("dial"), admissions: count("admission")}}
+        elif $name == "invalid_history_payload_stops_after_welcome" then
+            .fault.started as $fault_start
+            | def one_stream($action; match_record):
+                [.relay[] | select(.at < $fault_start and .action == $action and match_record) | .stream_id]
+                | if length == 1 then .[0] else null end;
+            .store.event_number as $number
+            | one_stream("held"; .frame == "event" and .event_number == $number) as $held
+            | .mark as $mark
+            | during_fault
+            | [.records[] | select(.kind == "verified_welcome")] as $welcomes
+            | terminal(.fault) + {counter: .store.meta, projects: .projects,
+                mark: ($mark + {welcome: $welcomes[0].last_event_number}),
+                link: {dials: count("dial"), admissions: count("admission"),
+                       verified_welcomes: ($welcomes | length), stream: $welcomes[0].stream_id},
+                payload: {number: $number, held_stream: $held,
+                          closed_stream: one_stream("closed"; .stream_id == $held),
+                          discarded_stream: one_stream("discarded"; .stream_id == $held and
+                              .frame == "event" and .event_number == $number),
+                          forwards_before_fault: ([.relay[] | select(.action == "forwarded" and
+                              .frame == "event" and .event_number == $number and .at < $fault_start)] | length),
+                          event_handoffs: count("event_handoff")}}
+        elif $name == "trusted_git_inspects_as_service_user" then
+            .probe.planted_path as $decoy
+            | (.response.facts | if type == "object" and (has("clean") | not) then .clean = false else . end) as $facts
+            | {service_uid: .service.uid, checkout: {path: .checkout}, machine_before: .service.machine,
+             git: ((.probe | del(.invocations)) + {service_path: .service.path,
+                   planted_invocations: ([.probe.invocations[] | select(. == $decoy)] | length)}),
+             inspection: {http_status: .request.status, client_id: .request.client_id, facts: $facts}}
+        else error("Unknown native observation.")
+        end'
+}
+
+# Replay synthetic source records on both managers in the offline lane.
+# The records contain no enrollment data, credentials or native host output.
+native_offline_records() {
+    local name=$1
+    case $name in
+        native_fixture_owns_stack)
+            cat <<'JSON'
+{
+  "reservation": {"project":"lgtm-s4-offline","image_tag":"lgtm-s4-offline-4","state":"/fixture/state",
+                  "checkout":"/fixture/candidate","ownership_record":"/fixture/objects",
+                  "reserved":[],"port":32769,"daemon":"fixture-daemon"},
+  "owned_web": {"container":"fixture-web"},
+  "installer": {"project":"lgtm-s4-offline","daemon":"fixture-daemon",
+                "container":"fixture-web","binding":"127.0.0.1:32769"}
+}
+JSON
+            ;;
+        requested_restart_restarts_service)
+            cat <<'JSON'
+{
+  "request":{"status":200,"prior_start":1,"exit":3,"machine":"fixture-machine"},
+  "online":{"start":8,"checked":10,"machine":"fixture-machine"},
+  "enrollment":{"before":"fixture-enrollment","after":"fixture-enrollment"},
+  "processes":[{"action":"start","at":1,"pid":20},{"action":"exit","at":3,"pid":20,"status":75},
+               {"action":"start","at":8,"pid":31}]
+}
+JSON
+            ;;
+        invalid_history_counter_stops_before_dial|invalid_history_payload_stops_after_welcome)
+            native_offline_history "$name"
+            ;;
+        trusted_git_inspects_as_service_user)
+            cat <<'JSON'
+{
+  "service":{"uid":501,"path":"/fixture/repo-b/decoy:/usr/bin","machine":"fixture-machine"},
+  "checkout":"/fixture/repo-b",
+  "probe":{"uid":501,"probe_path":"/fixture/repo-b/decoy:/usr/bin","path":"/usr/bin/git",
+           "canonical_path":"/usr/bin/git","version":"git version 2.0","planted_path":"/fixture/repo-b/decoy/git",
+           "invocations":["/usr/bin/git"]},
+  "request":{"status":200,"client_id":"fixture-machine"},
+  "response":{"facts":{"resolvedPath":"/fixture/repo-b","checkedOutBranch":"topic"}}
+}
+JSON
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+native_offline_history() {
+    local name=$1
+    jq -c --arg name "$name" '
+        if $name == "invalid_history_counter_stops_before_dial" then
+            .store.meta.next = "9223372036854775809"
+        else
+            .store = {meta: {next: "43"}, event_number: "42"}
+            | .mark = {before: "41", after: "41"}
+            | .projects = {before: "fixture-projects", after: "fixture-projects"}
+            | .records += [{kind: "dial", at: 3}, {kind: "admission", at: 4},
+                {kind: "verified_welcome", at: 5, stream_id: "new-stream", last_event_number: "41"}]
+            | .relay = [{action: "closed", stream_id: "unrelated-stream", at: 0},
+                {action: "held", frame: "event", event_number: "42", stream_id: "old-stream", at: 0},
+                {action: "discarded", frame: "event", event_number: "42", stream_id: "old-stream", at: 1},
+                {action: "closed", stream_id: "old-stream", at: 1}]
+        end' <<'JSON'
+{
+  "fault":{"started":2,"exited":6,"checked":18,"checked_pid":0,"recovered":19},
+  "machine_before":"fixture-machine",
+  "enrollment":{"before":"fixture-enrollment","after":"fixture-enrollment"},
+  "damage":{"before":"fixture-damage","after":"fixture-damage"},
+  "recovery":{"saved_history":"fixture-history","restored_history":"fixture-history","online_machine":"fixture-machine"},
+  "processes":[{"action":"start","at":2,"pid":20},{"action":"exit","at":6,"pid":20,"status":0},
+               {"action":"start","at":19,"pid":31}],
+  "logs":[{"pid":20,"at":5,"diagnostic":"history"}],
+  "records":[{"kind":"dial","at":19},{"kind":"admission","at":20}]
+}
+JSON
 }
 
 native_reject() {
