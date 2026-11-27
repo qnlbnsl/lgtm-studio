@@ -1,6 +1,6 @@
 ---
 kind: roadmap
-updated: 2026-11-25
+updated: 2026-11-27
 ---
 
 # Roadmap
@@ -15,7 +15,7 @@ The work that was planned for the old engine is not continued there. What the pr
 
 | Kind | Name | Overview |
 |---|---|---|
-| epic | go-rewrite | A Go server on PostgreSQL and a Go client on each machine replace the TypeScript engine. The website stays. The first four sprints end with a machine that joins a server and stays connected. |
+| epic | go-rewrite | A Go server on PostgreSQL and a Go client on each machine replace the TypeScript engine. The website stays. The first four sprints are built: a machine joins a server and stays connected. The second wave, in seven sprints, makes the stack do work: a repository on a machine, then an agent, its conversation, its permissions and its survival of a restart. Its first sprint is planned and in the build. |
 
 ## Later
 
