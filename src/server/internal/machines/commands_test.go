@@ -179,7 +179,7 @@ func TestScanAndReconnectQueueCommands(t *testing.T) {
 		if err != nil {
 			t.Fatal("The fixture could not allocate the replacement identifier.")
 		}
-		row, err := f.presence.State.BecomeCurrent(t.Context(), id, replacement, "10.2.3.4")
+		row, err := f.presence.State.BecomeCurrent(t.Context(), id, replacement, "10.2.3.4", projectionRun(id))
 		if err != nil || row.Generation != 4 {
 			t.Fatal("The fixture could not commit the replacement row.")
 		}

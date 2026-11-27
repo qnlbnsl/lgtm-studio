@@ -448,7 +448,8 @@ func openCommandReviewPeer(t *testing.T, address string, machine *machinetest.Ma
 	}
 	nonce := bytes.Repeat([]byte{18}, 32)
 	p.send(t, &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Hello{Hello: &linkv1.Hello{
-		MachineId: machine.ID, LinkRevision: 1, MachineNonce: nonce,
+		MachineId: machine.ID, LinkRevision: 2, MachineNonce: nonce,
+		RunId: machine.RunID, FirstEventNumber: machine.FirstEventNumber,
 	}}})
 	challenge := p.receive(t).GetChallenge()
 	if len(challenge.GetServerNonce()) != 32 || !ed25519.Verify(machine.ServerKey,

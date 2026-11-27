@@ -50,7 +50,7 @@ func NewState(s *store.Store, r *machines.Registry, h *Hub) *State {
 	}
 }
 
-func (s *State) BecomeCurrent(ctx context.Context, machineID, streamID, address string) (Stream, error) {
+func (s *State) BecomeCurrent(ctx context.Context, machineID, streamID, address string, announcement RunAnnouncement) (Stream, error) {
 	var stream Stream
 	err := s.store.Write(ctx, func(ctx context.Context, tx *store.Tx) error {
 		machine, err := s.registry.Lock(ctx, tx, machineID)
@@ -61,19 +61,34 @@ func (s *State) BecomeCurrent(ctx context.Context, machineID, streamID, address 
 			return err
 		}
 		s.locked(ctx, machineID)
-		stream = Stream{ID: streamID, Standing: machine}
+		run, err := classifyRun(ctx, tx, machineID, announcement)
+		if err == errRunBehindMark {
+			return ErrInvalidMessage
+		}
+		if err != nil {
+			return err
+		}
+		stream = Stream{ID: streamID, Standing: machine, Mark: uint64(run.mark)}
 		if machine.Approval == machines.ApprovalApproved {
 			var token [32]byte
 			rand.Read(token[:])
 			stream.ConnectionToken = base64.RawURLEncoding.EncodeToString(token[:])
 		}
 		err = tx.QueryRow(ctx, `
-INSERT INTO link_machines (machine_id, stream_generation) VALUES ($1, 1)
-ON CONFLICT (machine_id) DO UPDATE SET stream_generation = link_machines.stream_generation + 1
-RETURNING stream_generation, event_mark, clock_timestamp()`, machineID).
-			Scan(&stream.Generation, &stream.Mark, &stream.ServerTime)
+INSERT INTO link_machines (machine_id, stream_generation, admitted_run_id) VALUES ($1, 1, $2)
+ON CONFLICT (machine_id) DO UPDATE SET
+    stream_generation = link_machines.stream_generation + 1, admitted_run_id = EXCLUDED.admitted_run_id
+RETURNING stream_generation, clock_timestamp()`, machineID, announcement.ID).
+			Scan(&stream.Generation, &stream.ServerTime)
 		if err != nil {
 			return err
+		}
+		if run.unseen {
+			if _, err := tx.Exec(ctx, `
+INSERT INTO link_runs (machine_id, run_id, replay_through) VALUES ($1, $2, $3)`,
+				machineID, announcement.ID, run.replayThrough); err != nil {
+				return err
+			}
 		}
 		_, err = tx.Exec(ctx, `
 INSERT INTO link_connections (machine_id, stream_id, generation, connected_at, last_heard_at, address)
@@ -85,6 +100,18 @@ ON CONFLICT (machine_id) DO UPDATE SET
     facts_received = false, harnesses_received = false`, machineID, streamID, stream.Generation, stream.ServerTime, address)
 		if err != nil {
 			return err
+		}
+		ready := run.mark >= run.replayThrough
+		if err := s.dispatchAdmission(ctx, tx, Admission{
+			MachineID: machineID, StreamID: streamID, RunID: announcement.ID,
+			FirstEventNumber: announcement.FirstEventNumber, Ready: ready,
+		}); err != nil {
+			return err
+		}
+		if ready {
+			if err := s.promoteRun(ctx, tx, machineID, stream.Mark); err != nil {
+				return err
+			}
 		}
 		return s.registry.Touch(ctx, tx, machineID)
 	})

@@ -21,7 +21,7 @@ import (
 const (
 	HandshakeTimeout     = 10 * time.Second
 	LinkRefusalKey       = "Lgtm-Link-Refusal"
-	LinkRevision         = 1
+	LinkRevision         = 2
 	lookupTimeout        = 15 * time.Second
 	openQueueSize        = 16
 	terminalWriteTimeout = 2 * time.Second
@@ -29,7 +29,7 @@ const (
 
 var (
 	errHandshakeDeadline = errors.New("The machine did not answer in time.")
-	errLinkRevision      = errors.New("The server speaks revision 1 of the link.")
+	errLinkRevision      = errors.New("The server speaks revision 2 of the link.")
 	errMachineSignature  = errors.New("The machine's signature did not verify.")
 	errLinkStopping      = errors.New("The server is stopping.")
 	errLinkFinished      = errors.New("The link stream finished.")
@@ -227,7 +227,9 @@ func (s *Service) handshake(ctx context.Context, cancel context.CancelCauseFunc,
 		var admissionErr error
 		// A panic can interrupt the call after the database commits.
 		h.cleanup = true
-		admitted, admissionErr = link.state.BecomeCurrent(ctx, machineID, streamID, peerAddress(h.stream.Peer().Addr, link.options.PrivateStack))
+		admitted, admissionErr = link.state.BecomeCurrent(ctx, machineID, streamID,
+			peerAddress(h.stream.Peer().Addr, link.options.PrivateStack),
+			RunAnnouncement{ID: hello.GetRunId(), FirstEventNumber: hello.GetFirstEventNumber()})
 		var dbErr *store.Error
 		unknown := errors.As(admissionErr, &dbErr) && dbErr.Outcome() == store.OutcomeUnknown
 		h.cleanup = admissionErr == nil || unknown

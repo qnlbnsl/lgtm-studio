@@ -150,6 +150,10 @@ func (f *streamRecordsFixture) installHandle(t *testing.T, machine, id string, g
 	return cancel
 }
 
+func projectionRun(machineID string) link.RunAnnouncement {
+	return link.RunAnnouncement{ID: machineID, FirstEventNumber: 1}
+}
+
 func (f *streamRecordsFixture) admit(t *testing.T, machine string, gen int64) (link.Stream, context.CancelCauseFunc) {
 	t.Helper()
 	id, err := store.NewID()
@@ -157,7 +161,7 @@ func (f *streamRecordsFixture) admit(t *testing.T, machine string, gen int64) (l
 		t.Fatal("The presence fixture could not allocate a stream identifier.")
 	}
 	cancel := f.installHandle(t, machine, id, gen)
-	result, err := f.presence.BecomeCurrent(t.Context(), machine, id, "10.2.3.4")
+	result, err := f.presence.BecomeCurrent(t.Context(), machine, id, "10.2.3.4", projectionRun(machine))
 	if err != nil || result.Generation != gen || result.ID != id {
 		t.Fatal("The fixture did not commit its stream admission.")
 	}
@@ -339,7 +343,7 @@ func TestWatchClientsStreamPresence(t *testing.T) {
 		if err != nil {
 			t.Fatal("The replacement stream identifier could not be allocated.")
 		}
-		b, err := f.presence.BecomeCurrent(t.Context(), id, bid, "10.2.3.4")
+		b, err := f.presence.BecomeCurrent(t.Context(), id, bid, "10.2.3.4", projectionRun(id))
 		if err != nil || b.Generation != 2 {
 			t.Fatal("The staged replacement did not commit.")
 		}

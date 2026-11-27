@@ -18,15 +18,16 @@ import (
 	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1"
 	"github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1/linkv1connect"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/machines"
+	"github.com/qnlbnsl/lgtm-studio/src/server/internal/store"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/transport"
 )
 
-type Machine struct {
-	ID        string
-	Key       ed25519.PrivateKey
-	ServerKey ed25519.PublicKey
+const linkRevision = 2
 
-	// These fields are stubs of the test writer for the scripted process.
+type Machine struct {
+	ID               string
+	Key              ed25519.PrivateKey
+	ServerKey        ed25519.PublicKey
 	RunID            string
 	FirstEventNumber uint64
 }
@@ -34,7 +35,7 @@ type Machine struct {
 var (
 	errJoinKey = errors.New("The server's signing key did not match the join token.")
 	errProof   = errors.New("The server's Challenge did not verify.")
-	errWelcome = errors.New("The server did not send a revision 1 Welcome.")
+	errWelcome = errors.New("The server did not send a revision 2 Welcome.")
 )
 
 func NewServer(t testing.TB, handler http.Handler, timeout time.Duration) *httptest.Server {
@@ -68,6 +69,10 @@ func Join(ctx context.Context, client linkv1connect.LinkServiceClient, tokenText
 	if err != nil {
 		return nil, errors.New("A machine signing key could not be generated.")
 	}
+	runID, err := store.NewID()
+	if err != nil {
+		return nil, err
+	}
 	reply, err := client.Join(ctx, connect.NewRequest(&linkv1.JoinRequest{
 		TokenId: token.GetTokenId(), TokenSecret: token.GetSecret(),
 		MachinePublicKey: public, HostName: host,
@@ -80,7 +85,10 @@ func Join(ctx context.Context, client linkv1connect.LinkServiceClient, tokenText
 	if len(key) != ed25519.PublicKeySize || subtle.ConstantTimeCompare(hash[:], token.GetServerKeySha256()) != 1 {
 		return nil, errJoinKey
 	}
-	return &Machine{ID: reply.Msg.GetMachineId(), Key: private, ServerKey: key}, nil
+	return &Machine{
+		ID: reply.Msg.GetMachineId(), Key: private, ServerKey: key,
+		RunID: runID, FirstEventNumber: 1,
+	}, nil
 }
 
 func (m *Machine) Connect(ctx context.Context, client linkv1connect.LinkServiceClient) (*connect.BidiStreamForClient[linkv1.OpenRequest, linkv1.OpenResponse], *linkv1.Welcome, error) {
@@ -100,7 +108,10 @@ func (m *Machine) handshake(stream *connect.BidiStreamForClient[linkv1.OpenReque
 	}
 	var nonce [32]byte
 	rand.Read(nonce[:])
-	hello := &linkv1.Hello{MachineId: m.ID, MachineNonce: nonce[:], LinkRevision: 1}
+	hello := &linkv1.Hello{
+		MachineId: m.ID, MachineNonce: nonce[:], LinkRevision: linkRevision,
+		RunId: m.RunID, FirstEventNumber: m.FirstEventNumber,
+	}
 	if err := stream.Send(&linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Hello{Hello: hello}}); err != nil {
 		return nil, err
 	}
@@ -124,7 +135,7 @@ func (m *Machine) handshake(stream *connect.BidiStreamForClient[linkv1.OpenReque
 		return nil, err
 	}
 	welcome := reply.GetWelcome()
-	if welcome.GetLinkRevision() != 1 || welcome.GetState() == nil {
+	if welcome.GetLinkRevision() != linkRevision || welcome.GetState() == nil {
 		return nil, errWelcome
 	}
 	return welcome, nil

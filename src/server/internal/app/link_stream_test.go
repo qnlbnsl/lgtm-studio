@@ -90,7 +90,10 @@ func appProofText(label, id string, machineNonce, serverNonce []byte) []byte {
 func appChallenge(t *testing.T, s *appOpenStream, m *machinetest.Machine, nonceByte byte) *linkv1.OpenRequest {
 	t.Helper()
 	nonce := bytes.Repeat([]byte{nonceByte}, 32)
-	sendAppOpen(t, s, &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Hello{Hello: &linkv1.Hello{MachineId: m.ID, LinkRevision: 1, MachineNonce: nonce}}})
+	sendAppOpen(t, s, &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Hello{Hello: &linkv1.Hello{
+		MachineId: m.ID, LinkRevision: 2, MachineNonce: nonce,
+		RunId: m.RunID, FirstEventNumber: m.FirstEventNumber,
+	}}})
 	frame, err := s.Receive()
 	ch := frame.GetChallenge()
 	if err != nil || ch == nil || len(ch.ServerNonce) != 32 ||
