@@ -7857,3 +7857,13 @@ Two minor findings of the same review are open with it:
 
 - An approval's reply can show Offline for a machine whose original stream is still live while a replacement that later fails is waiting. The watch shows Joining, and the website discards the approval's reply.
 - No test covers a frame of a displaced stream that arrives while the replacement's publication is held.
+
+## 1668. Three small gaps in how the server starts and stops the machine stream
+
+Found on 2026-11-27, in the review by another vendor of the built server stream (`.plans/plans/go-s3-server-stream/attack/post-build-c.md`, verdict SHIP, grade 8 out of 10).
+
+1. No test fails when the server clears stale presence after its listener opens. The code clears it before, as the plan requires (post-c 1).
+2. Request handlers are not joined before the instance lock and the Store are released. When the five-second drain expires, a handler can still commit a write after another server took the lock (post-c 2). This was found by reading, not by a run.
+3. A panic inside the commit of an admission leaves the hub's admission state set, so no command reaches that machine until the server restarts (post-c 3). This was found by reading, not by a run.
+
+The next step is one test for point 1 and two small repairs with their tests for points 2 and 3.
