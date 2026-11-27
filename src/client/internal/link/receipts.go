@@ -1,9 +1,12 @@
 package link
 
 import (
+	"bytes"
 	"encoding/json"
 	"math"
+	"strings"
 	"time"
+	"unicode"
 
 	bolt "go.etcd.io/bbolt"
 
@@ -56,6 +59,10 @@ func (r savedResult) replayBytes(decision Decision) []byte {
 }
 
 func readReceipt(data []byte, maxResult int) (receipt, []byte, bool) {
+	if !uniqueReceiptFields(data) {
+		return receipt{}, nil, false
+	}
+
 	// Raw fields distinguish absence from explicit null in both formats.
 	var fields struct {
 		receipt
@@ -112,6 +119,39 @@ func readReceipt(data []byte, maxResult int) (receipt, []byte, bool) {
 	default:
 		return receipt{}, nil, false
 	}
+}
+
+func uniqueReceiptFields(data []byte) bool {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	if token, err := decoder.Token(); err != nil || token != json.Delim('{') {
+		return false
+	}
+	seen := make(map[string]struct{})
+	var value json.RawMessage
+	for decoder.More() {
+		token, err := decoder.Token()
+		name, ok := token.(string)
+		if err != nil || !ok {
+			return false
+		}
+		// Go's JSON decoder matches struct fields using simple Unicode case folding.
+		name = strings.Map(func(r rune) rune {
+			smallest := r
+			for candidate := unicode.SimpleFold(r); candidate != r; candidate = unicode.SimpleFold(candidate) {
+				smallest = min(smallest, candidate)
+			}
+			return smallest
+		}, name)
+		if _, duplicate := seen[name]; duplicate {
+			return false
+		}
+		seen[name] = struct{}{}
+		if err := decoder.Decode(&value); err != nil {
+			return false
+		}
+	}
+	token, err := decoder.Token()
+	return err == nil && token == json.Delim('}')
 }
 
 func validReceiptOutcome(result []byte) bool {
