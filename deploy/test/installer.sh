@@ -178,7 +178,15 @@ case ${1:-} in
         echo 0.0.0-test
         ;;
     join)
-        hash=$(printf '%s' "$3" | sha256sum | cut -d' ' -f1)
+        if [[ $# -ne 3 || $3 != - ]]; then
+            printf '%s\n' 'client received the token in the argument list' >>"$CALLS_LOG"
+            exit 2
+        fi
+        if IFS= read -r token; then
+            token=${token%$'\r'}
+        fi
+        [[ -n $token ]] || exit 2
+        hash=$(printf '%s' "$token" | sha256sum | cut -d' ' -f1)
         dir=${LGTM_CLIENT_STATE_DIR:-$HOME/.local/state/lgtm-client}
         if [[ -e $HOME/.local/bin/lgtm-client || -e $HOME/.config/systemd/user/lgtm-client.service ||
             -e $HOME/Library/LaunchAgents/dev.lgtmstudio.client.plist ]]; then
@@ -478,6 +486,11 @@ test_token_never_printed() {
     hash=$(printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1)
     fresh
     run SHIM_UNAME=Linux
+    if has_line 'client received the token in the argument list'; then
+        check 'The token was in the argument list.' false
+    else
+        check 'the token stays out of the argument list' true
+    fi
     check 'the join line with the token hash is in the calls log' has_re "^client join [^ ]+ $hash "
     check 'the output does not hold the token' out_lacks "$TOKEN"
     check 'no file of the test folder holds the token' \
