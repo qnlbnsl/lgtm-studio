@@ -1,10 +1,11 @@
 import { errorText } from '../live/reads';
 // Workflow definitions are edited here; project execution remains the build loop.
 import { useState, useEffect, useRef } from 'preact/hooks';
-import { live, href, ago, Icon } from '../lib';
+import { live, href, ago, Icon, store } from '../lib';
 import { Dialog, Menu } from '../ui';
 import * as engine from '../engine';
 import { confirm } from '../actions';
+import { captureSession } from '../server/sync';
 import { validateWorkflow as sampleError, workflowRoles as roles } from '../workflow-contracts';
 import type { Repo, State } from '../types';
 
@@ -35,15 +36,22 @@ interface Kept { version: number; history: (WorkflowVersion & { definition: Work
 const id = () => 'item-' + crypto.randomUUID().slice(0, 12);
 const label = (role: string) => role.split('-').map((s) => s[0]!.toUpperCase() + s.slice(1)).join(' ');
 async function sample(tag: string, p: WorkflowParams): Promise<WorkflowReply | undefined> {
-  const data: Record<string, WorkflowDefinition> = JSON.parse(localStorage.getItem(key) || '{}');
+  const workspace = store.state;
+  const scope = captureSession();
   const defaultDefinition: WorkflowDefinition = await fetch(new URL('../../../../design/mock/workflows/build-loop.json', import.meta.url)).then((r) => { if (!r.ok) throw Error('The default workflow is unavailable.'); return r.json(); });
+  if (store.state !== workspace || live.on || (scope && !scope.isCurrent())) throw Error('The workflow is unavailable.');
+  const data: Record<string, WorkflowDefinition> = JSON.parse(localStorage.getItem(key) || '{}');
   const kept: Record<string, Kept> = JSON.parse(localStorage.getItem(historyKey) || '{}');
   const keyOf = (scope: string, id: string) => (scope === 'user' ? 'user' : p.repoId) + ':' + id;
   const keptOf = (k: string): Kept => kept[k] || { version: 1, history: [] };
   const summary = (scope: string, id: string, definition: WorkflowDefinition): WorkflowSummary => ({ scope, id, name: definition.name, readOnly: scope === 'default', ...(scope === 'default' ? {} : { version: keptOf(keyOf(scope, id)).version }) });
   const records = [{ ...summary('default', 'build-loop', defaultDefinition), definition: defaultDefinition }, ...Object.entries(data).filter(([k]) => k.startsWith((p.repoId || 'user') + ':') || k.startsWith('user:')).map(([k, d]) => ({ ...summary(k.startsWith('user:') ? 'user' : 'repository', k.split(':')[1]!, d), definition: d }))];
   const current = records.find((r) => r.scope === p.scope && r.id === p.id);
-  const save = () => { localStorage.setItem(key, JSON.stringify(data)); localStorage.setItem(historyKey, JSON.stringify(kept)); };
+  const save = () => {
+    if (workspace.server.repositoryMode) throw Error('The workflow is unavailable.');
+    localStorage.setItem(key, JSON.stringify(data));
+    localStorage.setItem(historyKey, JSON.stringify(kept));
+  };
   if (tag === 'list') return { items: records.map(({ definition, ...r }) => r) };
   if (tag === 'validate') { const error = sampleError(p.definition); return { valid: !error, error }; }
   if (!current) throw Error('The workflow is unavailable.');

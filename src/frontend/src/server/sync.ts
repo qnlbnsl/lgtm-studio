@@ -10,9 +10,9 @@ import { PreviewState } from '@lgtm/api/preview';
 import { ProjectService } from '@lgtm/api/projects';
 import { SignInResult } from '@lgtm/api/session';
 import { FRAMED, persist, store, update } from '../lib';
-import type { JoiningClient, Machine } from '../types';
+import type { JoiningClient, Machine, State } from '../types';
 import { BadAddress, SAMPLE, addressLabel, fixedAddress, rememberAddress, rememberedAddress, serverUrl } from './address';
-import { WrongServer, api, onServer, openServer } from './api';
+import { WrongServer, api, onServer, openServer, selectServer, type Api, type ServerCandidate } from './api';
 
 const toMachine = (c: Client): Machine => ({
   id: c.id, name: c.name, role: c.hostsServer ? 'master' : 'worker',
@@ -32,18 +32,104 @@ export function reason(e: unknown): string {
   return 'The server did not answer.';
 }
 
-let watching: AbortController | null = null;
-function stopWatching(): void { watching?.abort(); watching = null; }
+let selectWorkspace: ((repositoryMode: boolean) => void) | null = null;
+let generation = 0;
+let selected: ServerCandidate | null = null;
+let authIntent = 0;
+const credentialTimeout = 6000;
+const cookieWriters = new Map<string, Promise<void>>();
+const cookieHost = (url: string) => url === SAMPLE ? SAMPLE : new URL(url).hostname;
+
+function writeCookie<T>(url: string, write: () => Promise<T>): Promise<T> {
+  const host = cookieHost(url);
+  const reply = (cookieWriters.get(host) ?? Promise.resolve()).then(write);
+  const tail = reply.then(() => {}, () => {});
+  cookieWriters.set(host, tail);
+  void tail.then(() => { if (cookieWriters.get(host) === tail) cookieWriters.delete(host); });
+  return reply;
+}
+
+export interface SessionScope {
+  clients: Api;
+  url: string;
+  signal: AbortSignal;
+  isCurrent(): boolean;
+}
+
+let session: SessionScope | null = null;
+let controller: AbortController | null = null;
+let watching: SessionScope | null = null;
+
+/** Captures the clients and lifetime that own a protected operation. */
+export function captureSession(): SessionScope | null { return session; }
+
+function stopWatching(): void {
+  session = null;
+  watching = null;
+  controller?.abort();
+  controller = null;
+}
+
+function startSession(server: ServerCandidate): void {
+  const signal = (controller = new AbortController()).signal;
+  const scope: SessionScope = { clients: server.clients, url: server.url, signal, isCurrent: () => session === scope };
+  session = scope;
+}
+
+function clearMachines(s: State): void {
+  s.server.synced = false;
+  s.machines = [];
+  s.joining = [];
+}
+
+function clearRepositorySession(s: State): void {
+  clearMachines(s);
+  Object.assign(s, {
+    expanded: {}, inspecting: {}, ui: {}, dialog: null, pending: {}, toasts: [], drafts: Object.create(null),
+    phoneOffer: null, machineDetails: null, subscriptions: [], projects: [], teams: [], agents: [],
+    epics: [], sprints: [], tasks: [], requests: [], threads: {}, channels: [], posts: [], notifications: [],
+    define: {}, worktrees: [], gitUi: {}, mocks: {}, design: {}, workflow: {}, boardRead: {}, boardUnread: {},
+    boardRevision: 0, boardDetails: {}, taskDetails: {}, setupData: null, boardAgents: {}, projectLeadSettings: {},
+    usage: { rows: [], limits: {}, review: { ranAt: 0, findings: [] } },
+  });
+  s.terminal.byProject = {};
+  s.conn = { status: 'reconnecting', lastHeard: 0 };
+}
+
+/** Ends the current session when a protected request reports that it has expired. */
+export function expireSession(scope: SessionScope, error: unknown): boolean {
+  if (!scope.isCurrent() || !(error instanceof ConnectError) || error.code !== Code.Unauthenticated) return false;
+  authIntent++;
+  stopWatching();
+  update((s) => {
+    s.session.status = s.server.synced ? 'expired' : 'out';
+    if (s.server.repositoryMode) clearRepositorySession(s);
+    else s.server.synced = false;
+  });
+  return true;
+}
+
+function waitForRetry(signal: AbortSignal, delay: number): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((done) => {
+    const timer = setTimeout(finish, delay);
+    signal.addEventListener('abort', finish, { once: true });
+    function finish() {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', finish);
+      done();
+    }
+  });
+}
 
 // Reads the collections the server owns, and follows their changes until the session ends.
-function watch(): void {
-  stopWatching();
-  const mine = watching = new AbortController();
+function watch(scope: SessionScope): void {
+  watching = scope;
   void (async () => {
-    for (let wait = 500; !mine.signal.aborted; wait = Math.min(wait * 2, 8000)) {
+    for (let wait = 500; scope.isCurrent(); wait = Math.min(wait * 2, 8000)) {
       try {
-        for await (const { change } of api().clients.watchClients({}, { signal: mine.signal })) {
-          if (mine.signal.aborted) return;
+        for await (const { change } of scope.clients.clients.watchClients({}, { signal: scope.signal })) {
+          if (!scope.isCurrent()) return;
           wait = 500;
           update((s) => {
             if (change.case === 'all') { s.machines = change.value.clients.filter((c) => !waits(c)).map(toMachine); s.joining = change.value.clients.filter(waits).map(toJoining); s.server.synced = true; s.conn.status = 'live'; }
@@ -55,48 +141,65 @@ function watch(): void {
           });
         }
       } catch (e) {
-        if (mine.signal.aborted) return;
-        if (e instanceof ConnectError && e.code === Code.Unauthenticated) { update((s) => { s.session.status = s.server.synced ? 'expired' : 'out'; s.server.synced = false; }); return; }
+        if (!scope.isCurrent() || expireSession(scope, e)) return;
         update((s) => { s.conn.status = 'reconnecting'; });
       }
       // The stream ended or failed. Wait a little longer each time, and read everything again.
-      await new Promise((done) => setTimeout(done, wait));
+      if (scope.isCurrent()) await waitForRetry(scope.signal, wait);
     }
   })();
 }
 
 /** Starts reading the server's records, when nothing reads them yet. */
-export function ensureReading(): void { if (!watching) watch(); }
+export function ensureReading(): void {
+  const scope = captureSession();
+  if (scope && !watching && store.state.session.status === 'in') watch(scope);
+}
 
-let selectWorkspace: ((repositoryMode: boolean) => void) | null = null;
+function forgetSelection(): number {
+  generation++;
+  stopWatching();
+  selected = null;
+  selectServer(null);
+  return generation;
+}
 
 /** Connects to a server and, when the browser is signed in there, starts reading it. */
-export async function connect(text: string): Promise<void> {
+export async function connect(text: string, onReady?: () => void): Promise<void> {
   const select = selectWorkspace;
   if (!select) return;
+  const mine = forgetSelection();
+  if (store.state.server.repositoryMode) update(clearRepositorySession);
   let url: string;
   try { url = serverUrl(text); } catch (e) { update((s) => { s.server = { ...s.server, status: 'ask', error: reason(e) }; }); return; }
-  stopWatching();
   update((s) => { s.server = { status: 'connecting', address: text, label: addressLabel(url), sample: url === SAMPLE, repositoryMode: s.server.repositoryMode, synced: false, fixed: fixedAddress() !== null }; });
   try {
+    // Discovery observes the cookie left by the writers queued before it.
+    await cookieWriters.get(cookieHost(url));
+    if (generation !== mine) return;
     // The sample inside the page has no cookie, so it remembers the session the way the mock always did.
-    const server = await openServer(url, { signedIn: persist('session', 'in') === 'in' });
-    if (selectWorkspace !== select) return;
+    const candidate = await openServer(url, { signedIn: persist('session', 'in') === 'in' });
+    if (generation !== mine) return;
+    const { server } = candidate;
     const sample = url === SAMPLE || server.sample;
     const repositoryMode = !sample && server.services.includes(ProjectService.typeName);
     if (!fixedAddress()) rememberAddress(text);
     // A framed copy of the website, in the Design view, may ask for a signed-out screen.
     const forced = FRAMED ? new URLSearchParams(location.hash.split('?')[1] || '').get('session') : null;
     select(repositoryMode);
+    selected = candidate;
+    selectServer(candidate);
+    startSession(candidate);
     update((s) => {
       s.server.status = 'ready';
       s.server.sample = sample;
       s.server.repositoryMode = repositoryMode;
       s.session.status = forced || (server.signedIn ? 'in' : 'out');
     });
-    if (store.state.session.status === 'in') watch();
+    ensureReading();
+    onReady?.();
   } catch (e) {
-    if (selectWorkspace !== select) return;
+    if (generation !== mine) return;
     update((s) => { s.server = { ...s.server, status: 'unreachable', error: e instanceof WrongServer ? e.message : `No LGTM Studio server answers at ${addressLabel(url)}.` }; });
   }
 }
@@ -112,43 +215,87 @@ export function start(select: (repositoryMode: boolean) => void): void {
 /** Ends standalone discovery and reading when the website leaves its element. */
 export function stop(): void {
   selectWorkspace = null;
-  stopWatching();
+  forgetSelection();
 }
 
 /** Forgets the server, and asks for an address again. */
 export function changeServer(): void {
-  stopWatching(); rememberAddress(null);
-  update((s) => { s.server = { ...s.server, status: 'ask', synced: false, error: undefined }; s.machines = []; s.joining = []; });
+  forgetSelection();
+  rememberAddress(null);
+  update((s) => {
+    if (s.server.repositoryMode) clearRepositorySession(s);
+    else clearMachines(s);
+    s.server = { ...s.server, status: 'ask', error: undefined };
+  });
 }
 
-/** Signs in with the server's password. Resolves to the session's new status. */
-export async function signIn(password: string): Promise<'in' | 'rejected' | 'unavailable'> {
+type SignInStatus = 'in' | 'rejected' | 'unavailable';
+
+/** Signs in with the selected server and applies the result while its intent is current. */
+export async function signIn(password: string, apply: (status: SignInStatus) => void): Promise<SignInStatus | 'obsolete'> {
+  const server = selected;
+  if (!server) return 'obsolete';
+  const mine = ++authIntent;
+  let status: SignInStatus;
   try {
-    const { result } = await api().session.signIn({ password });
-    if (result !== SignInResult.SIGNED_IN) return 'rejected';
-    watch();
-    return 'in';
-  } catch { return 'unavailable'; }
+    const { result } = await writeCookie(server.url, () => server.clients.session.signIn({ password }, { timeoutMs: credentialTimeout }));
+    status = result === SignInResult.SIGNED_IN ? 'in' : 'rejected';
+  } catch { status = 'unavailable'; }
+  if (selected !== server || authIntent !== mine) return 'obsolete';
+  if (status === 'in') {
+    stopWatching();
+    startSession(server);
+  }
+  apply(status);
+  if (selected === server && authIntent === mine) ensureReading();
+  return status;
 }
-export async function signOut(): Promise<void> {
+
+export async function signOut(apply: () => void): Promise<void> {
+  const server = selected;
+  if (!server) return;
+  const mine = ++authIntent;
   stopWatching();
-  try { await api().session.signOut({}); } catch { /* The page forgets the session either way. */ }
-  update((s) => { s.server.synced = false; s.machines = []; s.joining = []; });
+  if (store.state.server.repositoryMode) update((s) => {
+    clearRepositorySession(s);
+    s.session.status = 'out';
+  });
+  try {
+    await writeCookie(server.url, () => server.clients.session.signOut({}, { timeoutMs: credentialTimeout }));
+  } catch { /* The page forgets the session either way. */ }
+  if (selected !== server || authIntent !== mine) return;
+  update(clearMachines);
+  apply();
 }
 
 // ---- the clients of the server, which the website calls machines ---------------------
+async function machineCall<T>(scope: SessionScope, call: (clients: Api['clients']) => Promise<T>): Promise<T> {
+  scope.signal.throwIfAborted();
+  try { return await call(scope.clients.clients); }
+  catch (e) {
+    if (store.state.server.repositoryMode) expireSession(scope, e);
+    throw e;
+  }
+}
+
 // `address` is the address inside the token, which the machine dials. A sample server leaves it empty.
 export interface ClientToken { id: string; secret: string; expiresAt: number; address: string }
-export async function createClientToken(): Promise<ClientToken> {
-  const t = await api().clients.createClientToken({});
+export async function createClientToken(scope: SessionScope): Promise<ClientToken> {
+  const t = await machineCall(scope, (clients) => clients.createClientToken({}, { signal: scope.signal }));
   return { id: t.tokenId, secret: t.token, expiresAt: t.expiresAt ? timestampMs(t.expiresAt) : Date.now(), address: t.address };
 }
-export const revokeClientToken = (tokenId: string) => api().clients.revokeClientToken({ tokenId }).then(() => {}, () => {});
-export const approveClient = (id: string, name: string) => api().clients.approveClient({ id, name }).then(() => {});
-export const renameClient = (id: string, name: string) => api().clients.renameClient({ id, name }).then(() => {});
-export const scanClientHarnesses = (id: string) => api().clients.scanClientHarnesses({ id }).then(() => {});
-export const reconnectClient = (id: string) => api().clients.reconnectClient({ id }).then(() => {});
-export const removeClient = (id: string) => api().clients.removeClient({ id }).then(() => {});
+export const revokeClientToken = (scope: SessionScope, tokenId: string) =>
+  machineCall(scope, (clients) => clients.revokeClientToken({ tokenId }, { signal: scope.signal })).then(() => {}, () => {});
+export const approveClient = (scope: SessionScope, id: string, name: string) =>
+  machineCall(scope, (clients) => clients.approveClient({ id, name }, { signal: scope.signal })).then(() => {});
+export const renameClient = (scope: SessionScope, id: string, name: string) =>
+  machineCall(scope, (clients) => clients.renameClient({ id, name }, { signal: scope.signal })).then(() => {});
+export const scanClientHarnesses = (scope: SessionScope, id: string) =>
+  machineCall(scope, (clients) => clients.scanClientHarnesses({ id }, { signal: scope.signal })).then(() => {});
+export const reconnectClient = (scope: SessionScope, id: string) =>
+  machineCall(scope, (clients) => clients.reconnectClient({ id }, { signal: scope.signal })).then(() => {});
+export const removeClient = (scope: SessionScope, id: string) =>
+  machineCall(scope, (clients) => clients.removeClient({ id }, { signal: scope.signal })).then(() => {});
 
 // A map or a preview belongs to a project, or to the main checkout of a repository. The screens
 // name the second as "repository:" and the repository's id.
@@ -162,11 +309,15 @@ export interface MapView {
 export interface MapFrame { id: string; url: string; expiresAt: number }
 /** Follows one project's map until the returned function is called. */
 export function watchMap(projectId: string, onChange: (map: MapView) => void, onError: (text: string) => void): () => void {
+  const scope = captureSession();
+  if (!scope) return () => {};
   const stop = new AbortController();
+  const signal = AbortSignal.any([scope.signal, stop.signal]);
   void (async () => {
-    for (let wait = 500; !stop.signal.aborted; wait = Math.min(wait * 2, 8000)) {
+    for (let wait = 500; !signal.aborted; wait = Math.min(wait * 2, 8000)) {
       try {
-        for await (const { map } of api().maps.watchMap(place(projectId), { signal: stop.signal })) {
+        for await (const { map } of scope.clients.maps.watchMap(place(projectId), { signal })) {
+          if (signal.aborted) return;
           if (!map) continue;
           wait = 500;
           const f = map.facts;
@@ -176,21 +327,26 @@ export function watchMap(projectId: string, onChange: (map: MapView) => void, on
           });
         }
       } catch (e) {
-        if (stop.signal.aborted) return;
+        if (signal.aborted) return;
         onError(reason(e));
       }
-      await new Promise((done) => setTimeout(done, wait));
+      await waitForRetry(signal, wait);
     }
   })();
   return () => stop.abort();
 }
 export const buildMap = (projectId: string) => api().maps.buildMap(place(projectId)).then(() => {});
 export async function openMap(projectId: string): Promise<MapFrame> {
-  const { frame } = await api().maps.openMap(place(projectId));
+  const scope = captureSession();
+  if (!scope) throw new Error('The website has no server yet.');
+  const { frame } = await scope.clients.maps.openMap(place(projectId), { signal: scope.signal });
+  scope.signal.throwIfAborted();
   if (!frame) throw new Error('The server gave no address.');
-  return { id: frame.id, url: onServer(frame.url), expiresAt: frame.expiresAt ? timestampMs(frame.expiresAt) : 0 };
+  return { id: frame.id, url: onServer(frame.url, scope.url), expiresAt: frame.expiresAt ? timestampMs(frame.expiresAt) : 0 };
 }
-export const releaseMap = (id: string) => api().maps.releaseMap({ id }).then(() => {}, () => {});
+export async function releaseMap(id: string): Promise<void> {
+  try { await captureSession()?.clients.maps.releaseMap({ id }); } catch { /* The frame can expire on the server. */ }
+}
 
 // ---- the running product of a project -------------------------------------------------
 export interface PreviewView {
@@ -201,21 +357,25 @@ export interface PreviewFrame { id: string; url: string; expiresAt: number }
 const PREVIEW_STATES: Record<number, PreviewView['state']> = { [PreviewState.STARTING]: 'starting', [PreviewState.RUNNING]: 'running', [PreviewState.FAILED]: 'failed' };
 /** Follows one project's previews until the returned function is called. */
 export function watchPreviews(projectId: string, onChange: (list: PreviewView[]) => void, onError: (text: string) => void): () => void {
+  const scope = captureSession();
+  if (!scope) return () => {};
   const stop = new AbortController();
+  const signal = AbortSignal.any([scope.signal, stop.signal]);
   void (async () => {
-    while (!stop.signal.aborted) {
+    while (!signal.aborted) {
       try {
-        for await (const { previews } of api().previews.watchPreviews(place(projectId), { signal: stop.signal })) {
+        for await (const { previews } of scope.clients.previews.watchPreviews(place(projectId), { signal })) {
+          if (signal.aborted) return;
           onChange(previews.map((p) => ({
             id: p.id, name: p.name, command: p.command, port: p.port, machine: p.clientName, machineId: p.clientId, branch: p.branch,
             state: PREVIEW_STATES[p.state] ?? 'stopped', error: p.error, startedAt: p.startedAt ? timestampMs(p.startedAt) : 0,
           })));
         }
       } catch (e) {
-        if (stop.signal.aborted) return;
+        if (signal.aborted) return;
         onError(reason(e));
       }
-      await new Promise((r) => setTimeout(r, 2000));
+      await waitForRetry(signal, 2000);
     }
   })();
   return () => stop.abort();
@@ -223,11 +383,16 @@ export function watchPreviews(projectId: string, onChange: (list: PreviewView[])
 export const startPreview = (id: string) => api().previews.startPreview({ id }).then(() => {});
 export const stopPreview = (id: string) => api().previews.stopPreview({ id }).then(() => {});
 export async function openPreview(id: string): Promise<PreviewFrame> {
-  const { frame } = await api().previews.openPreview({ id });
+  const scope = captureSession();
+  if (!scope) throw new Error('The website has no server yet.');
+  const { frame } = await scope.clients.previews.openPreview({ id }, { signal: scope.signal });
+  scope.signal.throwIfAborted();
   if (!frame) throw new Error('The server gave no address for the preview.');
-  return { id: frame.id, url: onServer(frame.url), expiresAt: frame.expiresAt ? timestampMs(frame.expiresAt) : 0 };
+  return { id: frame.id, url: onServer(frame.url, scope.url), expiresAt: frame.expiresAt ? timestampMs(frame.expiresAt) : 0 };
 }
-export const releasePreview = (id: string) => api().previews.releasePreview({ id }).then(() => {}, () => {});
+export async function releasePreview(id: string): Promise<void> {
+  try { await captureSession()?.clients.previews.releasePreview({ id }); } catch { /* The frame can expire on the server. */ }
+}
 /** Adds a preview when `id` is empty, and changes one otherwise. */
 export const savePreview = (p: { id?: string; projectId: string; name: string; command: string; port: number; machineId?: string }) =>
   api().previews.savePreview({ id: p.id ?? '', ...place(p.projectId), name: p.name, command: p.command, port: p.port, clientId: p.machineId ?? '' }).then(() => {});

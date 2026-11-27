@@ -8002,3 +8002,16 @@ Found on 2026-11-27, in the second review of item 4 of the plan `go-s4-client-fo
 
 When `HEAD` is a link whose target is a branch name followed by white space, the installed Git refuses the checkout. The client reports the branch instead, because it removes the white space when it writes the private view.
 Where: the reading of a linked `HEAD` in `src/client/internal/folders/checkout.go`. The test writer of item 5 adds the test, and the builder of item 5 repairs it.
+
+## 1687. Some late answers of sample screens can still reach the current workspace
+
+Found on 2026-11-27, in the build of item 2 of the plan `go-s4-web-repositories`.
+
+The website now drops a discovery answer, a sign-in answer and a sample workflow copy that arrive after the server or the workspace changed. The builder looked for other late writers of the same kind and left these, because their files were outside the item:
+
+1. The Map and Browser screens, and the copy action of the terminal, can show a message in the current workspace when an action of an earlier workspace ends.
+2. The waiting confirmation dialog and the rename dialog can close the current dialog when an earlier request answers.
+3. The sample account helper writes its answer to the current workspace.
+4. The Design canvas channel keeps its last state after its view is gone.
+
+Where: `src/frontend/src/screens/` and the shared toast and dialog actions. All of these screens show sample data only in sprint 4. Each must be bound to its workspace before its screen reads real data. Issue 1682 is the same kind of fault in the Files editor.

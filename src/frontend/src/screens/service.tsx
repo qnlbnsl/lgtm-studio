@@ -85,11 +85,12 @@ const subAgents = (s: State, sid: Id): Agent[] => s.agents.filter((a) => a.subsc
 const savedTimers = new WeakMap<State, ReturnType<typeof setTimeout>>();
 export function markSaved() {
   const workspace = store.state;
+  const ui = workspace.ui;
   update((s) => { s.ui.saved = Date.now(); });
   clearTimeout(savedTimers.get(workspace));
   const clear = () => {
     savedTimers.delete(workspace);
-    if (store.state === workspace) update((s) => { s.ui.saved = null; });
+    if (store.state === workspace && workspace.ui === ui) update((s) => { s.ui.saved = null; });
   };
   const timer = live.on || workspace.server.repositoryMode ? setTimeout(clear, 1800) : act.sampleLater(clear, 1800);
   savedTimers.set(workspace, timer);
@@ -271,18 +272,27 @@ function MachineDetail({ s, m, now }: { s: State; m: Machine; now: Ms }) {
 }
 /** Shows why the server refused a change. */
 const said = (e: unknown) => act.toast(server.reason(e), 'error');
+function machineAction(scope: server.SessionScope | null, call: (scope: server.SessionScope) => Promise<void>, done?: () => void): void {
+  if (!scope?.isCurrent()) return;
+  void call(scope).then(() => { if (scope.isCurrent()) done?.(); }, (e) => { if (scope.isCurrent()) said(e); });
+}
 export function Machines({ s }: ScreenProps) {
   const now = useNow(10_000);
   useEffect(() => { if (live.on) void mocks.loadMachines(); }, [s.boardRevision]);
   const online = s.machines.filter((m) => m.status === 'online').length;
   const remove = (m: Machine) => { const ags = machineAgents(s, m.id).filter(running); const subs = s.subscriptions.filter((x) => x.machine === m.id);
+    const scope = server.captureSession();
     act.confirm({ title: `Remove ${m.name}?`, body: `${m.name} is disconnected and forgotten. Its folders stay on its disk. Pair it again to bring it back.`, action: 'Remove machine',
       lost: [ags.length ? `${plural(ags.length, 'running agent')} will stop` : null, subs.length ? `${plural(subs.length, 'subscription')} on it will be removed` : null, s.projects.some((p) => p.machine === m.id && !p.archived) ? 'Projects that run here need another machine' : null].filter(Boolean) as string[],
-      onConfirm: () => server.removeClient(m.id).then(() => {
-        // The server owns the machines. The subscriptions and the agents are still sample data in the page.
-        update((st) => { st.subscriptions = st.subscriptions.filter((x) => x.machine !== m.id);
+      onConfirm: () => machineAction(scope, (scope) => server.removeClient(scope, m.id), () => {
+        if (!store.state.server.repositoryMode) update((st) => { st.subscriptions = st.subscriptions.filter((x) => x.machine !== m.id);
           for (const a of st.agents) if (projectOf(st, a.project)?.machine === m.id && running(a)) { a.prevState = a.state; a.state = 'stopped'; a.activity = `Stopped · ${m.name} was removed`; } });
-        act.toast(`Removed ${m.name}`); }, said) }); };
+        act.toast(`Removed ${m.name}`); }) }); };
+  const rename = (m: Machine) => {
+    const scope = server.captureSession();
+    act.openDialog({ type: 'rename', title: `Rename ${m.name}`, value: m.name, taken: s.machines.map((x) => x.name),
+      onRename: (name: string) => machineAction(scope, (scope) => server.renameClient(scope, m.id, name), () => act.toast('Machine renamed')) });
+  };
   return <div class="view-body">
     <div class="page">
       <div class="page-head">
@@ -351,10 +361,11 @@ export function Machines({ s }: ScreenProps) {
             <td class={cx('c-mid', off ? 'warn-text' : 'muted')}>{live.on ? '' : off ? ago(m.lastSeen, now) + ' ago' : 'Now'}</td>
             <td class="svc-acts" onClick={(e) => e.stopPropagation()}>
               <Menu class="icon-btn sm" label={'Actions for ' + m.name} align="end" width={230} trigger={<Icon name="ellipsis" size={15} />} items={[
-                { label: 'Rename', icon: 'pencil', onSelect: () => act.openDialog({ type: 'rename', title: `Rename ${m.name}`, value: m.name, taken: s.machines.map((x) => x.name), onRename: (v: string) => { void server.renameClient(m.id, v).then(() => act.toast('Machine renamed'), said); } }) },
-                { label: 'Scan harnesses again', icon: 'scan-search', disabled: off || live.on && mocks.busy('read-machines'), why: off ? `${m.name} is offline.` : null, onSelect: () => live.on ? mocks.loadMachines() : void server.scanClientHarnesses(m.id).then(() => act.toast(`Scanned ${m.name}. Nothing changed.`), said) },
+                { label: 'Rename', icon: 'pencil', onSelect: () => rename(m) },
+                { label: 'Scan harnesses again', icon: 'scan-search', disabled: off || live.on && mocks.busy('read-machines'), why: off ? `${m.name} is offline.` : null,
+                  onSelect: () => live.on ? mocks.loadMachines() : machineAction(server.captureSession(), (scope) => server.scanClientHarnesses(scope, m.id), () => act.toast(`Scanned ${m.name}. Nothing changed.`)) },
                 { label: 'Add repository', icon: 'folder-git-2', disabled: off, why: off ? `${m.name} is offline.` : null, onSelect: () => act.openDialog({ type: 'add-repository', machine: m.id }) },
-                off && { label: 'Try to reconnect', icon: 'refresh-cw', onSelect: () => { if (act.refused()) return; act.toast(`Calling ${m.name}…`); void server.reconnectClient(m.id).catch(said); } },
+                off && { label: 'Try to reconnect', icon: 'refresh-cw', onSelect: () => { if (act.refused()) return; act.toast(`Calling ${m.name}…`); machineAction(server.captureSession(), (scope) => server.reconnectClient(scope, m.id)); } },
                 { sep: true },
                 { label: 'Remove machine', icon: 'trash-2', danger: true, disabled: !live.on && m.role === 'master', why: !live.on && m.role === 'master' ? 'The master runs the service and cannot be removed.' : null, onSelect: () => live.on ? refuse() : remove(m) },
               ].filter(Boolean)} />
@@ -370,14 +381,24 @@ export function Machines({ s }: ScreenProps) {
   </div>;
 }
 
-function PairMachine({ s }: ScreenProps) {
+function PairMachine({ s, d }: ScreenProps & { d: DialogState }) {
   // The server makes the token. A client uses it once, and then waits here for the owner's approval.
   const [token, setToken] = useState<server.ClientToken | null>(null); const [failed, setFailed] = useState('');
   const now = useNow(1000); const [typed, setTyped] = useState<string | null>(null); const [busy, setBusy] = useState(false);
-  useEffect(() => { let closed = false; let made: string | null = null;
-    server.createClientToken().then((t) => { if (closed) void server.revokeClientToken(t.id); else { made = t.id; setToken(t); } }, (e) => setFailed(server.reason(e)));
+  const scope = server.captureSession();
+  useEffect(() => {
+    if (!scope?.isCurrent()) return;
+    let closed = false;
+    let made: string | null = null;
+    setToken(null); setFailed(''); setTyped(null); setBusy(false);
+    server.createClientToken(scope).then((t) => {
+      if (!scope.isCurrent()) return;
+      if (closed || store.state.dialog !== d) void server.revokeClientToken(scope, t.id);
+      else { made = t.id; setToken(t); }
+    }, (e) => { if (!closed && scope.isCurrent() && store.state.dialog === d) setFailed(server.reason(e)); });
     // A token that is still open when the dialog closes is ended. An approved client has used its token up.
-    return () => { closed = true; if (made) void server.revokeClientToken(made); }; }, []);
+    return () => { closed = true; if (made && scope.isCurrent()) void server.revokeClientToken(scope, made); };
+  }, [d, scope]);
   const found = token ? s.joining.find((j) => j.tokenId === token.id) : undefined;
   const step = found ? 1 : 0; const code = token?.secret || '';
   // The first part of the host's name is offered as the machine's name.
@@ -387,11 +408,17 @@ function PairMachine({ s }: ScreenProps) {
   const taken = s.machines.some((m) => m.name.toLowerCase() === name.trim().toLowerCase());
   const confirm = () => {
     if (!found || !name.trim() || taken || busy) return;
+    if (!scope?.isCurrent() || store.state.dialog !== d) return;
+    const current = () => scope.isCurrent() && store.state.dialog === d;
     setBusy(true);
-    server.approveClient(found.id, name.trim()).then(() => {
-      update((st) => { st.expanded['machine:' + found.id] = true; });
+    server.approveClient(scope, found.id, name.trim()).then(() => {
+      if (!current()) return;
+      const { machines, joining, server: selected } = store.state;
+      const watched = machines.some((m) => m.id === found.id);
+      if (!selected.repositoryMode || watched) update((st) => { st.expanded['machine:' + found.id] = true; });
+      if (selected.repositoryMode && !watched && !joining.some((j) => j.id === found.id)) { act.closeDialog(); return; }
       act.closeDialog(); act.toast(`${name.trim()} is paired`);
-    }, (e) => { setBusy(false); setFailed(server.reason(e)); });
+    }, (e) => { if (current()) { setBusy(false); setFailed(server.reason(e)); } });
   };
   return <Dialog title="Add a machine" onClose={act.closeDialog} onSubmit={confirm} foot={<>
       <span class="why">
@@ -889,8 +916,15 @@ function AddSubscription({ s, d }: DialogProps) {
   const selectedMachine = machineOf(s, machine);
   const why = !live.on && selectedMachine?.status !== 'online' ? `${selectedMachine?.name || 'This machine'} is offline.` : !live.on && !selectedMachine?.harnesses?.[harness] ? `${h.name} is not installed on ${selectedMachine?.name || 'this machine'}.` : !name.trim() ? 'Give the account a name.' : dup ? 'This harness already has an account with that name.' : folder === 'advanced' && !home.startsWith('/') ? 'Use an absolute login folder.' : '';
   const add = async (run = false) => { if (why || step !== 'account' || pending) return; setPending(true); setError('');
-    try { const added = account || await signInUi.addAccount(harness, name.trim(), folder, home.trim(), machine); setAccount(added); if (run) await terminal.start(added); else close(); }
-    catch (e) { setError(errorText(e)); } finally { setPending(false); } };
+    const scope = server.captureSession();
+    const current = () => store.state === s && s.dialog === d && (scope?.isCurrent() ?? true);
+    try {
+      const added = account || await signInUi.addAccount(harness, name.trim(), folder, home.trim(), machine);
+      if (!current()) return;
+      setAccount(added);
+      if (run) await terminal.start(added);
+      else close();
+    } catch (e) { if (current()) setError(errorText(e)); } finally { if (current()) setPending(false); } };
   return <Dialog title={'Add account · ' + h.name} size={terminal.session ? 'signin-wide' : ''} onClose={pending ? () => {} : close} onSubmit={step === 'account' ? () => add(false) : () => {}} foot={<>
       <button type="button" class="btn" disabled={pending} onClick={close}>{account ? 'Done' : 'Cancel'}</button>
       {step === 'install' ? result?.state === 'installed' ? <button type="button" class="btn primary" onClick={() => setStep('account')}>Continue</button> : <>
@@ -1718,7 +1752,13 @@ export function ProjectSettings({ s, project: p, page }: { s: State; project: Pr
     onConfirm: () => { if (live.on) return boardLive.deleteTeam(p.id, team.id); if (agentsOfTeam(s, team.id).some(running)) return act.toast('Stop the team’s agents before deleting the team.', 'error'); if (s.tasks.some((x) => x.team === team.id)) return act.toast('Delete or move the team’s tasks before deleting the team.', 'error'); update((st) => { st.teams = st.teams.filter((x) => x.id !== team.id); for (const c of st.channels.filter((x) => x.team === team.id)) c.archived = true; }); act.toast('Team deleted'); return true; } });
   const archive = () => act.confirm({ title: `Archive ${p.name}?`, waitForReply: live.on, pendingLabel: 'Archiving…', body: 'The project leaves the sidebar and its agents stop. Its branch, worktrees and threads are kept, and you can restore it.', action: 'Archive project', danger: false,
     lost: [running_ ? `${plural(running_, 'running agent')} will stop` : null, openRequests(s, { project: p.id }).length ? `${plural(openRequests(s, { project: p.id }).length, 'open request')} will be hidden` : null].filter(Boolean) as string[],
-    onConfirm: async () => { const reply = await act.archiveProject(p.id); if (!live.on || reply) go('/r/' + r.id); return reply; } });
+    onConfirm: async () => {
+      const scope = server.captureSession();
+      const reply = await act.archiveProject(p.id);
+      if (store.state !== s || (scope && !scope.isCurrent())) return false;
+      if (!live.on || reply) go('/r/' + r.id);
+      return reply;
+    } });
   const del = () => act.confirm({ title: `Delete ${p.name}?`, waitForReply: live.on, pendingLabel: 'Deleting…', danger: true,
     body: 'The project, its stopped agents, threads, private channels, sprints and tasks disappear from all views. Its open review, questions and requests go too. Its agents’ shared-channel posts go. Other authors’ posts and replies remain stored in the channel. Posts with references to this project no longer appear in channel reads. Those references no longer open. Its exclusive worktree registrations and their children go. Close terminals in those worktrees first. Removal stops at the repository checkout and worktrees named by other projects or teams. Unrelated registrations stay. Design registrations stay recorded. Their files cannot be opened through the engine if their worktree registration goes. Stored events stay in the log. The worktree folders and every branch stay on disk. This cannot be undone.', action: 'Delete project',
     onConfirm: async () => { if (live.on) return; if (!p.archived) return false;

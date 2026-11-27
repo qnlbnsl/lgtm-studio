@@ -58,10 +58,9 @@ export function Login({ s }: ScreenProps) {
     if (blocked || busy) return;
     if (!pw) { setEmpty(true); field.current?.focus(); return; }
     setBusy(true);
-    act.signIn(pw).then((next) => {
+    act.signIn(pw, () => go(live.on ? alertsLive.afterSignIn(s.session.firstRun) : s.session.firstRun ? '/setup' : '/home')).then((next) => {
       setBusy(false);
-      if (next === 'rejected') { setPw(''); return; }
-      if (next === 'in') go(live.on ? alertsLive.afterSignIn(s.session.firstRun) : s.session.firstRun ? '/setup' : '/home');
+      if (next === 'rejected') setPw('');
     });
   };
   const retry = () => { setRetrying(true); act.retryService().then(() => setRetrying(false)); };

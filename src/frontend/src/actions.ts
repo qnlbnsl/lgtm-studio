@@ -407,22 +407,32 @@ export function setSession(status: string): void {
 }
 // Signs in with the server's password. The sample server accepts any password except "wrong".
 // Resolves to the session's new status.
-export async function signIn(password: string): Promise<string> {
-  if (live.on) return engine.connection().signIn!(password);
-  const status = await server.signIn(password);
-  setSession(status);
-  return status;
+export async function signIn(password: string, onSignedIn?: () => void): Promise<string> {
+  if (live.on) {
+    const workspace = S();
+    const status = await engine.connection().signIn!(password);
+    if (!live.on || S() !== workspace) return 'obsolete';
+    if (status === 'in') onSignedIn?.();
+    return status;
+  }
+  return server.signIn(password, (status) => {
+    setSession(status);
+    if (status === 'in') onSignedIn?.();
+  });
 }
 // Asks again whether the service answers, after the Login page said it does not.
 export async function retryService(): Promise<void> {
   if (live.on) return engine.connection().reconnect?.();
-  await server.connect(S().server.address);
-  if (S().server.status === 'ready') toast('The server is answering again');
+  await server.connect(S().server.address, () => toast('The server is answering again'));
 }
 export async function signOut(): Promise<void> {
-  if (live.on) { await engine.connection().signOut!(); go('/login'); return; }
-  await server.signOut();
-  setSession('out'); go('/login');
+  if (live.on) {
+    const workspace = S();
+    await engine.connection().signOut!();
+    if (live.on && S() === workspace) go('/login');
+    return;
+  }
+  await server.signOut(() => { setSession('out'); go('/login'); });
 }
 export function resetMock(): void { try { for (const k of Object.keys(localStorage)) if (k.startsWith('lgtm-mock:')) localStorage.removeItem(k); } catch { /* storage is optional */ } location.hash = '#/home'; location.reload(); }
 export { MIN, teamName, tasksOfSprint, agentLabel, teamOf };

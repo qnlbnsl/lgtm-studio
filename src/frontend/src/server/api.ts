@@ -14,23 +14,25 @@ import { SAMPLE } from './address';
 /** The revision of the contract this website speaks. */
 export const CONTRACT = 1;
 export interface Api { session: Client<typeof SessionService>; clients: Client<typeof ClientService>; maps: Client<typeof MapService>; previews: Client<typeof PreviewService> }
-let current: Api | null = null;
-let base = '';
+export interface ServerCandidate { url: string; clients: Api; server: GetServerResponse }
+let current: ServerCandidate | null = null;
+
+export function selectServer(candidate: ServerCandidate | null): void { current = candidate; }
 
 /** Turns an address the server gave, which may be a path on the server, into a full address. */
-export function onServer(address: string): string { return new URL(address, base === SAMPLE || !base ? location.href : base + '/').href; }
+export function onServer(address: string, base = current?.url): string { return new URL(address, base === SAMPLE || !base ? location.href : base + '/').href; }
 
 /** The typed clients of the server the website is connected to. */
 export function api(): Api {
   if (!current) throw new Error('The website has no server yet.');
-  return current;
+  return current.clients;
 }
 
 /** Thrown when something answers at the address and it is not a server this website can use. */
 export class WrongServer extends Error {}
 
-/** Connects to the server at an address, and returns what it says about itself. */
-export async function openServer(url: string, sample: { signedIn: boolean }): Promise<GetServerResponse> {
+/** Validates the server's discovery reply and returns the clients that received it. */
+export async function openServer(url: string, sample: { signedIn: boolean }): Promise<ServerCandidate> {
   let transport: Transport;
   if (url === SAMPLE) {
     // The sample engine is loaded only when it is used, so a website for a real server does not carry it.
@@ -40,10 +42,9 @@ export async function openServer(url: string, sample: { signedIn: boolean }): Pr
     // The session is a cookie of the server, so each call sends the server's cookies.
     transport = createConnectTransport({ baseUrl: url, fetch: (input, init) => fetch(input, { ...init, credentials: 'include' }) });
   }
-  const next: Api = { session: createClient(SessionService, transport), clients: createClient(ClientService, transport), maps: createClient(MapService, transport), previews: createClient(PreviewService, transport) };
-  const server = await next.session.getServer({}, { timeoutMs: 6000 });
+  const clients: Api = { session: createClient(SessionService, transport), clients: createClient(ClientService, transport), maps: createClient(MapService, transport), previews: createClient(PreviewService, transport) };
+  const server = await clients.session.getServer({}, { timeoutMs: 6000 });
   if (server.product !== 'lgtm-studio') throw new WrongServer('What answers there is not an LGTM Studio server.');
   if (server.contract !== CONTRACT) throw new WrongServer(`The server speaks revision ${server.contract} of the contract, and this website speaks revision ${CONTRACT}.`);
-  current = next; base = url;
-  return server;
+  return { url, clients, server };
 }
