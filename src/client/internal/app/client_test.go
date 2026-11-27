@@ -18,6 +18,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -39,6 +40,8 @@ const (
 	appMachineID = "0195977c-0000-7000-8000-000000000008"
 	appTokenID   = "0195977c-0000-7000-8000-000000000009"
 )
+
+var appRunIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 type appPeer struct {
 	linkv1connect.UnimplementedLinkServiceHandler
@@ -109,8 +112,12 @@ func (p *appPeer) challenge(stream *connect.BidiStream[linkv1.OpenRequest, linkv
 		return err
 	}
 	hello := frame.GetHello()
-	if hello.GetMachineId() != appMachineID || hello.GetLinkRevision() != 1 {
+	if hello.GetMachineId() != appMachineID || hello.GetLinkRevision() != 2 {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("unexpected hello"))
+	}
+	first := hello.GetFirstEventNumber()
+	if !appRunIDPattern.MatchString(hello.GetRunId()) || first == 0 || first > 1<<63 {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("invalid run announcement"))
 	}
 	nonce := randBytes()
 	message := append([]byte("lgtm-link-v1 server\x00"), byte(len(appMachineID)))
@@ -134,7 +141,7 @@ func (p *appPeer) welcome(stream *connect.BidiStream[linkv1.OpenRequest, linkv1.
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("missing proof"))
 	}
 	standing := &linkv1.MachineState{Approval: linkv1.Approval_APPROVAL_WAITING, Revision: 1}
-	welcome := &linkv1.Welcome{State: standing, LastEventNumber: mark, ServerTime: timestamppb.Now(), LinkRevision: 1}
+	welcome := &linkv1.Welcome{State: standing, LastEventNumber: mark, ServerTime: timestamppb.Now(), LinkRevision: 2}
 	if approved {
 		standing.Approval, standing.Name = linkv1.Approval_APPROVAL_APPROVED, "test machine"
 		welcome.ConnectionToken = "fixture-stream"

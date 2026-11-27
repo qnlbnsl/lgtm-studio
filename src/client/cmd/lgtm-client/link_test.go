@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -44,6 +45,8 @@ const (
 	commandVersion   = "0.0.0-test"
 	clientUsage      = "Usage: lgtm-client {join|run|version}\n"
 )
+
+var commandRunIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 // TestLinkCommandProcess enters main in a subprocess so exit status, signals
 // and standard input cross the same boundary as they do in the installer.
@@ -288,8 +291,12 @@ func (p *commandPeer) challenge(stream *commandStream) error {
 		return err
 	}
 	hello := frame.GetHello()
-	if hello.GetMachineId() != commandMachineID || hello.GetLinkRevision() != 1 {
+	if hello.GetMachineId() != commandMachineID || hello.GetLinkRevision() != 2 {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("wrong machine identity"))
+	}
+	first := hello.GetFirstEventNumber()
+	if !commandRunIDPattern.MatchString(hello.GetRunId()) || first == 0 || first > 1<<63 {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("invalid run announcement"))
 	}
 	nonce := make([]byte, 32)
 	rand.Read(nonce)
@@ -321,7 +328,7 @@ func (p *commandPeer) welcome(stream *commandStream, mark uint64, approved bool)
 		return err
 	}
 	standing := &linkv1.MachineState{Approval: linkv1.Approval_APPROVAL_WAITING, Revision: 1}
-	welcome := &linkv1.Welcome{State: standing, LastEventNumber: mark, ServerTime: timestamppb.Now(), LinkRevision: 1}
+	welcome := &linkv1.Welcome{State: standing, LastEventNumber: mark, ServerTime: timestamppb.Now(), LinkRevision: 2}
 	if approved {
 		standing.Approval, standing.Name = linkv1.Approval_APPROVAL_APPROVED, "fixture machine"
 		welcome.ConnectionToken = "fixture-stream"

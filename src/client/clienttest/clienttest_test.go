@@ -13,6 +13,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -32,6 +33,8 @@ const (
 	machineID = "0195977c-0000-7000-8000-000000000008"
 	tokenID   = "0195977c-0000-7000-8000-000000000009"
 )
+
+var runIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 type testClientPeer struct {
 	linkv1connect.UnimplementedLinkServiceHandler
@@ -65,8 +68,12 @@ func (p *testClientPeer) Open(ctx context.Context, stream *connect.BidiStream[li
 		return err
 	}
 	hello := frame.GetHello()
-	if hello.GetMachineId() != machineID || hello.GetLinkRevision() != 1 {
+	if hello.GetMachineId() != machineID || hello.GetLinkRevision() != 2 {
 		return connect.NewError(connect.CodeInvalidArgument, errors.New("wrong machine identity"))
+	}
+	first := hello.GetFirstEventNumber()
+	if !runIDPattern.MatchString(hello.GetRunId()) || first == 0 || first > 1<<63 {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New("invalid run announcement"))
 	}
 	nonce := make([]byte, 32)
 	rand.Read(nonce)
@@ -90,7 +97,7 @@ func (p *testClientPeer) Open(ctx context.Context, stream *connect.BidiStream[li
 	}
 	if err := stream.Send(&linkv1.OpenResponse{Kind: &linkv1.OpenResponse_Welcome{Welcome: &linkv1.Welcome{
 		State:      &linkv1.MachineState{Approval: linkv1.Approval_APPROVAL_WAITING, Revision: 1},
-		ServerTime: timestamppb.Now(), LinkRevision: 1,
+		ServerTime: timestamppb.Now(), LinkRevision: 2,
 	}}}); err != nil {
 		return err
 	}
