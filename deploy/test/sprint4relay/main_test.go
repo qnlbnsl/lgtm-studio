@@ -18,6 +18,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,7 +80,7 @@ func TestSprintFourRelayPreservesProofAndSelectsFrames(t *testing.T) {
 		client, controlDir := startRelay(t, upstream.address, nil)
 		serverKey := checkJoin(t, client, upstream, false)
 
-		old, cancelOld := openLink(t, client, upstream, serverKey, 1)
+		old, cancelOld := openLink(t, t.Context(), client, upstream, serverKey, 1)
 		expectAttempt(t, old, 1)
 		oldStream := waitObservation(t, controlDir, func(o observation) bool {
 			return o.Action == "forwarded" && o.frameSelector == commandSelector(1)
@@ -125,6 +126,8 @@ func TestSprintFourRelayPreservesProofAndSelectsFrames(t *testing.T) {
 		upstream.requireTraffic(t, 1, oldTraffic...)
 
 		cancelOld()
+		_ = old.CloseRequest()
+		_ = old.CloseResponse()
 		for _, rule := range []frameSelector{eventRule, resultRule} {
 			waitRule(t, controlDir, oldStream, generation, "discarded", rule)
 		}
@@ -134,7 +137,7 @@ func TestSprintFourRelayPreservesProofAndSelectsFrames(t *testing.T) {
 		upstream.waitOldClosed(t)
 		upstream.requireTraffic(t, 1, oldTraffic...)
 
-		next, _ := openLink(t, client, upstream, serverKey, 2)
+		next, _ := openLink(t, t.Context(), client, upstream, serverKey, 2)
 		// An old copy would reach the upstream before the client sends the replay.
 		heartbeatBarrier(t, next)
 		upstream.requireTraffic(t, 2, "heartbeat")
@@ -164,6 +167,67 @@ func TestSprintFourRelayPreservesProofAndSelectsFrames(t *testing.T) {
 			return o.Action == "forwarded" && bytes.Equal(o.StreamID, nextStream) && o.frameSelector == replayedResult
 		}))
 		requireRetirement(t, observations(t, controlDir), oldStream, nextStream, generation, eventRule, resultRule)
+	})
+
+	t.Run("DiscardsOnConnectionClose", func(t *testing.T) {
+		upstream := newRelayPeer(t, false)
+		client, controlDir := startRelay(t, upstream.address, nil)
+		serverKey := checkJoin(t, client, upstream, false)
+
+		var socket struct {
+			sync.Mutex
+			conn net.Conn
+		}
+		ctx := httptrace.WithClientTrace(t.Context(), &httptrace.ClientTrace{
+			GotConn: func(info httptrace.GotConnInfo) {
+				socket.Lock()
+				socket.conn = info.Conn
+				socket.Unlock()
+			},
+		})
+		old, _ := openLink(t, ctx, client, upstream, serverKey, 1)
+		t.Cleanup(func() {
+			_ = old.CloseRequest()
+			_ = old.CloseResponse()
+		})
+		expectAttempt(t, old, 1)
+		oldStream := waitObservation(t, controlDir, func(o observation) bool {
+			return o.Action == "forwarded" && o.frameSelector == commandSelector(1)
+		}).StreamID
+		requireStreamID(t, oldStream)
+
+		const generation = 20
+		const heldNumber = 7
+		eventRule, resultRule := eventSelector(heldNumber), resultSelector(1)
+		replaceControl(t, controlDir, oldStream, generation, eventRule, resultRule)
+		for _, rule := range []frameSelector{eventRule, resultRule} {
+			waitRule(t, controlDir, oldStream, generation, "armed", rule)
+		}
+		sendFrame(t, old, eventFrame(heldNumber))
+		sendFrame(t, old, resultFrame(fixtureCommand, 1))
+		heartbeatBarrier(t, old)
+		for _, rule := range []frameSelector{eventRule, resultRule} {
+			waitRule(t, controlDir, oldStream, generation, "held", rule)
+		}
+
+		// Close the active socket while the stream context and both halves are still open.
+		socket.Lock()
+		conn := socket.conn
+		socket.Unlock()
+		if conn == nil {
+			t.Fatal("Could not identify the connection carrying the old stream.")
+		}
+		if err := conn.Close(); err != nil {
+			t.Fatalf("Could not close the old connection: %v", err)
+		}
+		for _, rule := range []frameSelector{eventRule, resultRule} {
+			waitRule(t, controlDir, oldStream, generation, "discarded", rule)
+		}
+		waitObservation(t, controlDir, func(o observation) bool {
+			return o.Action == "closed" && o.Generation == generation && bytes.Equal(o.StreamID, oldStream)
+		})
+		upstream.waitOldClosed(t)
+		upstream.requireTraffic(t, 1, "heartbeat")
 	})
 
 	t.Run("PreservesRefusals", func(t *testing.T) {
@@ -554,9 +618,9 @@ func sendHelloAndVerifyChallenge(t *testing.T, stream *wireStream, serverKey ed2
 	return machineNonce, serverNonce
 }
 
-func openLink(t *testing.T, client linkv1connect.LinkServiceClient, p *relayPeer, serverKey ed25519.PublicKey, revision uint32) (*wireStream, context.CancelFunc) {
+func openLink(t *testing.T, parent context.Context, client linkv1connect.LinkServiceClient, p *relayPeer, serverKey ed25519.PublicKey, revision uint32) (*wireStream, context.CancelFunc) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 3*waitLimit)
+	ctx, cancel := context.WithTimeout(parent, 3*waitLimit)
 	t.Cleanup(cancel)
 	stream := client.Open(ctx)
 	machineNonce, serverNonce := sendHelloAndVerifyChallenge(t, stream, serverKey, revision)
