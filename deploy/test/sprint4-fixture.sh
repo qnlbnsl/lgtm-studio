@@ -51,7 +51,12 @@ s4_checkouts() {
         s4_git -C "$S4_REPO_A" remote remove origin &&
         s4_git clone --quiet --no-hardlinks -- "$repo" "$S4_REPO_B" &&
         s4_git -C "$S4_REPO_B" switch --quiet -c topic &&
-        s4_git -C "$S4_REPO_B" -c user.name=Fixture -c user.email=fixture@example.invalid             commit --quiet --allow-empty -m 'Advance the topic branch.' &&
+        s4_git -C "$S4_REPO_B" -c user.name=Fixture -c user.email=fixture@example.invalid \
+            commit --quiet --allow-empty -m 'Advance the topic branch.' &&
+        s4_git -C "$repo" -c user.name=Fixture -c user.email=fixture@example.invalid \
+            commit --quiet --allow-empty -m 'Advance the default branch.' &&
+        s4_git -C "$S4_REPO_B" fetch --quiet origin &&
+        s4_git -C "$S4_REPO_B" branch --quiet --force main origin/main &&
         printf '%s\n' 'An uncommitted checkout change.' >>"$S4_REPO_B/README.md" &&
         s4_source_clean
 }
@@ -608,7 +613,8 @@ s4_guard_docker() {
             [[ $# == 4 && $2 == --format && $3 == '{{.State.Health.Status}}' &&
                 $4 =~ ^[0-9a-f]{12,64}$ ]] || return 1
             id=$4
-            awk -v id="$id" '$1 == "container" && index($3, id) == 1 {found=1} END {exit !found}' +                "$s4_dir/objects" && "$s4_docker" "$@" 2>/dev/null
+            awk -v id="$id" '$1 == "container" && index($3, id) == 1 {found=1} END {exit !found}' \
+                "$s4_dir/objects" && "$s4_docker" "$@" 2>/dev/null
             ;;
         *) return 1 ;;
     esac
