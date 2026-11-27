@@ -110,13 +110,7 @@ func (s *Service) open(ctx context.Context, stream *connect.BidiStream[linkv1.Op
 		err = errLinkFinished
 	}
 	if h.handle != nil && errors.Is(err, ErrUnknownMachine) {
-		// A registry miss can arrive before the admission that displaced this stream is published.
-		leave, gateErr := link.hub.enter(ctx, h.handle)
-		if gateErr != nil {
-			err = gateErr
-		} else {
-			leave()
-		}
+		err = link.hub.removalCause(ctx, h.handle)
 	}
 	cancel(err)
 	cause := context.Cause(ctx)

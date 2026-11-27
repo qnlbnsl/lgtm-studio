@@ -213,16 +213,17 @@ func (s *streamingService) silenceCause(ctx context.Context, handle *Handle) err
 	defer stop()
 	_, err := s.state.CheckCurrent(read, handle.machineID, handle.streamID)
 	switch {
+	case err == nil:
+		return errHandshakeDeadline
 	case errors.Is(err, ErrUnknownMachine):
-		// The admission that displaced this stream may still be publishing its cause.
-		leave, gateErr := s.hub.enter(read, handle)
-		if gateErr == nil {
-			leave()
+		cause := s.hub.removalCause(read, handle)
+		if errors.Is(cause, context.DeadlineExceeded) {
+			return errDatabaseUnavailable
 		}
-		return ErrUnknownMachine
+		return cause
 	case errors.Is(err, ErrNotCurrent):
 		return ErrNotCurrent
 	default:
-		return errHandshakeDeadline
+		return errDatabaseUnavailable
 	}
 }

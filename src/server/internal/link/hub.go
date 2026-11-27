@@ -15,13 +15,14 @@ type Hub struct {
 }
 
 type hubMachine struct {
-	gate       chan struct{}
-	users      int
-	handles    map[*Handle]struct{}
-	current    *Handle
-	generation int64
-	admitting  *Handle
-	removed    bool
+	gate          chan struct{}
+	users         int
+	handles       map[*Handle]struct{}
+	current       *Handle
+	generation    int64
+	admitting     *Handle
+	removed       bool
+	removedStream *string
 }
 
 type Handle struct {
@@ -197,20 +198,24 @@ func (h *Hub) holds(machineID, streamID string, watching bool) bool {
 	if m == nil || m.removed {
 		return false
 	}
-	if watching {
-		// The database may already show the admission while the hub is still publishing it.
-		candidate := m.current
-		if m.admitting != nil && m.admitting.streamID == streamID {
+	candidate := m.current
+	if m.admitting != nil {
+		// A watch selects its stream from the database snapshot.
+		if !watching {
+			return false
+		}
+		if m.admitting.streamID == streamID {
 			candidate = m.admitting
 		}
-		if candidate != nil && candidate.streamID == streamID && !candidate.finished {
-			// The watch needs another saved reference after it sees the admission without liveness.
-			candidate.watchedBeforeWelcome = true
-		}
 	}
-	// The published handle may already be displaced while the commit is in flight.
-	return m.admitting == nil && m.current != nil && m.current.streamID == streamID &&
-		m.current.ctx.Err() == nil && m.current.finished
+	if candidate == nil || candidate.streamID != streamID || candidate.ctx.Err() != nil {
+		return false
+	}
+	if watching && !candidate.finished {
+		// The watch needs another saved reference after it sees the admission without liveness.
+		candidate.watchedBeforeWelcome = true
+	}
+	return candidate.finished
 }
 
 func (h *Hub) Wake(machineID string) {
@@ -245,6 +250,34 @@ func (h *Hub) EndRemoved(machineID string) {
 		m.removed = true
 		m.cancelRemoved()
 	}
+}
+
+// recordRemoval remembers the stream selected by the removal transaction.
+// Only a confirmed registry miss may use this value because the removal could roll back.
+func (h *Hub) recordRemoval(machineID, streamID string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if m := h.machines[machineID]; m != nil {
+		m.removedStream = &streamID
+	}
+}
+
+func (h *Hub) removalCause(ctx context.Context, handle *Handle) error {
+	h.mu.Lock()
+	removedStream, started := handle.machine.removedStream, handle.started
+	h.mu.Unlock()
+	if removedStream != nil && started {
+		if *removedStream != handle.streamID {
+			return ErrSuperseded
+		}
+		return ErrUnknownMachine
+	}
+	leave, err := h.enter(ctx, handle)
+	if err != nil {
+		return err
+	}
+	leave()
+	return ErrUnknownMachine
 }
 
 func (m *hubMachine) cancelRemoved() {

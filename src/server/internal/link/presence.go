@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -248,11 +249,16 @@ SET outcome = 'removed', finished_at = clock_timestamp(), payload = NULL
 WHERE machine_id = $1 AND outcome IS NULL`, machineID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM link_connections WHERE machine_id = $1`, machineID); err != nil {
+	var streamID string
+	err := tx.QueryRow(ctx, `DELETE FROM link_connections WHERE machine_id = $1 RETURNING stream_id`, machineID).Scan(&streamID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}
-	_, err := tx.Exec(ctx, `DELETE FROM link_machines WHERE machine_id = $1`, machineID)
-	return err
+	if _, err := tx.Exec(ctx, `DELETE FROM link_machines WHERE machine_id = $1`, machineID); err != nil {
+		return err
+	}
+	s.hub.recordRemoval(machineID, streamID)
+	return nil
 }
 
 func (s *State) locked(ctx context.Context, machineID string) {
