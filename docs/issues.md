@@ -8049,3 +8049,12 @@ What must hold: while the client reads the status of a checkout, the Git process
 
 Where: `workingTreeClean` and the status commands in `src/client/internal/folders/status.go`. One repair covers this issue and points 2 and 3 of issue 1685: Git runs on a private copy that the client filled through its own bounded reads, or inside a boundary of the operating system.
 
+
+## 1692. Two gaps in the tests of the website's watches and folder requests
+
+Found on 2026-11-27, in the review of items 3 and 5 of the plan `go-s4-web-repositories` (post-3 1 and post-3 2). The review's verdict was to ship, and the code is right.
+
+1. No test queues a frame of the machine watch, switches to another signed-in session, and then lets the frame through. A change that applied such a frame to the new session would pass.
+2. No test lets a folder request start after its intent has expired. A change that sent such a request anyway would pass.
+
+Where: `src/frontend/e2e/repository-watch.spec.ts` and `src/frontend/e2e/folder-calls.spec.ts`. The test writer of item 6 of the plan, which calls the folder requests from the dialog, adds both.
