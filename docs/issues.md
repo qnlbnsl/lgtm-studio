@@ -8083,3 +8083,24 @@ Found on 2026-11-27, in the review of item 4 of the plan `go-s4-server-link` (po
 3. No test checks that the warning of one machine is absent on another machine. A change that showed the warning on every machine would pass.
 
 Where: `src/server/internal/link/recovery_v2_test.go`. The test writer of item 5 of the plan makes the three changes in a second step.
+
+## 1696. Two smaller points of the client's stop for recovery
+
+Found on 2026-11-27, in the review of item 3 of the plan `go-s4-client-folders` (post-3c 2 and post-3c 3). The major finding of that review, that every failure to open the store counts as damaged history, is repaired in the build and is not part of this issue.
+
+1. A store file that is unsafe, for example one that others can read, ends the client with exit 1 and the one line "Could not use client.db." The line does not say what to change. A service that restarts on failure then retries without end. This was so before item 3.
+2. Several checks of the replay validation cover each other, so no test can tell whether one of them is missing. Nothing behaves wrongly today. A comment at each check should say that the overlap is intended.
+
+Where: `stopForStore` in `src/client/internal/link/session.go`, `validateReplay` and `validateReplayBatch` in `src/client/internal/link/replay.go`, and the unit file of the client's service for the restart limit.
+
+## 1697. Three limits of the client's outgoing filter
+
+Found on 2026-11-27, in the review of item 7 of the plan `go-s4-client-folders` (post-7 1 to post-7 3). The owner's standing decision is that security hardening does not block the build, so the item is closed and these are recorded here.
+
+What must hold:
+
+1. Text that the filter has masked contains no registered value, also when the mask marker itself joins the text around it.
+2. A command identifier that becomes a registered value while its work runs is not written again into a receipt.
+3. When two registered values overlap in a text, the masked span covers both, in whole text and across pieces.
+
+Where: `MaskText`, `TextStream.Push` and the matcher in `src/client/internal/link/filter.go`, and the scan settlement in `src/client/internal/link/commands.go`. Each point needs a test in `src/client/internal/link/filter_test.go` or beside it.
