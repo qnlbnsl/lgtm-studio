@@ -230,6 +230,11 @@ func (s *Service) handshake(ctx context.Context, cancel context.CancelCauseFunc,
 		admitted, admissionErr = link.state.BecomeCurrent(ctx, machineID, streamID,
 			peerAddress(h.stream.Peer().Addr, link.options.PrivateStack),
 			RunAnnouncement{ID: hello.GetRunId(), FirstEventNumber: hello.GetFirstEventNumber()})
+		var diagnosticErr *recoveryDiagnosticError
+		if errors.As(admissionErr, &diagnosticErr) {
+			h.cleanup = false
+			return 0, false, errDatabaseUnavailable
+		}
 		var dbErr *store.Error
 		unknown := errors.As(admissionErr, &dbErr) && dbErr.Outcome() == store.OutcomeUnknown
 		h.cleanup = admissionErr == nil || unknown

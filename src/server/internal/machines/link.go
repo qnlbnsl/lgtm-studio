@@ -8,7 +8,7 @@ import (
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/store"
 )
 
-// Presence describes the saved connection and the process that holds it.
+// Presence describes the saved connection, its liveness and the event history warning.
 type Presence struct {
 	StreamID                         string
 	Generation                       int64
@@ -17,6 +17,7 @@ type Presence struct {
 	CPUPercent, MemoryPercent        *uint32
 	FactsReceived, HarnessesReceived bool
 	Held                             bool
+	EventHistoryNeedsRecovery        bool
 }
 
 type Link interface {

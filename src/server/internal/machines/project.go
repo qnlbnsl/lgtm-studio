@@ -15,7 +15,7 @@ func Project(machine Machine) *lgtmv1.Client {
 	return ProjectWithPresence(machine, nil)
 }
 
-// ProjectWithPresence adds contact times, connection state and load from a held stream.
+// ProjectWithPresence adds the saved recovery warning and details from a held stream.
 func ProjectWithPresence(machine Machine, presence *Presence) *lgtmv1.Client {
 	client := &lgtmv1.Client{
 		Id:               machine.ID,
@@ -32,6 +32,9 @@ func ProjectWithPresence(machine Machine, presence *Presence) *lgtmv1.Client {
 	}
 	if machine.LastSeenAt != nil {
 		client.LastSeen = timestamppb.New(*machine.LastSeenAt)
+	}
+	if presence != nil {
+		client.EventHistoryNeedsRecovery = presence.EventHistoryNeedsRecovery
 	}
 	if presence != nil && presence.Held {
 		client.Address = presence.Address

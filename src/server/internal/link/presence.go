@@ -52,6 +52,7 @@ func NewState(s *store.Store, r *machines.Registry, h *Hub) *State {
 
 func (s *State) BecomeCurrent(ctx context.Context, machineID, streamID, address string, announcement RunAnnouncement) (Stream, error) {
 	var stream Stream
+	var recoveryRefusal bool
 	err := s.store.Write(ctx, func(ctx context.Context, tx *store.Tx) error {
 		machine, err := s.registry.Lock(ctx, tx, machineID)
 		if err == machines.ErrNoMachine {
@@ -63,7 +64,15 @@ func (s *State) BecomeCurrent(ctx context.Context, machineID, streamID, address 
 		s.locked(ctx, machineID)
 		run, err := classifyRun(ctx, tx, machineID, announcement)
 		if err == errRunBehindMark {
-			return ErrInvalidMessage
+			recoveryRefusal = true
+			if _, err := tx.Exec(ctx, `
+UPDATE link_machines SET recovery_set_generation = stream_generation WHERE machine_id = $1`, machineID); err != nil {
+				return err
+			}
+			if !run.recoverySet {
+				return s.registry.Touch(ctx, tx, machineID)
+			}
+			return nil
 		}
 		if err != nil {
 			return err
@@ -115,6 +124,12 @@ ON CONFLICT (machine_id) DO UPDATE SET
 		}
 		return s.registry.Touch(ctx, tx, machineID)
 	})
+	if recoveryRefusal {
+		if err != nil {
+			return Stream{}, &recoveryDiagnosticError{err}
+		}
+		return Stream{}, ErrInvalidMessage
+	}
 	if err != nil {
 		return Stream{}, err
 	}
@@ -258,9 +273,13 @@ func (s *State) Presence(ctx context.Context, q machines.Querier, ids []string) 
 		return out, nil
 	}
 	rows, err := q.Query(ctx, `
-SELECT machine_id, stream_id, generation, connected_at, last_heard_at, address,
-       cpu_percent, memory_percent, facts_received, harnesses_received
-FROM link_connections WHERE machine_id = ANY($1)`, ids)
+SELECT m.machine_id, COALESCE(c.stream_id, ''), COALESCE(c.generation, 0),
+       c.connected_at, c.last_heard_at, COALESCE(c.address, ''), c.cpu_percent, c.memory_percent,
+       COALESCE(c.facts_received, false), COALESCE(c.harnesses_received, false),
+       m.recovery_set_generation IS NOT NULL
+FROM link_machines m
+LEFT JOIN link_connections c ON c.machine_id = m.machine_id
+WHERE m.machine_id = ANY($1)`, ids)
 	if err != nil {
 		return nil, err
 	}
@@ -269,11 +288,15 @@ FROM link_connections WHERE machine_id = ANY($1)`, ids)
 	for rows.Next() {
 		var id string
 		var p machines.Presence
-		if err := rows.Scan(&id, &p.StreamID, &p.Generation, &p.ConnectedAt, &p.LastHeardAt, &p.Address,
-			&p.CPUPercent, &p.MemoryPercent, &p.FactsReceived, &p.HarnessesReceived); err != nil {
+		var connectedAt, lastHeardAt *time.Time
+		if err := rows.Scan(&id, &p.StreamID, &p.Generation, &connectedAt, &lastHeardAt, &p.Address,
+			&p.CPUPercent, &p.MemoryPercent, &p.FactsReceived, &p.HarnessesReceived, &p.EventHistoryNeedsRecovery); err != nil {
 			return nil, err
 		}
-		p.Held = s.hub.holds(id, p.StreamID, watching)
+		if p.StreamID != "" {
+			p.ConnectedAt, p.LastHeardAt = *connectedAt, *lastHeardAt
+			p.Held = s.hub.holds(id, p.StreamID, watching)
+		}
 		out[id] = p
 	}
 	return out, rows.Err()

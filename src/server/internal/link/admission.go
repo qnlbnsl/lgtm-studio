@@ -24,7 +24,13 @@ type runAdmission struct {
 	mark          int64
 	replayThrough int64
 	unseen        bool
+	recoverySet   bool
 }
+
+// recoveryDiagnosticError identifies a failed write that could only record the warning.
+type recoveryDiagnosticError struct{ error }
+
+func (e *recoveryDiagnosticError) Unwrap() error { return e.error }
 
 // classifyRun reads the durable fences with the machine row locked.
 func classifyRun(ctx context.Context, tx *store.Tx, machineID string, announcement RunAnnouncement) (runAdmission, error) {
@@ -39,12 +45,13 @@ func classifyRun(ctx context.Context, tx *store.Tx, machineID string, announceme
 	err := tx.QueryRow(ctx, `
 SELECT m.event_mark, COALESCE(m.admitted_run_id, ''), known.replay_through,
        CASE WHEN m.admitted_run_id IS DISTINCT FROM m.ready_run_id
-            THEN COALESCE(latest.replay_through, 0) ELSE 0 END
+            THEN COALESCE(latest.replay_through, 0) ELSE 0 END,
+       m.recovery_set_generation IS NOT NULL
 FROM link_machines m
 LEFT JOIN link_runs known ON known.machine_id = m.machine_id AND known.run_id = $2
 LEFT JOIN link_runs latest ON latest.machine_id = m.machine_id AND latest.run_id = m.admitted_run_id
 WHERE m.machine_id = $1`, machineID, announcement.ID).
-		Scan(&run.mark, &latestID, &knownBoundary, &pendingBoundary)
+		Scan(&run.mark, &latestID, &knownBoundary, &pendingBoundary, &run.recoverySet)
 	if err != nil && err != pgx.ErrNoRows {
 		return runAdmission{}, err
 	}
@@ -56,7 +63,7 @@ WHERE m.machine_id = $1`, machineID, announcement.ID).
 	}
 
 	if run.replayThrough < run.mark {
-		return runAdmission{}, errRunBehindMark
+		return run, errRunBehindMark
 	}
 	var stagedWatermark int64
 	if err := tx.QueryRow(ctx, `
@@ -73,6 +80,7 @@ WHERE machine_id = $1 AND staged_event_number IS NOT NULL`, machineID).Scan(&sta
 }
 
 // promoteRun makes the latest admitted run ready when the mark covers its replay prefix.
+// A ready admission can also clear a warning left by an earlier generation.
 // The caller holds the machine lock and has established the current stream.
 func (s *State) promoteRun(ctx context.Context, tx *store.Tx, machineID string, mark uint64) error {
 	change := RunChange{MachineID: machineID}
@@ -81,7 +89,8 @@ func (s *State) promoteRun(ctx context.Context, tx *store.Tx, machineID string, 
 SELECT m.admitted_run_id, COALESCE(m.ready_run_id, ''), r.replay_through
 FROM link_machines m
 JOIN link_runs r ON r.machine_id = m.machine_id AND r.run_id = m.admitted_run_id
-WHERE m.machine_id = $1 AND m.ready_run_id IS DISTINCT FROM m.admitted_run_id AND r.replay_through <= $2`,
+WHERE m.machine_id = $1 AND r.replay_through <= $2
+  AND (m.ready_run_id IS DISTINCT FROM m.admitted_run_id OR m.stream_generation > m.recovery_set_generation)`,
 		machineID, mark).Scan(&change.RunID, &change.PreviousRunID, &replayThrough)
 	if err == pgx.ErrNoRows {
 		return nil
@@ -89,9 +98,17 @@ WHERE m.machine_id = $1 AND m.ready_run_id IS DISTINCT FROM m.admitted_run_id AN
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE link_machines SET ready_run_id = $2 WHERE machine_id = $1`,
+	if _, err := tx.Exec(ctx, `
+UPDATE link_machines
+SET ready_run_id = $2,
+    recovery_set_generation = CASE WHEN stream_generation > recovery_set_generation
+                                   THEN NULL ELSE recovery_set_generation END
+WHERE machine_id = $1`,
 		machineID, change.RunID); err != nil {
 		return err
+	}
+	if change.RunID == change.PreviousRunID {
+		return nil
 	}
 	change.FirstEventNumber = uint64(replayThrough) + 1
 	return s.dispatchRunChange(ctx, tx, change)
