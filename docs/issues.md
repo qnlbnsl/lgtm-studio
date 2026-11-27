@@ -7968,3 +7968,10 @@ Found on 2026-11-27, in the repair of item 1 of the plan `go-s4-web-repositories
 
 The Files editor of the website holds unsaved text in a map that belongs to the page and not to the workspace. The map is keyed by worktree and path. A second sample workspace reuses the identifiers of the first and can show its unsaved text.
 Where: `src/frontend/src/screens/files.tsx`. A real server sends no worktree in sprint 4, so the real workspace is not affected today. The map must move into the workspace before Files reads real data.
+
+## 1683. No test requires a replayed held receipt to pass on its callback's error
+
+Found on 2026-11-27, in the review of the Store items of sprint 4 (post-store 1). The review's verdict was to ship, and the code is right.
+
+When a retry finds its held receipt, the Store calls the caller's function under the receipt's lock. If that function fails, the Store returns the error and rolls back what the function wrote. No test requires this. A change that dropped the error and committed the function's writes would pass the whole Store package.
+Where: `src/server/internal/store/held_receipts_test.go`. The missing test requires the error, no reply, the first operation and receipt still present, and no row or feed reference from the failed call.
