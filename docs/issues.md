@@ -7941,3 +7941,23 @@ Found on 2026-11-27, in the review of item 4 of the plan `go-s4-client-folders` 
 The client reads the origin of a checkout by passing the checkout's configuration to the installed `git config` and reading the listing back. A password inside an origin address is removed before the address is reported, and it reaches no log and no report.
 What must hold: a credential in a checkout's configuration stays inside the client process. Today it is also present in the memory of the Git process that parses the configuration. Where: `src/client/internal/folders/` (the origin reader).
 The fix is to parse and clean the configuration inside the client. It is a minor finding, and it does not block sprint 4.
+
+## 1680. Two gaps in the tests of the Projects tables
+
+Found on 2026-11-27, in the review of item 1 of the plan `go-s4-server-projects` (post-1 1 and post-1 2). The review's verdict was to ship, and the tables themselves are right.
+
+1. No test deletes a repository that a settled operation points at, and then checks that the operation still holds its target identifier and its reply. A change that deleted such operations with their repository would pass.
+2. The tests of the two partial indexes of `folder_operations` check the key columns and that a condition exists, and not which condition. The two conditions could be swapped unnoticed.
+
+Where: `src/server/internal/projects/migrate_test.go`. Items 3 and 6 of the plan use both properties, and their tests are the natural place to close the gaps.
+
+## 1681. Four minor findings on the private stack fixture of the tests
+
+Found on 2026-11-27, in the review of item 1 of the plan `go-s4-stack-checks` (post-1c 4, 5, 6 and 8).
+
+1. `deploy/up.sh --until vault` cannot run under the fixture, because that route sets the default port, and the refusal names the wrong cause.
+2. The fixture compares the candidate checkout before and after a build, and not the tree of the earlier revision that it also builds from.
+3. The guard in front of `curl` accepts a path outside the fixture's folder for a cookie file and for a request body.
+4. Closing the fixture removes its two image tags and leaves the build cache and untagged layers. The check of the Compose model reads mounts and bindings only.
+
+Where: `deploy/test/sprint4-fixture.sh`. None of the four lets the fixture act on a stack that it did not create.
