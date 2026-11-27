@@ -3,6 +3,7 @@
 package servertest
 
 import (
+	"context"
 	"crypto/ed25519"
 	"crypto/rand"
 	"io"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1/linkv1connect"
 	lgtmv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1"
@@ -36,10 +38,19 @@ type Options struct {
 	Log io.Writer
 	// LinkSeams lets tests observe link phases on start and after restart.
 	LinkSeams LinkSeams
+	// ConfigurePostgres is a stub of the test writer. It is not called yet.
+	ConfigurePostgres func(*pgxpool.Config)
 }
 
-// LinkSeams lets tests observe handshake and acknowledgement phases.
-type LinkSeams app.LinkSeams
+// LinkSeams lets tests observe link phases.
+type LinkSeams struct {
+	AfterProof, AfterAdmission func(context.Context, string)
+	BeforeEventAck             func(context.Context, string, uint64)
+	// BeforeEventCommit is a stub of the test writer. It is not called yet.
+	BeforeEventCommit func(context.Context, string, uint64) error
+	// BeforeCommandSend is a stub of the test writer. It is not called yet.
+	BeforeCommandSend func(context.Context, string, string) error
+}
 
 // Server is a running fixture. Its client speaks cleartext HTTP/2 and keeps its cookies across restarts.
 type Server struct {
@@ -158,7 +169,11 @@ func (s *Server) Environment() map[string]string {
 
 func (s *Server) launch(t testing.TB) {
 	t.Helper()
-	server, err := app.StartWithLinkSeams(t.Context(), s.cfg, s.log, app.LinkSeams(s.linkSeams))
+	// This adapter is a stub of the test writer. It forwards the built callbacks.
+	server, err := app.StartWithLinkSeams(t.Context(), s.cfg, s.log, app.LinkSeams{
+		AfterProof: s.linkSeams.AfterProof, AfterAdmission: s.linkSeams.AfterAdmission,
+		BeforeEventAck: s.linkSeams.BeforeEventAck,
+	})
 	if err != nil {
 		t.Fatal("The fixture application did not start.")
 	}
