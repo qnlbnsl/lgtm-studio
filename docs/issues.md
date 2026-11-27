@@ -7933,6 +7933,7 @@ Found on 2026-11-27, in the build of item 4 of the plan `go-s4-client-folders`.
 The contract allows a resolved folder path of up to 8,192 bytes. The subtests `resolved_path_of_8192_bytes` and `resolved_path_of_8193_bytes` of `TestInspectFolderRefusals` in `src/client/internal/folders/checkout_test.go` build a checkout at that depth, and skip when the file system refuses the folder. They skip on the Linux host of the build.
 The builder checked the rule that compares the length by itself, and it accepts 8,192 bytes and refuses 8,193.
 What is missing: a run of both subtests without a skip on a machine whose file system holds such a path, or a fixture that reaches the boundary another way. The plan asks for a run with no skip.
+Since 2026-11-27 the test `TestCheckoutReviewResolvedPathLimit` reaches the boundary without a deep folder, so the rule itself is tested without a skip. The two older subtests still skip.
 
 ## 1679. The client hands a checkout's whole Git configuration to a Git process before it removes credentials
 
@@ -7975,3 +7976,10 @@ Found on 2026-11-27, in the review of the Store items of sprint 4 (post-store 1)
 
 When a retry finds its held receipt, the Store calls the caller's function under the receipt's lock. If that function fails, the Store returns the error and rolls back what the function wrote. No test requires this. A change that dropped the error and committed the function's writes would pass the whole Store package.
 Where: `src/server/internal/store/held_receipts_test.go`. The missing test requires the error, no reply, the first operation and receipt still present, and no row or feed reference from the failed call.
+
+## 1684. A checkout that borrows objects from another repository is refused
+
+Found on 2026-11-27, in the repair of item 4 of the plan `go-s4-client-folders`.
+
+The client refuses a checkout as not readable when its object folder names another object store, or when a folder or file below its Git folders is a link. A clone made with a shared or reference object store is such a checkout. The refusal is deliberate: the client reads no file and no object outside a checkout and its own Git folders.
+Where: `checkObjectFolder` in `src/client/internal/folders/checkout.go`. A linked worktree of a normal repository is still admitted. What is missing is a decision of the owner on whether such clones are ever admitted, and how.

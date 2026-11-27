@@ -76,6 +76,12 @@ func readCheckout(ctx context.Context, path, home string) (checkoutPaths, *linkv
 	if refusal != folderOK {
 		return checkoutPaths{}, nil, refusal
 	}
+	return readResolvedCheckout(ctx, paths, physical)
+}
+
+// readResolvedCheckout is the part of discovery after the typed path is resolved.
+// The physical path is the resolved typed directory, which bounds a configured worktree.
+func readResolvedCheckout(ctx context.Context, paths checkoutPaths, physical string) (checkoutPaths, *linkv1.FolderFacts, linkv1.FolderRefusal) {
 	if !validFolderPath(paths.root, maxResolvedFolderBytes) {
 		return checkoutPaths{}, nil, folderPathNotUsable
 	}
@@ -242,7 +248,7 @@ func checkoutDirectories(ctx context.Context, root string) (checkoutPaths, linkv
 	gitPath := relativeGitPath(root, ".git")
 	dir, gitDir, err := openFolderDirectory(ctx, gitPath)
 	if errors.Is(err, syscall.ENOTDIR) {
-		gitFile, _, fileErr := readFolderFile(ctx, gitPath, maxConfigBytes)
+		gitFile, _, fileErr := readFolderFile(ctx, []string{root}, gitPath, maxConfigBytes)
 		target, ok := strings.CutPrefix(strings.TrimRight(string(gitFile), "\r\n"), "gitdir: ")
 		if fileErr != nil || !ok || !validGitPath(target) {
 			return checkoutPaths{}, folderNotReadable
@@ -263,7 +269,7 @@ func checkoutDirectories(ctx context.Context, root string) (checkoutPaths, linkv
 	}
 
 	commonDir := gitDir
-	common, _, err := readFolderFile(ctx, relativeGitPath(gitDir, "commondir"), maxConfigBytes)
+	common, _, err := readFolderFile(ctx, []string{gitDir}, relativeGitPath(gitDir, "commondir"), maxConfigBytes)
 	if err == nil {
 		target := strings.TrimRight(string(common), "\r\n")
 		if !validGitPath(target) {
@@ -274,10 +280,37 @@ func checkoutDirectories(ctx context.Context, root string) (checkoutPaths, linkv
 			return checkoutPaths{}, folderNotReadable
 		}
 		dir.Close()
+		if !linkedWorktree(ctx, root, gitDir, commonDir) {
+			return checkoutPaths{}, folderNotReadable
+		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return checkoutPaths{}, folderNotReadable
 	}
 	return checkoutPaths{root: root, gitDir: gitDir, commonDir: commonDir, indexPath: relativeGitPath(gitDir, "index")}, folderOK
+}
+
+// linkedWorktree admits a separate common folder only through Git's own relationship for a
+// linked worktree: the worktree's metadata folder is an entry of the main repository's
+// worktrees folder, and its gitdir file names the .git file of this worktree.
+func linkedWorktree(ctx context.Context, root, gitDir, commonDir string) bool {
+	if filepath.Dir(gitDir) != relativeGitPath(commonDir, "worktrees") {
+		return false
+	}
+	back, _, err := readFolderFile(ctx, []string{gitDir}, relativeGitPath(gitDir, "gitdir"), maxConfigBytes)
+	target := strings.TrimRight(string(back), "\r\n")
+	if err != nil || !validGitPath(target) {
+		return false
+	}
+	parent, ok := strings.CutSuffix(relativeGitPath(gitDir, target), "/.git")
+	if !ok {
+		return false
+	}
+	dir, worktree, err := openFolderDirectory(ctx, parent)
+	if err != nil {
+		return false
+	}
+	dir.Close()
+	return worktree == root
 }
 
 func validGitPath(path string) bool {
@@ -429,32 +462,138 @@ func (d *folderGitDiagnostic) Write(p []byte) (int, error) {
 
 var errGitNoResult = errors.New("The folder cannot be read.")
 
-func openFolderFile(ctx context.Context, path string) (*os.File, error) {
+// openAnchoredDirectory opens a canonical absolute directory without following any link,
+// so that a folder found by discovery cannot be swapped for a link to another place.
+func openAnchoredDirectory(ctx context.Context, path string) (int, error) {
+	if !filepath.IsAbs(path) {
+		return -1, errFolderUnreadable
+	}
+	fd, err := unix.Open("/", unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return -1, errFolderUnreadable
+	}
+	for part := range strings.SplitSeq(path, "/") {
+		if part == "" {
+			continue
+		}
+		next, err := openContainedDirectory(ctx, fd, part)
+		_ = unix.Close(fd)
+		if err != nil {
+			return -1, err
+		}
+		fd = next
+	}
+	return fd, nil
+}
+
+// openContainedDirectory opens one directory entry below an open directory. A link, a
+// parent component and anything other than a directory are refused; absence stays absence.
+func openContainedDirectory(ctx context.Context, dirfd int, name string) (int, error) {
+	if name == "." || name == ".." || ctx.Err() != nil {
+		return -1, errFolderUnreadable
+	}
+	fd, err := unix.Openat(dirfd, name, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if errors.Is(err, syscall.ENOENT) {
+		return -1, syscall.ENOENT
+	}
+	if err != nil {
+		return -1, errFolderUnreadable
+	}
+	return fd, nil
+}
+
+// openContainedParent opens the directory that holds path. The path must lie below one of
+// the roots, which are the checkout and its own Git folders as discovery found them. Every
+// component after the root is entered without following a link, and no parent component
+// is accepted, so the open never leaves the root.
+func openContainedParent(ctx context.Context, roots []string, path string) (int, string, error) {
+	anchor := ""
+	for _, root := range roots {
+		if root != "" && len(root) > len(anchor) && folderWithin(root, path) && path != root {
+			anchor = root
+		}
+	}
+	if anchor == "" || !validGitPath(path) {
+		return -1, "", errFolderUnreadable
+	}
+	parts := strings.Split(strings.TrimPrefix(path[len(strings.TrimSuffix(anchor, "/")):], "/"), "/")
+	name := parts[len(parts)-1]
+	if name == "" || name == "." || name == ".." {
+		return -1, "", errFolderUnreadable
+	}
+	fd, err := openAnchoredDirectory(ctx, anchor)
+	if err != nil {
+		return -1, "", err
+	}
+	for _, part := range parts[:len(parts)-1] {
+		if part == "" || part == "." {
+			continue
+		}
+		next, err := openContainedDirectory(ctx, fd, part)
+		_ = unix.Close(fd)
+		if err != nil {
+			return -1, "", err
+		}
+		fd = next
+	}
+	return fd, name, nil
+}
+
+// openFolderFile opens a regular file below the roots without following any link.
+func openFolderFile(ctx context.Context, roots []string, path string) (*os.File, error) {
+	parent, name, err := openContainedParent(ctx, roots, path)
+	if err != nil {
+		return nil, err
+	}
+	defer unix.Close(parent)
+	return openRegularAt(parent, name, unix.AT_SYMLINK_NOFOLLOW)
+}
+
+// openServiceFile opens a file that the service's own environment selects, such as the
+// default excludes file. The checkout selects no part of this path, so links in it are the
+// service's own choice and are followed.
+func openServiceFile(ctx context.Context, path string) (*os.File, error) {
 	dir, name := filepath.Split(path)
 	parent, _, err := openFolderDirectory(ctx, dir)
 	if err != nil {
 		return nil, err
 	}
 	defer parent.Close()
+	return openRegularAt(int(parent.Fd()), name, 0)
+}
+
+func openRegularAt(dirfd int, name string, flags int) (*os.File, error) {
 	var stat unix.Stat_t
-	if err := unix.Fstatat(int(parent.Fd()), name, &stat, 0); err != nil {
-		return nil, err
+	if err := unix.Fstatat(dirfd, name, &stat, flags); err != nil {
+		if errors.Is(err, syscall.ENOENT) {
+			return nil, syscall.ENOENT
+		}
+		return nil, errFolderUnreadable
 	}
 	if stat.Mode&unix.S_IFMT != unix.S_IFREG {
 		return nil, errFolderUnreadable
 	}
-	fd, err := unix.Openat(int(parent.Fd()), name, unix.O_RDONLY|unix.O_NONBLOCK|unix.O_CLOEXEC|unix.O_NOCTTY, 0)
+	open := unix.O_RDONLY | unix.O_NONBLOCK | unix.O_CLOEXEC | unix.O_NOCTTY
+	if flags&unix.AT_SYMLINK_NOFOLLOW != 0 {
+		open |= unix.O_NOFOLLOW
+	}
+	fd, err := unix.Openat(dirfd, name, open, 0)
 	if err != nil {
-		return nil, err
+		return nil, errFolderUnreadable
 	}
 	return os.NewFile(uintptr(fd), ""), nil
 }
 
-func readFolderFile(ctx context.Context, path string, limit int) ([]byte, *unix.Stat_t, error) {
-	file, err := openFolderFile(ctx, path)
+// readFolderFile reads a regular file below the roots without following any link.
+func readFolderFile(ctx context.Context, roots []string, path string, limit int) ([]byte, *unix.Stat_t, error) {
+	file, err := openFolderFile(ctx, roots, path)
 	if err != nil {
 		return nil, nil, err
 	}
+	return readOpenedFile(ctx, file, limit)
+}
+
+func readOpenedFile(ctx context.Context, file *os.File, limit int) ([]byte, *unix.Stat_t, error) {
 	defer file.Close()
 	var before, after unix.Stat_t
 	fd := int(file.Fd())
@@ -479,7 +618,7 @@ type checkoutView struct {
 	paths    checkoutPaths
 	snapshot statusSnapshot
 	git      string
-	sources  map[string]*unix.Stat_t
+	sources  map[string]folderSource
 
 	config   folderConfig
 	bare     bool
@@ -494,7 +633,7 @@ func newCheckoutView(ctx context.Context, paths checkoutPaths) (*checkoutView, e
 	if git == "" || ctx.Err() != nil {
 		return nil, errFolderUnreadable
 	}
-	view := &checkoutView{ctx: ctx, paths: paths, git: git, sources: make(map[string]*unix.Stat_t)}
+	view := &checkoutView{ctx: ctx, paths: paths, git: git, sources: make(map[string]folderSource)}
 	if err := view.readLayoutConfig(); err != nil {
 		return nil, err
 	}
@@ -525,33 +664,129 @@ func (v *checkoutView) gitOutput(stdin io.Reader, args ...string) (string, error
 	return out.String(), err
 }
 
-// source remembers either a regular file's identity or its absence for the final check.
-func (v *checkoutView) source(path string, limit int) ([]byte, error) {
-	data, info, err := readFolderFile(v.ctx, path, limit)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, errFolderUnreadable
-	}
-	if previous, seen := v.sources[path]; seen &&
-		(previous == nil && info != nil || previous != nil && (info == nil || !sameFolderFile(previous, info))) {
-		return nil, errFolderUnreadable
-	}
-	v.sources[path] = info
-	return data, nil
+// folderSourceKind says how a source was read, so that the final check reads it the same way.
+type folderSourceKind int
+
+const (
+	// sourceContained is a regular file below the checkout or its Git folders.
+	sourceContained folderSourceKind = iota
+	// sourceService is a file that the service's own environment selects.
+	sourceService
+	// sourceLink is a symbolic link below the Git folders whose target is read as text.
+	sourceLink
+)
+
+// folderSource is a source's identity, or nil for its absence.
+type folderSource struct {
+	kind folderSourceKind
+	info *unix.Stat_t
 }
 
+func (v *checkoutView) roots() []string {
+	return []string{v.paths.root, v.paths.gitDir, v.paths.commonDir}
+}
+
+// source reads a regular file below the checkout or its Git folders and remembers either its
+// identity or its absence for the final check. A link or a path outside those folders fails.
+func (v *checkoutView) source(path string, limit int) ([]byte, error) {
+	data, info, err := readFolderFile(v.ctx, v.roots(), path, limit)
+	return data, v.remember(path, sourceContained, info, err)
+}
+
+// serviceSource reads a file that the service's own environment selects.
+func (v *checkoutView) serviceSource(path string, limit int) ([]byte, error) {
+	var data []byte
+	var info *unix.Stat_t
+	file, err := openServiceFile(v.ctx, path)
+	if err == nil {
+		data, info, err = readOpenedFile(v.ctx, file, limit)
+	}
+	return data, v.remember(path, sourceService, info, err)
+}
+
+func (v *checkoutView) remember(path string, kind folderSourceKind, info *unix.Stat_t, err error) error {
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return errFolderUnreadable
+	}
+	if previous, seen := v.sources[path]; seen && (previous.kind != kind || !sameFolderSource(previous.info, info)) {
+		return errFolderUnreadable
+	}
+	v.sources[path] = folderSource{kind: kind, info: info}
+	return nil
+}
+
+func sameFolderSource(a, b *unix.Stat_t) bool {
+	return a == nil && b == nil || a != nil && b != nil && sameFolderFile(a, b)
+}
+
+// headSource reads the Git folder's HEAD. Git also accepts HEAD as a symbolic link whose
+// target is a reference name; the link is read as that name and never followed.
+func (v *checkoutView) headSource() ([]byte, error) {
+	path := relativeGitPath(v.paths.gitDir, "HEAD")
+	target, info, err := readFolderLink(v.ctx, v.roots(), path)
+	if errors.Is(err, errFolderNotLink) {
+		return v.source(path, maxConfigBytes)
+	}
+	if err := v.remember(path, sourceLink, info, err); err != nil || info == nil {
+		return nil, errFolderUnreadable
+	}
+	return []byte("ref: " + target + "\n"), nil
+}
+
+var errFolderNotLink = errors.New("The folder cannot be read.")
+
+// readFolderLink reads the target of a symbolic link below the roots without following it.
+// An entry that is not a link gives errFolderNotLink.
+func readFolderLink(ctx context.Context, roots []string, path string) (string, *unix.Stat_t, error) {
+	parent, name, err := openContainedParent(ctx, roots, path)
+	if err != nil {
+		return "", nil, err
+	}
+	defer unix.Close(parent)
+	var before, after unix.Stat_t
+	if err := unix.Fstatat(parent, name, &before, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		if errors.Is(err, syscall.ENOENT) {
+			return "", nil, syscall.ENOENT
+		}
+		return "", nil, errFolderUnreadable
+	}
+	if before.Mode&unix.S_IFMT != unix.S_IFLNK {
+		return "", nil, errFolderNotLink
+	}
+	var target [maxResolvedFolderBytes + 1]byte
+	n, err := unix.Readlinkat(parent, name, target[:])
+	if err != nil || n >= len(target) || unix.Fstatat(parent, name, &after, unix.AT_SYMLINK_NOFOLLOW) != nil ||
+		!sameFolderFile(&before, &after) || !validGitPath(string(target[:n])) {
+		return "", nil, errFolderUnreadable
+	}
+	return string(target[:n]), &before, nil
+}
+
+// unchanged checks every source again, by the same reader that first read it.
 func (v *checkoutView) unchanged() bool {
 	for path, before := range v.sources {
-		file, err := openFolderFile(v.ctx, path)
-		if errors.Is(err, fs.ErrNotExist) && before == nil {
+		var current *unix.Stat_t
+		var err error
+		switch before.kind {
+		case sourceLink:
+			_, current, err = readFolderLink(v.ctx, v.roots(), path)
+		default:
+			var file *os.File
+			if before.kind == sourceService {
+				file, err = openServiceFile(v.ctx, path)
+			} else {
+				file, err = openFolderFile(v.ctx, v.roots(), path)
+			}
+			if err == nil {
+				current = new(unix.Stat_t)
+				err = unix.Fstat(int(file.Fd()), current)
+				file.Close()
+			}
+		}
+		if errors.Is(err, fs.ErrNotExist) && before.info == nil {
 			continue
 		}
-		if err != nil {
-			return false
-		}
-		var current unix.Stat_t
-		err = unix.Fstat(int(file.Fd()), &current)
-		file.Close()
-		if err != nil || before == nil || !sameFolderFile(before, &current) {
+		if err != nil || !sameFolderSource(before.info, current) {
 			return false
 		}
 	}
@@ -685,13 +920,13 @@ func (v *checkoutView) readLayoutConfig() error {
 }
 
 func (v *checkoutView) prepare() error {
-	objects, objectPath, err := openFolderDirectory(v.ctx, relativeGitPath(v.paths.commonDir, "objects"))
-	if err != nil {
-		return errFolderUnreadable
-	}
-	objects.Close()
+	// The private view names this folder as its only alternate, one path per line.
+	objectPath := relativeGitPath(v.paths.commonDir, "objects")
 	if !validGitPath(objectPath) {
 		return errFolderUnreadable
+	}
+	if err := v.checkObjectFolder(objectPath); err != nil {
+		return err
 	}
 	reftable := v.config.get("extensions.refstorage") == "reftable"
 	if reftable && v.paths.gitDir != v.paths.commonDir {
@@ -710,7 +945,7 @@ func (v *checkoutView) prepare() error {
 		return err
 	}
 
-	head, err := v.source(relativeGitPath(v.paths.gitDir, "HEAD"), maxConfigBytes)
+	head, err := v.headSource()
 	if err != nil || head == nil {
 		return errFolderUnreadable
 	}
@@ -756,6 +991,81 @@ func (v *checkoutView) prepare() error {
 		v.shallow[id] = true
 	}
 	return v.write(filepath.Join(v.common, "shallow"), shallow)
+}
+
+const (
+	maxObjectFolderEntries = 1 << 20
+	maxObjectFolderDepth   = 4
+)
+
+// checkObjectFolder admits only the checkout's own object folder as Git's object store.
+// The folder must be a real directory below the common Git folder, every entry in it must
+// be a regular file or a real directory, and it must name no alternate store. Git then has
+// no path from the private view to an object outside the approved folder.
+func (v *checkoutView) checkObjectFolder(objectPath string) error {
+	parent, name, err := openContainedParent(v.ctx, []string{v.paths.commonDir}, objectPath)
+	if err != nil {
+		return errFolderUnreadable
+	}
+	fd, err := openContainedDirectory(v.ctx, parent, name)
+	_ = unix.Close(parent)
+	if err != nil {
+		return errFolderUnreadable
+	}
+	defer unix.Close(fd)
+	walk, err := unix.FcntlInt(uintptr(fd), unix.F_DUPFD_CLOEXEC, 0)
+	if err != nil {
+		return errFolderUnreadable
+	}
+	entries := 0
+	if err := v.checkObjectEntries(walk, 0, &entries); err != nil {
+		return err
+	}
+	// The scan above showed that info is a real directory, if it exists at all.
+	var alternates unix.Stat_t
+	err = unix.Fstatat(fd, "info/alternates", &alternates, unix.AT_SYMLINK_NOFOLLOW)
+	if !errors.Is(err, syscall.ENOENT) {
+		return errFolderUnreadable
+	}
+	return nil
+}
+
+// checkObjectEntries walks one object directory and closes it.
+func (v *checkoutView) checkObjectEntries(fd, depth int, entries *int) error {
+	dir := os.NewFile(uintptr(fd), "")
+	defer dir.Close()
+	for {
+		list, err := dir.ReadDir(256)
+		if err != nil && err != io.EOF || v.ctx.Err() != nil {
+			return errFolderUnreadable
+		}
+		for _, entry := range list {
+			*entries++
+			if *entries > maxObjectFolderEntries {
+				return errFolderUnreadable
+			}
+			switch entry.Type() {
+			case 0:
+			case fs.ModeDir:
+				if depth >= maxObjectFolderDepth {
+					return errFolderUnreadable
+				}
+				child, err := openContainedDirectory(v.ctx, int(dir.Fd()), entry.Name())
+				if err != nil {
+					return errFolderUnreadable
+				}
+				if err := v.checkObjectEntries(child, depth+1, entries); err != nil {
+					return err
+				}
+			default:
+				// A link, device, pipe or socket could lead Git outside the folder or stall it.
+				return errFolderUnreadable
+			}
+		}
+		if err == io.EOF || len(list) == 0 {
+			return nil
+		}
+	}
 }
 
 func symbolicFolderRef(data []byte) (string, bool) {
@@ -979,10 +1289,11 @@ func (v *checkoutView) captureIndex() error {
 	}
 	// Copy only candidates referenced by the index bytes. Git validates the split
 	// index and identifies its exact backing file in the private directory.
-	dir, _, err := openFolderDirectory(v.ctx, v.paths.gitDir)
+	fd, err := openAnchoredDirectory(v.ctx, v.paths.gitDir)
 	if err != nil {
 		return errFolderUnreadable
 	}
+	dir := os.NewFile(uintptr(fd), "")
 	defer dir.Close()
 	var copied []string
 	var total int
@@ -1165,10 +1476,16 @@ func (v *checkoutView) writeStatusConfig(out *strings.Builder) error {
 	return nil
 }
 
+// copyEffectiveGitFile copies the effective excludes or attributes file into the private view.
+// A file that the checkout's configuration selects must lie below the checkout or its Git
+// folders, and it is refused otherwise, even when it does not exist. Without that setting,
+// the service's own default file is used through the service's own environment.
 func (v *checkoutView) copyEffectiveGitFile(out *strings.Builder, key, fallback, private string) error {
-	home, _ := os.UserHomeDir()
 	path := v.config.get("core." + key)
+	var data []byte
+	var err error
 	if _, configured := v.config["core."+key]; !configured {
+		home, _ := os.UserHomeDir()
 		base := os.Getenv("XDG_CONFIG_HOME")
 		if !filepath.IsAbs(base) && filepath.IsAbs(home) {
 			base = filepath.Join(home, ".config")
@@ -1176,19 +1493,22 @@ func (v *checkoutView) copyEffectiveGitFile(out *strings.Builder, key, fallback,
 		if !filepath.IsAbs(base) {
 			return nil
 		}
-		path = filepath.Join(base, "git", fallback)
-	} else if tail, ok := strings.CutPrefix(path, "~/"); ok {
-		if !filepath.IsAbs(home) {
-			return errFolderUnreadable
-		}
-		path = relativeGitPath(home, tail)
+		data, err = v.serviceSource(filepath.Join(base, "git", fallback), maxMetadataBytes)
 	} else if !validGitPath(path) || strings.HasPrefix(path, "~") || strings.HasPrefix(path, "%(") {
+		// A home-relative or prefix-relative file is outside the checkout by construction.
 		return errFolderUnreadable
 	} else {
-		path = relativeGitPath(v.paths.root, path)
+		// The contained reader refuses a path outside the roots before any file system access.
+		data, err = v.source(relativeGitPath(v.paths.root, path), maxMetadataBytes)
 	}
-	if err := v.copySource(path, private, maxMetadataBytes); err != nil {
+	if err != nil {
 		return err
+	}
+	// An absent file still pins the setting to the private view's own absent copy.
+	if data != nil {
+		if err := v.write(private, data); err != nil {
+			return err
+		}
 	}
 	target := filepath.Join(v.snapshot.gitDir, private)
 	escaped := strings.NewReplacer("\\", "\\\\", "\"", "\\\"", "\n", "\\n", "\t", "\\t", "\b", "\\b").Replace(target)
