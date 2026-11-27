@@ -407,8 +407,14 @@ func TestOpenReportsDoNotReachRevokedWatch(t *testing.T) {
 		t.Fatal("The authorized watch did not see the joined fixture machine.")
 	}
 	stream, _ := applicationLinkStream(t, m, server.Link())
-	if !w.Receive() || w.Msg().GetSaved().GetId() != m.ID {
-		t.Fatal("The authorized watch did not receive the connection save before revocation.")
+	for {
+		if !w.Receive() {
+			t.Fatalf("The authorized watch did not receive the connection save before revocation: %v", w.Err())
+		}
+		saved := w.Msg().GetSaved()
+		if saved.GetId() == m.ID && saved.GetConnectedAt() != nil {
+			break
+		}
 	}
 	session := lgtmv1connect.NewSessionServiceClient(server.HTTPClient, server.URL)
 	if _, err := session.SignOut(appOpenContext(t), connect.NewRequest(&webv1.SignOutRequest{})); err != nil {

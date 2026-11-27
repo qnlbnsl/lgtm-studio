@@ -16933,3 +16933,21 @@ The fault is older than the repairs that the review covered.
 The next step is to trim a final carriage return at the end of input, with one test.
 
 Closed on 2026-11-27. The reader drops a final carriage return at the end of input. The test is `TestReadJoinTokenTrimsCarriageReturnAtEndOfInput`.
+
+## 1672. The test of a report after sign-out fails in about one run of three
+
+Found on 2026-11-27, while the tests for issues 1668 and 1669 were checked.
+
+`TestOpenReportsDoNotReachRevokedWatch` in `src/server/internal/app/link_stream_test.go` failed 7 times in 20 runs by itself, on a quiet host.
+
+The cause is in the test. No report reaches a watch after its session was signed out.
+A stream that connects makes two saves of its machine, at two following positions of the change feed.
+The test reads one save and calls it the connection save. In a fast run that save is the first of the two, without a connection time.
+The second save, with the connection time, was committed about 20 milliseconds before the sign-out began, and is still unread when the test asserts that nothing more arrives.
+In a slow run the watch reads both changes late, and the test passes.
+This was observed in a scratch copy with prints, in 5 failing runs of 12: each time the extra message was a save of the machine with a connection time, at the next feed position, without the facts of the report.
+
+The next step is a change of the test alone: read saves until one carries the connection time, and only then sign out.
+The test file is frozen, so a test writer makes the change and the checksum is renewed.
+
+Closed on 2026-11-27. The test reads saves until one carries the connection time, and signs out after that. It passed 40 of 40 runs for the test writer and 20 of 20 for the orchestrator. In a scratch copy without the session check on each change, the test still fails, so it keeps catching what it is for.
