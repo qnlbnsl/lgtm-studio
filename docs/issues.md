@@ -7867,3 +7867,13 @@ Found on 2026-11-27, in the review by another vendor of the built server stream 
 3. A panic inside the commit of an admission leaves the hub's admission state set, so no command reaches that machine until the server restarts (post-c 3). This was found by reading, not by a run.
 
 The next step is one test for point 1 and two small repairs with their tests for points 2 and 3.
+
+## 1669. The client's reader of the join token keeps a final carriage return
+
+Found on 2026-11-27, in the review by another vendor of the client's link (`.plans/plans/go-s3-client-link/attack/post-build-f.md`, finding post-f 4).
+
+When the token arrives on standard input without a final line feed but with a carriage return, the client keeps the carriage return.
+The token then fails to decode, and the join is refused. Nothing reaches a log.
+The fault is older than the repairs that the review covered.
+
+The next step is to trim a final carriage return at the end of input, with one test.
