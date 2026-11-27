@@ -104,3 +104,34 @@ The fold began at `c2d85f5e`. The working plan matched `attack/plan-v1.md` byte 
 | 10. Sizing | `scope.py check . contract/contracts` returned `ok: contract/contracts`. Four items still use one scope and a low or medium complexity. The single vendor's live allowance stays a dispatch check. |
 
 The fold keeps the frontmatter, divider, five folds and template order. The frozen revision 1 record still matches `fcfa96c3`. The actual history comparator accepted the synthetic append against revisions 1 and 2 and rejected each of the four named mutations. The existing Go contract suite and both TypeScript consumer checks exited 0. The tracked privacy check and a run against the five named fold files exited 0. These are checks of the current plan and the revision 1 baseline. The revision 2 runtime proofs remain build checks.
+
+## Evidence from the round 2 fold on 2026-11-27
+
+The frozen plan at `1cf3deb0` matches `attack/plan-v2.md`. The fold checked its findings against the later round 1 plan at `4699ad06` and the approved sprint 4 design. The later plan had already specified that replay acknowledgements precede `SetState`. The final fold adds the exact approval race. [Round 2 register](attack/round-2-findings.md)
+
+| Finding area | Source checked |
+|---|---|
+| History refusal and diagnostic visibility | `src/server/internal/link/handshake.go:205` verifies proof before admission. Lines 224 to 237 handle the result of admission through the hub. `src/server/internal/link/hub.go:119` handles uncertainty about the admission commit. The diagnostic check separately requires the incumbent to remain current. `src/server/internal/machines/watch.go:70` reads snapshots, and line 90 reloads saved records. `src/server/internal/watch/watch.go:142` looks up the current record, so the proof must observe the set and clear in distinct steps. |
+| Latest admitted run and replay | `src/server/internal/link/stream.go:135` calls event application before sending an acknowledgement. The approved design at `docs/specs/2026-11-27-running-an-agent-design.md:115` sets the run gate. The equal-boundary and restarted pending-run cases protect admission order as well as the numeric fence. |
+| Keyed replay and cross-machine cleanup | `src/server/internal/store/receipts.go:71` locks the caller and key. The saved receipt is read in the transaction at line 94 and returned to the caller at line 125. `src/server/internal/machines/records.go:59` removes one machine. These are the boundaries for the replay-retirement and multi-machine cleanup proofs. |
+| Origin identity and target priority | The approved design at `docs/specs/2026-11-27-running-an-agent-design.md:202` describes saved paths and identity proof for attachment. The Architect report's local Git probe shows why equal account-relative Secure Shell paths are unsafe evidence. The fold withholds those origins and gives the missing-target case one fixed reply. |
+| Installed stop and startup output | `src/client/internal/link/session.go:314` has existing clean stops. `src/client/internal/app/client.go:107` logs state and repository paths before Link runs. Lines 112 to 118 distinguish an error, stop and requested restart. `src/client/cmd/lgtm-client/main.go:100` exits with that result. `deploy/lgtm-client.service:10` and `deploy/dev.lgtmstudio.client.plist:21` enable restart after failure. |
+| Exact fixture boundaries | `src/server/internal/link/stream.go:135` applies and commits the event before the acknowledgement hook. `src/server/internal/app/start.go:99` exposes the current hook. `src/client/clienttest/clienttest.go:14` and `:30` give fixture settings and entry. The handoffs require an interruption before server commit and another after durable client append but before receipt completion. |
+| Machines consumer | `src/frontend/src/server/sync.ts:19` converts machine records, and its two lists separately consume waiting and enrolled machines from the same watch. The contract adds one boolean. The owner decides its display. |
+
+## Tier M checks rerun after round 2
+
+| Gate | Observation |
+|---|---|
+| 1. Decisions | All 44 rows are closed or unanswered with an assumption. Six new rows clarify which earlier decisions the fold updates. |
+| 2. Acceptance | All three workstreams retain acceptance, risks and verification. Four items specify red tests and mutations. The dependent tests give both scenario and expected results. |
+| 3. Design artifact | The existing Machines record carries the additive boolean. The existing page remains the display surface, with presentation left to the owner. |
+| 4. Traceability | The three workstreams still map all 14 sprint checks and the named foundation rules and design closing lists. |
+| 5. Risks | All three risk tables remain populated. Both review findings on the recovery lifecycle point to the unreviewed replacement rule in the Link request. |
+| 6. Verification | The history comparator accepted two controls and rejected four mutations. The Go contract tests, contract lint, and both TypeScript consumer checks passed on the current baseline. The rollout names both freeze pins and all five in-process cases require explicit passes on PostgreSQL. |
+| 7. Adversarial review | The register covers 13 findings in 10 groups for 24 points. No round 2 statement is stuck. The plan records both verdicts and remains at `attack`. |
+| 8. Anchors | Fresh search resolved `link_record`, `TestEveryWatchCallHasTheSharedShape`, `GetServerResponse` and `Client`. The table above records the runtime anchors read for the fold. |
+| 9. Guardrails | The plan preserves the part boundaries. The revision 1 file matches its frozen baseline. Issue 1676 records unsupported history restoration and replacement. |
+| 10. Sizing | The live scope check passed for `contract/contracts`. Four items retain low or medium complexity. The single vendor's live allowance is checked at launch. |
+
+The final fold retains the required frontmatter, divider, five folds and template order. The plan has 7,392 whitespace-delimited words, down from 7,678 after round 1 and 9,354 in the reviewed snapshot. The probes cover the current baseline and the plan. Revision 2 behavior is verified during the build.
