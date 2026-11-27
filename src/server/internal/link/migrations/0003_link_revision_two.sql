@@ -22,7 +22,7 @@ ALTER TABLE link_commands
             AND staged_event_number > 0
             AND staged_outcome IN ('done', 'failed', 'expired', 'unsupported', 'interrupted')
             AND (action <> 'set_state' OR staged_outcome <> 'expired')
-            AND dispatched AND sent_stream_id IS NOT NULL
+            AND dispatched AND sent_stream_id IS NOT NULL AND sent_stream_id <> ''
             AND outcome IS NULL AND finished_at IS NULL AND payload IS NOT NULL
         )
     );
