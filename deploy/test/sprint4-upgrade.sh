@@ -5,10 +5,10 @@ set -uo pipefail
 umask 077
 export LC_ALL=C
 
-# This test-writer stub supplies no evidence. The builder collects private
-# observations from the owned fixture and assigns one object to upgrade_observation.
 upgrade_observe() {
-    upgrade_observation='{}'
+    # The installed collector needs the integrated candidate.
+    [[ -z $2 ]] || return 1
+    upgrade_observation=$(upgrade_offline_observation)
 }
 
 upgrade_filters='
@@ -298,6 +298,119 @@ upgrade_main() {
     fi
     command -v jq >/dev/null 2>&1 || { upgrade_skip 'The installed upgrade needs jq.'; return; }
     upgrade_run_cases "$1"
+}
+
+# These synthetic records exercise the assertions without an installed service.
+upgrade_offline_observation() {
+    jq -nc '
+        def digest($digit): $digit * 64;
+        def pair($server; $web): {server: digest($server), web: digest($web)};
+        def frame($stream; $connection; $action; $direction; $frame):
+            {stream_id: $stream, connection_id: $connection, $action, $direction, $frame,
+             machine_id: "offline-machine"};
+        def old_frame($action; $direction; $frame):
+            frame("old"; 1; $action; $direction; $frame) + {generation: 1};
+        def refusal_frame($action; $direction; $frame):
+            frame("refusal"; 2; $action; $direction; $frame);
+        def new_frame($direction; $frame): frame("new"; 3; "forwarded"; $direction; $frame);
+        def discovery:
+            {signedIn: true, product: "lgtm-studio", contract: 1,
+             services: ["lgtm.v1.ProjectService"]};
+
+        {project: "lgtm-s4-offline", port: 18787, binding: "127.0.0.1:18787",
+         daemon: "offline-daemon", state: "offline-state", volume: "offline-volume",
+         bao_store: "offline-bao", password_source: "offline-settings",
+         password_fingerprint: digest("1"), session: digest("2"),
+         identity: digest("3"), key: digest("4"), vault_key: digest("5"),
+         machine: "offline-machine", approved: true} as $identity
+        | pair("6"; "7") as $legacy_images
+        | pair("8"; "9") as $candidate_images
+        | {link: 2, store: 1} as $legacy_ledger
+        | {link: 3, store: 2, projects: 1} as $candidate_manifest
+        | {command_id: "offline-sentinel", machine_id: $identity.machine, attempt: 1,
+           outcome: "done", finished_at: "2026-11-27T12:00:00Z"} as $sentinel
+        | ($identity + {binary: digest("a"), ledger: $legacy_ledger, sentinel: $sentinel}) as $original
+        | ($identity + {healthy: true, get_server: discovery, online: false,
+            ledger: $candidate_manifest, images: $candidate_images}) as $cutover
+        | ($cutover + {online: true, binary: digest("b"), running_binary: digest("b"),
+            mode: {directory: 448, db: 384, identity: 384, key: 384},
+            sentinel: $sentinel}) as $installed
+        | {event_number: 42, digest: digest("c"), command_id: "offline-scan", outcome: 1} as $disk
+        | ($disk | {event_number, digest}) as $event
+        | ($disk | {command_id, outcome} + {attempt: 1}) as $result
+        | {id: $disk.command_id, machine_id: $identity.machine, attempt: 2,
+           outcome: "done", finished_at: "2026-11-27T12:02:00Z"} as $settled
+        | {fault_observed: true, client_quiesced: true, client_starts_before_ledger_verified: 0,
+           candidate_stopped_before_ledger: true, $original, recovered: $installed,
+           $legacy_images, $candidate_images, $candidate_manifest} as $recovery
+        | {
+            $original, $cutover, $installed, $candidate_manifest, $disk,
+            preflight: {
+                ownership_record: "offline-ownership", actions_before_ownership: 0,
+                password_fingerprint: $identity.password_fingerprint, old_website_serving: true,
+                backups: {postgres: digest("d"), stack: digest("e"), client: digest("f")},
+                $candidate_images, started: 1, password_verified: 2, client_quiesced: 3,
+                backups_verified: 4, images_ready: 5, cutover_started: 6
+            },
+            refusal: {
+                stream_id: "refusal", connection_id: 2, binary: $original.binary,
+                verified_challenge: true, code: "failed_precondition", trailer: ["link_revision_mismatch"],
+                admissions: 0, quiesced: true, candidate_started: false, $disk
+            },
+            installer: {status: 0, messages: ["lgtm-client is already joined."], tokens_issued: 0, joins: 0},
+            old: {
+                stream_id: "old", connection_id: 1, generation: 1,
+                prefix_mark: 41, mark_before_cutover: 41, scan_rpc: "ClientService.ScanClientHarnesses",
+                attempt: 1, unsettled: ($settled + {attempt: 1, finished_at: null, outcome: null}),
+                service_stopped: true, lock_released: true, scan_invocations: 1,
+                expires_at: ("2026-11-27T12:03:00Z" | fromdateiso8601)
+            },
+            replay: {
+                stream_id: "new", connection_id: 3, mark_after_ack: $disk.event_number,
+                reoffered_at: ("2026-11-27T12:01:59Z" | fromdateiso8601),
+                settled_at: ($settled.finished_at | fromdateiso8601)
+            },
+            relay: [
+                (old_frame("forwarded"; "down"; "event_ack") + {event_number: 41}),
+                (old_frame("forwarded"; "down"; "command") + ($result | {command_id, attempt})),
+                (old_frame("armed"; "up"; "event") + ($event | {event_number})),
+                (old_frame("armed"; "up"; "command_result") + ($result | {command_id, attempt})),
+                (old_frame("held"; "up"; "event") + $event),
+                (old_frame("held"; "up"; "command_result") + $result),
+                (old_frame("discarded"; "up"; "event") + $event),
+                (old_frame("discarded"; "up"; "command_result") + $result),
+                old_frame("closed"; null; null),
+                (refusal_frame("forwarded"; "up"; "open") + {link_revision: 1}),
+                refusal_frame("forwarded"; "down"; "challenge"),
+                refusal_frame("forwarded"; "up"; "proof"),
+                refusal_frame("closed"; null; null),
+                (new_frame("up"; "open") + {link_revision: 2}),
+                (new_frame("down"; "welcome") + {link_revision: 2, last_event_number: 41}),
+                (new_frame("up"; "event") + $event),
+                (new_frame("down"; "event_ack") + ($event | {event_number})),
+                (new_frame("down"; "command") + ($disk | {command_id}) + {attempt: 2}),
+                (new_frame("up"; "command_result") + $result + {attempt: 2, last_event_number: 0})
+            ],
+            applications: [{message: "link_event_applied", machine_id: $identity.machine,
+                            sequence: $disk.event_number}],
+            settlements: [$settled], settled_after_control: $settled,
+            probe: {
+                startup_invocations: 1, replay_invocations: 0, control_invocations: 1,
+                control_command_id: "offline-control", control_machine_id: $identity.machine,
+                control_outcome: "done"
+            },
+            recoveries: [
+                ($recovery + {boundary: "before_migration_commit",
+                    during: ($original + {web_ready: false}),
+                    restart_images: [$legacy_images, $candidate_images], old_session_recovered: true}),
+                ($recovery + {boundary: "after_migration_before_web",
+                    during: ($cutover + {web_ready: false}), restart_images: [$candidate_images]}),
+                ($recovery + {boundary: "after_binary_before_restart",
+                    during: ($installed + {web_ready: true, replacement_started: false}),
+                    restart_images: [$candidate_images],
+                    installer: {interrupted: digest("0"), rerun: digest("0"), rerun_status: 0}})
+            ]
+        }'
 }
 
 if [[ ${BASH_SOURCE[0]} == "$0" ]]; then
