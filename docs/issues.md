@@ -8094,3 +8094,13 @@ What must hold:
 3. When two registered values overlap in a text, the masked span covers both, in whole text and across pieces.
 
 Where: `MaskText`, `TextStream.Push` and the matcher in `src/client/internal/link/filter.go`, and the scan settlement in `src/client/internal/link/commands.go`. Each point needs a test in `src/client/internal/link/filter_test.go` or beside it.
+
+## 1698. Three smaller points of the repository views on a real server
+
+Found on 2026-11-27, in the review of item 9 of the plan `go-s4-web-repositories` (post-9 2, post-9 3 and post-9 5). The major finding of that review and its points 4 and 6 are repaired in the build and are not part of this issue.
+
+1. The switcher cuts a long origin off with an ellipsis and offers no way to read the rest. Two origins with a long shared beginning look the same. The Checkouts widget wraps the same origin. Wrapping changes how the switcher looks, so the owner decides the form. This is the same question as issue 1694.
+2. On a real server the sidebar still offers the filter "Only projects needing you". It can be pressed, and the tree of watched repositories does not change. Hiding the filter there is a visible change, so the owner decides.
+3. With the sample data, a malformed repository address such as one ending in `constructor` now shows the Command center with its tab selected and a correct browser title. Before, no tab was selected and the title showed program text. The new behavior is better, and it is a change to a compatibility screen that nobody decided.
+
+Where: the switcher in `src/frontend/src/dialogs.tsx`, the sidebar filter in `src/frontend/src/app.tsx`, and the route lookup in `src/frontend/src/screens/repo.tsx`.
