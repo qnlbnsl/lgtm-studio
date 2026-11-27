@@ -16,6 +16,11 @@ const commandSweepPageSize = 64
 
 type commandSweepTicksKey struct{}
 
+// WithCommandSweepTicks lets application tests drive the periodic command sweep.
+func WithCommandSweepTicks(ctx context.Context, ticks <-chan time.Time) context.Context {
+	return context.WithValue(ctx, commandSweepTicksKey{}, ticks)
+}
+
 var (
 	errCommandSweep     = errors.New("The command sweep could not finish.")
 	errCommandSweepBusy = store.NewDomainError("The machine is busy.")
