@@ -7904,3 +7904,14 @@ Found on 2026-11-27 by reading the source, while the list of website features wa
 5. Logging out clears the browser's view also when the server did not confirm the logout.
 
 The next step is to run each one against the stack, and to bring the visible changes to the owner, because the visible website changes only with the owner's approval.
+
+## 1676. A server database set back in time, and a client history that cannot be told from the real one, are not supported
+
+Found on 2026-11-27, in the fold of the first review round of the plan `go-s4-contract`.
+
+Link revision 2 makes a result wait for the events before it, and gives no command to a new client process before its past is applied. Both rules compare the client's event numbers with the mark that the server saved.
+
+1. When the server's database is restored to an earlier state, the server's mark is behind the client's history, and results and events that the server once applied arrive again. No mechanism reconciles the two stores.
+2. When a client's saved state is replaced by one whose numbering cannot be told from the real one, the server cannot detect the loss.
+
+Neither is promised by a check of wave 1 or of sprint 4. Support needs a design for reconciling history and results across the two stores. A client whose history is behind the server's mark is covered: the Machines page names it, and the owner restores the client's saved state or removes the machine and joins it again.
