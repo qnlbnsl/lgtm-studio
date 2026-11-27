@@ -74,3 +74,32 @@ The raw command fixture's `openCommandPeer` is used for both the send deadline a
 | Privacy command | The required Node version ran `scripts/check-private.mjs` and exited 0. Ran the same scanner's rules against the untracked plan files using an explicit file list, also with exit 0. |
 
 The commands compared names, paths, status, test identifiers and the written requirements. Runtime and deployment checks are build acceptance.
+
+## Round 1 source checks
+
+Compared the frozen plan with all four review reports. Checked the approved design's Link points, removal section and sprint 4 checks R1 to R14, alongside the original foundation checks C1 to C13. Read the reviewed contract plan and both binding handoff tables. Used the Projects planning result and the current Projects fold draft to align its app-local adapter and watch refresh. The Server source anchors below were read with the checkout at `22ca76c6`.
+
+| Source anchor | What the fold checked |
+|---|---|
+| `src/server/internal/machines/store.go:108` and `:178`, `Registry.Get` and `Registry.Delete`. `src/server/internal/machines/records.go:60`, `RemoveClient`. | The registry lookup sees deletion in the caller's write. Removal records a Machines reference and calls `Forget` after deleting the registry row. |
+| `src/server/internal/store/feed.go:14` and `:71`, `MaxWriteChanges` and `Tx.Record`. `src/server/internal/store/feed_test.go`, `TestRecordValidationAndLimit`. | Overflow poisons an ordinary write. The proposed `RecordOnce` uses the existing transaction and preserves ordinary recording. |
+| `src/server/internal/watch/watch.go:119` and `:142`, `serve` and `readChange`. `src/server/internal/store/follow.go:17`, `ErrWatchLagged`. | A matching saved-row loader error propagates out of the shared watch. The Projects loader can use the existing error to trigger a new snapshot. |
+| `src/server/internal/link/outbox_claim.go:38` and `:107`, `claimNext` and `revisitScans`. `src/server/internal/link/stream.go:93`, `Service.serve`. | The writer tries commands after dispatching a frame. The cursor can return to a deferred sequence after its head is no longer eligible. |
+| `src/server/internal/link/outbox_result_test.go:127` and `:353`, `TestAcceptResultRules` and `TestResultAndReplacementFormOneLine`. `src/server/internal/link/outbox_sweep_test.go:71` and `:428`, `TestSweepCommands` and `TestCommandRemovalIsAtomic`. | Existing immediate results, sweep and removal assertions retain their feed behavior. |
+| `src/server/internal/link/inbox.go:64` and `:75`, `State.ApplyEvent` and `applyReport`. `src/server/internal/link/stream.go:135`, `Service.dispatch`. | Facts already has a real effect in the event write. The old acknowledgement seam runs after that write. The proposed pre-commit seam belongs before the mark update and inherits the item 8 startup path. |
+| `src/server/internal/api/server.go:158`, `NewHandler`. `src/server/internal/api/session_decode.go:83`, `redactingJSON.Unmarshal`. | The Link handler caps decoded messages. The neighboring codec shows how to supply a procedure-specific decoder. It is the pattern for new `src/server/internal/api/link_decode.go`. |
+| `src/server/internal/app/start.go:96` and `:153`, `LinkSeams` and `startup.run`. `src/server/internal/store/pool.go:143`, `Open`. `src/server/servertest/server.go:159`, `Server.launch`. | Startup uses a PostgreSQL pool configuration that can be copied. The fixture restart calls the same launch path. The new rollback and pool controls can be verified on a revision 1 application with a Facts event. |
+| `src/server/internal/link/presence_test.go`, `TestBecomeCurrent`. `src/server/internal/link/outbox_test.go:40`, `TestCommandMigrationUpgradesPartB`. `src/server/internal/app/commands_test.go:268`, `seedStoppedCommandSweep`. `src/server/internal/app/review_commands_test.go:233`, `TestServerRestartsAfterInterruptedCommandMigration`. | Three assertions mean the current manifest and move to 3. The historical migration uses an explicit older manifest and raw old-schema seed. |
+| `src/linktest/outbox_test.go:408`, `authenticateScriptedLink`. `src/linktest/reserved_result_test.go:55`, `TestLinkReservedCommandResult`. `src/server/internal/link/handshake_test.go:646`, `TestHandshakeDecisionOrder`. | Both paired callers need distinct first-number fixtures. The lookup and unknown precedence rows need an unsupported revision. |
+| `scripts/check-go.sh:18` and `:33`, build and freeze checks. `deploy/test/with-postgres.sh`, test environment. `deploy/test/checks-s4.sh` at `22ca76c6`, deployed assertions. | The integrated gate needs PostgreSQL and the landed revision 2 pin. The frozen stack script delegates paired cases and the owner observes R14. |
+
+## Round 1 self-check
+
+| Probe | Result on 2026-11-27 |
+|---|---|
+| Gates 1 and 2 | The 21 original decisions stayed in order and six dated rows were appended. The 17 test-first cases map to eight observed criteria. Read each case against the code available before its work item. |
+| Gates 3 through 6 | The Link plan changes no screen. The design and contract source universe still maps to four workstreams, each with risks, real PostgreSQL or deployed observations, and one rollout order. |
+| Gate 7 | Matched all 26 identifiers and severities to the four reports. Recomputed 14 groups and 50 points, with zero stuck statements. Each group has a plan repair and the build-only observations have scenarios and expected results. |
+| Gates 8 through 10 | Checked relative links and source symbols. Compared the part type block and the published fixture signatures with the frozen plan. Matched the files and tasks to the Server scope. The scope checker returned `ok: server/backend`. The plan gives eight low or medium items and the vendor launch count. Live allowance is checked at dispatch. |
+| Canonical format and repository checks | Checked the Tier M sections, frontmatter and epic slot. The epic reverse link remains with the orchestrator. The tracked and explicit-file privacy probes and `git diff --check` passed. The stack script matches `22ca76c6`, and the three referenced shell entry points pass Bash syntax checks. |
+| Current Go compile probe | `go test ./src/server/... ./src/linktest -run '^$' -count=1` exited zero. This compiles the checked-out sources and fixtures. Runtime PostgreSQL and deployed acceptance belong to the build. |
