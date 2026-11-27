@@ -87,6 +87,11 @@ func (tx *Tx) Record(change ChangeRef) error {
 	return tx.err
 }
 
+// RecordOnce is a stub of the test writer.
+func (tx *Tx) RecordOnce(change ChangeRef) error {
+	return nil
+}
+
 // validText reports whether PostgreSQL can store the value as text.
 func validText(value string) bool {
 	return utf8.ValidString(value) && !strings.ContainsRune(value, 0)

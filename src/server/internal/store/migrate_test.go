@@ -170,7 +170,7 @@ SELECT (SELECT query FROM pg_stat_activity WHERE pid = $1),
 	if !exists {
 		t.Fatal("no ledger exists after both starts succeeded")
 	}
-	migrateEqualLedger(t, ledger, map[string]int{"store": 1})
+	migrateEqualLedger(t, ledger, map[string]int{"store": 2})
 	for _, table := range []string{"feed", "feed_retention", "receipts"} {
 		if !migrateTableExists(t, obs, table) {
 			t.Fatalf("store table %q is missing", table)
@@ -230,7 +230,7 @@ INSERT INTO beta_log (step) VALUES (1);`,
 	migrateAwait(t, "the first start", first, 30*time.Second)
 	migrateAwait(t, "the second start", second, 30*time.Second)
 
-	want := map[string]int{"store": 1, "alpha": 2, "beta": 1}
+	want := map[string]int{"store": 2, "alpha": 2, "beta": 1}
 	ledger, _ := migrateLedger(t, obs)
 	migrateEqualLedger(t, ledger, want)
 	alpha := migrateInts(t, obs, "SELECT step FROM alpha_log ORDER BY id")
@@ -364,7 +364,7 @@ func TestMigrateFailureRollsBack(t *testing.T) {
 		t.Fatal("the table of the failed batch exists")
 	}
 	ledger, _ := migrateLedger(t, obs)
-	migrateEqualLedger(t, ledger, map[string]int{"store": 1, "gamma": 1})
+	migrateEqualLedger(t, ledger, map[string]int{"store": 2, "gamma": 1})
 
 	// Only the unmerged fixture file is replaced.
 	fixed := map[string]string{
@@ -378,7 +378,7 @@ func TestMigrateFailureRollsBack(t *testing.T) {
 		t.Fatal("the repaired migration did not create its table")
 	}
 	ledger, _ = migrateLedger(t, obs)
-	migrateEqualLedger(t, ledger, map[string]int{"store": 1, "gamma": 2})
+	migrateEqualLedger(t, ledger, map[string]int{"store": 2, "gamma": 2})
 }
 
 func TestMigrateValidatesManifest(t *testing.T) {
@@ -438,7 +438,7 @@ func TestMigrateValidatesManifest(t *testing.T) {
 		t.Fatalf("the valid manifest failed: %v", err)
 	}
 	before, _ := migrateLedger(t, obs)
-	migrateEqualLedger(t, before, map[string]int{"store": 1, "delta": 2})
+	migrateEqualLedger(t, before, map[string]int{"store": 2, "delta": 2})
 
 	older := Migrations{Part: "delta", Files: migrateFiles(map[string]string{"0001_one.sql": "CREATE TABLE delta_one (id integer);"})}
 	if err := s.Migrate(ctx, older); err == nil {

@@ -445,6 +445,103 @@ func TestRecordValidationAndLimit(t *testing.T) {
 	}
 }
 
+func TestRecordOnceValidationAndLimit(t *testing.T) {
+	const capacity = 256
+	first := feedRecord("key-0")
+	fill := func(tx *Tx) error {
+		for i := range capacity {
+			if err := tx.Record(feedRecord(fmt.Sprintf("key-%d", i))); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	t.Run("exact repeat at capacity", func(t *testing.T) {
+		s, _, obs := feedFixture(t, nil)
+		err := s.Write(t.Context(), func(ctx context.Context, tx *Tx) error {
+			if err := fill(tx); err != nil {
+				return err
+			}
+			return tx.RecordOnce(first)
+		})
+		if err != nil {
+			t.Fatalf("an exact repeat at capacity failed: %v", err)
+		}
+		feedRequireCount(t, obs, "feed", capacity)
+		if got := storetest.Scalar[int](t, obs, "SELECT count(*) FROM feed WHERE key = 'key-0'"); got != 1 {
+			t.Fatalf("the repeated reference committed %d times, want one", got)
+		}
+
+		if err := s.Write(t.Context(), func(ctx context.Context, tx *Tx) error {
+			if err := tx.RecordOnce(first); err != nil {
+				return err
+			}
+			return tx.RecordOnce(first)
+		}); err != nil {
+			t.Fatalf("recording the reference in a fresh write failed: %v", err)
+		}
+		feedRequireCount(t, obs, "feed", capacity+1)
+		if got := storetest.Scalar[int](t, obs, "SELECT count(*) FROM feed WHERE key = 'key-0'"); got != 2 {
+			t.Fatalf("the reference committed %d times across two writes, want two", got)
+		}
+	})
+
+	for _, tc := range []struct {
+		name string
+		ref  ChangeRef
+	}{
+		{"different topic", ChangeRef{Topic: "other", Key: first.Key, Change: Saved}},
+		{"different scope", ChangeRef{Topic: first.Topic, Scope: "other", Key: first.Key, Change: Saved}},
+		{"different key", feedRecord("overflow")},
+		{"different change", ChangeRef{Topic: first.Topic, Key: first.Key, Change: Removed}},
+	} {
+		t.Run(tc.name+" at capacity", func(t *testing.T) {
+			s, _, obs := feedFixture(t, nil)
+			var recordErr error
+			err := s.Write(t.Context(), func(ctx context.Context, tx *Tx) error {
+				if _, err := tx.Exec(ctx, "INSERT INTO records VALUES ('sentinel', 'sentinel')"); err != nil {
+					return err
+				}
+				if err := fill(tx); err != nil {
+					return err
+				}
+				recordErr = tx.RecordOnce(tc.ref)
+				return nil
+			})
+			if !errors.Is(recordErr, ErrTooManyChanges) || !errors.Is(err, ErrTooManyChanges) {
+				t.Errorf("RecordOnce error = %v, Write error = %v, want both to report overflow", recordErr, err)
+			}
+			feedRequireCount(t, obs, "records", 0)
+			feedRequireCount(t, obs, "feed", 0)
+		})
+	}
+
+	t.Run("sticky validation error", func(t *testing.T) {
+		s, _, obs := feedFixture(t, nil)
+		var validationErr, repeatErr error
+		err := s.Write(t.Context(), func(ctx context.Context, tx *Tx) error {
+			if err := feedSave(ctx, tx, first.Key); err != nil {
+				return err
+			}
+			validationErr = tx.RecordOnce(ChangeRef{})
+			repeatErr = tx.RecordOnce(first)
+			return nil
+		})
+		if !errors.Is(validationErr, errInvalidChange) || !errors.Is(repeatErr, validationErr) || !errors.Is(err, validationErr) {
+			t.Errorf("invalid reference error = %v, repeat error = %v, Write error = %v, want the same validation error", validationErr, repeatErr, err)
+		}
+		feedRequireCount(t, obs, "records", 0)
+		feedRequireCount(t, obs, "feed", 0)
+		if err := s.Write(t.Context(), func(ctx context.Context, tx *Tx) error {
+			return tx.RecordOnce(first)
+		}); err != nil {
+			t.Fatalf("the failed write poisoned a fresh write: %v", err)
+		}
+		feedRequireOrder(t, obs, first.Key)
+	})
+}
+
 func TestFeedLockDoesNotBlockUnrecordedWrites(t *testing.T) {
 	for _, cancelWaiter := range []bool{true, false} {
 		name := "lock timeout"

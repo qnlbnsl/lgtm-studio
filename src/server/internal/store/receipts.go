@@ -125,6 +125,23 @@ VALUES ($1, $2, $3, $4, $5)`, principal[:], req.Key, req.FingerprintVersion, dig
 	return reply, nil
 }
 
+// WriteOnceRetained is a stub of the test writer.
+func (s *Store) WriteOnceRetained(
+	ctx context.Context, req Request,
+	start func(context.Context, *Tx) ([]byte, error),
+	replay func(context.Context, *Tx, []byte) error,
+) ([]byte, error) {
+	return nil, nil
+}
+
+// RetireReceipt is a stub of the test writer.
+func (s *Store) RetireReceipt(
+	ctx context.Context, caller string, key string, expectedReply []byte,
+	remove func(context.Context, *Tx) (bool, error),
+) (bool, error) {
+	return false, nil
+}
+
 // requestDigest hashes the version as two big-endian bytes,
 // then the caller, procedure and fingerprint, each after its eight-byte big-endian length.
 func requestDigest(version int16, caller, procedure string, fingerprint []byte) [sha256.Size]byte {
