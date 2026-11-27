@@ -47,6 +47,7 @@ func (s *Service) serve(ctx context.Context, handle *Handle, frames <-chan recei
 			return stream.Send(&linkv1.OpenResponse{Kind: &linkv1.OpenResponse_Command{Command: command}})
 		})
 	}
+	replayComplete := handle.admissionMark >= handle.replayThrough
 	checkIdentity, tryCommand := true, true
 	for ctx.Err() == nil {
 		select {
@@ -71,7 +72,7 @@ func (s *Service) serve(ctx context.Context, handle *Handle, frames <-chan recei
 		select {
 		case frame, open = <-frames:
 		default:
-			if tryCommand {
+			if replayComplete && tryCommand {
 				ready = false
 				break
 			}
@@ -91,13 +92,15 @@ func (s *Service) serve(ctx context.Context, handle *Handle, frames <-chan recei
 			break
 		}
 		if ready {
-			if err := s.dispatch(ctx, machineID, streamID, frame, send); err != nil {
+			ackedMark, err := s.dispatch(ctx, machineID, streamID, frame, send)
+			if err != nil {
 				return err
 			}
+			replayComplete = replayComplete || ackedMark >= handle.replayThrough
 		}
 
 		tryCommand = false
-		if hooks != nil && ctx.Err() == nil {
+		if replayComplete && hooks != nil && ctx.Err() == nil {
 			turn := ctx
 			if session != nil {
 				if !s.commandSlots.acquire(session) {
@@ -123,24 +126,25 @@ func (s *Service) serve(ctx context.Context, handle *Handle, frames <-chan recei
 	return context.Cause(ctx)
 }
 
-func (s *Service) dispatch(ctx context.Context, machineID, streamID string, frame receivedFrame, send func(*linkv1.OpenResponse) error) error {
+// dispatch returns the acknowledged event mark after sending the acknowledgement.
+func (s *Service) dispatch(ctx context.Context, machineID, streamID string, frame receivedFrame, send func(*linkv1.OpenResponse) error) (uint64, error) {
 	link := s.streaming
 	if frame.err != nil {
 		if malformedOpenFrame(frame.err) {
-			return link.checkFrame(ctx, machineID, streamID, frame)
+			return 0, link.checkFrame(ctx, machineID, streamID, frame)
 		}
-		return errLinkFinished
+		return 0, errLinkFinished
 	}
 	switch kind := frame.request.GetKind().(type) {
 	case *linkv1.OpenRequest_Heartbeat:
 		if err := link.state.Heartbeat(ctx, machineID, streamID, kind.Heartbeat); err != nil {
-			return err
+			return 0, err
 		}
-		return send(&linkv1.OpenResponse{Kind: &linkv1.OpenResponse_HeartbeatAck{HeartbeatAck: &linkv1.HeartbeatAck{}}})
+		return 0, send(&linkv1.OpenResponse{Kind: &linkv1.OpenResponse_HeartbeatAck{HeartbeatAck: &linkv1.HeartbeatAck{}}})
 	case *linkv1.OpenRequest_Event:
 		result, err := link.state.applyEvent(ctx, machineID, streamID, kind.Event, link.options.Seams.BeforeEventCommit)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if result.Applied {
 			link.options.Logger.Info("link_event_applied", "machine_id", machineID, "sequence", result.Mark)
@@ -149,11 +153,18 @@ func (s *Service) dispatch(ctx context.Context, machineID, streamID string, fram
 			}
 		}
 		if err := context.Cause(ctx); err != nil {
-			return err
+			return 0, err
 		}
-		return send(&linkv1.OpenResponse{Kind: &linkv1.OpenResponse_EventAck{EventAck: &linkv1.EventAck{Through: result.Mark}}})
+		if _, err := link.state.CheckCurrent(ctx, machineID, streamID); err != nil {
+			return 0, err
+		}
+		ack := &linkv1.OpenResponse{Kind: &linkv1.OpenResponse_EventAck{EventAck: &linkv1.EventAck{Through: result.Mark}}}
+		if err := send(ack); err != nil {
+			return 0, err
+		}
+		return result.Mark, nil
 	default:
-		return link.checkFrame(ctx, machineID, streamID, frame)
+		return 0, link.checkFrame(ctx, machineID, streamID, frame)
 	}
 }
 

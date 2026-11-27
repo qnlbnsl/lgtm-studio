@@ -79,6 +79,15 @@ WHERE machine_id = $1 AND staged_event_number IS NOT NULL`, machineID).Scan(&sta
 	return run, nil
 }
 
+// runReady checks readiness after the caller locks the machine and checks the stream.
+func runReady(ctx context.Context, tx *store.Tx, machineID string) (bool, error) {
+	var ready bool
+	err := tx.QueryRow(ctx, `
+SELECT admitted_run_id IS NOT NULL AND admitted_run_id IS NOT DISTINCT FROM ready_run_id
+FROM link_machines WHERE machine_id = $1`, machineID).Scan(&ready)
+	return ready, err
+}
+
 // promoteRun makes the latest admitted run ready when the mark covers its replay prefix.
 // A ready admission can also clear a warning left by an earlier generation.
 // The caller holds the machine lock and has established the current stream.

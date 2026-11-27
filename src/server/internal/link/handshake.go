@@ -243,6 +243,8 @@ func (s *Service) handshake(ctx context.Context, cancel context.CancelCauseFunc,
 	if err != nil {
 		return err
 	}
+	h.handle.admissionMark = admitted.Mark
+	h.handle.replayThrough = admitted.replayThrough
 	if hook := link.options.Seams.AfterAdmission; hook != nil {
 		hook(ctx, machineID)
 	}

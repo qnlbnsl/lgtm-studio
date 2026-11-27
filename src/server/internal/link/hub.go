@@ -31,6 +31,8 @@ type Handle struct {
 	ctx                  context.Context
 	cancel               context.CancelCauseFunc
 	wake                 chan struct{}
+	admissionMark        uint64
+	replayThrough        uint64
 	started, finished    bool
 	watchedBeforeWelcome bool
 }

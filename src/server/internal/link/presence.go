@@ -36,6 +36,7 @@ type Stream struct {
 	Generation      int64
 	Standing        machines.Machine
 	Mark            uint64
+	replayThrough   uint64
 	ServerTime      time.Time
 	ConnectionToken string
 }
@@ -77,7 +78,9 @@ UPDATE link_machines SET recovery_set_generation = stream_generation WHERE machi
 		if err != nil {
 			return err
 		}
-		stream = Stream{ID: streamID, Standing: machine, Mark: uint64(run.mark)}
+		stream = Stream{
+			ID: streamID, Standing: machine, Mark: uint64(run.mark), replayThrough: uint64(run.replayThrough),
+		}
 		if machine.Approval == machines.ApprovalApproved {
 			var token [32]byte
 			rand.Read(token[:])

@@ -139,6 +139,10 @@ func (s *State) sendClaimed(ctx context.Context, machineID, streamID string, com
 		if err != nil {
 			return err
 		}
+		ready, err := runReady(ctx, tx, machineID)
+		if err != nil || !ready {
+			return err
+		}
 		var action string
 		var expiresAt, databaseNow time.Time
 		checkedAt := time.Now()

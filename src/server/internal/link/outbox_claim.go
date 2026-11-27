@@ -47,6 +47,10 @@ func (s *State) claimNext(ctx context.Context, machineID, streamID string, curso
 		if err != nil {
 			return err
 		}
+		ready, err := runReady(ctx, tx, machineID)
+		if err != nil || !ready {
+			return err
+		}
 		if machine.Approval == machines.ApprovalApproved && !next.approved {
 			next = commandCursor{approved: true}
 		}

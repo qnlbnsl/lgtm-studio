@@ -72,6 +72,9 @@ WHERE m.machine_id = $1 AND c.stream_id = $2`, machineID, streamID).Scan(&mark)
 		if _, err := tx.Exec(ctx, `UPDATE link_machines SET event_mark = $2 WHERE machine_id = $1`, machineID, int64(number)); err != nil {
 			return err
 		}
+		if err := s.promoteRun(ctx, tx, machineID, number); err != nil {
+			return err
+		}
 		result = EventResult{Mark: number, Applied: true}
 		return s.registry.Touch(ctx, tx, machineID)
 	})
