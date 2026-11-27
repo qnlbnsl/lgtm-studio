@@ -125,6 +125,8 @@ type startup struct {
 	monitor  sync.WaitGroup
 	follower *store.Follower
 	workers  sync.WaitGroup
+	requests sync.RWMutex
+	stopping bool
 }
 
 func start(ctx context.Context, cfg config.Config, log *slog.Logger, budgets phaseBudgets) (*Server, error) {
@@ -286,8 +288,16 @@ func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logg
 	var protocols http.Protocols
 	protocols.SetHTTP1(true)
 	protocols.SetUnencryptedHTTP2(true)
+	requestContext, cancelRequests := context.WithCancel(context.Background())
 	httpServer := &http.Server{
-		Handler:           handler,
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			st.requests.RLock()
+			defer st.requests.RUnlock()
+			if !st.stopping {
+				handler.ServeHTTP(w, r)
+			}
+		}),
+		BaseContext:       func(net.Listener) context.Context { return requestContext },
 		Protocols:         &protocols,
 		ReadHeaderTimeout: headerTimeout,
 		IdleTimeout:       idleTimeout,
@@ -307,12 +317,12 @@ func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logg
 
 	served := make(chan error, 1)
 	go func() { served <- httpServer.Serve(listener) }()
-	go st.serve(server, httpServer, served)
+	go st.serve(server, httpServer, served, cancelRequests)
 	return server, nil
 }
 
 // serve waits for the end of the lifetime, then drains requests and releases the workers, the lock and the Store.
-func (st *startup) serve(server *Server, httpServer *http.Server, served <-chan error) {
+func (st *startup) serve(server *Server, httpServer *http.Server, served <-chan error, cancelRequests context.CancelFunc) {
 	var failure error
 	stopped := false
 	select {
@@ -326,16 +336,21 @@ func (st *startup) serve(server *Server, httpServer *http.Server, served <-chan 
 	if errors.Is(context.Cause(st.life), errLockLost) {
 		// Another server may take the lock at once, so this one stops answering at once.
 		failure = errLockLost
-		_ = httpServer.Close()
 	} else {
 		drain, cancel := context.WithTimeout(context.Background(), drainTimeout)
 		_ = httpServer.Shutdown(drain)
 		cancel()
-		_ = httpServer.Close()
 	}
+	cancelRequests()
+	_ = httpServer.Close()
 	if !stopped {
 		<-served
 	}
+	// Closing connections unblocks network calls. The write lock joins active handlers
+	// and prevents late entries from reaching the Store after that point.
+	st.requests.Lock()
+	st.stopping = true
+	st.requests.Unlock()
 	st.release()
 	server.err = failure
 	close(server.done)
@@ -462,7 +477,7 @@ func (s *Server) Wait() error {
 	return s.err
 }
 
-// Close drains requests for at most five seconds, then stops the server and waits for its cleanup.
+// Close gives requests up to five seconds to finish, then cancels and joins them before cleanup.
 // It is safe to call more than once.
 func (s *Server) Close() error {
 	s.cancel(errClosed)

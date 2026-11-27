@@ -16909,3 +16909,27 @@ The failure occurred while several test files were running.
 The cause of the missed startup bound has not been established.
 No wait or deadline was widened.
 The orchestrator should retain this observation when assessing the full check.
+
+## 1668. Three small gaps in how the server starts and stops the machine stream
+
+Found on 2026-11-27, in the review by another vendor of the built server stream (`.plans/plans/go-s3-server-stream/attack/post-build-c.md`, verdict SHIP, grade 8 out of 10).
+
+1. No test fails when the server clears stale presence after its listener opens. The code clears it before, as the plan requires (post-c 1).
+2. Request handlers are not joined before the instance lock and the Store are released. When the five-second drain expires, a handler can still commit a write after another server took the lock (post-c 2). This was found by reading, not by a run.
+3. A panic inside the commit of an admission leaves the hub's admission state set, so no command reaches that machine until the server restarts (post-c 3). This was found by reading, not by a run.
+
+The next step is one test for point 1 and two small repairs with their tests for points 2 and 3.
+
+Closed on 2026-11-27. Point 1 has its test, `TestStartupClearsStalePresenceBeforeListening`. Point 2: the server cancels and joins its request handlers before it releases the instance lock and the Store. A handler that ignores its cancellation keeps the lock until it returns, so the service manager's stop limit is what bounds such a shutdown. Point 3: a panic in the commit of an admission clears the admission state. The tests are in the files that begin with `review_c_`.
+
+## 1669. The client's reader of the join token keeps a final carriage return
+
+Found on 2026-11-27, in the review by another vendor of the client's link (`.plans/plans/go-s3-client-link/attack/post-build-f.md`, finding post-f 4).
+
+When the token arrives on standard input without a final line feed but with a carriage return, the client keeps the carriage return.
+The token then fails to decode, and the join is refused. Nothing reaches a log.
+The fault is older than the repairs that the review covered.
+
+The next step is to trim a final carriage return at the end of input, with one test.
+
+Closed on 2026-11-27. The reader drops a final carriage return at the end of input. The test is `TestReadJoinTokenTrimsCarriageReturnAtEndOfInput`.

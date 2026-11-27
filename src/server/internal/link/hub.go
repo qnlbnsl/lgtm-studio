@@ -104,15 +104,17 @@ func (h *Hub) Admit(handle *Handle, commit func() (int64, bool, error)) error {
 	defer leave()
 	m := handle.machine
 	h.mu.Lock()
-	m.admitting = handle
-	h.mu.Unlock()
-	generation, unknown, err := commit()
-
-	h.mu.Lock()
 	defer h.mu.Unlock()
+	m.admitting = handle
 	defer func() {
 		m.admitting = nil
 		m.cancelRemoved()
+	}()
+	generation, unknown, err := func() (int64, bool, error) {
+		h.mu.Unlock()
+		// Reacquire the mutex for publication and for cleanup if commit panics.
+		defer h.mu.Lock()
+		return commit()
 	}()
 	if unknown {
 		if m.current != nil {

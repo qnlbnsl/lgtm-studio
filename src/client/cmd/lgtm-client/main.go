@@ -80,6 +80,7 @@ func readJoinToken(stdin io.Reader) string {
 	case nil:
 		return string(bytes.TrimSuffix(line[:len(line)-1], []byte("\r")))
 	case io.EOF:
+		line = bytes.TrimSuffix(line, []byte("\r"))
 		if len(line) <= maxJoinTokenBytes {
 			return string(line)
 		}
@@ -87,7 +88,7 @@ func readJoinToken(stdin io.Reader) string {
 		// The byte after a full-length token can only start a line ending.
 		if line[maxJoinTokenBytes] == '\r' {
 			token := string(line[:maxJoinTokenBytes])
-			if next, err := reader.ReadByte(); err == nil && next == '\n' {
+			if next, err := reader.ReadByte(); err == io.EOF || (err == nil && next == '\n') {
 				return token
 			}
 		}

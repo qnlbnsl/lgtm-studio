@@ -7858,26 +7858,6 @@ Two minor findings of the same review are open with it:
 - An approval's reply can show Offline for a machine whose original stream is still live while a replacement that later fails is waiting. The watch shows Joining, and the website discards the approval's reply.
 - No test covers a frame of a displaced stream that arrives while the replacement's publication is held.
 
-## 1668. Three small gaps in how the server starts and stops the machine stream
-
-Found on 2026-11-27, in the review by another vendor of the built server stream (`.plans/plans/go-s3-server-stream/attack/post-build-c.md`, verdict SHIP, grade 8 out of 10).
-
-1. No test fails when the server clears stale presence after its listener opens. The code clears it before, as the plan requires (post-c 1).
-2. Request handlers are not joined before the instance lock and the Store are released. When the five-second drain expires, a handler can still commit a write after another server took the lock (post-c 2). This was found by reading, not by a run.
-3. A panic inside the commit of an admission leaves the hub's admission state set, so no command reaches that machine until the server restarts (post-c 3). This was found by reading, not by a run.
-
-The next step is one test for point 1 and two small repairs with their tests for points 2 and 3.
-
-## 1669. The client's reader of the join token keeps a final carriage return
-
-Found on 2026-11-27, in the review by another vendor of the client's link (`.plans/plans/go-s3-client-link/attack/post-build-f.md`, finding post-f 4).
-
-When the token arrives on standard input without a final line feed but with a carriage return, the client keeps the carriage return.
-The token then fails to decode, and the join is refused. Nothing reaches a log.
-The fault is older than the repairs that the review covered.
-
-The next step is to trim a final carriage return at the end of input, with one test.
-
 ## 1670. A sign-in of Claude Code that the client cannot read is outside the output filter
 
 Found on 2026-11-27, in the second review round of the design for running an agent (`.plans/designs/running-an-agent/round-2-fit.md`, finding fit 2).
@@ -7906,9 +7886,13 @@ The next step belongs to sprint 8: decide whether the service manager's own clea
 Found on 2026-11-27, while the tests for issues 1668 and 1669 were checked.
 
 `TestOpenReportsDoNotReachRevokedWatch` in `src/server/internal/app/link_stream_test.go` failed 7 times in 20 runs by itself, on a quiet host.
-It fails on its assertion that no report reaches a website watch after its session was signed out, or that the watch ends with `unauthenticated`.
-The runs that fail are the faster ones. The server's tests do not use the client's code, so the last repair of the client is not the cause.
-The test passed in every earlier run of the suite, when the host carried many workers.
 
-It is open whether the test has a race, or whether the server can send one more report to a watch whose session was just signed out.
-The next step is a diagnosis by reading and by runs, before any repair.
+The cause is in the test. No report reaches a watch after its session was signed out.
+A stream that connects makes two saves of its machine, at two following positions of the change feed.
+The test reads one save and calls it the connection save. In a fast run that save is the first of the two, without a connection time.
+The second save, with the connection time, was committed about 20 milliseconds before the sign-out began, and is still unread when the test asserts that nothing more arrives.
+In a slow run the watch reads both changes late, and the test passes.
+This was observed in a scratch copy with prints, in 5 failing runs of 12: each time the extra message was a save of the machine with a connection time, at the next feed position, without the facts of the report.
+
+The next step is a change of the test alone: read saves until one carries the connection time, and only then sign out.
+The test file is frozen, so a test writer makes the change and the checksum is renewed.
