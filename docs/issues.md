@@ -8036,3 +8036,16 @@ Found on 2026-11-27, in the review of item 1 of the plan `go-s4-server-link` (po
 
 A part registers a function that the link calls for a report, inside the link's transaction. When that function fails, the link returns the error, and the write rolls back. The tests fail only an admission function. A change that dropped the error of a report function would pass.
 Where: `src/server/internal/link/parts_test.go`. Item 4 of the plan `go-s4-server-projects` wires the first real report function, and its tests are the natural place to close the gap.
+
+## 1691. Three more limits of the same rule, in the status of a checkout
+
+Found on 2026-11-27, in the review of item 5 of the plan `go-s4-client-folders` (post-5 1, 2 and 3). The owner's standing decision is that a security finding does not block the build, so these three are recorded and item 5 is closed. Issue 1685 holds the first three limits.
+
+What must hold: while the client reads the status of a checkout, the Git process it starts reads no file outside that checkout and its own Git folders.
+
+1. The status of a parent checkout must not make Git read the Git folder of a submodule before the client has checked that submodule.
+2. The check for content filters must read attribute files only from inside the checkout, also when a folder on the way to a tracked file leads elsewhere.
+3. The comparison of tracked files must read the file that was checked, also when the checkout changes during the comparison.
+
+Where: `workingTreeClean` and the status commands in `src/client/internal/folders/status.go`. One repair covers this issue and points 2 and 3 of issue 1685: Git runs on a private copy that the client filled through its own bounded reads, or inside a boundary of the operating system.
+
