@@ -7839,3 +7839,21 @@ Findings about the tests and the test server:
 The tenth finding is about the review's own task file, which named a heading that no file has (post-f 10). It needs no change of the code.
 
 The next step is a small repair pass for points 2, 3, 6 and 9, which are cheap. Points 1 and 8 need a decision on whether the short windows matter.
+
+## 1667. The server's statement about how a replaced stream ends keeps drawing findings
+
+Found on 2026-11-27, in the fifth review of the built server stream (`.plans/plans/go-s3-server-stream/attack/post-build-e.md`).
+
+The link contract says that an older stream ends with `aborted` when a newer stream of the same machine is admitted, and that the current stream ends with `unknown_machine` when its machine is removed.
+Reviews b, d and e each found one more rare ordering in which the server gives another status.
+The orderings of reviews b and d are repaired.
+The ordering of review e is open: the reply to the newer stream's commit is lost, and a removal commits at the same moment. The older stream then ends with `unavailable`.
+
+The client retries after `aborted` and after `unavailable` alike, and its next dial gets the lasting answer, so no machine ends in a wrong state.
+By the build loop's rule, a statement that draws a major finding in three rounds is stuck, and the owner keeps, changes or drops it.
+Until the owner decides, no further repair round runs on this statement.
+
+Two minor findings of the same review are open with it:
+
+- An approval's reply can show Offline for a machine whose original stream is still live while a replacement that later fails is waiting. The watch shows Joining, and the website discards the approval's reply.
+- No test covers a frame of a displaced stream that arrives while the replacement's publication is held.
