@@ -7933,3 +7933,11 @@ Found on 2026-11-27, in the build of item 4 of the plan `go-s4-client-folders`.
 The contract allows a resolved folder path of up to 8,192 bytes. The subtests `resolved_path_of_8192_bytes` and `resolved_path_of_8193_bytes` of `TestInspectFolderRefusals` in `src/client/internal/folders/checkout_test.go` build a checkout at that depth, and skip when the file system refuses the folder. They skip on the Linux host of the build.
 The builder checked the rule that compares the length by itself, and it accepts 8,192 bytes and refuses 8,193.
 What is missing: a run of both subtests without a skip on a machine whose file system holds such a path, or a fixture that reaches the boundary another way. The plan asks for a run with no skip.
+
+## 1679. The client hands a checkout's whole Git configuration to a Git process before it removes credentials
+
+Found on 2026-11-27, in the review of item 4 of the plan `go-s4-client-folders` (post-4 5).
+
+The client reads the origin of a checkout by passing the checkout's configuration to the installed `git config` and reading the listing back. A password inside an origin address is removed before the address is reported, and it reaches no log and no report.
+What must hold: a credential in a checkout's configuration stays inside the client process. Today it is also present in the memory of the Git process that parses the configuration. Where: `src/client/internal/folders/` (the origin reader).
+The fix is to parse and clean the configuration inside the client. It is a minor finding, and it does not block sprint 4.
