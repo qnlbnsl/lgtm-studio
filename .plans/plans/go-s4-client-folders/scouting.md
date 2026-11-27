@@ -116,3 +116,17 @@ The Client scope passed the scope checker. A local version probe printed Git 2.4
 The plan keeps the template order, frontmatter, overview divider and five folds. The epic row is present at `planned`. Its linkage remains the orchestrator's edit under this assignment.
 
 The repository privacy check, scoped privacy check and diff whitespace check passed. The structural probe verified nine item gates, six source anchors and all 36 reviewed dispositions. It recomputed 20 groups and 66 points. The plan is the only stuck statement.
+
+## Sources for the sprint 4 alignment
+
+| Source | Observation |
+|---|---|
+| `.plans/epics/go-rewrite/sprint-4-seams.md`, seam 8, frozen tests, check map, build waves and fixture entry points. | By reading, Client item 9 owes a real read observer and two independent appends. The paired writer owns the selective drop. Wave 6 orders item 8's app edits before item 6. Wave 7 adds the adapter. Wave 13 puts the revision switches and paired fixture edits in one commit. |
+| `src/client/clienttest/clienttest.go` at `Options`, `Join` and `Run`, `src/client/internal/app/client.go` at `Options`, `Run` and `withDefaults`, and `src/client/internal/link/session.go` at `RunOptions`. | By reading, the adapter converts its options to App options and the app writes structured logs to `Stderr`. These are the forwarding anchors for both callbacks. `src/client/internal/link/folder_command.go` is a planned file. Its worker follows the final eligibility checks in `commands.go` at `startScan`. |
+| `src/client/internal/link/session.go` at `liveSession.serve` and `freshReports`, `report.go` at `scanHarnesses` and `appendSnapshot`, and `outbox.go` at `Store.appendContext`. | By reading, the approved startup inventory runs outside the stream owner. The reporter logs `link_event_buffered` and `sequence` after the store commits the event and its next number. The next-number write and the event write share the transaction. This supplies an observation while the folder handoff is held. |
+| `src/linktest/command_fixture_test.go` at `installVersionProbe`, `versionProbe.arm`, `heldPID`, `release`, `setVersion`, `withClosedClientDB` and `requirePending`. | By reading, the paired fixture already exposes a pipe-backed version probe and closed-store inspection. Release the probe during the folder callback. Use its distinct version to verify the exact durable event. |
+| `src/linktest/relay_test.go` at `startRelayWithControls`, `noticeResult` and `relayLeg.forwardRequests`, and `src/server/servertest/server.go` at `Server.Restart`. | By reading, the relay traces results before `dropResult` and calls `observeResult` only for forwarded results. Add `lastEventNumber` to the pre-drop trace and match the active interruption by command. R5 uses the existing server restart. |
+
+## Alignment Tier M self-check
+
+The alignment probe checked the ten Tier M gates against the existing three workstreams. It verified the append-only decision log with one closed seam decision, nine test-first acceptance gates and eight live source anchors. The risk tables, environment gates, release order, traceability, repository rules and sizing are intact. There is no screen change. All 36 findings remain in the round 1 register. The plan is 8,640 words, down from 8,643. The Client scope, repository privacy and diff whitespace checks passed. The native Go and PostgreSQL paired cases remain build gates. The epic row is present at `planned`, and the orchestrator owns its linkage.
