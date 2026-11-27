@@ -62,3 +62,5 @@ func (s *Service) projectOne(ctx context.Context, q Querier, machine Machine) (*
 	presence := rows[machine.ID]
 	return ProjectWithPresence(machine, &presence), nil
 }
+
+func (s *Service) WithCommands(CommandQueue) *Service { return s } // STUB s3-commands-tests-b

@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1" // STUB s3-commands-tests-b
+
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/store"
 )
 
@@ -22,3 +24,7 @@ type Link interface {
 	Presence(context.Context, Querier, []string) (map[string]Presence, error)
 	Forget(context.Context, *store.Tx, string) error
 }
+
+type CommandQueue interface { // STUB s3-commands-tests-b
+	Enqueue(context.Context, *store.Tx, string, *linkv1.Command, time.Duration) error // STUB s3-commands-tests-b
+} // STUB s3-commands-tests-b
