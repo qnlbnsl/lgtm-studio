@@ -283,7 +283,7 @@ function comment(s: State, p: Project, sc: MockScreen, text: string): void {
   if (live.on) { refuse(); return; }
   const d = designerOf(s, p);
   update(() => { sc.comments.push({ from: 'owner', ts: Date.now(), text }); sc.replying = true; });
-  setTimeout(() => update(() => {
+  act.sampleLater(() => update(() => {
     sc.replying = false; if (ensure(s, p).approvedAt) { sc.comments.push({ from: d.id, ts: Date.now(), text: 'The design is approved, so I passed this to the project lead as a change request.' }); return; }
     const from = sc.rev; sc.rev += 1; sc.status = 'changed'; sc.updatedAt = Date.now(); sc.note = 'Changed after your comment.';
     sc.comments.push({ from: d.id, ts: Date.now(), text: `Done in revision ${sc.rev}. Open Changes to compare it with revision ${from}.` });

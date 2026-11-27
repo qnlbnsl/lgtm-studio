@@ -3,7 +3,7 @@
 // https://cdn.agentclientprotocol.com/registry/v1/latest/registry.json. Each entry is in the
 // registry and is named by at least two of the registry's agent list, T3 Code and Herdr.
 // Claude Code and Codex are not here, because the engine ships them.
-import { Icon, update, live } from '../lib';
+import { Icon, update, live, store } from '../lib';
 import { HARNESSES, machineOf } from '../data';
 import * as act from '../actions';
 import { Dialog, registerDialog, Menu, CodeBox } from '../ui';
@@ -45,9 +45,10 @@ export function installCommands(id: string, x: Supported): string[] {
 }
 
 function install(id: string) {
+  if (store.state.server.repositoryMode) return;
   const x = SUPPORTED[id]!;
   update((st) => { st.ui.installing = id; });
-  setTimeout(() => update((st) => {
+  act.sampleLater(() => update((st) => {
     const base = HARNESSES[id] || { name: x.name, models: [], efforts: [], noEffort: [], runMode: 'ACP' };
     HARNESSES[id] = { ...base, installed: true, version: x.version };
     const m = st.machines.find((y) => y.role === 'master') || st.machines[0]; if (m) { m.harnesses ||= {}; m.harnesses[id] = x.version; }

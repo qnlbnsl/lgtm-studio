@@ -703,7 +703,7 @@ function startRun(w: ProjectWorkflow, p: Project, wf: ActionFile): Id | null {
   const id = uid('run');
   const prev = w.runs.filter((r) => r.kind === wf.kind && !r.skippedRun && !r.running).sort((a, b) => b.ts - a.ts)[0];
   update(() => { w.runs.push({ id, kind: wf.kind, why: 'Started by you', commit: (prev && prev.commit) || 'HEAD', branch: p.branch, ts: Date.now(), dur: '—', passed: 0, failed: 0, skipped: 0, failures: [], running: true, by: null }); });
-  setTimeout(() => update(() => { const r = byId(w.runs, id)!; r.running = false; r.passed = wf.tests ? (prev ? prev.passed + prev.failed : 1240) : 0; r.skipped = prev ? prev.skipped : 0; r.dur = prev ? prev.dur : '3 min 2 s'; r.ts = Date.now(); act.toast(`${wf.kind} passed`); }), 3200);
+  act.sampleLater(() => update(() => { const r = byId(w.runs, id)!; r.running = false; r.passed = wf.tests ? (prev ? prev.passed + prev.failed : 1240) : 0; r.skipped = prev ? prev.skipped : 0; r.dur = prev ? prev.dur : '3 min 2 s'; r.ts = Date.now(); act.toast(`${wf.kind} passed`); }), 3200);
   return id;
 }
 const slugOf = (a: ActionFile) => a.file.replace(/\.ya?ml$/, '');

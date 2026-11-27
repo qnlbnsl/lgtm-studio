@@ -392,10 +392,10 @@ export function seed(): Omit<State, SeededSlices> {
   }
 
   return {
-    ...base(),
+    ...base('sample'),
     session: { status: (FRAMED && new URLSearchParams(location.hash.split('?')[1] || '').get('session')) || persist('session', 'in'), firstRun: false },
     conn: { status: 'live', lastHeard: T },
-    server: { status: 'connecting', address: '', label: '', sample: false, synced: false, fixed: false }, joining: [],
+    server: { status: 'connecting', address: '', label: '', sample: false, repositoryMode: false, synced: false, fixed: false }, joining: [],
     machines, subscriptions, repos, projects, teams, agents, epics, sprints, tasks, requests, threads, channels, posts,
     expanded: { 'repo:lgtm': true, 'project:console': true, 'team:console-shell': true },
     inspecting: { console: 'feat/agent-console/shell' },
@@ -405,7 +405,7 @@ export function seed(): Omit<State, SeededSlices> {
 
 // The parts of the store that hold no sample: the owner's preferences, the page's own state,
 // and the service settings at their defaults.
-function base(): Pick<State, 'prefs' | 'drafts' | 'pending' | 'expanded' | 'inspecting' | 'toasts' | 'dialog' | 'phoneOffer' | 'settings'> {
+function base(mode: 'sample' | 'empty' | 'live'): Pick<State, 'prefs' | 'drafts' | 'pending' | 'expanded' | 'inspecting' | 'toasts' | 'dialog' | 'phoneOffer' | 'settings'> {
   return {
     prefs: {
       theme: persist('theme', 'system'), density: persist('density', 'compact'),
@@ -426,9 +426,10 @@ function base(): Pick<State, 'prefs' | 'drafts' | 'pending' | 'expanded' | 'insp
       // Whether the folded sidebar slides over the page when the pointer is at the window's left edge.
       peek: persist('peek', true),
       // The projects the owner pinned, in the order they were pinned. The mock starts with two.
-      pinned: persist<Id[]>('pinned', live.on ? [] : ['console', 'phone']),
+      pinned: persist<Id[]>('pinned', mode === 'sample' ? ['console', 'phone'] : []),
     },
-    drafts: composerDrafts(live.on ? 'live' : 'mock', FRAMED), pending: {}, expanded: {}, inspecting: {}, toasts: [], dialog: null, phoneOffer: persist<string | null>('phoneOffer', 'open'),
+    drafts: mode === 'empty' ? Object.create(null) : composerDrafts(mode === 'sample' ? 'mock' : 'live', FRAMED),
+    pending: {}, expanded: {}, inspecting: {}, toasts: [], dialog: null, phoneOffer: mode === 'sample' ? persist<string | null>('phoneOffer', 'open') : null,
     settings: {
       ntfyServer: '', ntfyTopic: '', ntfyToken: '', tokenSet: false, ntfyEnabled: false, email: { enabled: false, tokenSet: false },
       webEnabled: true, port: 8787, checkIn: 15, proxyMode: false, publicAddress: '',
@@ -444,15 +445,14 @@ function base(): Pick<State, 'prefs' | 'drafts' | 'pending' | 'expanded' | 'insp
   };
 }
 
-// The store of the live website before the engine has answered. Every collection is empty,
-// so each screen shows its empty structure. The engine's records replace these through
-// the connection; see engine.js. Nothing here comes from seed().
+// The initial store for discovery and for the legacy engine. Their records arrive through
+// the selected connection.
 export function emptyState(): Omit<State, SeededSlices> {
   return {
-    ...base(),
+    ...base(live.on ? 'live' : 'empty'),
     session: { status: 'checking', firstRun: false },
     conn: { status: 'reconnecting', lastHeard: Date.now() },
-    server: { status: 'ready', address: '', label: '', sample: false, synced: true, fixed: true }, joining: [],
+    server: { status: 'ready', address: '', label: '', sample: false, repositoryMode: false, synced: true, fixed: true }, joining: [],
     machines: [], subscriptions: [], repos: [], projects: [], teams: [], agents: [], epics: [], sprints: [], tasks: [], requests: [],
     threads: {}, channels: [], posts: [],
     T: Date.now(),

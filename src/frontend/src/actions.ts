@@ -17,13 +17,24 @@ import type { Agent, Attachment, DialogState, Id, Prefs, Request, State, Team, T
 
 const S = () => store.state;
 
+/** Runs a delayed sample action only in the workspace that scheduled it. */
+export function sampleLater(fn: () => void, delay: number): ReturnType<typeof setTimeout> {
+  const workspace = S();
+  return setTimeout(() => {
+    if (S() === workspace && !live.on && !workspace.server.repositoryMode) fn();
+  }, delay);
+}
+
 // ---- notices and dialogs -----------------------------------------------------
 export function toast(error: unknown, tone = 'ok', fallback?: string): void {
   const text = errorText(error, fallback);
   if (!text) return;
   const id = uid('toast');
+  const workspace = S();
   update((s) => { s.toasts.push({ id, text, tone }); });
-  setTimeout(() => update((s) => { s.toasts = s.toasts.filter((t) => t.id !== id); }), 3600);
+  setTimeout(() => {
+    if (S() === workspace) update((s) => { s.toasts = s.toasts.filter((t) => t.id !== id); });
+  }, 3600);
 }
 // In live mode, an action that the engine does not take yet changes nothing and says so.
 // The notice is written directly, because every other change in a refused turn is dropped.
@@ -130,7 +141,7 @@ export function sendMessage(agentId: Id, text: string, context: MessageContext[]
     s.pending[agentId] = true;
     if (a.state === 'idle') { a.state = 'working'; a.activity = 'Working on your message'; }
   });
-  const timer = setTimeout(() => {
+  const timer = sampleLater(() => {
     update((s) => {
       if (!s.pending[agentId]) return;
       delete s.pending[agentId];
@@ -227,10 +238,10 @@ export function answerRequest(requestId: Id, optionId: string | null, text?: str
     }
   });
   // The side panel goes back to the project lead once the question it opened for is answered.
-  if (s.ui?.panelReq === requestId) setTimeout(() => { if (S().ui.panelReq === requestId) closeSidePanel(); }, 1200);
+  if (s.ui?.panelReq === requestId) sampleLater(() => { if (S().ui.panelReq === requestId) closeSidePanel(); }, 1200);
   toast(({ approval: `${answer}: ${r.title}`, question: 'Answer sent', merge: answer === 'Merged' ? `Merged ${r.source} into ${r.target}` : 'Sent back to the project lead', failed: 'Agent resumed' } as Record<string, string>)[r.kind]);
   // The agent reacts a moment later.
-  setTimeout(() => update((st) => {
+  sampleLater(() => update((st) => {
     const ag = agentOf(st, r.agent); if (ag.state === 'stopped') return;
     const lines: Record<string, string> = {
       approval: optionId === 'deny' ? 'Denied. I will look for a way that does not need that command.' : `Allowed. ${r.command ? 'The command ran and exited with 0.' : 'I have read it.'} Carrying on.`,
@@ -278,7 +289,7 @@ export function createProject({ repo, goal, machine, subscription, newRepo, lead
   });
   go(`/p/${id}/end-result`);
   // The lead's first turn: it names the project, then asks what it needs to plan.
-  setTimeout(() => update((st) => {
+  sampleLater(() => update((st) => {
     const p = projectOf(st, id); const lead = agentOf(st, leadId); if (!p) return;
     const name = nameFromGoal(goal); const sl = slug(name);
     Object.assign(p, { name, naming: false, branch: 'feat/' + sl, folder: `${r.folders[machine]}/.worktrees/${sl}` });
@@ -354,9 +365,11 @@ const ACTIVITY: Record<string, string[]> = {
 };
 let ticking: ReturnType<typeof setInterval> | null = null;
 export function startSimulation() {
-  if (ticking) return;
+  if (ticking !== null) return;
+  const workspace = S();
   ticking = setInterval(() => {
-    const s = S(); if (!s || s.conn.status !== 'live' || document.hidden) return;
+    const s = S();
+    if (s !== workspace || live.on || s.server.repositoryMode || s.conn.status !== 'live' || document.hidden) return;
     const working = s.agents.filter((a) => a.state === 'working' && !a.stalled && !s.pending[a.id]);
     if (!working.length) return;
     const a = working[Math.floor(Math.random() * working.length)]!;
@@ -371,6 +384,11 @@ export function startSimulation() {
     notify();
   }, 4200);
 }
+export function stopSimulation(): void {
+  if (ticking === null) return;
+  clearInterval(ticking);
+  ticking = null;
+}
 
 // ---- preview states (the mock's own controls) ------------------------------------
 export function setConnection(status: string): void {
@@ -381,7 +399,8 @@ export function setConnection(status: string): void {
 export function setSession(status: string): void {
   // In live mode only the engine signs the page in. The page may still clear a rejected login.
   if (live.on) { if (status !== 'in') engineWrite({ session: { ...S().session, status } }); return; }
-  update((s) => { s.session.status = status; }); remember('session', status === 'in' ? 'in' : 'out');
+  update((s) => { s.session.status = status; });
+  if (!S().server.repositoryMode) remember('session', status === 'in' ? 'in' : 'out');
 }
 // Signs in with the server's password. The sample server accepts any password except "wrong".
 // Resolves to the session's new status.

@@ -602,15 +602,16 @@ function NotConnected({ what }: { what: string }) {
 // ---- the app --------------------------------------------------------------------
 function App() {
   const s = useStore(); const route = useRoute();
+  const compatibility = !live.on && !s.server.repositoryMode;
   // The mock has the Questions view, so a question's card opens there.
-  questionsView.on = !live.on;
+  questionsView.on = compatibility;
   const [drawer, setDrawer] = useState(false); const [peek, setPeek] = useState(false);
   useKey((e) => {
     const mod = isMac ? e.metaKey : e.ctrlKey;
     if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); act.openDialog({ type: 'switcher' }); }
     if (mod && e.key.toLowerCase() === 'b') { e.preventDefault(); act.setPref('sidebarFolded', !store.state.prefs.sidebarFolded); }
     // Control and the backtick key open and close the terminal, on every keyboard, as in a code editor.
-    if (!live.on && e.ctrlKey && e.code === 'Backquote') { e.preventDefault(); toggleTerminal(store.state, parseRoute()); }
+    if (!live.on && !store.state.server.repositoryMode && e.ctrlKey && e.code === 'Backquote') { e.preventDefault(); toggleTerminal(store.state, parseRoute()); }
   }, []);
   useEffect(() => {
     if (!route.parts.length) go('/home');
@@ -631,9 +632,9 @@ function App() {
   if (!live.on && s.session.status === 'in' && !s.server.synced) return <main class="auth" aria-busy="true" />;
   // The live website asks the engine whether this browser is signed in before it shows anything.
   if (s.session.status === 'checking') return <main class="auth" aria-busy="true" />;
-  if (top === 'login' || (s.session.status !== 'in' && (top !== 'setup' || live.on))) return <><Login s={s} /><Toasts s={s} /></>;
+  if (top === 'login' || (s.session.status !== 'in' && (top !== 'setup' || !compatibility))) return <><Login s={s} /><Toasts s={s} /></>;
   const waiting = live.on && !s.snapshotReady;
-  if (top === 'setup' && !waiting) return <><FirstRun s={s} /><DialogHost s={s} /><Toasts s={s} /></>;
+  if (top === 'setup' && !s.server.repositoryMode && !waiting) return <><FirstRun s={s} /><DialogHost s={s} /><Toasts s={s} /></>;
   const project = top === 'p' ? projectOf(s, route.parts[1]) : null;
   let content: ComponentChildren;
   if (waiting) content = <div class="view-body">
@@ -669,7 +670,7 @@ function App() {
     </div>
   </div>;
   // Outside a project and a repository, the terminal opens under the page, in the place the owner chose.
-  const loose = !live.on && !waiting && top !== 'p' && !terminalHere(s, route).fixed && terminalShown(s, route) ? terminalHere(s, route).place : null;
+  const loose = compatibility && !waiting && top !== 'p' && !terminalHere(s, route).fixed && terminalShown(s, route) ? terminalHere(s, route).place : null;
   if (loose) content = <div class="with-term"><div class="wt-view fill">{content}</div><TerminalPanel s={s} place={loose} /></div>;
   // Focus hides the sidebar, the top bar, the tab row and the lead panel, so the board fills the window.
   const focus = s.ui.focus && (top === 'p' && ((route.parts[2] || homeTab()) === 'board' || route.parts[2] === 'design' && route.parts[3] === 'architecture') || top === 'r' && route.parts[2] === 'board');
@@ -696,23 +697,48 @@ export function mount(el: Element, { connection, slots: fills, mode = 'mock' }: 
   setDraftNotice(() => act.toast('This draft is too long to keep after a reload.', 'error'));
   engine.setConnection(connection);
   slots = fills || {};
+  act.stopSimulation();
   live.on = mode === 'live';
   if (live.on) return mountLive(el);
-  // The seed functions below fill the slices seed() leaves out.
-  const state = seed() as State;
-  state.ui = {};
-  for (const add of [seedDefine, seedGit, seedTerminal, seedMocks, seedBoard, seedWorkflow, seedService, seedUsage, seedAuth]) add?.(state);
-  store.state = state;
+  store.state = emptyWorkspace();
   act.applyPrefs();
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', act.applyPrefs);
-  act.startSimulation();
-  // The records that have moved to the contract are read from the server.
-  server.start();
-  // The real website reads everything once, then follows the engine's stream of changes.
-  engine.call('snapshot', {});
-  engine.call('subscribe', { after: 0 });
+  let hasSampleWorkspace = false;
+  server.start((repositoryMode) => {
+    if (!repositoryMode && hasSampleWorkspace) return;
+    act.stopSimulation();
+    const previous = store.state;
+    const next = repositoryMode ? emptyWorkspace() : sampleWorkspace();
+    next.server = { ...previous.server };
+    next.prefs = { ...previous.prefs, pinned: next.prefs.pinned };
+    store.state = next;
+    hasSampleWorkspace = !repositoryMode;
+    if (hasSampleWorkspace) {
+      act.startSimulation();
+      engine.call('snapshot', {});
+      engine.call('subscribe', { after: 0 });
+    }
+  });
   render(<App />, el);
   return { store, act };
+}
+
+function sampleWorkspace(): State {
+  const state = seed() as State;
+  state.ui = {};
+  for (const add of [seedDefine, seedGit, seedTerminal, seedMocks, seedBoard, seedWorkflow, seedService, seedUsage, seedAuth]) add(state);
+  return state;
+}
+
+function emptyWorkspace(): State {
+  const state = emptyState() as State;
+  seedTerminal(state);
+  return Object.assign(state, {
+    ui: {}, define: {}, worktrees: [], gitUi: {}, boardRead: {}, boardUnread: {}, boardRevision: 0,
+    boardDetails: {}, taskDetails: {}, setupData: null, boardAgents: {}, projectLeadSettings: {}, notifications: [],
+    workflow: {}, mocks: {}, design: {}, machineDetails: null,
+    usage: { rows: [], limits: {}, review: { ranAt: 0, findings: [] } },
+  });
 }
 
 // ---- live mode -------------------------------------------------------------------
@@ -724,13 +750,9 @@ export function mount(el: Element, { connection, slots: fills, mode = 'mock' }: 
 /** A patch from the connection: store keys, and a few signals that are not store keys. */
 type LivePatch = Partial<State> & { chatEvent?: Parameters<typeof chat.receive>[0]; git?: Parameters<typeof liveGit.observe>[0]['git'] };
 function mountLive(el: Element) {
-  // The lines below fill the slices emptyState() leaves out.
-  const state = emptyState() as State;
-  state.ui = {};
+  const state = emptyWorkspace();
   for (const key of Object.keys(state.settings)) state.settings[key] = typeof state.settings[key] === 'boolean' || typeof state.settings[key] === 'number' ? null : typeof state.settings[key] === 'string' ? '' : {};
   state.settings.quiet = { on: null, from: '', to: '', failed: null };
-  seedTerminal(state);
-  Object.assign(state, { worktrees: [], gitUi: {}, boardRead: {}, boardUnread: {}, boardRevision: 0, boardDetails: {}, taskDetails: {}, setupData: null, boardAgents: {}, projectLeadSettings: {}, notifications: [], phoneOffer: null, workflow: {}, mocks: {}, design: {}, machineDetails: null });
   store.state = guardStore(state);
   act.applyPrefs();
   matchMedia('(prefers-color-scheme: dark)').addEventListener('change', act.applyPrefs);
@@ -771,6 +793,7 @@ function onRefusedError(e: Event) {
 // Takes the website out of the element and returns to the default connection.
 export function unmount(el: Element): void {
   render(null, el);
+  act.stopSimulation();
   if (live.on) { chat.reset(); engine.connection().close?.(); removeEventListener('error', onRefusedError); removeEventListener('unhandledrejection', onRefusedError); live.on = false; }
   engine.setConnection(null);
   slots = {};

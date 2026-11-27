@@ -100,7 +100,7 @@ function stream(sess: TermSession, label: string, steps: Step[], exit = 0, after
     if (!sess.running) return;
     if (i >= steps.length) { sess.running = null; sess.exit = exit; after?.(); notify(); return; }
     const [delay, line] = steps[i++]!;
-    sess.running.timer = setTimeout(() => { out(sess, line); notify(); next(); }, delay);
+    sess.running.timer = act.sampleLater(() => { out(sess, line); notify(); next(); }, delay);
   };
   sess.running = { label, timer: null };
   next();
@@ -550,7 +550,7 @@ export function TerminalTab({ s, project }: { s: State; project: Project; route?
   });
   const reconnect = (x: TermSession) => {
     update(() => { x.status = 'reconnecting'; });
-    setTimeout(() => update(() => { x.status = 'open'; out(x, [[`Reconnected to ${machineOf(s, x.machine).name}. The session kept running while you were away.`, 'tc-m']]); }), 1100);
+    act.sampleLater(() => update(() => { x.status = 'open'; out(x, [[`Reconnected to ${machineOf(s, x.machine).name}. The session kept running while you were away.`, 'tc-m']]); }), 1100);
   };
   const takeOver = (x: TermSession) => {
     const w = x.watching!;

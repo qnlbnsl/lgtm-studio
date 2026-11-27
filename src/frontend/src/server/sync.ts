@@ -1,13 +1,13 @@
 // Keeps the store in step with the server.
 //
-// A collection that has moved to the contract is read here and nowhere else: the server sends
-// it once and then sends each change. Screens read the store as before. The collections that
-// have not moved yet are still sample data inside the page; issue 1613 lists them.
+// A collection that has moved to the contract is read here and nowhere else. The server sends
+// it once and then sends each change. Compatibility workspaces also hold sample collections.
 import { Code, ConnectError } from '@connectrpc/connect';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
 import { ClientState, type Client } from '@lgtm/api/clients';
 import { MapState } from '@lgtm/api/map';
 import { PreviewState } from '@lgtm/api/preview';
+import { ProjectService } from '@lgtm/api/projects';
 import { SignInResult } from '@lgtm/api/session';
 import { FRAMED, persist, store, update } from '../lib';
 import type { JoiningClient, Machine } from '../types';
@@ -43,6 +43,7 @@ function watch(): void {
     for (let wait = 500; !mine.signal.aborted; wait = Math.min(wait * 2, 8000)) {
       try {
         for await (const { change } of api().clients.watchClients({}, { signal: mine.signal })) {
+          if (mine.signal.aborted) return;
           wait = 500;
           update((s) => {
             if (change.case === 'all') { s.machines = change.value.clients.filter((c) => !waits(c)).map(toMachine); s.joining = change.value.clients.filter(waits).map(toJoining); s.server.synced = true; s.conn.status = 'live'; }
@@ -67,19 +68,29 @@ function watch(): void {
 /** Starts reading the server's records, when nothing reads them yet. */
 export function ensureReading(): void { if (!watching) watch(); }
 
+let selectWorkspace: (repositoryMode: boolean) => void;
+
 /** Connects to a server and, when the browser is signed in there, starts reading it. */
 export async function connect(text: string): Promise<void> {
   let url: string;
   try { url = serverUrl(text); } catch (e) { update((s) => { s.server = { ...s.server, status: 'ask', error: reason(e) }; }); return; }
   stopWatching();
-  update((s) => { s.server = { status: 'connecting', address: text, label: addressLabel(url), sample: url === SAMPLE, synced: false, fixed: fixedAddress() !== null }; });
+  update((s) => { s.server = { status: 'connecting', address: text, label: addressLabel(url), sample: url === SAMPLE, repositoryMode: s.server.repositoryMode, synced: false, fixed: fixedAddress() !== null }; });
   try {
     // The sample inside the page has no cookie, so it remembers the session the way the mock always did.
     const server = await openServer(url, { signedIn: persist('session', 'in') === 'in' });
+    const sample = url === SAMPLE || server.sample;
+    const repositoryMode = !sample && server.services.includes(ProjectService.typeName);
     if (!fixedAddress()) rememberAddress(text);
     // A framed copy of the website, in the Design view, may ask for a signed-out screen.
     const forced = FRAMED ? new URLSearchParams(location.hash.split('?')[1] || '').get('session') : null;
-    update((s) => { s.server.status = 'ready'; s.server.sample = server.sample; s.session.status = forced || (server.signedIn ? 'in' : 'out'); });
+    selectWorkspace(repositoryMode);
+    update((s) => {
+      s.server.status = 'ready';
+      s.server.sample = sample;
+      s.server.repositoryMode = repositoryMode;
+      s.session.status = forced || (server.signedIn ? 'in' : 'out');
+    });
     if (store.state.session.status === 'in') watch();
   } catch (e) {
     update((s) => { s.server = { ...s.server, status: 'unreachable', error: e instanceof WrongServer ? e.message : `No LGTM Studio server answers at ${addressLabel(url)}.` }; });
@@ -87,7 +98,8 @@ export async function connect(text: string): Promise<void> {
 }
 
 /** Starts the website: connects to the fixed or the remembered address, or asks for one. */
-export function start(): void {
+export function start(select: (repositoryMode: boolean) => void): void {
+  selectWorkspace = select;
   const address = fixedAddress() ?? rememberedAddress();
   if (address) void connect(address);
   else update((s) => { s.server.status = 'ask'; });

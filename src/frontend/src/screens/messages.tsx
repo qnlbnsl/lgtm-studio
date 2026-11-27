@@ -142,7 +142,7 @@ function sendPost({ channel, kind, action, to, text, replyTo }: NewPost): Promis
   const responder = (to[0] || (root && root.from !== 'owner' ? root.from : ch!.members[0]))!;
   const a = agentOf(s0, responder);
   if (!a || a.state === 'stopped' || a.state === 'failed') { act.toast(`${a ? a.name : 'That agent'} is not running, so the post waits for it.`); return; }
-  setTimeout(() => update((s) => {
+  act.sampleLater(() => update((s) => {
     s.posts.push({ id: uid('p'), channel, from: responder, kind: kind === 'question' || kind === 'blocked' ? 'note' : kind === 'handoff' ? 'done' : 'note', action: 'fyi', text: CANNED[kind]!, ts: Date.now(), to: [], replyTo: replyTo || id, closed: false });
   }), 1700);
 }
@@ -157,7 +157,7 @@ function nudge(agentId: Id): unknown {
   });
   act.toast(`Nudged ${agentLabel(s0, a, { withTeam: true })}${ch ? ` in ${ch.kind === 'dm' ? 'a direct message' : '#' + ch.name}` : ''}`);
   if (a.state === 'stopped' || a.state === 'failed') return;
-  setTimeout(() => update((s) => {
+  act.sampleLater(() => update((s) => {
     const ag = agentOf(s, agentId); ag.lastOutputAt = Date.now();
     if (wasStalled) { ag.stalled = false; ag.activity = 'Running pnpm typecheck again'; }
     if (ch) s.posts.push({ id: uid('p'), channel: ch.id, from: agentId, kind: 'note', action: 'fyi', ts: Date.now(), to: [], replyTo: id, closed: false,

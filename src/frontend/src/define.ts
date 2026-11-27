@@ -6,6 +6,7 @@
 // are recut here: the proposal sits in the draft, and each decision is its own question.
 import { store, update, uid, live, plural, MIN } from './lib';
 import { agentOf, projectOf, threadOf } from './data';
+import { sampleLater } from './actions';
 import * as engine from './engine';
 import type { Id, Ms, Project, State, ThreadItem, ToolLine } from './types';
 
@@ -151,7 +152,7 @@ function rewrite(d: DefineRecord, n: number, lead: string, rest: string): void {
 function leadSays(pid: Id, delay: number, fn: (d: DefineRecord, s: State) => string, { quiet = false, then = null as (() => void) | null } = {}): void {
   const lead = agentOf(S(), projectOf(S(), pid).lead);
   update((s) => { s.pending[lead.id] = true; lead.state = 'working'; lead.activity = 'Updating the end result'; });
-  setTimeout(() => {
+  sampleLater(() => {
     update((s) => {
       const d = defineOf(s, pid); if (!d) return;
       delete s.pending[lead.id];

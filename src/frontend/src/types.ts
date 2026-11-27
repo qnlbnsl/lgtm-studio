@@ -194,6 +194,8 @@ export interface ServerState {
   address: string; label: string;
   /** True for a server that holds sample data only. */
   sample: boolean;
+  /** True when discovery selected the real repository workspace. */
+  repositoryMode: boolean;
   /** True once the records the server owns have arrived. */
   synced: boolean;
   /** True when the build fixed the address, so the page does not ask for one. */

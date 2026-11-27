@@ -84,9 +84,13 @@ const subAgents = (s: State, sid: Id): Agent[] => s.agents.filter((a) => a.subsc
 
 let savedTimer: ReturnType<typeof setTimeout> | undefined;
 export function markSaved() {
+  const workspace = store.state;
   update((s) => { s.ui.saved = Date.now(); });
   clearTimeout(savedTimer);
-  savedTimer = setTimeout(() => update((s) => { s.ui.saved = null; }), 1800);
+  const clear = () => {
+    if (store.state === workspace) update((s) => { s.ui.saved = null; });
+  };
+  savedTimer = live.on || workspace.server.repositoryMode ? setTimeout(clear, 1800) : act.sampleLater(clear, 1800);
 }
 const setS = (patch: Partial<Settings>) => { if (live.on) return liveGit.saveSettings(patch); update((s) => { Object.assign(s.settings, patch); }); markSaved(); };
 export function Saved({ s }: ScreenProps) {
@@ -592,7 +596,7 @@ export function RepoSetup({ s, repo: r }: { s: State; repo: Loose & { id: Id; na
   const start = () => {
     if (!m || m.status !== 'online' || busy) return;
     update((st) => { st.ui.settingUp = { ...(st.ui.settingUp || {}), [r.id]: m.id }; });
-    setTimeout(() => update((st) => {
+    act.sampleLater(() => update((st) => {
       const x = byId(st.repos, r.id); if (!x) return;
       const folder = `${m.workspace}/${x.name}`; const aid = x.id + '-repo';
       x.folders = { [m.id]: folder }; x.agent = aid; st.expanded['repo:' + x.id] = true;
@@ -1138,7 +1142,7 @@ export function Notifications({ s }: ScreenProps) {
   const list = s.notifications; const unread = list.filter((n) => !n.read).length; const failed = list.filter((n) => n.delivery === 'failed').length;
   const [showAll, setShowAll] = useState(false); const shown = showAll ? list : list.slice(0, 12);
   const open = (n: Notification) => { if (live.on) { const r = n.request && byId(s.requests, n.request); if (r) go(routeForRequest(s, r)); else if (n.to) go(n.to); return; } update(() => { n.read = true; }); const r = n.request && byId(s.requests, n.request); if (r) go(routeForRequest(s, r)); else if (n.to) go(n.to); };
-  const retry = (n: Notification) => { if (live.on) return liveGit.retryAlert(n); act.toast('Sending again…'); setTimeout(() => { const ok = /\./.test(set.ntfyServer) && !/localhost/.test(set.ntfyServer); update(() => { n.delivery = ok ? 'sent' : 'failed'; }); act.toast(ok ? 'Sent to phone' : n.error, ok ? 'ok' : 'error'); }, 700); };
+  const retry = (n: Notification) => { if (live.on) return liveGit.retryAlert(n); act.toast('Sending again…'); act.sampleLater(() => { const ok = /\./.test(set.ntfyServer) && !/localhost/.test(set.ntfyServer); update(() => { n.delivery = ok ? 'sent' : 'failed'; }); act.toast(ok ? 'Sent to phone' : n.error, ok ? 'ok' : 'error'); }, 700); };
   const setOn = (k: string, v: boolean) => live.on ? liveGit.notifyKind(k, v) : setS({ notifyOn: { ...set.notifyOn, [k]: v } });
   let lastDay: string | null = null;
   return <div class="view-body">
@@ -1563,7 +1567,7 @@ function About({ s }: ScreenProps) {
     <Row label="Licence"><span>{live.on ? '' : 'Apache License 2.0'}</span></Row>
     <Row label="Restart the service" hint="Agents keep their place. Web connections close and reconnect.">
       <button type="button" class="btn" onClick={() => act.confirm({ title: 'Restart the service?', body: 'Agents stop at the end of their turn and resume after the restart. This page reconnects on its own.', action: 'Restart', danger: false,
-        onConfirm: () => { if (act.refused()) return; act.setConnection('reconnecting'); setTimeout(() => { act.setConnection('live'); act.toast('The service restarted'); }, 2400); } })}>
+        onConfirm: () => { if (act.refused()) return; act.setConnection('reconnecting'); act.sampleLater(() => { act.setConnection('live'); act.toast('The service restarted'); }, 2400); } })}>
         <Icon name="rotate-ccw" size={13} />
         Restart
       </button>
