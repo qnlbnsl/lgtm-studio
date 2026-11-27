@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"connectrpc.com/connect"
 
@@ -22,24 +23,40 @@ type joinReceipt struct {
 	keyDigest [sha256.Size]byte
 }
 
+type relayControls struct {
+	beforeReply    func(context.Context, *linkv1.OpenResponse) bool
+	releaseReports <-chan struct{}
+	dropResult     func(noticeResult) bool
+}
+
 type relay struct {
+	controls relayControls
 	upstream linkv1connect.LinkServiceClient
 	address  string
 	dropJoin atomic.Bool
 	blockNew atomic.Bool
 	joins    chan joinReceipt
 	legs     chan *relayLeg
+	workers  sync.WaitGroup
 }
 
 func startRelay(t *testing.T, upstream linkv1connect.LinkServiceClient) *relay {
 	t.Helper()
-	r := &relay{upstream: upstream, joins: make(chan joinReceipt, 8), legs: make(chan *relayLeg, 16)}
+	return startRelayWithControls(t, upstream, relayControls{})
+}
+
+func startRelayWithControls(t *testing.T, upstream linkv1connect.LinkServiceClient, controls relayControls) *relay {
+	t.Helper()
+	r := &relay{controls: controls, upstream: upstream, joins: make(chan joinReceipt, 8), legs: make(chan *relayLeg, 16)}
 	_, handler := linkv1connect.NewLinkServiceHandler(r)
 	listener := httptest.NewUnstartedServer(handler)
 	listener.Config.Protocols = new(http.Protocols)
 	listener.Config.Protocols.SetUnencryptedHTTP2(true)
 	listener.Start()
-	t.Cleanup(listener.Close)
+	t.Cleanup(func() {
+		listener.Close()
+		r.workers.Wait()
+	})
 	r.address = listener.URL
 	return r
 }
@@ -73,6 +90,26 @@ type legObservation struct {
 	emptyHeartbeats int
 	results         []noticeResult
 	unknownMachine  bool
+	commands        []commandDelivery
+	reports         []reportDelivery
+}
+
+type commandDelivery struct {
+	id       string
+	attempt  uint32
+	expiry   time.Time
+	kind     string
+	revision uint64
+}
+
+type reportDelivery struct {
+	facts     bool
+	harnesses bool
+}
+
+type commandAttempt struct {
+	id      string
+	attempt uint32
 }
 
 type noticeResult struct {
@@ -86,8 +123,9 @@ type relayLeg struct {
 	done   chan struct{}
 	inject chan *linkv1.Command
 
-	mu    sync.Mutex
-	trace legObservation
+	mu       sync.Mutex
+	trace    legObservation
+	injected map[commandAttempt]struct{}
 }
 
 func (l *relayLeg) observe() legObservation {
@@ -97,6 +135,8 @@ func (l *relayLeg) observe() legObservation {
 	trace.events = append([]uint64(nil), trace.events...)
 	trace.acks = append([]uint64(nil), trace.acks...)
 	trace.results = append([]noticeResult(nil), trace.results...)
+	trace.commands = append([]commandDelivery(nil), trace.commands...)
+	trace.reports = append([]reportDelivery(nil), trace.reports...)
 	return trace
 }
 
@@ -108,7 +148,7 @@ func (r *relay) Open(ctx context.Context, downstream *connect.BidiStream[linkv1.
 		return disconnected()
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	leg := &relayLeg{cut: cancel, done: make(chan struct{}), inject: make(chan *linkv1.Command, 1)}
+	leg := &relayLeg{cut: cancel, done: make(chan struct{}), inject: make(chan *linkv1.Command, 1), injected: make(map[commandAttempt]struct{})}
 	defer close(leg.done)
 	select {
 	case r.legs <- leg:
@@ -117,21 +157,18 @@ func (r *relay) Open(ctx context.Context, downstream *connect.BidiStream[linkv1.
 		return disconnected()
 	}
 	upstream := r.upstream.Open(ctx)
-	go leg.forwardRequests(downstream, upstream)
+	// Return the downstream status before joining the upstream reader. The
+	// client may still need that status to close its request side.
+	defer cancel()
+	r.workers.Go(func() { leg.forwardRequests(ctx, r.controls, downstream, upstream) })
 
 	type reply struct {
 		frame *linkv1.OpenResponse
 		err   error
 	}
 	replies := make(chan reply)
-	readerDone := make(chan struct{})
-	defer func() {
-		cancel()
-		<-readerDone
-		_ = upstream.CloseResponse()
-	}()
-	go func() {
-		defer close(readerDone)
+	r.workers.Go(func() {
+		defer upstream.CloseResponse()
 		for ctx.Err() == nil {
 			frame, err := upstream.Receive()
 			select {
@@ -143,13 +180,16 @@ func (r *relay) Open(ctx context.Context, downstream *connect.BidiStream[linkv1.
 				return
 			}
 		}
-	}()
+	})
 
 	for {
 		select {
 		case <-ctx.Done():
 			return disconnected()
 		case notice := <-leg.inject:
+			leg.mu.Lock()
+			leg.injected[commandAttempt{notice.GetId(), notice.GetAttempt()}] = struct{}{}
+			leg.mu.Unlock()
 			if err := downstream.Send(&linkv1.OpenResponse{Kind: &linkv1.OpenResponse_Command{Command: notice}}); err != nil {
 				return err
 			}
@@ -171,6 +211,9 @@ func (r *relay) Open(ctx context.Context, downstream *connect.BidiStream[linkv1.
 				}
 				return next.err
 			}
+			if r.controls.beforeReply != nil && !r.controls.beforeReply(ctx, next.frame) {
+				return disconnected()
+			}
 			if err := downstream.Send(next.frame); err != nil {
 				return err
 			}
@@ -180,6 +223,7 @@ func (r *relay) Open(ctx context.Context, downstream *connect.BidiStream[linkv1.
 }
 
 func (l *relayLeg) forwardRequests(
+	ctx context.Context, controls relayControls,
 	downstream *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse],
 	upstream *connect.BidiStreamForClient[linkv1.OpenRequest, linkv1.OpenResponse],
 ) {
@@ -189,12 +233,17 @@ func (l *relayLeg) forwardRequests(
 		if err != nil {
 			return
 		}
+		skip := false
 		l.mu.Lock()
 		switch {
 		case frame.GetProof() != nil:
 			l.trace.proofs++
 		case frame.GetEvent() != nil:
-			l.trace.events = append(l.trace.events, frame.GetEvent().GetNumber())
+			event := frame.GetEvent()
+			l.trace.events = append(l.trace.events, event.GetNumber())
+			l.trace.reports = append(l.trace.reports, reportDelivery{
+				facts: event.GetFacts() != nil, harnesses: event.GetHarnessesFound() != nil,
+			})
 		case frame.GetHeartbeat() != nil:
 			l.trace.heartbeats++
 			beat := frame.GetHeartbeat()
@@ -203,12 +252,23 @@ func (l *relayLeg) forwardRequests(
 			}
 		case frame.GetCommandResult() != nil:
 			reply := frame.GetCommandResult()
-			l.trace.results = append(l.trace.results, noticeResult{reply.GetCommandId(), reply.GetAttempt(), reply.GetOutcome()})
-			l.mu.Unlock()
-			// Only the relay sends notices. The application has no stored command for them.
-			continue
+			result := noticeResult{reply.GetCommandId(), reply.GetAttempt(), reply.GetOutcome()}
+			l.trace.results = append(l.trace.results, result)
+			_, skip = l.injected[commandAttempt{result.id, result.attempt}]
+			// Only results for injected commands or deliberate cuts stay in the relay.
+			skip = skip || (controls.dropResult != nil && controls.dropResult(result))
 		}
 		l.mu.Unlock()
+		if skip {
+			continue
+		}
+		if frame.GetEvent() != nil && controls.releaseReports != nil {
+			select {
+			case <-controls.releaseReports:
+			case <-ctx.Done():
+				return
+			}
+		}
 		if upstream.Send(frame) != nil {
 			return
 		}
@@ -229,5 +289,18 @@ func (l *relayLeg) recordReply(frame *linkv1.OpenResponse) {
 		l.trace.approval = welcome.GetState().GetApproval()
 	case frame.GetEventAck() != nil:
 		l.trace.acks = append(l.trace.acks, frame.GetEventAck().GetThrough())
+	case frame.GetCommand() != nil:
+		cmd := frame.GetCommand()
+		delivery := commandDelivery{id: cmd.GetId(), attempt: cmd.GetAttempt(), expiry: cmd.GetExpiresAt().AsTime()}
+		switch {
+		case cmd.GetSetState() != nil:
+			delivery.kind = "set_state"
+			delivery.revision = cmd.GetSetState().GetState().GetRevision()
+		case cmd.GetScanHarnesses() != nil:
+			delivery.kind = "scan_harnesses"
+		case cmd.GetRestart() != nil:
+			delivery.kind = "restart"
+		}
+		l.trace.commands = append(l.trace.commands, delivery)
 	}
 }

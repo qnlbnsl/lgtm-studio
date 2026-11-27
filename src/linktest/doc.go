@@ -1,8 +1,8 @@
 // Package linktest exercises the client and server together through their public
 // test entry points, with a disposable PostgreSQL database.
 //
-// The combined checks still to come are TestLinkCommandAttemptsAcrossReconnect,
-// TestLinkRestartReplaysAfterDroppedResult, TestLinkSameStreamApproval,
-// TestLinkScanDoesNotDelayRestart, TestLinkCommandProcess, and busy scan expiry.
-// They require the server's stored commands.
+// The command process scenario remains deferred. TestLinkCommandProcess would
+// need a public fixture that launches the actual client command and exposes its
+// operating system exit status. The clienttest fixture runs the application in
+// process, and the command package's subprocess entry is private to its tests.
 package linktest

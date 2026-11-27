@@ -340,7 +340,26 @@ func checkScriptedReplay(t *testing.T, server *servertest.Server, db *pgx.Conn, 
 		if err := stream.Send(&linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Event{Event: event}}); err != nil {
 			t.Fatal("The scripted peer could not send its test report.")
 		}
-		return stream.Receive()
+		for {
+			frame, err := stream.Receive()
+			if err != nil || frame.GetCommand() == nil {
+				return frame, err
+			}
+			wire, marshalErr := proto.Marshal(frame)
+			if marshalErr != nil || bytes.Contains(wire, []byte(unknownMarker)) {
+				t.Fatal("An unknown report field reached a wire reply.")
+			}
+			cmd := frame.GetCommand()
+			if cmd.GetSetState() == nil {
+				t.Fatal("The scripted peer received an unexpected action while waiting for a report acknowledgement.")
+			}
+			result := &linkv1.CommandResult{
+				CommandId: cmd.GetId(), Attempt: cmd.GetAttempt(), Outcome: linkv1.CommandOutcome_COMMAND_OUTCOME_DONE,
+			}
+			if err := stream.Send(&linkv1.OpenRequest{Kind: &linkv1.OpenRequest_CommandResult{CommandResult: result}}); err != nil {
+				t.Fatal("The scripted peer could not acknowledge the stored state notice.")
+			}
+		}
 	}
 	frame, err = send(repeat)
 	if err != nil || frame.GetEventAck().GetThrough() != current || mark(t, db, id) != current {

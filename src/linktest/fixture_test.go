@@ -148,13 +148,21 @@ type runningClient struct {
 
 func startClient(t *testing.T, opts clienttest.Options) *runningClient {
 	t.Helper()
+	return startClientExpecting(t, opts, 0)
+}
+
+func startClientExpecting(t *testing.T, opts clienttest.Options, code int) *runningClient {
+	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
 	run := &runningClient{cancel: cancel, done: make(chan struct{})}
 	go func() {
 		run.code = clienttest.Run(ctx, opts)
 		close(run.done)
 	}()
-	t.Cleanup(func() { run.stop(t) })
+	t.Cleanup(func() {
+		run.cancel()
+		run.expectExit(t, code)
+	})
 	return run
 }
 
@@ -166,9 +174,14 @@ func (r *runningClient) stop(t *testing.T) {
 
 func (r *runningClient) expectCleanExit(t *testing.T) {
 	t.Helper()
+	r.expectExit(t, 0)
+}
+
+func (r *runningClient) expectExit(t *testing.T, code int) {
+	t.Helper()
 	receive(t, r.done, "the client to exit and release its state")
-	if r.code != 0 {
-		t.Fatalf("The client exited with status %d, want 0.", r.code)
+	if r.code != code {
+		t.Fatalf("The client exited with status %d, want %d.", r.code, code)
 	}
 }
 
