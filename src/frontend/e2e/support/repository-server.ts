@@ -10,7 +10,7 @@ import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 import { Code, ConnectError, cors, type ConnectRouter, type ConnectRouterOptions } from '@connectrpc/connect';
-import { ClientService, type Client } from '@lgtm/api/clients';
+import { ClientService, ClientState, type Client, type WatchClientsResponse } from '@lgtm/api/clients';
 import { ProjectService } from '@lgtm/api/projects';
 import { SessionService, SignInResult, type GetServerResponse } from '@lgtm/api/session';
 import { test as base, type Page } from '@playwright/test';
@@ -49,6 +49,7 @@ declare global {
 function observeBrowserCalls(): Plugin {
   const api = join(frontend, 'src/server/api.ts');
   const data = join(frontend, 'src/data.ts');
+  const main = join(frontend, 'src/main.ts');
   const probe = '\0discovery-connect-probe';
   return {
     name: 'discovery-connect-probe',
@@ -82,6 +83,18 @@ function observeBrowserCalls(): Plugin {
     },
     transform(source, id) {
       if (id === data) return source + '\nif (window.discoveryProbe) window.discoveryProbe.harnessInstalled = id => Boolean(HARNESSES[id]?.installed);\n';
+      if (id === main) return source + `
+        import { unmount } from './app';
+        import { connect } from './server/sync';
+        if (window.repositorySessionProbe) window.repositorySessionProbe.bridge = {
+          connect,
+          remount() {
+            const container = document.getElementById('app');
+            unmount(container);
+            window.lgtm = mount(container);
+          },
+        };
+      `;
     },
   };
 }
@@ -249,7 +262,7 @@ export async function serveRepositoryDiscovery(pageOrigin: string, discovery: Pa
   };
 }
 
-export async function serveWebsite(directory: string) {
+export async function serveWebsite(directory: string, hostname?: string) {
   const types: Record<string, string> = { html: 'text/html', js: 'text/javascript', css: 'text/css', woff2: 'font/woff2' };
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? '/', 'http://127.0.0.1');
@@ -261,7 +274,13 @@ export async function serveWebsite(directory: string) {
     response.setHeader('Content-Type', types[file.split('.').at(-1)!] ?? 'application/octet-stream');
     createReadStream(file).pipe(response);
   });
-  return { origin: await listen(server), stop: () => stop(server) };
+  return { origin: withHostname(await listen(server), hostname), stop: () => stop(server) };
+}
+
+function withHostname(origin: string, hostname?: string) {
+  const url = new URL(origin);
+  if (hostname) url.hostname = hostname;
+  return url.origin;
 }
 
 export async function startStandaloneMock(pageOrigin: string) {
@@ -344,4 +363,214 @@ export async function observeWebsite(page: Page, origins: string[]) {
     };
   });
   return { calls, errors };
+}
+
+export const sessionProcedure = {
+  discovery: procedure.discovery,
+  signIn: procedure.signIn,
+  signOut: procedure.signOut,
+  watch: procedure.machines,
+  create: `/${ClientService.typeName}/${ClientService.method.createClientToken.name}`,
+  revoke: `/${ClientService.typeName}/${ClientService.method.revokeClientToken.name}`,
+  approve: `/${ClientService.typeName}/${ClientService.method.approveClient.name}`,
+  remove: `/${ClientService.typeName}/${ClientService.method.removeClient.name}`,
+  scan: `/${ClientService.typeName}/${ClientService.method.scanClientHarnesses.name}`,
+} as const;
+type SessionMethod = keyof typeof sessionProcedure;
+type CookieObservation = 'missing' | 'accepted' | 'unexpected';
+interface SessionCall { listener: string; method: SessionMethod; cookie: CookieObservation }
+
+export function sessionRegistry() {
+  return { active: false, value: crypto.randomUUID(), calls: [] as SessionCall[] };
+}
+
+// Each listener can hold one request per procedure. Call records contain only cookie classifications.
+export async function serveRepositorySession({ pageOrigin, hostname, listener, registry, clients = [], sample = false }: {
+  pageOrigin: string; hostname: string; listener: string; registry: ReturnType<typeof sessionRegistry>;
+  clients?: Client[]; sample?: boolean;
+}) {
+  const cookieName = 'lgtm-session-fixture';
+  const cookieFlags = '; Path=/; HttpOnly; SameSite=Strict';
+  type Held = { arrived: ReturnType<typeof barrier>; release: ReturnType<typeof barrier>; aborted: ReturnType<typeof barrier> };
+  const holds = new Map<SessionMethod, Held>();
+  type StreamStep = WatchClientsResponse['change'] | Code;
+  const steps: StreamStep[] = [];
+  let stepReady = barrier();
+  const watchAborts: number[] = [];
+  let watchCount = 0;
+  let tokenCount = 0;
+  const refusals = new Map<SessionMethod, Code>();
+
+  async function record(method: SessionMethod, headers: Headers, signal: AbortSignal, protect = true) {
+    const cookie = (headers.get('cookie') ?? '').split(/; */).find((pair) => pair.startsWith(cookieName + '='));
+    const accepted = registry.active && cookie === cookieName + '=' + registry.value;
+    registry.calls.push({ listener, method, cookie: accepted ? 'accepted' : cookie ? 'unexpected' : 'missing' });
+    if (protect && !accepted) throw new ConnectError('The fixture session is missing.', Code.Unauthenticated);
+    const hold = holds.get(method);
+    if (hold) {
+      const aborted = untilAborted(signal);
+      holds.delete(method);
+      void aborted.then(hold.aborted.open);
+      hold.arrived.open();
+      await Promise.race([hold.release.reached, aborted]);
+      if (signal.aborted) throw new ConnectError('The fixture call ended.', Code.Canceled);
+    }
+    const refusal = refusals.get(method);
+    if (refusal !== undefined) throw new ConnectError('The fixture refused this call.', refusal);
+    return accepted;
+  }
+
+  const handler = connectNodeAdapter({
+    routes(router) {
+      router.service(SessionService, {
+        async getServer(_request, context) {
+          const signedIn = await record('discovery', context.requestHeader, context.signal, false);
+          return { product: 'lgtm-studio', contract: 1, sample, signedIn, services: sample ? [] : [ProjectService.typeName] };
+        },
+        async signIn(_request, context) {
+          await record('signIn', context.requestHeader, context.signal, false);
+          registry.active = true;
+          context.responseHeader.set('Set-Cookie', cookieName + '=' + registry.value + cookieFlags);
+          return { result: SignInResult.SIGNED_IN };
+        },
+        async signOut(_request, context) {
+          await record('signOut', context.requestHeader, context.signal);
+          registry.active = false;
+          context.responseHeader.set('Set-Cookie', cookieName + '=' + cookieFlags + '; Max-Age=0');
+          return {};
+        },
+      });
+      router.service(ClientService, {
+        async *watchClients(_request, context) {
+          await record('watch', context.requestHeader, context.signal);
+          const watch = ++watchCount;
+          const aborted = untilAborted(context.signal);
+          void aborted.then(() => watchAborts.push(watch));
+          yield { change: { case: 'all', value: { clients } } };
+          while (!context.signal.aborted) {
+            if (steps.length === 0) await Promise.race([stepReady.reached, aborted]);
+            if (context.signal.aborted) return;
+            const step = steps.shift();
+            if (steps.length === 0) stepReady = barrier();
+            if (typeof step === 'number') throw new ConnectError('The fixture ended the watch.', step);
+            if (step) yield { change: step };
+          }
+        },
+        async createClientToken(_request, context) {
+          const tokenId = 'pair-' + ++tokenCount;
+          await record('create', context.requestHeader, context.signal);
+          // The identifier is enough to match an arriving machine. The fixture sends no secret.
+          return { tokenId, expiresAt: { seconds: 1795784400n }, address: '10.2.3.4' };
+        },
+        async revokeClientToken(_request, context) {
+          await record('revoke', context.requestHeader, context.signal);
+          return {};
+        },
+        async approveClient(request, context) {
+          await record('approve', context.requestHeader, context.signal);
+          return { client: { id: request.id, name: request.name, state: ClientState.ONLINE } };
+        },
+        async removeClient(_request, context) {
+          await record('remove', context.requestHeader, context.signal);
+          return {};
+        },
+        async scanClientHarnesses(_request, context) {
+          await record('scan', context.requestHeader, context.signal);
+          return {};
+        },
+      });
+      router.service(ProjectService, {
+        async *watchRepositories(_request, context) {
+          if (!registry.active || !(context.requestHeader.get('cookie') ?? '').split(/; */).includes(cookieName + '=' + registry.value)) {
+            throw new ConnectError('The fixture session is missing.', Code.Unauthenticated);
+          }
+          yield { change: { case: 'all', value: { repositories: [] } } };
+          await untilAborted(context.signal);
+        },
+      });
+    },
+  });
+  const server = createServer((request, response) => {
+    if (request.headers.origin === pageOrigin) {
+      response.setHeader('Access-Control-Allow-Origin', pageOrigin);
+      response.setHeader('Access-Control-Allow-Credentials', 'true');
+      response.setHeader('Access-Control-Expose-Headers', cors.exposedHeaders.join(', '));
+      response.setHeader('Vary', 'Origin');
+      if (request.method === 'OPTIONS') {
+        response.setHeader('Access-Control-Allow-Methods', cors.allowedMethods.join(', '));
+        response.setHeader('Access-Control-Allow-Headers', cors.allowedHeaders.join(', '));
+        response.writeHead(204).end();
+        return;
+      }
+    }
+    handler(request, response);
+  });
+  return {
+    origin: withHostname(await listen(server), hostname),
+    listener,
+    calls: () => registry.calls.filter((call) => call.listener === listener),
+    watchAborts,
+    refuse(method: SessionMethod, code: Code) { refusals.set(method, code); },
+    hold(method: SessionMethod) {
+      const hold = { arrived: barrier(), release: barrier(), aborted: barrier() };
+      holds.set(method, hold);
+      return { arrived: hold.arrived.reached, release: hold.release.open, aborted: hold.aborted.reached };
+    },
+    send(step: StreamStep) { steps.push(step); stepReady.open(); },
+    stop: () => stop(server),
+  };
+}
+
+interface BrowserReply {
+  ready: boolean;
+  release: () => void;
+}
+
+declare global {
+  interface Window {
+    repositorySessionProbe: {
+      hold: (origin: string, match: string) => BrowserReply;
+      reply?: BrowserReply;
+      requests: string[];
+      watchSignals: { origin: string; signal: AbortSignal | null | undefined }[];
+      bridge?: { connect: (address: string) => Promise<void>; remount: () => void };
+    };
+  }
+}
+
+export async function observeRepositorySession(page: Page, origins: string[]) {
+  const trace = await observeWebsite(page, origins);
+  await page.addInitScript((watchPath) => {
+    const send = window.fetch.bind(window);
+    const watchSignals: Window['repositorySessionProbe']['watchSignals'] = [];
+    let held: { origin: string; match: string; ready: boolean; release: () => void; gate: Promise<void> } | undefined;
+    window.repositorySessionProbe = {
+      watchSignals, requests: [],
+      hold(origin, match) {
+        let release!: () => void;
+        const gate = new Promise<void>((done) => { release = done; });
+        return held = { origin, match, ready: false, gate, release };
+      },
+    };
+    window.fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+      if (url.pathname.startsWith('/lgtm.v1.')) window.repositorySessionProbe.requests.push(url.origin + url.pathname);
+      const reply = held && url.origin === held.origin && url.pathname.includes(held.match) ? held : undefined;
+      if (reply) held = undefined;
+      if (url.pathname === watchPath) watchSignals.push({ origin: url.origin, signal: init?.signal });
+      const response = await send(input, init);
+      if (!reply) return response;
+
+      // Hold a fully received body at the application boundary, even if its old request is later aborted.
+      const body = await response.arrayBuffer();
+      reply.ready = true;
+      await reply.gate;
+      // Keep body reads on the promise queue once the barrier opens.
+      return Object.assign(new Response(null, response), {
+        arrayBuffer: async () => body,
+        json: async () => JSON.parse(new TextDecoder().decode(body)),
+      });
+    };
+  }, procedure.machines);
+  return trace;
 }
