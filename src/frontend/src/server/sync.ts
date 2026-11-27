@@ -4,7 +4,7 @@
 // it once and then sends each change. Compatibility workspaces also hold sample collections.
 import { Code, ConnectError } from '@connectrpc/connect';
 import { timestampMs } from '@bufbuild/protobuf/wkt';
-import { ClientState, type Client } from '@lgtm/api/clients';
+import { ClientState, type Client, type WatchClientsResponse } from '@lgtm/api/clients';
 import { MapState } from '@lgtm/api/map';
 import { PreviewState } from '@lgtm/api/preview';
 import { ProjectService } from '@lgtm/api/projects';
@@ -13,6 +13,7 @@ import { FRAMED, persist, store, update } from '../lib';
 import type { JoiningClient, Machine, Repo, State } from '../types';
 import { BadAddress, SAMPLE, addressLabel, fixedAddress, rememberAddress, rememberedAddress, serverUrl } from './address';
 import { WrongServer, api, onServer, openServer, selectServer, type Api, type ServerCandidate } from './api';
+import { applyRepositoryChange } from './repositories';
 
 const toMachine = (c: Client): Machine => ({
   id: c.id, name: c.name, role: c.hostsServer ? 'master' : 'worker',
@@ -58,22 +59,34 @@ export interface SessionScope {
 
 let session: SessionScope | null = null;
 let controller: AbortController | null = null;
-let watching: SessionScope | null = null;
+
+interface WatchAttempt { openedAt: number; initialized: boolean }
+interface WatchFeed { attempt?: WatchAttempt; controller: AbortController }
+let machineFeed: WatchFeed | null = null;
+let repositoryFeed: WatchFeed | null = null;
 
 /** Captures the clients and lifetime that own a protected operation. */
 export function captureSession(): SessionScope | null { return session; }
 
-// This is a stub of the test writer for the current repository snapshot.
+/** Returns the repository list once the current attempt has received its initial snapshot. */
 export function currentRepositorySnapshot(): { openedAt: number; repos: readonly Repo[] } | undefined {
-  return undefined;
+  const attempt = repositoryFeed?.attempt;
+  if (attempt?.initialized) return { openedAt: attempt.openedAt, repos: store.state.repos };
 }
 
-// This is a stub of the test writer for the repository watch refresh.
-export function refreshRepositories(): void {}
+/** Opens a fresh repository watch without restarting the machine watch. */
+export function refreshRepositories(): void {
+  const scope = captureSession();
+  if (!scope || !repositoryFeed) return;
+  repositoryFeed.controller.abort();
+  startRepositoryWatch(scope);
+  update(updateWatchConnection);
+}
 
 function stopWatching(): void {
   session = null;
-  watching = null;
+  machineFeed = null;
+  repositoryFeed = null;
   controller?.abort();
   controller = null;
 }
@@ -92,6 +105,7 @@ function clearMachines(s: State): void {
 
 function clearRepositorySession(s: State): void {
   clearMachines(s);
+  s.repos = [];
   Object.assign(s, {
     expanded: {}, inspecting: {}, ui: {}, dialog: null, pending: {}, toasts: [], drafts: Object.create(null),
     phoneOffer: null, machineDetails: null, subscriptions: [], projects: [], teams: [], agents: [],
@@ -130,38 +144,86 @@ function waitForRetry(signal: AbortSignal, delay: number): Promise<void> {
   });
 }
 
-// Reads the collections the server owns, and follows their changes until the session ends.
-function watch(scope: SessionScope): void {
-  watching = scope;
-  void (async () => {
-    for (let wait = 500; scope.isCurrent(); wait = Math.min(wait * 2, 8000)) {
-      try {
-        for await (const { change } of scope.clients.clients.watchClients({}, { signal: scope.signal })) {
-          if (!scope.isCurrent()) return;
-          wait = 500;
-          update((s) => {
-            if (change.case === 'all') { s.machines = change.value.clients.filter((c) => !waits(c)).map(toMachine); s.joining = change.value.clients.filter(waits).map(toJoining); s.server.synced = true; s.conn.status = 'live'; }
-            else if (change.case === 'saved') {
-              const c = change.value; s.machines = s.machines.filter((m) => m.id !== c.id); s.joining = s.joining.filter((j) => j.id !== c.id);
-              if (waits(c)) s.joining.push(toJoining(c)); else s.machines.push(toMachine(c));
-            } else if (change.case === 'removedId') { s.machines = s.machines.filter((m) => m.id !== change.value); s.joining = s.joining.filter((j) => j.id !== change.value); }
-            s.conn.lastHeard = Date.now();
-          });
-        }
-      } catch (e) {
-        if (!scope.isCurrent() || expireSession(scope, e)) return;
-        update((s) => { s.conn.status = 'reconnecting'; });
+function applyClientChange(s: State, { change }: WatchClientsResponse): void {
+  if (change.case === 'all') {
+    s.machines = change.value.clients.filter((c) => !waits(c)).map(toMachine);
+    s.joining = change.value.clients.filter(waits).map(toJoining);
+  } else if (change.case === 'saved') {
+    const c = change.value;
+    s.machines = s.machines.filter((m) => m.id !== c.id);
+    s.joining = s.joining.filter((j) => j.id !== c.id);
+    if (waits(c)) s.joining.push(toJoining(c));
+    else s.machines.push(toMachine(c));
+  } else if (change.case === 'removedId') {
+    s.machines = s.machines.filter((m) => m.id !== change.value);
+    s.joining = s.joining.filter((j) => j.id !== change.value);
+  }
+}
+
+function updateWatchConnection(s: State): void {
+  const live = machineFeed?.attempt?.initialized && repositoryFeed?.attempt?.initialized;
+  if (live) s.server.synced = true;
+  s.conn.status = live ? 'live' : 'reconnecting';
+}
+
+async function followWatch<T extends { change: { case: string | undefined } }>(
+  scope: SessionScope,
+  feed: WatchFeed,
+  open: (signal: AbortSignal) => AsyncIterable<T>,
+  apply: (s: State, frame: T) => void,
+): Promise<void> {
+  const signal = AbortSignal.any([scope.signal, feed.controller.signal]);
+  const repositoryMode = store.state.server.repositoryMode;
+  for (let wait = 500; !signal.aborted; wait = Math.min(wait * 2, 8000)) {
+    const attempt = { openedAt: performance.now(), initialized: false };
+    feed.attempt = attempt;
+    const current = () => scope.isCurrent() && !signal.aborted && feed.attempt === attempt;
+    try {
+      for await (const frame of open(signal)) {
+        if (!current()) return;
+        const kind = frame.change.case;
+        if (kind === 'all') attempt.initialized = true;
+        if (repositoryMode && (!attempt.initialized || kind === undefined)) continue;
+        wait = 500;
+        update((s) => {
+          apply(s, frame);
+          if (repositoryMode) updateWatchConnection(s);
+          else if (kind === 'all') {
+            s.server.synced = true;
+            s.conn.status = 'live';
+          }
+          s.conn.lastHeard = Date.now();
+        });
       }
-      // The stream ended or failed. Wait a little longer each time, and read everything again.
-      if (scope.isCurrent()) await waitForRetry(scope.signal, wait);
+    } catch (e) {
+      if (!current() || expireSession(scope, e)) return;
+      if (!repositoryMode) update((s) => { s.conn.status = 'reconnecting'; });
     }
-  })();
+    if (!current()) return;
+    feed.attempt = undefined;
+    if (repositoryMode) update(updateWatchConnection);
+    await waitForRetry(signal, wait);
+  }
+}
+
+function startRepositoryWatch(scope: SessionScope): void {
+  const feed = { controller: new AbortController() };
+  repositoryFeed = feed;
+  void followWatch(scope, feed, (signal) => scope.clients.projects.watchRepositories({}, { signal }), applyRepositoryChange);
+}
+
+// Reads the collections the server owns and follows their changes until the session ends.
+function watch(scope: SessionScope): void {
+  const feed = { controller: new AbortController() };
+  machineFeed = feed;
+  void followWatch(scope, feed, (signal) => scope.clients.clients.watchClients({}, { signal }), applyClientChange);
+  if (store.state.server.repositoryMode) startRepositoryWatch(scope);
 }
 
 /** Starts reading the server's records, when nothing reads them yet. */
 export function ensureReading(): void {
   const scope = captureSession();
-  if (scope && !watching && store.state.session.status === 'in') watch(scope);
+  if (scope && !machineFeed && store.state.session.status === 'in') watch(scope);
 }
 
 function forgetSelection(): number {
@@ -252,6 +314,7 @@ export async function signIn(password: string, apply: (status: SignInStatus) => 
   if (selected !== server || authIntent !== mine) return 'obsolete';
   if (status === 'in') {
     stopWatching();
+    if (store.state.server.repositoryMode) update(clearRepositorySession);
     startSession(server);
   }
   apply(status);

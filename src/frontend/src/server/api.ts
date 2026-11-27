@@ -8,12 +8,19 @@ import { createConnectTransport } from '@connectrpc/connect-web';
 import { ClientService } from '@lgtm/api/clients';
 import { MapService } from '@lgtm/api/map';
 import { PreviewService } from '@lgtm/api/preview';
+import { ProjectService } from '@lgtm/api/projects';
 import { SessionService, type GetServerResponse } from '@lgtm/api/session';
 import { SAMPLE } from './address';
 
 /** The revision of the contract this website speaks. */
 export const CONTRACT = 1;
-export interface Api { session: Client<typeof SessionService>; clients: Client<typeof ClientService>; maps: Client<typeof MapService>; previews: Client<typeof PreviewService> }
+export interface Api {
+  session: Client<typeof SessionService>;
+  clients: Client<typeof ClientService>;
+  maps: Client<typeof MapService>;
+  previews: Client<typeof PreviewService>;
+  projects: Client<typeof ProjectService>;
+}
 export interface ServerCandidate { url: string; clients: Api; server: GetServerResponse }
 let current: ServerCandidate | null = null;
 
@@ -42,7 +49,13 @@ export async function openServer(url: string, sample: { signedIn: boolean }): Pr
     // The session is a cookie of the server, so each call sends the server's cookies.
     transport = createConnectTransport({ baseUrl: url, fetch: (input, init) => fetch(input, { ...init, credentials: 'include' }) });
   }
-  const clients: Api = { session: createClient(SessionService, transport), clients: createClient(ClientService, transport), maps: createClient(MapService, transport), previews: createClient(PreviewService, transport) };
+  const clients: Api = {
+    session: createClient(SessionService, transport),
+    clients: createClient(ClientService, transport),
+    maps: createClient(MapService, transport),
+    previews: createClient(PreviewService, transport),
+    projects: createClient(ProjectService, transport),
+  };
   const server = await clients.session.getServer({}, { timeoutMs: 6000 });
   if (server.product !== 'lgtm-studio') throw new WrongServer('What answers there is not an LGTM Studio server.');
   if (server.contract !== CONTRACT) throw new WrongServer(`The server speaks revision ${server.contract} of the contract, and this website speaks revision ${CONTRACT}.`);

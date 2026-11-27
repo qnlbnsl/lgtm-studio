@@ -47,8 +47,12 @@ export interface HarnessRecipe {
 }
 
 // ---- repositories, projects and teams ---------------------------------------------
+export interface RepoFolder { id: Id; clientId: Id; resolvedPath: string }
 export interface Repo {
   id: Id; name: string; main: string; remote?: string | null; folders: Record<string, string>; design?: boolean;
+  remoteOmitted?: boolean;
+  firstCommit?: string;
+  folderRecords?: readonly RepoFolder[];
   /** The letters that start every identifier of the repository's sprints and tasks. */
   prefix?: string;
   description?: string; describedAt?: Ms; describedBy?: Id;

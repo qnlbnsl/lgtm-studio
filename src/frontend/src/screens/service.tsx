@@ -415,8 +415,8 @@ function PairMachine({ s, d }: ScreenProps & { d: DialogState }) {
       if (!current()) return;
       const { machines, joining, server: selected } = store.state;
       const watched = machines.some((m) => m.id === found.id);
-      if (!selected.repositoryMode || watched) update((st) => { st.expanded['machine:' + found.id] = true; });
       if (selected.repositoryMode && !watched && !joining.some((j) => j.id === found.id)) { act.closeDialog(); return; }
+      update((st) => { st.expanded['machine:' + found.id] = true; });
       act.closeDialog(); act.toast(`${name.trim()} is paired`);
     }, (e) => { if (current()) { setBusy(false); setFailed(server.reason(e)); } });
   };
