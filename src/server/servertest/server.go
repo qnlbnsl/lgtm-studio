@@ -38,17 +38,18 @@ type Options struct {
 	Log io.Writer
 	// LinkSeams lets tests observe link phases on start and after restart.
 	LinkSeams LinkSeams
-	// ConfigurePostgres is a stub of the test writer. It is not called yet.
+	// ConfigurePostgres configures a fresh copy of the pool settings before each launch.
 	ConfigurePostgres func(*pgxpool.Config)
 }
 
 // LinkSeams lets tests observe link phases.
 type LinkSeams struct {
 	AfterProof, AfterAdmission func(context.Context, string)
-	BeforeEventAck             func(context.Context, string, uint64)
-	// BeforeEventCommit is a stub of the test writer. It is not called yet.
+	// BeforeEventAck observes each committed mark advance before the acknowledgement.
+	BeforeEventAck func(context.Context, string, uint64)
+	// BeforeEventCommit can fail an event write after report handling and before the mark advances.
 	BeforeEventCommit func(context.Context, string, uint64) error
-	// BeforeCommandSend is a stub of the test writer. It is not called yet.
+	// BeforeCommandSend runs after the command claim commits and before the send begins.
 	BeforeCommandSend func(context.Context, string, string) error
 }
 
@@ -58,12 +59,13 @@ type Server struct {
 	HTTPClient       *http.Client
 	SigningPublicKey ed25519.PublicKey
 
-	env       map[string]string
-	cfg       config.Config
-	transport *http.Transport
-	log       *slog.Logger
-	linkSeams LinkSeams
-	app       *app.Server
+	env               map[string]string
+	cfg               config.Config
+	transport         *http.Transport
+	log               *slog.Logger
+	linkSeams         LinkSeams
+	configurePostgres func(*pgxpool.Config)
+	app               *app.Server
 }
 
 // clientTimeout bounds one request from the fixture's website client.
@@ -117,13 +119,14 @@ func Start(t testing.TB, options Options) *Server {
 		output = io.Discard
 	}
 	s := &Server{
-		URL:        "http://" + listen,
-		HTTPClient: &http.Client{Transport: transport, Jar: jar, Timeout: clientTimeout},
-		env:        env,
-		cfg:        cfg,
-		transport:  transport,
-		log:        slog.New(slog.NewJSONHandler(output, nil)),
-		linkSeams:  options.LinkSeams,
+		URL:               "http://" + listen,
+		HTTPClient:        &http.Client{Transport: transport, Jar: jar, Timeout: clientTimeout},
+		env:               env,
+		cfg:               cfg,
+		transport:         transport,
+		log:               slog.New(slog.NewJSONHandler(output, nil)),
+		linkSeams:         options.LinkSeams,
+		configurePostgres: options.ConfigurePostgres,
 	}
 	// Registered after the database and the vault, so it runs before their cleanup.
 	t.Cleanup(func() { s.stop() })
@@ -169,11 +172,12 @@ func (s *Server) Environment() map[string]string {
 
 func (s *Server) launch(t testing.TB) {
 	t.Helper()
-	// This adapter is a stub of the test writer. It forwards the built callbacks.
-	server, err := app.StartWithLinkSeams(t.Context(), s.cfg, s.log, app.LinkSeams{
-		AfterProof: s.linkSeams.AfterProof, AfterAdmission: s.linkSeams.AfterAdmission,
-		BeforeEventAck: s.linkSeams.BeforeEventAck,
-	})
+	cfg := s.cfg
+	if s.configurePostgres != nil {
+		cfg.Postgres = cfg.Postgres.Copy()
+		s.configurePostgres(cfg.Postgres)
+	}
+	server, err := app.StartWithLinkSeams(t.Context(), cfg, s.log, app.LinkSeams(s.linkSeams))
 	if err != nil {
 		t.Fatal("The fixture application did not start.")
 	}

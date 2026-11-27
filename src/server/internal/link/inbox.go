@@ -25,6 +25,10 @@ type EventResult struct {
 }
 
 func (s *State) ApplyEvent(ctx context.Context, machineID, streamID string, event *linkv1.Event) (EventResult, error) {
+	return s.applyEvent(ctx, machineID, streamID, event, nil)
+}
+
+func (s *State) applyEvent(ctx context.Context, machineID, streamID string, event *linkv1.Event, beforeCommit func(context.Context, string, uint64) error) (EventResult, error) {
 	var result EventResult
 	err := s.store.Write(ctx, func(ctx context.Context, tx *store.Tx) error {
 		machine, err := s.registry.Lock(ctx, tx, machineID)
@@ -59,6 +63,11 @@ WHERE m.machine_id = $1 AND c.stream_id = $2`, machineID, streamID).Scan(&mark)
 
 		if err := s.applyReport(ctx, tx, machine, event); err != nil {
 			return err
+		}
+		if beforeCommit != nil {
+			if err := beforeCommit(ctx, machineID, number); err != nil {
+				return err
+			}
 		}
 		if _, err := tx.Exec(ctx, `UPDATE link_machines SET event_mark = $2 WHERE machine_id = $1`, machineID, int64(number)); err != nil {
 			return err

@@ -93,10 +93,12 @@ type phaseBudgets struct {
 	admission, migration, prerequisites, probe time.Duration
 }
 
-// LinkSeams lets tests observe handshake and acknowledgement phases.
+// LinkSeams lets tests observe handshake, event and command phases.
 type LinkSeams struct {
 	AfterProof, AfterAdmission func(context.Context, string)
 	BeforeEventAck             func(context.Context, string, uint64)
+	BeforeEventCommit          func(context.Context, string, uint64) error
+	BeforeCommandSend          func(context.Context, string, string) error
 }
 
 // Start checks the prerequisites in order and returns a listening server, or a *StartupError.

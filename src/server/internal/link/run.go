@@ -24,6 +24,8 @@ type Options struct {
 type Seams struct {
 	AfterProof, AfterAdmission func(context.Context, string)
 	BeforeEventAck             func(context.Context, string, uint64)
+	BeforeEventCommit          func(context.Context, string, uint64) error
+	BeforeCommandSend          func(context.Context, string, string) error
 }
 
 type CommandHooks interface {

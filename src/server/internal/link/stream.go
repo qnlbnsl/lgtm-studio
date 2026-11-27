@@ -104,6 +104,11 @@ func (s *Service) serve(ctx context.Context, handle *Handle, frames <-chan recei
 					continue
 				}
 				turn = context.WithValue(ctx, commandSessionKey{}, session)
+				if hook := s.streaming.options.Seams.BeforeCommandSend; hook != nil {
+					turn = context.WithValue(turn, afterCommandClaimKey{}, func(ctx context.Context, command *linkv1.Command) error {
+						return hook(ctx, machineID, command.GetId())
+					})
+				}
 			}
 			var err error
 			tryCommand, err = hooks.SendNext(turn, machineID, streamID, sendCommand)
@@ -133,7 +138,7 @@ func (s *Service) dispatch(ctx context.Context, machineID, streamID string, fram
 		}
 		return send(&linkv1.OpenResponse{Kind: &linkv1.OpenResponse_HeartbeatAck{HeartbeatAck: &linkv1.HeartbeatAck{}}})
 	case *linkv1.OpenRequest_Event:
-		result, err := link.state.ApplyEvent(ctx, machineID, streamID, kind.Event)
+		result, err := link.state.applyEvent(ctx, machineID, streamID, kind.Event, link.options.Seams.BeforeEventCommit)
 		if err != nil {
 			return err
 		}
