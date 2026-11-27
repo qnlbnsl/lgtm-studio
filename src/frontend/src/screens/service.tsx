@@ -4,7 +4,7 @@ import * as liveGit from '../live/git';
 import * as signInUi from '../live/signin';
 // The service pages: Machines, Harnesses, Notifications and Service settings,
 // plus one project's Settings tab and the Add repository dialog.
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import {
   Icon, cx, update, store, go, href, ago, clock, dayLabel, useNow, uid, plural, MIN, HOUR, DAY, live, refuse,
 } from '../lib';
@@ -18,7 +18,12 @@ import * as act from '../actions';
 import * as board from '../live/board';
 import * as mocks from '../live/mocks';
 import * as server from '../server/sync';
+import {
+  addRepository, defaultFolderMachine, folderFailure, folderIntent, folderMachineRemoved, folderNetwork,
+  folderRejected, folderRepositoryMissing, inspectFolder, type FolderIntent,
+} from '../server/folders';
 import { Avatar, Menu, Dialog, registerDialog, Empty, NotConnected, StateWord, CodeBox, SettingHelp } from '../ui';
+import type { FolderFacts } from '@lgtm/api/projects';
 import type { ComponentChildren, ComponentType, TargetedEvent } from 'preact';
 import type { Agent, DialogState, Harness, HarnessRecipe, Id, Loose, Machine, Ms, Notification, Project, ProjectAssignment, Route, Settings, State, Subscription, Team } from '../types';
 import type { SignInCheck } from '../live/signin';
@@ -499,6 +504,275 @@ registerDialog('pair-machine', PairMachine);
 
 // ---- add repository ------------------------------------------------------------
 function AddRepository({ s, d }: DialogProps) {
+  // DialogHost keeps the component mounted when one dialog replaces another of the same type.
+  const activation = useRef({ dialog: d, key: 0 });
+  if (activation.current.dialog !== d) activation.current = { dialog: d, key: activation.current.key + 1 };
+  return s.server.repositoryMode
+    ? <WatchedAddRepository key={activation.current.key} s={s} d={d} />
+    : <CompatibilityAddRepository s={s} d={d} />;
+}
+
+type FolderInspection = { controller: AbortController; timer: ReturnType<typeof setTimeout>; facts?: FolderFacts };
+type FolderSave = { intent: FolderIntent; firstWall: number; firstElapsed: number };
+type SavedFolder = { repositoryId: string; folderId: string; receivedAt: number };
+type AddProgress =
+  | { phase: 'sending'; save: FolderSave; controller: AbortController }
+  | { phase: 'replay'; save: FolderSave }
+  | { phase: 'joining'; save: FolderSave; saved: SavedFolder; startedAt: number }
+  | { phase: 'recheck'; save: FolderSave; saved: SavedFolder };
+
+const addReplayWindow = 23 * HOUR;
+const repositoryRefreshDelay = 2000;
+const repositoryJoinDeadline = 6000;
+
+function WatchedAddRepository({ s, d }: DialogProps) {
+  const [scope] = useState(server.captureSession);
+  const known = d.repo === undefined ? null : byId(s.repos, d.repo);
+  const [input, setInput] = useState(() => {
+    const clientId = defaultFolderMachine(s.machines, d.machine);
+    const machine = byId(s.machines, clientId);
+    return { clientId, path: machine?.workspace && known ? `${machine.workspace}/${known.name}` : '' };
+  });
+  const { clientId, path } = input;
+  const m = byId(s.machines, clientId);
+  const online = m?.status === 'online';
+  const valid = path.startsWith('/') || path === '~' || path.startsWith('~/');
+  const [facts, setFacts] = useState<FolderFacts | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [feedback, setFeedback] = useState('');
+  const [removedClient, setRemovedClient] = useState('');
+  const inspection = useRef<FolderInspection | null>(null);
+  const addProgress = useRef<AddProgress | null>(null);
+  const [progress, renderProgress] = useState<AddProgress | null>(null);
+
+  const isCurrent = () => !!scope?.isCurrent() && store.state.dialog === d;
+  const registered = (id: string) => byId(store.state.machines, id);
+  const setProgress = (next: AddProgress | null) => {
+    const previous = addProgress.current;
+    addProgress.current = next;
+    if (previous?.phase === 'sending') previous.controller.abort();
+    renderProgress(next);
+  };
+  const cancelInspection = () => {
+    const previous = inspection.current;
+    inspection.current = null;
+    if (previous) {
+      clearTimeout(previous.timer);
+      previous.controller.abort();
+    }
+  };
+  const clearInspection = () => {
+    cancelInspection();
+    setFacts(null);
+    setChecking(false);
+  };
+  const edit = (next: typeof input) => {
+    if (!isCurrent() || (next.clientId === clientId && next.path === path)) return;
+    clearInspection();
+    setProgress(null);
+    setFeedback('');
+    setRemovedClient('');
+    setInput(next);
+  };
+  const settleRemoval = (id: string) => {
+    setProgress(null);
+    clearInspection();
+    setRemovedClient(id);
+    setFeedback(folderMachineRemoved);
+  };
+  const close = () => {
+    if (!isCurrent()) return;
+    clearInspection();
+    setProgress(null);
+    if (d.back) act.openDialog(d.back); else act.closeDialog();
+  };
+
+  useLayoutEffect(() => () => {
+    cancelInspection();
+    if (addProgress.current?.phase === 'sending') addProgress.current.controller.abort();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (m || !isCurrent()) return;
+    if (clientId && addProgress.current) settleRemoval(clientId);
+    else if (clientId) {
+      clearInspection();
+      if (!removedClient) setFeedback('');
+    }
+    const fallback = defaultFolderMachine(s.machines, d.machine);
+    if (fallback !== clientId) setInput({ clientId: fallback, path });
+  });
+
+  useLayoutEffect(() => {
+    if (!scope || !isCurrent() || !online || !valid || inspection.current || removedClient === clientId) return;
+    const intent = folderIntent({ procedure: 'inspect', clientId, path });
+    const controller = new AbortController();
+    const current = () => !controller.signal.aborted && isCurrent() && !!registered(intent.clientId);
+    setChecking(true);
+    const timer = setTimeout(async () => {
+      if (!current()) return;
+      if (registered(intent.clientId)?.status !== 'online') {
+        cancelInspection();
+        setChecking(false);
+        return;
+      }
+      for (let attempt = 0; current(); attempt++) {
+        try {
+          const reply = await inspectFolder(intent, {
+            client: scope.clients.projects, isCurrent: current,
+            signal: AbortSignal.any([controller.signal, scope.signal]),
+          });
+          if (!reply) return;
+          if (reply.facts) {
+            started.facts = reply.facts;
+            setFacts(reply.facts);
+          }
+          else if (!removedClient) setFeedback(folderRejected);
+        } catch (error) {
+          if (!current() || server.expireSession(scope, error)) return;
+          const failure = folderFailure(error);
+          if (attempt === 0 && failure.retry) continue;
+          if (!removedClient) setFeedback(failure.text);
+        }
+        setChecking(false);
+        return;
+      }
+    }, 700);
+    const started: FolderInspection = { controller, timer };
+    inspection.current = started;
+  }, [input, online]);
+
+  const reconcile = (join: Extract<AddProgress, { phase: 'joining' }>) => {
+    if (!isCurrent() || addProgress.current !== join) return;
+    const { save, saved, startedAt } = join;
+    const machine = registered(save.intent.clientId);
+    if (!machine) return settleRemoval(save.intent.clientId);
+    if (performance.now() - startedAt >= repositoryJoinDeadline) {
+      setProgress({ phase: 'recheck', save, saved });
+      setFeedback(folderNetwork);
+      return;
+    }
+    const snapshot = server.currentRepositorySnapshot();
+    if (!snapshot) return;
+    const repo = byId(snapshot.repos, saved.repositoryId);
+    if (repo?.folderRecords?.some((folder) => folder.id === saved.folderId && folder.clientId === machine.id)) {
+      setProgress(null);
+      update((st) => {
+        st.expanded['repo:' + repo.id] = true;
+        st.dialog = d.back ? { ...d.back, machine: machine.id, repo: repo.id } : null;
+      });
+      act.toast(`Added ${repo.name} on ${machine.name}`);
+    } else if (snapshot.openedAt > saved.receivedAt) {
+      setProgress(null);
+      clearInspection();
+      setFeedback(repo ? folderRejected : folderRepositoryMissing);
+    }
+  };
+
+  useLayoutEffect(() => {
+    if (progress?.phase === 'joining') reconcile(progress);
+  });
+  useLayoutEffect(() => {
+    if (progress?.phase !== 'joining' || addProgress.current !== progress) return;
+    const elapsed = performance.now() - progress.startedAt;
+    const refresh = setTimeout(() => {
+      reconcile(progress);
+      if (isCurrent() && addProgress.current === progress) server.refreshRepositories();
+    }, Math.max(0, Math.ceil(repositoryRefreshDelay - elapsed)));
+    const deadline = setTimeout(() => reconcile(progress), Math.max(0, Math.ceil(repositoryJoinDeadline - elapsed)));
+    return () => { clearTimeout(refresh); clearTimeout(deadline); };
+  }, [progress]);
+
+  const checkWatch = (save: FolderSave, saved: SavedFolder) => {
+    const join = { phase: 'joining', save, saved, startedAt: performance.now() } as const;
+    setProgress(join);
+    reconcile(join);
+  };
+  const add = async () => {
+    if (!scope || !isCurrent() || !registered(clientId)) return;
+    const previous = addProgress.current;
+    if (previous?.phase === 'sending' || previous?.phase === 'joining') return;
+    if (!previous && (!inspection.current?.facts || registered(clientId)?.status !== 'online')) return;
+    setFeedback('');
+    if (previous?.phase === 'recheck') return checkWatch(previous.save, previous.saved);
+    if (previous?.phase === 'replay' && Math.max(
+      Date.now() - previous.save.firstWall, performance.now() - previous.save.firstElapsed,
+    ) >= addReplayWindow) {
+      setProgress(null);
+      clearInspection();
+      setInput({ clientId, path });
+      return;
+    }
+    setRemovedClient('');
+    const save = previous?.save ?? {
+      intent: folderIntent({ procedure: 'add', clientId, path, repositoryId: d.repo }),
+      firstWall: Date.now(), firstElapsed: performance.now(),
+    };
+    const controller = new AbortController();
+    const sending = { phase: 'sending', save, controller } as const;
+    setProgress(sending);
+    const current = () => isCurrent() && addProgress.current === sending && !!registered(save.intent.clientId);
+    try {
+      const reply = await addRepository(save.intent, {
+        client: scope.clients.projects, isCurrent: current,
+        signal: AbortSignal.any([controller.signal, scope.signal]),
+      });
+      if (!reply) return;
+      if (!reply.repository?.id || !reply.folder?.id || reply.folder.clientId !== save.intent.clientId) {
+        setProgress({ phase: 'replay', save });
+        setFeedback(folderRejected);
+        return;
+      }
+      checkWatch(save, { repositoryId: reply.repository.id, folderId: reply.folder.id, receivedAt: performance.now() });
+    } catch (error) {
+      if (!current() || server.expireSession(scope, error)) return;
+      const failure = folderFailure(error);
+      if (failure.text === folderMachineRemoved) return settleRemoval(save.intent.clientId);
+      setProgress(failure.retry ? { phase: 'replay', save } : null);
+      setFeedback(failure.text);
+    }
+  };
+
+  const busy = progress?.phase === 'sending' || progress?.phase === 'joining';
+  const why = feedback || (m && !online ? `${m.name} is offline.` : m && !valid ? 'Give the folder of a git repository.'
+    : checking ? 'Looking at the folder…' : '');
+  const canAdd = !!m && !busy && (!!progress || (online && !!facts));
+  const pendingFact = <span class="faint">{checking ? 'Detecting…' : '—'}</span>;
+  return <Dialog title={known ? `Add ${known.name} to a machine` : 'Add repository'} onClose={close} onSubmit={add} foot={<>
+      {why && <span class="why" style="overflow-wrap:anywhere">{why}</span>}
+      <button type="button" class="btn" onClick={close}>{d.back ? 'Back' : 'Cancel'}</button>
+      <button type="submit" class="btn primary" disabled={!canAdd} aria-busy={busy}>{busy ? 'Adding…' : 'Add repository'}</button>
+    </>}>
+    <div class="field">
+      <label for="ar-machine">Machine</label>
+      <select id="ar-machine" class="select" value={clientId} onChange={(e) => edit({ clientId: e.currentTarget.value, path })}>
+        {!m && <option value="" />}
+        {s.machines.map((x) => <option key={x.id} value={x.id} disabled={x.status !== 'online'}>
+          {x.name}
+          {x.status !== 'online' ? ' (offline)' : x.here ? ' (this computer)' : ''}
+        </option>)}
+      </select>
+    </div>
+    <div class="field">
+      <label for="ar-path">{m ? `Folder on ${m.name}` : 'Folder'}</label>
+      <input id="ar-path" class="input mono" value={path} onInput={(e) => edit({ clientId, path: e.currentTarget.value })}
+        placeholder={m ? `${m.workspace}/my-repository` : undefined} autofocus spellcheck={false} />
+    </div>
+    <dl class="dl svc-detected">
+      <dt>Base branch</dt>
+      <dd class="mono" style="overflow-wrap:anywhere">{facts ? facts.mainBranch || '—' : pendingFact}</dd>
+      <dt>Remote</dt>
+      <dd class="mono" style="overflow-wrap:anywhere">{facts ? facts.remoteOmitted ? '—' : facts.remote ?? 'No remote' : pendingFact}</dd>
+      <dt>Status</dt>
+      <dd>{facts ? facts.clean
+        ? <span class="row success-text"><Icon name="circle-check" size={14} />A git repository with a clean working tree</span>
+        : 'This Git repository has uncommitted changes.'
+        : <span class="faint">—</span>}</dd>
+    </dl>
+  </Dialog>;
+}
+
+function CompatibilityAddRepository({ s, d }: DialogProps) {
   const known = d.repo ? byId(s.repos, d.repo) : null;
   const [machine, setMachine] = useState(live.on ? 'local' : d.machine || 'studio'); const m = machineOf(s, machine);
   const [path, setPath] = useState(() => `${machineOf(s, live.on ? 'local' : d.machine || 'studio').workspace}/${known ? known.name : ''}`);
