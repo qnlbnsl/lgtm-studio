@@ -147,6 +147,48 @@ func TestRevisionTwoExecutableStop(t *testing.T) {
 		})
 	}
 
+	t.Run("unreadable store", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root can read the fixture despite its file mode")
+		}
+		opts, _ := appOptions(t)
+		p := newAppPeer(t, nil, nil)
+		seedApp(t, opts, p, false)
+		paths := state.PathsIn(opts.StateDir)
+		before := appFile(t, paths.Store)
+		if err := os.Chmod(paths.Store, 0); err != nil {
+			t.Fatal("could not make the fixture store unreadable")
+		}
+		if _, err := os.ReadFile(paths.Store); !errors.Is(err, os.ErrPermission) {
+			t.Fatalf("reading the fixture store returned %v, want a permission error", err)
+		}
+
+		stdout, stderr, status := runRecoveryProcess(t, binaryPath, opts)
+		if status != 1 {
+			t.Errorf("the unreadable store exited with status %d, want 1", status)
+		}
+		if stdout.Len() != 0 {
+			t.Error("the failed store open wrote to standard output")
+		}
+		lines := appLogs(t, stderr)
+		for _, line := range lines {
+			message := strings.ToLower(line.Message)
+			if strings.Contains(message, "restor") || strings.Contains(message, "recover") || strings.Contains(message, "enroll") {
+				t.Error("the process gave a history recovery instruction for the unreadable store")
+			}
+		}
+		failure := oneAppLog(t, lines, "link_stopped", "store_failed")
+		if failure.Level != "ERROR" || failure.Message != "Could not use client.db." {
+			t.Error("the process did not report a plain store failure")
+		}
+		if err := os.Chmod(paths.Store, 0o600); err != nil {
+			t.Fatal("could not restore fixture access to check its bytes")
+		}
+		if !bytes.Equal(before, appFile(t, paths.Store)) {
+			t.Error("the failed store open changed the saved database bytes")
+		}
+	})
+
 	t.Run("requested restart", func(t *testing.T) {
 		const commandID = "0195977c-0000-7000-8000-000000000010"
 		const outcome = linkv1.CommandOutcome_COMMAND_OUTCOME_DONE
