@@ -3,6 +3,7 @@ package app
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"io"
 	"log/slog"
@@ -34,7 +35,13 @@ var (
 
 // Join enrolls the machine and publishes its identity after its store is ready.
 func Join(ctx context.Context, opts Options, address, token string) (result error) {
-	opts, logger := withDefaults(opts)
+	opts = withDefaults(opts)
+	filter := link.NewOutgoingFilter()
+	// An enrollment token has room for at least its 32-byte secret.
+	if body, ok := strings.CutPrefix(token, "lgtm1_"); ok && len(body) >= base64.RawURLEncoding.EncodedLen(32) {
+		filter.AddSecrets(token, body)
+	}
+	logger := newOutgoingLogger(opts.Stderr, filter)
 	folder, err := openState(opts)
 	if err != nil {
 		return joinFailure(logger, "state_open_failed", err.Error())
@@ -71,7 +78,9 @@ func Join(ctx context.Context, opts Options, address, token string) (result erro
 
 // Run connects a previously enrolled machine and returns its process status.
 func Run(ctx context.Context, opts Options) (status int) {
-	opts, logger := withDefaults(opts)
+	opts = withDefaults(opts)
+	filter := link.NewRefreshingOutgoingFilter(claudeSignInReader(opts.Getenv))
+	logger := newOutgoingLogger(opts.Stderr, filter)
 	folder, err := openState(opts)
 	if err != nil {
 		logger.Error("client_start_failed", "message", err.Error())
@@ -94,8 +103,10 @@ func Run(ctx context.Context, opts Options) (status int) {
 		logger.Error("client_start_failed", "message", "No usable saved enrollment. Run lgtm-client join to enroll this machine.")
 		return 1
 	}
-	credential, err := enroll.Load(paths.Key)
-	if err != nil || !server.ClientPublicKey.Equal(credential.PublicKey()) {
+	credential, err := enroll.LoadVerified(paths.Key, server.ClientPublicKey, func(values ...string) {
+		filter.AddSecrets(secretForms(values...)...)
+	})
+	if err != nil {
 		logger.Error("client_start_failed", "message", "The saved enrollment has no matching machine key. Run lgtm-client join with a fresh state folder.")
 		return 1
 	}
@@ -109,6 +120,7 @@ func Run(ctx context.Context, opts Options) (status int) {
 	outcome, err = runLink(ctx, link.RunOptions{
 		Server: server, Credential: credential, Folder: folder, Settings: settings,
 		ScanOptions: harness.DefaultScanOptions(opts.Getenv), Version: opts.Version, Logger: logger,
+		Filter: filter,
 	})
 	if err != nil {
 		return 1
@@ -125,7 +137,7 @@ func Run(ctx context.Context, opts Options) (status int) {
 	}
 }
 
-func withDefaults(opts Options) (Options, *slog.Logger) {
+func withDefaults(opts Options) Options {
 	if opts.Getenv == nil {
 		opts.Getenv = os.Getenv
 	}
@@ -135,7 +147,7 @@ func withDefaults(opts Options) (Options, *slog.Logger) {
 	if opts.Stderr == nil {
 		opts.Stderr = io.Discard
 	}
-	return opts, slog.New(slog.NewJSONHandler(opts.Stderr, nil))
+	return opts
 }
 
 func openState(opts Options) (*state.Folder, error) {

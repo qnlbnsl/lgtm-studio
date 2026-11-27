@@ -17,10 +17,17 @@ const redactedText = "[redacted]"
 type OutgoingFilter struct {
 	mu      sync.RWMutex
 	secrets map[string]struct{}
+	refresh func() []string
 }
 
 // NewOutgoingFilter starts with no known secrets.
 func NewOutgoingFilter() *OutgoingFilter { return &OutgoingFilter{} }
+
+// NewRefreshingOutgoingFilter reads more secret spellings at each output gate.
+// The reader must return the spellings without calling back into the filter.
+func NewRefreshingOutgoingFilter(read func() []string) *OutgoingFilter {
+	return &OutgoingFilter{refresh: read}
+}
 
 // AddSecrets registers additional spellings without forgetting earlier values.
 func (f *OutgoingFilter) AddSecrets(values ...string) {
@@ -29,6 +36,10 @@ func (f *OutgoingFilter) AddSecrets(values ...string) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.addSecrets(values)
+}
+
+func (f *OutgoingFilter) addSecrets(values []string) {
 	for _, value := range values {
 		if value == "" {
 			continue
@@ -55,9 +66,32 @@ func (f *OutgoingFilter) ContainsSecret(text string) bool {
 	return f.containsSecret(text)
 }
 
+// WithTextMask refreshes and classifies all strings in one record together.
+// The callback uses the mask only during the call.
+func (f *OutgoingFilter) WithTextMask(screen func(mask func(string) string)) {
+	unlock := f.lockSecrets()
+	defer unlock()
+	screen(func(text string) string {
+		text, _ = f.maskPrefix(text, true)
+		text = strings.ToValidUTF8(text, "\uFFFD")
+		if f.containsSecret(text) {
+			text, _ = f.maskPrefix(text, true)
+			if f.containsSecret(text) {
+				return ""
+			}
+		}
+		return text
+	})
+}
+
 func (f *OutgoingFilter) lockSecrets() func() {
 	if f == nil {
 		return func() {}
+	}
+	if f.refresh != nil {
+		f.mu.Lock()
+		f.addSecrets(f.refresh())
+		return f.mu.Unlock
 	}
 	f.mu.RLock()
 	return f.mu.RUnlock

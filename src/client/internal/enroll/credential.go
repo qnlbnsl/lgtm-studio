@@ -76,6 +76,19 @@ func Create(path string) (*Credential, error) {
 
 // Load reads a private key file owned by the current user.
 func Load(path string) (*Credential, error) {
+	return load(path, nil, nil)
+}
+
+// LoadVerified checks the owned key against the enrolled public key. It
+// registers the private representations of the returned signing key.
+func LoadVerified(path string, public ed25519.PublicKey, register func(...string)) (*Credential, error) {
+	if len(public) != ed25519.PublicKeySize {
+		return nil, ErrKeyInvalid
+	}
+	return load(path, public, register)
+}
+
+func load(path string, public ed25519.PublicKey, register func(...string)) (*Credential, error) {
 	f, err := os.OpenFile(path, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		if errors.Is(err, syscall.ELOOP) {
@@ -113,10 +126,10 @@ func Load(path string) (*Credential, error) {
 	if len(data) > maxKeySize {
 		return nil, ErrKeyInvalid
 	}
-	return decodeCredential(data)
+	return decodeCredential(data, public, register)
 }
 
-func decodeCredential(data []byte) (*Credential, error) {
+func decodeCredential(data []byte, public ed25519.PublicKey, register func(...string)) (*Credential, error) {
 	firstLine, body, ok := bytes.Cut(data, []byte("\n"))
 	if !ok || string(bytes.TrimSuffix(firstLine, []byte("\r"))) != "-----BEGIN PRIVATE KEY-----" ||
 		bytes.Contains(body, []byte("-----BEGIN ")) {
@@ -142,6 +155,14 @@ func decodeCredential(data []byte) (*Credential, error) {
 	key, ok := parsed.(ed25519.PrivateKey)
 	if err != nil || !ok {
 		return nil, ErrKeyInvalid
+	}
+	if public != nil && !public.Equal(key.Public()) {
+		return nil, ErrKeyInvalid
+	}
+	if register != nil {
+		armoredBody, _ := bytes.CutSuffix(end, []byte("\n-----END PRIVATE KEY-----"))
+		register(string(data), string(bytes.TrimRight(data, "\r\n")),
+			string(bytes.TrimRight(armoredBody, "\r\n")), string(block.Bytes), string(key), string(key.Seed()))
 	}
 	return newCredential(key), nil
 }
