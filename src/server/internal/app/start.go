@@ -256,10 +256,11 @@ func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logg
 		PrivateStack: cfg.AllowPrivateStack,
 		Logger:       log,
 		Seams:        link.Seams(seams),
+		Commands:     state,
 	})
 	st.workers.Go(func() { streamService.Run(st.life, follower) })
 	clients := machines.NewService(s, sessions, registry, tokens).
-		WithFollower(follower).WithWatchShutdown(st.life).WithLink(state)
+		WithFollower(follower).WithWatchShutdown(st.life).WithLink(state).WithCommands(state)
 	handler := api.NewHandler(api.Options{
 		Sessions: sessions,
 		Origins:  origins,

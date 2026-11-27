@@ -83,6 +83,13 @@ func (s *Service) Run(ctx context.Context, follower *store.Follower) {
 	if follower != nil {
 		workers.Go(func() { s.follow(ctx, follower) })
 	}
+	if state, ok := link.options.Commands.(*State); ok {
+		workers.Go(func() {
+			state.RunCommandSweep(ctx, func(error) {
+				link.options.Logger.Warn(errCommandSweep.Error())
+			})
+		})
+	}
 	workers.Wait()
 }
 
