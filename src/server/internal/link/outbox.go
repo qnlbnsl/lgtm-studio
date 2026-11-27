@@ -18,22 +18,35 @@ const (
 	CommandRetention = 7 * 24 * time.Hour
 )
 
-// Enqueue stores an action and its wake reference in the caller's machine write.
-func (*State) Enqueue(ctx context.Context, tx *store.Tx, machineID string, action *linkv1.Command, ttl time.Duration) error {
+// Enqueue implements the Machines command queue in the caller's machine write.
+func (s *State) Enqueue(ctx context.Context, tx *store.Tx, machineID string, action *linkv1.Command, ttl time.Duration) error {
+	_, err := s.EnqueueCommand(ctx, tx, machineID, action, ttl)
+	return err
+}
+
+// EnqueueCommand stores an action and its wake in the caller's write.
+// The caller must lock the machine first and keep the returned identifier only on commit.
+func (s *State) EnqueueCommand(ctx context.Context, tx *store.Tx, machineID string, action *linkv1.Command, ttl time.Duration) (string, error) {
 	if ttl <= 0 {
-		return ErrInvalidMessage
+		return "", ErrInvalidMessage
 	}
 	kind, clean, err := commandAction(action)
 	if err != nil {
-		return err
+		return "", err
 	}
 	payload, err := proto.Marshal(clean)
 	if err != nil {
-		return ErrInvalidMessage
+		return "", ErrInvalidMessage
+	}
+	if _, err := s.registry.Get(ctx, tx, machineID); err != nil {
+		if err == machines.ErrNoMachine {
+			return "", ErrUnknownMachine
+		}
+		return "", err
 	}
 	id, err := store.NewID()
 	if err != nil {
-		return err
+		return "", err
 	}
 	lifetime := pgtype.Interval{Microseconds: ttl.Microseconds(), Valid: true}
 	_, err = tx.Exec(ctx, `
@@ -41,9 +54,12 @@ INSERT INTO link_commands (id, machine_id, action, payload, created_at, expires_
 SELECT $1, $2, $3, $4, created_at, created_at + $5::interval
 FROM (SELECT clock_timestamp() AS created_at) AS sampled`, id, machineID, kind, payload, lifetime)
 	if err != nil {
-		return err
+		return "", err
 	}
-	return tx.Record(store.ChangeRef{Topic: outboxTopic, Key: machineID, Change: store.Saved})
+	if err := tx.RecordOnce(store.ChangeRef{Topic: outboxTopic, Key: machineID, Change: store.Saved}); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 // commandAction rebuilds the payload from declared action fields.

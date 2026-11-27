@@ -25,6 +25,10 @@ type State struct {
 	registry  *machines.Registry
 	hub       *Hub
 	afterLock func(context.Context, string)
+
+	commandSettled map[CommandKind]func(context.Context, *store.Tx, Settlement) error
+	reportApplied  map[ReportKind]func(context.Context, *store.Tx, string, *linkv1.Event) error
+	lifecycleHooks []PartHooks
 }
 
 type Stream struct {
@@ -37,7 +41,13 @@ type Stream struct {
 }
 
 func NewState(s *store.Store, r *machines.Registry, h *Hub) *State {
-	return &State{store: s, registry: r, hub: h}
+	return &State{
+		store:          s,
+		registry:       r,
+		hub:            h,
+		commandSettled: make(map[CommandKind]func(context.Context, *store.Tx, Settlement) error),
+		reportApplied:  make(map[ReportKind]func(context.Context, *store.Tx, string, *linkv1.Event) error),
+	}
 }
 
 func (s *State) BecomeCurrent(ctx context.Context, machineID, streamID, address string) (Stream, error) {

@@ -2,7 +2,8 @@ package link
 
 import (
 	"context"
-	"time"
+	"errors"
+	"maps"
 
 	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/store"
@@ -46,6 +47,10 @@ type RunChange struct {
 	FirstEventNumber                uint64
 }
 
+// PartHooks run inside the Link write with its context and transaction.
+// An error aborts the write, and a later attempt may call the hook again.
+// Hooks may write part records, record feed changes, and enqueue for the locked machine.
+// Hooks must avoid nested writes, additional machine locks, client waits and external work.
 type PartHooks struct {
 	CommandSettled map[CommandKind]func(context.Context, *store.Tx, Settlement) error
 	ReportApplied  map[ReportKind]func(context.Context, *store.Tx, string, *linkv1.Event) error
@@ -54,37 +59,73 @@ type PartHooks struct {
 	MachineRemoved func(context.Context, *store.Tx, string) error
 }
 
-// EnqueueCommand is a stub from the test writer.
-func (*State) EnqueueCommand(context.Context, *store.Tx, string, *linkv1.Command, time.Duration) (string, error) {
-	return "", nil
-}
+var errDuplicatePartRoute = errors.New("A link part route is already registered.")
 
-// RegisterPart is a stub from the test writer.
-func (*State) RegisterPart(PartHooks) error {
+// RegisterPart installs a part's routes and lifecycle hooks before Link workers start.
+func (s *State) RegisterPart(hooks PartHooks) error {
+	for kind := range hooks.CommandSettled {
+		if _, exists := s.commandSettled[kind]; exists {
+			return errDuplicatePartRoute
+		}
+	}
+	for kind := range hooks.ReportApplied {
+		if _, exists := s.reportApplied[kind]; exists {
+			return errDuplicatePartRoute
+		}
+	}
+	maps.Copy(s.commandSettled, hooks.CommandSettled)
+	maps.Copy(s.reportApplied, hooks.ReportApplied)
+	s.lifecycleHooks = append(s.lifecycleHooks, PartHooks{
+		StreamAdmitted: hooks.StreamAdmitted,
+		RunChanged:     hooks.RunChanged,
+		MachineRemoved: hooks.MachineRemoved,
+	})
 	return nil
 }
 
-// dispatchSettlement is a stub from the test writer.
-func (*State) dispatchSettlement(context.Context, *store.Tx, CommandKind, Settlement) error {
+func (s *State) dispatchSettlement(ctx context.Context, tx *store.Tx, kind CommandKind, settlement Settlement) error {
+	if hook := s.commandSettled[kind]; hook != nil {
+		return hook(ctx, tx, settlement)
+	}
 	return nil
 }
 
-// dispatchReport is a stub from the test writer.
-func (*State) dispatchReport(context.Context, *store.Tx, ReportKind, string, *linkv1.Event) error {
+func (s *State) dispatchReport(ctx context.Context, tx *store.Tx, kind ReportKind, machineID string, event *linkv1.Event) error {
+	if hook := s.reportApplied[kind]; hook != nil {
+		return hook(ctx, tx, machineID, event)
+	}
 	return nil
 }
 
-// dispatchAdmission is a stub from the test writer.
-func (*State) dispatchAdmission(context.Context, *store.Tx, Admission) error {
+func (s *State) dispatchAdmission(ctx context.Context, tx *store.Tx, admission Admission) error {
+	for _, hooks := range s.lifecycleHooks {
+		if hooks.StreamAdmitted != nil {
+			if err := hooks.StreamAdmitted(ctx, tx, admission); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
-// dispatchRunChange is a stub from the test writer.
-func (*State) dispatchRunChange(context.Context, *store.Tx, RunChange) error {
+func (s *State) dispatchRunChange(ctx context.Context, tx *store.Tx, change RunChange) error {
+	for _, hooks := range s.lifecycleHooks {
+		if hooks.RunChanged != nil {
+			if err := hooks.RunChanged(ctx, tx, change); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
-// dispatchRemoval is a stub from the test writer.
-func (*State) dispatchRemoval(context.Context, *store.Tx, string) error {
+func (s *State) dispatchRemoval(ctx context.Context, tx *store.Tx, machineID string) error {
+	for _, hooks := range s.lifecycleHooks {
+		if hooks.MachineRemoved != nil {
+			if err := hooks.MachineRemoved(ctx, tx, machineID); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
