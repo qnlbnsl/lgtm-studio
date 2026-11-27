@@ -8065,3 +8065,11 @@ Found on 2026-11-27, in the review of item 3 of the plan `go-s4-server-link` (po
 
 When a client run is admitted, the server compares its first event number with the staged results of that machine. The test seeds the staged results on the same machine that asks for admission. A change that compared against the staged results of all machines would pass, and would refuse a valid run of another machine.
 Where: `TestRunAdmissionPersistsAcrossRestart` in `src/server/internal/link/admission_v2_test.go`. The test writer who finishes the settlement tests of item 6 adds a second signed peer.
+
+## 1694. A long watched folder path is cut off in the machine detail
+
+Found on 2026-11-27, in the review of item 4 of the plan `go-s4-web-repositories` (post-4 3).
+
+The machine detail shows every watched folder of a machine with its path. A long path is cut off with an ellipsis, at about 280 pixels on a phone and 181 pixels on a desktop. The full path is only in a `title` attribute, which touch and keyboard do not reach. Two checkouts of one repository whose paths differ only at the end then look the same.
+Where: the folder row of the machine detail in `src/frontend/src/screens/service.tsx`, and its tests in `src/frontend/e2e/repository-routes.spec.ts`, which use short paths.
+What must hold: the part of the path that tells two folders apart is readable on a phone. Wrapping the path changes how the screen looks, so the owner decides the form.
