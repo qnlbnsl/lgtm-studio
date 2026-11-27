@@ -7900,3 +7900,15 @@ A process that moves itself into another group or another session is not ended.
 Nothing in sprint 5 looks for such a process.
 
 The next step belongs to sprint 8: decide whether the service manager's own cleanup covers this on Linux and on macOS, and test it.
+
+## 1672. The test of a report after sign-out fails in about one run of three
+
+Found on 2026-11-27, while the tests for issues 1668 and 1669 were checked.
+
+`TestOpenReportsDoNotReachRevokedWatch` in `src/server/internal/app/link_stream_test.go` failed 7 times in 20 runs by itself, on a quiet host.
+It fails on its assertion that no report reaches a website watch after its session was signed out, or that the watch ends with `unauthenticated`.
+The runs that fail are the faster ones. The server's tests do not use the client's code, so the last repair of the client is not the cause.
+The test passed in every earlier run of the suite, when the host carried many workers.
+
+It is open whether the test has a race, or whether the server can send one more report to a watch whose session was just signed out.
+The next step is a diagnosis by reading and by runs, before any repair.
