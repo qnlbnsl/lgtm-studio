@@ -171,6 +171,7 @@ Revision 2 adds fields and messages, and changes no existing field.
 - The first message of the client on `Open` gains the run and the number of the run's first event.
 - `CommandResult` gains the number of the last buffered event.
 - `Command.action` gains `LookAtFolder`, and `Event.report` gains `FolderSeen`, with new field numbers. Both messages are declared in a new file of the same package, `folders.proto`.
+- The contract states that the server sends one acknowledgement for each event. The client hands over at most 32 events without one, and relies on it.
 - Both declarations of the revision in `link.proto` become 2, and so do the two constants in the programs and the sentence in the contract's readme.
 - The record of frozen revisions keeps its entry for revision 1 at its place and gains an entry for revision 2. The freeze of revision 2 is checked against the base of revision 1 during the review of the contract, and the base moves to revision 2 after that review.
 
