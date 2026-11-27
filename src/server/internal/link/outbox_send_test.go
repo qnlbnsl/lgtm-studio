@@ -303,7 +303,7 @@ func TestCommandSendRechecksBeforeWrite(t *testing.T) {
 			case "replaced":
 				replacement := fixtureStreamID(t)
 				err := checkOneLine(t, f.presenceFixture, func(ctx context.Context) error {
-					_, err := f.state.BecomeCurrent(ctx, m.ID, replacement, presenceAddress)
+					_, err := admitFixtureRun(f.state, ctx, m.ID, replacement, presenceAddress)
 					return err
 				}, func(ctx context.Context) error {
 					return f.state.AcceptResult(ctx, m.ID, stream, result)
@@ -442,7 +442,7 @@ func openCommandPeer(t *testing.T, f *handshakeFixture, server *httptest.Server,
 	if p.framer.WriteHeaders(http2.HeadersFrameParam{StreamID: commandPeerStream, BlockFragment: block.Bytes(), EndHeaders: true}) != nil {
 		t.Fatal("The command peer could not open its request stream.")
 	}
-	hello := helloFrame(m.ID, 1, 1)
+	hello := helloFrame(m.ID, LinkRevision, 1)
 	p.send(t, hello)
 	challenge := p.readEnvelope(t).GetChallenge()
 	if challenge == nil || !ed25519.Verify(f.serverKey, fixtureProofText("lgtm-link-v1 server", hello.GetHello(), challenge.GetServerNonce()), challenge.GetServerSignature()) {

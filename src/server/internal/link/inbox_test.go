@@ -311,7 +311,7 @@ func TestEventFormsOneLine(t *testing.T) {
 			eventSQL(t, f, "UPDATE link_machines SET event_mark = 40 WHERE machine_id = $1", m.ID)
 			installReportAudit(t, f)
 			admit := func(ctx context.Context) error {
-				got, err := f.state.BecomeCurrent(ctx, m.ID, b, "")
+				got, err := admitFixtureRun(f.state, ctx, m.ID, b, "")
 				want := uint64(41)
 				if admissionFirst {
 					want = 40

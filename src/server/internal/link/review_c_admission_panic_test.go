@@ -39,7 +39,7 @@ func TestAdmissionCommitPanicAllowsCommandsAfterReconnect(t *testing.T) {
 	awaitHeld(t, f.hub, machine.ID, current.StreamID)
 
 	broken := startHandshake(t, client, nil)
-	hello := helloFrame(machine.ID, 1, 2)
+	hello := helloFrame(machine.ID, LinkRevision, 2)
 	sendHandshake(t, broken, hello)
 	challenge := requireChallenge(t, broken, f.serverKey, hello.GetHello())
 	armed.Store(true)

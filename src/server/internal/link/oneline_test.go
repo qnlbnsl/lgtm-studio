@@ -87,7 +87,7 @@ func TestWritesOfOneMachineFormOneLine(t *testing.T) {
 			b := fixtureStreamID(t)
 			before := f.head(t)
 			admission := func(ctx context.Context) error {
-				s, err := f.state.BecomeCurrent(ctx, m.ID, b, presenceAddress)
+				s, err := admitFixtureRun(f.state, ctx, m.ID, b, presenceAddress)
 				if err == nil && (s.ID != b || s.Generation != 2) {
 					return errors.New("Admission did not return the replacement generation.")
 				}

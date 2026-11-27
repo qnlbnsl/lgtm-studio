@@ -25,6 +25,10 @@ type Machine struct {
 	ID        string
 	Key       ed25519.PrivateKey
 	ServerKey ed25519.PublicKey
+
+	// These fields are stubs of the test writer for the scripted process.
+	RunID            string
+	FirstEventNumber uint64
 }
 
 var (

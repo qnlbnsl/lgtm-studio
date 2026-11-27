@@ -153,7 +153,7 @@ func TestProofRequestClosureAtCutoff(t *testing.T) {
 				m, _ := f.register(t, "station closing during proof")
 				before := f.head(t)
 				stream := startHandshake(t, client, nil)
-				hello := helloFrame(m.ID, 1, 4)
+				hello := helloFrame(m.ID, LinkRevision, 4)
 				sendHandshake(t, stream, hello)
 				requireChallenge(t, stream, f.serverKey, hello.GetHello())
 				clock.timer(t, "Hello")

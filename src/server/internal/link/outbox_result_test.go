@@ -322,7 +322,7 @@ func TestResultAndReplacementFormOneLine(t *testing.T) {
 			id := seedResultCommand(t, f, m.ID, old.ID, "scan_harnesses", 2, true, start.Add(2*time.Minute))
 			head := f.head(t)
 			admit := func(ctx context.Context) error {
-				replacement, err := f.state.BecomeCurrent(ctx, m.ID, next, presenceAddress)
+				replacement, err := admitFixtureRun(f.state, ctx, m.ID, next, presenceAddress)
 				if err != nil || replacement.ID != next || replacement.Generation != 2 {
 					return errors.New("The replacement did not acquire the next stream generation.")
 				}

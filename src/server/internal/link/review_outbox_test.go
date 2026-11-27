@@ -157,7 +157,7 @@ func TestWatchdogAbortsDisplacedStreamBeforeReplacementPublication(t *testing.T)
 			original := f.current(t, machine.ID)
 
 			replacement := startHandshake(t, client, nil)
-			hello := helloFrame(machine.ID, 1, 2)
+			hello := helloFrame(machine.ID, LinkRevision, 2)
 			sendHandshake(t, replacement, hello)
 			challenge := requireChallenge(t, replacement, f.serverKey, hello.GetHello())
 			armCommit.Store(true)

@@ -64,7 +64,7 @@ func TestRemovalAfterReplacementCommitBeforePublication(t *testing.T) {
 			awaitHeld(t, f.hub, m.ID, a.StreamID)
 
 			replacement := startHandshake(t, client, nil)
-			hello := helloFrame(m.ID, 1, 2)
+			hello := helloFrame(m.ID, LinkRevision, 2)
 			sendHandshake(t, replacement, hello)
 			challenge := requireChallenge(t, replacement, f.serverKey, hello.GetHello())
 			// Arm after Challenge, whose lookup may still be completing on another connection.

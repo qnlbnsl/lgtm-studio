@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -42,7 +43,6 @@ type openServerStream = connect.BidiStream[linkv1.OpenRequest, linkv1.OpenRespon
 
 const (
 	openUnknown   = "The server does not know this machine. Join it again."
-	openRevision  = "The server speaks revision 1 of the link."
 	openTimeout   = "The machine did not answer in time."
 	openSignature = "The machine's signature did not verify."
 	openInvalid   = "The link message broke a rule of the contract."
@@ -222,6 +222,7 @@ func startHandshake(t *testing.T, client linkv1connect.LinkServiceClient, header
 func helloFrame(id string, revision uint32, nonce byte) *linkv1.OpenRequest {
 	return &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Hello{Hello: &linkv1.Hello{
 		MachineId: id, LinkRevision: revision, MachineNonce: bytes.Repeat([]byte{nonce}, 32),
+		RunId: id, FirstEventNumber: 1,
 	}}}
 }
 
@@ -361,14 +362,14 @@ func TestHandshakeOpensStream(t *testing.T) {
 	m, key := f.register(t, "station")
 	a := startHandshake(t, client, map[string]string{"X-Forwarded-For": presenceAddress})
 	a.RequestHeader().Add("X-Forwarded-For", "malformed")
-	helloA := helloFrame(m.ID, 1, 11)
+	helloA := helloFrame(m.ID, LinkRevision, 11)
 	sendHandshake(t, a, helloA)
 	cA := requireChallenge(t, a, f.serverKey, helloA.GetHello())
 	start := storetest.Scalar[time.Time](t, f.obs, "SELECT clock_timestamp()")
 	sendHandshake(t, a, proofFrame(key, helloA.GetHello(), cA))
 	waiting := requireWelcome(t, a)
 	end := storetest.Scalar[time.Time](t, f.obs, "SELECT clock_timestamp()")
-	if waiting.GetLinkRevision() != 1 || waiting.GetLastEventNumber() != 0 ||
+	if waiting.GetLinkRevision() != LinkRevision || waiting.GetLastEventNumber() != 0 ||
 		!proto.Equal(waiting.GetState(), &linkv1.MachineState{Approval: linkv1.Approval_APPROVAL_WAITING, Revision: 1}) ||
 		waiting.GetConnectionToken() != "" || waiting.GetServerTime().CheckValid() != nil ||
 		waiting.GetServerTime().AsTime().Before(start) || waiting.GetServerTime().AsTime().After(end) {
@@ -384,7 +385,7 @@ func TestHandshakeOpensStream(t *testing.T) {
 	}
 	storetest.Exec(t, f.obs, "UPDATE link_machines SET event_mark = 42 WHERE machine_id = $1", m.ID)
 	b := startHandshake(t, client, nil)
-	helloB := helloFrame(m.ID, 1, 11)
+	helloB := helloFrame(m.ID, LinkRevision, 11)
 	sendHandshake(t, b, helloB)
 	cB := requireChallenge(t, b, f.serverKey, helloB.GetHello())
 	if bytes.Equal(cA.GetServerNonce(), cB.GetServerNonce()) {
@@ -394,7 +395,7 @@ func TestHandshakeOpensStream(t *testing.T) {
 	f.approve(t, m.ID)
 	sendHandshake(t, b, proofFrame(key, helloB.GetHello(), cB))
 	approved := requireWelcome(t, b)
-	if approved.GetLinkRevision() != 1 || approved.GetLastEventNumber() != 42 ||
+	if approved.GetLinkRevision() != LinkRevision || approved.GetLastEventNumber() != 42 ||
 		!proto.Equal(approved.GetState(), &linkv1.MachineState{Approval: linkv1.Approval_APPROVAL_APPROVED, Revision: 2, Name: "Approved machine"}) ||
 		!validConnectionToken(approved.GetConnectionToken()) {
 		t.Error("Welcome did not use the standing and mark committed at approved admission.")
@@ -405,9 +406,9 @@ func TestHandshakeOpensStream(t *testing.T) {
 	}
 	requireOpenEnd(t, a, connect.CodeAborted, openReplaced, "")
 	c := startHandshake(t, client, nil)
-	sendHandshake(t, c, helloFrame(m.ID, 1, 12))
-	challenge := requireChallenge(t, c, f.serverKey, helloFrame(m.ID, 1, 12).GetHello())
-	sendHandshake(t, c, proofFrame(key, helloFrame(m.ID, 1, 12).GetHello(), challenge))
+	sendHandshake(t, c, helloFrame(m.ID, LinkRevision, 12))
+	challenge := requireChallenge(t, c, f.serverKey, helloFrame(m.ID, LinkRevision, 12).GetHello())
+	sendHandshake(t, c, proofFrame(key, helloFrame(m.ID, LinkRevision, 12).GetHello(), challenge))
 	fresh := requireWelcome(t, c)
 	if !validConnectionToken(fresh.GetConnectionToken()) || fresh.GetConnectionToken() == approved.GetConnectionToken() {
 		t.Error("Consecutive approved Welcomes did not have different valid tokens.")
@@ -475,7 +476,7 @@ func TestReplayedProofRefused(t *testing.T) {
 			client := f.wire(t, handshakeWireOptions{}, p.options...)
 			m, key := f.register(t, "station")
 			a := startHandshake(t, client, nil)
-			hello := helloFrame(m.ID, 1, 13)
+			hello := helloFrame(m.ID, LinkRevision, 13)
 			sendHandshake(t, a, hello)
 			cA := requireChallenge(t, a, f.serverKey, hello.GetHello())
 			proof := proofFrame(key, hello.GetHello(), cA)
@@ -516,7 +517,7 @@ func TestOpenRefusesUnusableRegisteredKey(t *testing.T) {
 				t.Run(tc.name, func(t *testing.T) {
 					m := f.machine(t, tc.bytes, "seeded")
 					s := startHandshake(t, client, nil)
-					hello := helloFrame(m.ID, 1, 15)
+					hello := helloFrame(m.ID, LinkRevision, 15)
 					sendHandshake(t, s, hello)
 					requireChallenge(t, s, f.serverKey, hello.GetHello())
 					storetest.Exec(t, f.obs, "INSERT INTO link_machines(machine_id,event_mark) VALUES ($1,42)", m.ID)
@@ -644,6 +645,12 @@ func (handshakeCodec) Unmarshal(data []byte, message any) error {
 }
 
 func TestHandshakeDecisionOrder(t *testing.T) {
+	// These rows use revision 1 once the server switches to revision 2.
+	unsupportedRevision := uint32(1)
+	if LinkRevision == 1 {
+		unsupportedRevision = 2
+	}
+	revisionSentence := fmt.Sprintf("The server speaks revision %d of the link.", LinkRevision)
 	for _, p := range handshakeProtocols {
 		t.Run(p.name, func(t *testing.T) {
 			for _, tc := range []struct {
@@ -654,18 +661,18 @@ func TestHandshakeDecisionOrder(t *testing.T) {
 				code                 connect.Code
 				sentence, reason     string
 			}{
-				{"lookup failure", 2, false, true, "late", connect.CodeUnavailable, openDatabase, ""},
-				{"unknown takes precedence", 2, true, false, "late", connect.CodeFailedPrecondition, openUnknown, "unknown_machine"},
-				{"revision takes precedence", 2, false, false, "late", connect.CodeFailedPrecondition, openRevision, "link_revision_mismatch"},
-				{"early valid proof", 1, false, false, "early", 0, "", ""},
-				{"proof exactly at cutoff", 1, false, false, "exact", 0, "", ""},
-				{"late valid proof", 1, false, false, "late", connect.CodeDeadlineExceeded, openTimeout, ""},
-				{"late malformed proof", 1, false, false, "late malformed", connect.CodeDeadlineExceeded, openTimeout, ""},
-				{"missing proof", 1, false, false, "missing", connect.CodeDeadlineExceeded, openTimeout, ""},
-				{"malformed proof", 1, false, false, "malformed", connect.CodeInvalidArgument, openInvalid, ""},
-				{"wrong kind instead of Proof", 1, false, false, "wrong kind", connect.CodeInvalidArgument, openInvalid, ""},
-				{"oversized Proof", 1, false, false, "oversize", connect.CodeInvalidArgument, openInvalid, ""},
-				{"wrong signature", 1, false, false, "wrong signature", connect.CodeUnauthenticated, openSignature, ""},
+				{"lookup failure", unsupportedRevision, false, true, "late", connect.CodeUnavailable, openDatabase, ""},
+				{"unknown takes precedence", unsupportedRevision, true, false, "late", connect.CodeFailedPrecondition, openUnknown, "unknown_machine"},
+				{"revision takes precedence", unsupportedRevision, false, false, "late", connect.CodeFailedPrecondition, revisionSentence, "link_revision_mismatch"},
+				{"early valid proof", LinkRevision, false, false, "early", 0, "", ""},
+				{"proof exactly at cutoff", LinkRevision, false, false, "exact", 0, "", ""},
+				{"late valid proof", LinkRevision, false, false, "late", connect.CodeDeadlineExceeded, openTimeout, ""},
+				{"late malformed proof", LinkRevision, false, false, "late malformed", connect.CodeDeadlineExceeded, openTimeout, ""},
+				{"missing proof", LinkRevision, false, false, "missing", connect.CodeDeadlineExceeded, openTimeout, ""},
+				{"malformed proof", LinkRevision, false, false, "malformed", connect.CodeInvalidArgument, openInvalid, ""},
+				{"wrong kind instead of Proof", LinkRevision, false, false, "wrong kind", connect.CodeInvalidArgument, openInvalid, ""},
+				{"oversized Proof", LinkRevision, false, false, "oversize", connect.CodeInvalidArgument, openInvalid, ""},
+				{"wrong signature", LinkRevision, false, false, "wrong signature", connect.CodeUnauthenticated, openSignature, ""},
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					lookupStarted := make(chan struct{}, 1)
@@ -691,6 +698,9 @@ func TestHandshakeDecisionOrder(t *testing.T) {
 					}
 					if tc.unavailable {
 						storetest.Exec(t, f.obs, "ALTER TABLE machines RENAME TO unavailable_machines")
+					}
+					if tc.proof == "malformed" {
+						storetest.Exec(t, f.obs, "INSERT INTO link_machines (machine_id, event_mark) VALUES ($1, 42)", m.ID)
 					}
 					before := f.head(t)
 					clock := newOpenClock()
@@ -768,16 +778,18 @@ func TestHandshakeValueRules(t *testing.T) {
 				{"wrong kind", func() *linkv1.OpenRequest {
 					return &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Heartbeat{Heartbeat: &linkv1.Heartbeat{}}}
 				}, false},
-				{"missing identifier", func() *linkv1.OpenRequest { return helloFrame("", 1, 14) }, false},
-				{"noncanonical identifier", func() *linkv1.OpenRequest { return helloFrame("0193A2B4-5c6d-7e8f-9a0b-1c2d3e4f5a6b", 1, 14) }, false},
+				{"missing identifier", func() *linkv1.OpenRequest { return helloFrame("", LinkRevision, 14) }, false},
+				{"noncanonical identifier", func() *linkv1.OpenRequest {
+					return helloFrame("0193A2B4-5c6d-7e8f-9a0b-1c2d3e4f5a6b", LinkRevision, 14)
+				}, false},
 				{"malformed nonce", func() *linkv1.OpenRequest {
-					f := helloFrame(m.ID, 1, 14)
+					f := helloFrame(m.ID, LinkRevision, 14)
 					f.GetHello().MachineNonce = make([]byte, 31)
 					return f
 				}, false},
-				{"malformed protobuf", func() *linkv1.OpenRequest { return helloFrame(m.ID, 1, 14) }, true},
+				{"malformed protobuf", func() *linkv1.OpenRequest { return helloFrame(m.ID, LinkRevision, 14) }, true},
 				{"oversized first frame", func() *linkv1.OpenRequest {
-					f := helloFrame(m.ID, 1, 14)
+					f := helloFrame(m.ID, LinkRevision, 14)
 					f.ProtoReflect().SetUnknown(protowire.AppendBytes(protowire.AppendTag(nil, 20, protowire.BytesType), make([]byte, 64<<10)))
 					return f
 				}, false},
@@ -808,7 +820,7 @@ func TestHandshakeValueRules(t *testing.T) {
 					s := startHandshake(t, client, nil)
 					timer, first := startTimedHello(t, clock, s)
 					clock.set(tc.when)
-					hello := helloFrame(m.ID, 1, 15)
+					hello := helloFrame(m.ID, LinkRevision, 15)
 					if !tc.silent {
 						sendHandshake(t, s, hello)
 						clock.observed(t, tc.when)
@@ -842,7 +854,7 @@ func awaitHeld(t *testing.T, hub *Hub, machineID, streamID string) {
 
 func submitProof(t *testing.T, f *handshakeFixture, s *openClientStream, id string, key ed25519.PrivateKey, nonce byte) {
 	t.Helper()
-	hello := helloFrame(id, 1, nonce)
+	hello := helloFrame(id, LinkRevision, nonce)
 	sendHandshake(t, s, hello)
 	challenge := requireChallenge(t, s, f.serverKey, hello.GetHello())
 	sendHandshake(t, s, proofFrame(key, hello.GetHello(), challenge))
@@ -950,7 +962,7 @@ func TestRemovalOrdersAdmission(t *testing.T) {
 				}
 				checkOpenEnd(t, first, endErr, connect.CodeFailedPrecondition, openUnknown, "unknown_machine")
 				later := startHandshake(t, client, nil)
-				hello := helloFrame(id, 1, 20)
+				hello := helloFrame(id, LinkRevision, 20)
 				sendHandshake(t, later, hello)
 				requireChallenge(t, later, f.serverKey, hello.GetHello())
 				requireOpenEnd(t, later, connect.CodeFailedPrecondition, openUnknown, "unknown_machine")
@@ -1170,7 +1182,7 @@ func TestAdmissionCommitReplyLost(t *testing.T) {
 				queued <- [2]string{id, stream}
 			}}})
 			s := startHandshake(t, client, nil)
-			hello := helloFrame(m.ID, 1, 27)
+			hello := helloFrame(m.ID, LinkRevision, 27)
 			sendHandshake(t, s, hello)
 			challenge := requireChallenge(t, s, f.serverKey, hello.GetHello())
 			f.admit(t, m.ID, 1)
@@ -1230,7 +1242,7 @@ func TestAdmissionCommitReplyLost(t *testing.T) {
 		queued := make(chan struct{}, 1)
 		client := f.wire(t, handshakeWireOptions{controls: &handshakeControls{onQueueDisconnect: func(string, string) { queued <- struct{}{} }}})
 		s := startHandshake(t, client, nil)
-		hello := helloFrame(m.ID, 1, 29)
+		hello := helloFrame(m.ID, LinkRevision, 29)
 		sendHandshake(t, s, hello)
 		challenge := requireChallenge(t, s, f.serverKey, hello.GetHello())
 		storetest.Exec(t, f.obs, `CREATE FUNCTION reject_admission() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -1283,7 +1295,7 @@ func TestScriptedMachineJoinsAndConnects(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 12*time.Second)
 			defer cancel()
 			s, w, err := machine.Connect(ctx, client)
-			if err != nil || s == nil || w == nil || w.GetLinkRevision() != 1 ||
+			if err != nil || s == nil || w == nil || w.GetLinkRevision() != LinkRevision ||
 				w.GetState().GetApproval() != linkv1.Approval_APPROVAL_WAITING || w.GetConnectionToken() != "" {
 				t.Fatal("The scripted machine did not complete the signed handshake on the generated route.")
 			}

@@ -89,10 +89,20 @@ func fixtureStreamID(t *testing.T) string {
 	return id
 }
 
+// During the test freeze, the same fixture runs against both admission signatures.
+func admitFixtureRun(s *State, ctx context.Context, machineID, streamID, address string) (Stream, error) {
+	if LinkRevision == 1 {
+		admit := any(s.BecomeCurrent).(func(context.Context, string, string, string) (Stream, error))
+		return admit(ctx, machineID, streamID, address)
+	}
+	admit := any(s.BecomeCurrent).(func(context.Context, string, string, string, RunAnnouncement) (Stream, error))
+	return admit(ctx, machineID, streamID, address, RunAnnouncement{ID: machineID, FirstEventNumber: 1})
+}
+
 func (f *presenceFixture) admit(t *testing.T, machineID string, generation int64) Stream {
 	t.Helper()
 	id := fixtureStreamID(t)
-	result, err := f.state.BecomeCurrent(t.Context(), machineID, id, presenceAddress)
+	result, err := admitFixtureRun(f.state, t.Context(), machineID, id, presenceAddress)
 	if err != nil || result.ID != id || result.Generation != generation || result.Standing.ID != machineID {
 		t.Fatalf("BecomeCurrent did not return the requested stream and generation %d.", generation)
 	}
@@ -203,7 +213,7 @@ func TestBecomeCurrent(t *testing.T) {
 
 	unknown := fixtureStreamID(t)
 	before = f.head(t)
-	if _, err := f.state.BecomeCurrent(t.Context(), unknown, fixtureStreamID(t), ""); !errors.Is(err, ErrUnknownMachine) {
+	if _, err := admitFixtureRun(f.state, t.Context(), unknown, fixtureStreamID(t), ""); !errors.Is(err, ErrUnknownMachine) {
 		t.Error("A missing machine did not return ErrUnknownMachine.")
 	}
 	if _, err := f.state.CheckCurrent(t.Context(), unknown, a.ID); !errors.Is(err, ErrUnknownMachine) {
