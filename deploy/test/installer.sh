@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+set +x
+set +a
 # Hermetic tests of deploy/install-client.sh on Linux (work item 2 of the plan go-s3-stack-client).
 #
 # Every outside program is a stand-in: go, docker, systemctl, loginctl, launchctl, uname, id, curl and jq
@@ -30,9 +32,8 @@ TESTNO=0
 TESTFAILED=0
 TESTNAME=''
 
-# An obviously false token of 60 characters that matches the shape the installer accepts.
-TOKEN=lgtm1_$(printf 'NOTAREALTOKEN%.0s' 1 2 3 4 5)
-TOKEN=${TOKEN:0:60}
+# The Docker stand-in generates this same 60-character value.
+TOKEN=$(printf '%s' lgtm1_ NOTAREALTOKEN{,,,,} | cut -c1-60)
 MARKER=SHIM_SECRET_MARKER_7f3a91
 ME=$(id -un)
 
@@ -155,7 +156,14 @@ case $name in
                     printf '%s\n' "$SHIM_SECRET_MARKER" >&2
                     exit 1
                 fi
-                printf '%s\n' "$SHIM_TOKEN"
+                case ${SHIM_TOKEN_CASE:-valid} in
+                    valid) printf '%s' lgtm1_ NOTAREALTOKEN{,,,,} | cut -c1-60 ;;
+                    0) printf '%s\n' 'oops' ;;
+                    1) printf '%s\n' 'lgtm1_abc def' ;;
+                    2) printf '%s\n' 'lgtm1_' ;;
+                    3) printf '%s\n' 'xlgtm1_abcdef' ;;
+                    *) exit 1 ;;
+                esac
                 ;;
         esac
         exit 0
@@ -182,10 +190,21 @@ case ${1:-} in
             printf '%s\n' 'client received the token in the argument list' >>"$CALLS_LOG"
             exit 2
         fi
+        join_environment=$(export -p)
+        if [[ -p /dev/fd/0 ]]; then
+            printf '%s\n' 'join input is a pipe' >>"$CALLS_LOG"
+        fi
         if IFS= read -r token; then
             token=${token%$'\r'}
         fi
         [[ -n $token ]] || exit 2
+        if [[ $* == *"$token"* ]]; then
+            printf '%s\n' 'client received the token in the argument list' >>"$CALLS_LOG"
+            exit 2
+        fi
+        if [[ $join_environment != *"$token"* ]]; then
+            printf '%s\n' 'join environment contains no token' >>"$CALLS_LOG"
+        fi
         hash=$(printf '%s' "$token" | sha256sum | cut -d' ' -f1)
         dir=${LGTM_CLIENT_STATE_DIR:-$HOME/.local/state/lgtm-client}
         if [[ -e $HOME/.local/bin/lgtm-client || -e $HOME/.config/systemd/user/lgtm-client.service ||
@@ -301,7 +320,7 @@ run() {
         cd "$T" &&
             umask 077 &&
             env -i HOME="$H" PATH="$T/shims:$T/tools" TMPDIR="$T/tmp" USER="$ME" LOGNAME="$ME" LANG=C \
-                GIT_OPTIONAL_LOCKS=0 CALLS_LOG="$LOG" SHIM_STATE="$T/state" SHIM_TOKEN="$TOKEN" \
+                GIT_OPTIONAL_LOCKS=0 CALLS_LOG="$LOG" SHIM_STATE="$T/state" \
                 SHIM_SECRET_MARKER="$MARKER" "${envs[@]}" "$installer" "${args[@]}" 2>&1 </dev/null
     )
     RC=$?
@@ -313,7 +332,7 @@ runx() {
         cd "$T" &&
             umask 077 &&
             env -i HOME="$H" PATH="$T/shims:$T/tools" TMPDIR="$T/tmp" USER="$ME" LOGNAME="$ME" LANG=C \
-                GIT_OPTIONAL_LOCKS=0 CALLS_LOG="$LOG" SHIM_STATE="$T/state" SHIM_TOKEN="$TOKEN" \
+                GIT_OPTIONAL_LOCKS=0 CALLS_LOG="$LOG" SHIM_STATE="$T/state" \
                 SHIM_SECRET_MARKER="$MARKER" "$@" "$real_bash" -x "$installer" 2>&1 </dev/null
     )
     RC=$?
@@ -342,6 +361,12 @@ rc_is() { ((RC == $1)); }
 
 nothing_installed() { [[ ! -e $(bin) && ! -e $(unit) && ! -e $(agent) ]]; }
 bindir_empty() { [[ ! -d $H/.local/bin ]] || [[ -z $(find "$H/.local/bin" -mindepth 1 -print -quit) ]]; }
+
+no_token_files() {
+    local status=0
+    grep -rlaF -f <(printf '%s\n' "$TOKEN") -- "$T" || status=$?
+    ((status == 1))
+}
 
 # The lines about a service manager that a refused run may hold.
 manager_lines_beyond_probe() {
@@ -482,7 +507,8 @@ test_joins_before_service_starts() {
 
 test_token_never_printed() {
     begin token_never_printed
-    local hash
+    local hash mode
+    local -a compatibility
     hash=$(printf '%s' "$TOKEN" | sha256sum | cut -d' ' -f1)
     fresh
     run SHIM_UNAME=Linux
@@ -493,20 +519,27 @@ test_token_never_printed() {
     fi
     check 'the join line with the token hash is in the calls log' has_re "^client join [^ ]+ $hash "
     check 'the output does not hold the token' out_lacks "$TOKEN"
-    check 'no file of the test folder holds the token' \
-        bash -c '! grep -rIlF -- "$1" "$2" 2>/dev/null | grep -q .' _ "$TOKEN" "$T"
+    check 'no file of the test folder holds the token' no_token_files
 
     fresh
     run SHIM_UNAME=Linux SHIM_JOIN_EXIT=1
     check 'a failed join reached the join' has_re "^client join [^ ]+ $hash "
     check 'a failed join does not print the token' out_lacks "$TOKEN"
-    check 'no file of the failed test folder holds the token' \
-        bash -c '! grep -rIlF -- "$1" "$2" 2>/dev/null | grep -q .' _ "$TOKEN" "$T"
+    check 'no file of the failed test folder holds the token' no_token_files
 
-    fresh
-    runx SHIM_UNAME=Linux
-    check 'a trace run reached the join' has_re "^client join [^ ]+ $hash "
-    check 'the trace does not hold the token' out_lacks "$TOKEN"
+    for mode in native 5.0; do
+        compatibility=()
+        [[ $mode == native ]] || compatibility+=("BASH_COMPAT=$mode")
+        fresh
+        runx SHIM_UNAME=Linux "${compatibility[@]}"
+        check "[$mode] the installer exited successfully" rc_is 0
+        check "[$mode] the traced join reads the token with the standard-input flag" has_re "^client join [^ ]+ $hash "
+        check "[$mode] the token stays out of the join arguments" no_re '^client received the token in the argument list$'
+        check "[$mode] the join standard input is a pipe" has_line 'join input is a pipe'
+        check "[$mode] the join environment contains no token" has_line 'join environment contains no token'
+        check "[$mode] the trace does not hold the token" out_lacks "$TOKEN"
+        check "[$mode] no file of the traced test folder holds the token" no_token_files
+    done
     end
 }
 
@@ -596,10 +629,12 @@ test_refuses_stack_not_answering() {
 
 test_refuses_malformed_token() {
     begin refuses_malformed_token
-    local bad
-    for bad in oops 'lgtm1_abc def' 'lgtm1_' 'xlgtm1_abcdef'; do
+    local -a malformed=(oops 'lgtm1_abc def' 'lgtm1_' 'xlgtm1_abcdef')
+    local case_index bad
+    for case_index in "${!malformed[@]}"; do
+        bad=${malformed[case_index]}
         fresh
-        run SHIM_UNAME=Linux SHIM_TOKEN="$bad"
+        run SHIM_UNAME=Linux SHIM_TOKEN_CASE="$case_index"
         check "[$bad] the exit code is 1" rc_is 1
         check "[$bad] the output says no token was returned" out_has 'returned no token'
         check "[$bad] nothing is joined" no_re '^client join '
@@ -1010,6 +1045,14 @@ test_refuses_unsupported_system() {
 }
 
 # ---------------------------------------------------------------------------
+
+if [[ $# == 1 && $1 == --join-transport ]]; then
+    printf '1..1\n'
+    test_token_never_printed
+    printf '%s passed, %s failed\n' "$PASSED" "$FAILCOUNT"
+    ((FAILCOUNT == 0))
+    exit "$?"
+fi
 
 printf '1..25\n'
 test_installs_linux_user_service

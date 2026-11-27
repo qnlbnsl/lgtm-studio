@@ -45,8 +45,33 @@ present() {
     [[ -e $1 || -L $1 ]]
 }
 
+private_directory() {
+    [[ -d $1 && ! -L $1 && -O $1 ]] && [[ $(stat -c '%a' -- "$1" 2>/dev/null) == 700 ]]
+}
+
+private_file() {
+    [[ -f $1 && ! -L $1 && -O $1 ]] && [[ $(stat -c '%a' -- "$1" 2>/dev/null) == 600 ]]
+}
+
+lock_fixture() {
+    need flock
+    private_directory "$fixture" && exec {fixture_lock}<"$fixture" &&
+        flock -x "$fixture_lock" || fail 'The private live fixture could not be locked.'
+    # The open directory could have been removed while this invocation waited.
+    if ! present "$fixture"; then
+        return 1
+    fi
+    [[ $fixture -ef /dev/fd/$fixture_lock && ! -L $state ]] ||
+        fail 'The live fixture changed while acquiring its lock.'
+}
+
 unit_property() {
     systemctl --user show --property="$1" --value "$unit" 2>/dev/null
+}
+
+read_unit_load() {
+    unit_load=$(unit_property LoadState) || [[ $unit_load == not-found ]] ||
+        fail 'The user unit load state could not be read.'
 }
 
 unit_owned_by_fixture() {
@@ -106,12 +131,14 @@ signin() {
         get_server --cookie "$jar" && jq -e '.signedIn == true' <<< "$body" >/dev/null 2>&1
 }
 
+revoke_session() {
+    [[ ! -s $1 ]] ||
+        { rpc SessionService/SignOut --cookie "$1" <<< '{}' && [[ $http_code == 200 || $http_code == 401 ]]; }
+}
+
 signout() {
     [[ -n $jar ]] || return 0
-    if [[ -s $jar ]]; then
-        rpc SessionService/SignOut --cookie "$jar" <<< '{}' &&
-            [[ $http_code == 200 || $http_code == 401 ]] || return 1
-    fi
+    revoke_session "$jar" || return 1
     rm -f -- "$jar" 2>/dev/null || return 1
     jar=''
 }
@@ -223,15 +250,14 @@ read_identity() {
 write_record() {
     local record
     record=$(mktemp -- "$fixture/record.XXXXXX" 2>/dev/null) &&
-        printf '%s\0' "$boot_id" "$web_url" "${COMPOSE_FILE:-}" > "$record" &&
+        printf '%s\0' "$boot_id" "$web_url" "${COMPOSE_FILE:-}" "${XDG_CONFIG_HOME:-}" > "$record" &&
         mv -T -- "$record" "$fixture/fixture"
 }
 
 read_record() {
     local -a record
-    [[ -f $fixture/fixture && ! -L $fixture/fixture && -O $fixture/fixture ]] &&
-        [[ $(stat -c '%a' -- "$fixture/fixture" 2>/dev/null) == 600 ]] &&
-        mapfile -d '' -t record < "$fixture/fixture" && [[ ${#record[@]} == 3 ]] || return 1
+    private_file "$fixture/fixture" && mapfile -d '' -t record < "$fixture/fixture" &&
+        [[ ${#record[@]} == 3 || ${#record[@]} == 4 ]] || return 1
     recorded_boot=${record[0]}
     recorded_address=${record[1]}
     if [[ -n ${record[2]} ]]; then
@@ -239,6 +265,84 @@ read_record() {
     else
         unset COMPOSE_FILE
     fi
+    if [[ ${#record[@]} == 4 ]]; then
+        if [[ -n ${record[3]} ]]; then
+            export XDG_CONFIG_HOME="${record[3]}"
+        else
+            unset XDG_CONFIG_HOME
+        fi
+        unit_file=${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/$unit
+    fi
+}
+
+read_recorded_address() {
+    read_address && [[ $web_url == "$recorded_address" ]]
+}
+
+fixture_install() (
+    # The installer inherits the lock descriptor and these two functions.
+    # Each registration reserves the exact staging path before anything is created beside the target.
+    export live_fixture="$fixture" live_bin="$bin" live_unit_file="$unit_file"
+    mktemp() {
+        local target kind registration staging
+        [[ $# == 2 && $1 == -- ]] || return 1
+        case $2 in
+            "$live_bin".XXXXXX) target=$live_bin; kind=bin ;;
+            "$live_unit_file".XXXXXX) target=$live_unit_file; kind=unit ;;
+            *) return 1 ;;
+        esac
+        registration=$(command mktemp -- "$live_fixture/$kind.XXXXXX") || return 1
+        staging=$target.fixture-${registration##*.}
+        mkdir -m 0700 -- "$staging" && (set -C; : > "$staging/pending") || return 1
+        printf '%s\n' "$staging/pending"
+    }
+    mv() {
+        local source=${@: -2:1} target=${@: -1}
+        if [[ $target == "$live_bin" ]]; then
+            # The hard link proves ownership even if the installer dies just after the rename.
+            [[ $source == "$live_bin".fixture-*/pending ]] &&
+                ln -- "$source" "${source%/*}/program" || return 1
+        fi
+        command mv "$@"
+    }
+    export -f mktemp mv
+    exec "$installer"
+)
+
+locate_staging() {
+    local registration=$1 target=$2 suffix
+    suffix=${registration##*.}
+    private_file "$registration" && [[ $suffix =~ ^[a-zA-Z0-9]{6}$ ]] ||
+        fail 'The fixture staging record could not be verified.'
+    staging=$target.fixture-$suffix
+    if present "$staging"; then
+        private_directory "$staging" || fail 'The fixture staging directory could not be verified.'
+    fi
+}
+
+remove_staging() {
+    local kind=$1 target=$2 registration staging
+    for registration in "$fixture/$kind".*; do
+        present "$registration" || continue
+        locate_staging "$registration" "$target"
+        if present "$staging"; then
+            rm -f -- "$staging/pending" "$staging/program" && rmdir -- "$staging" ||
+                fail 'The installer staging files could not be removed.'
+        fi
+    done
+}
+
+fixture_owns_program() {
+    local registration staging
+    [[ -f $bin && ! -L $bin ]] || return 1
+    for registration in "$fixture"/bin.*; do
+        present "$registration" || continue
+        locate_staging "$registration" "$bin"
+        if [[ -f $staging/program && ! -L $staging/program && $bin -ef $staging/program ]]; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 machine_rpc() {
@@ -257,15 +361,14 @@ reject() {
 
 live_install_leaves_machine_waiting() {
     local before
-    # The installer must use the client's standard-input form before minting a real token.
-    grep -Eq '^[[:blank:]]*if ! join_output=.* join "\$address" - <<< "\$token" 2>&1\); then$' \
-        "$installer" 2>/dev/null ||
+    TMPDIR="$fixture" LGTM_INSTALLER_UNDER_TEST="$installer" \
+        bash "$repo/deploy/test/installer.sh" --join-transport >/dev/null 2>&1 ||
         { reject 'The installer must pass the join token on standard input.'; return 1; }
     snapshot "$((SECONDS + 5))" ||
         { reject 'WatchClients did not send the machine list before installation.'; return 1; }
     before=$(jq -c '[.all.clients[]?.id]' <<< "$frame" 2>/dev/null) || return 1
 
-    LGTM_CLIENT_STATE_DIR="$state" "$installer" >/dev/null 2>&1 ||
+    LGTM_CLIENT_STATE_DIR="$state" fixture_install >/dev/null 2>&1 ||
         { reject 'The installer exited unsuccessfully.'; return 1; }
     read_identity || { reject 'The installed client did not write a machine identifier.'; return 1; }
     snapshot "$((SECONDS + 5))" ||
@@ -353,7 +456,7 @@ live_rerun_keeps_machine() {
     count=$(jq -e '.all.clients // [] | length' <<< "$frame" 2>/dev/null) &&
         digest=$(sha256sum < "$identity") || return 1
 
-    (unset LGTM_CLIENT_STATE_DIR; "$installer") >/dev/null 2>&1 ||
+    (unset LGTM_CLIENT_STATE_DIR; fixture_install) >/dev/null 2>&1 ||
         { reject 'The second install exited unsuccessfully.'; return 1; }
     deadline=$((SECONDS + 35))
     wait_online "$deadline" "$previous" ||
@@ -424,15 +527,18 @@ need() {
 
 run_default() {
     local status=0
+    read_unit_load
     ! present "$fixture" && ! present "$bin" && ! present "$unit_file" && [[ $unit_load == not-found ]] ||
         fail 'The live fixture, client program or user unit already exists.'
-    need docker curl jq go loginctl sha256sum journalctl
+    need docker curl jq go loginctl sha256sum journalctl flock
     [[ $(systemctl is-enabled docker.service 2>/dev/null) == enabled ]] ||
         fail 'Docker must be enabled at boot.'
     [[ -n ${LGTM_WEB_PASSWORD:-} ]] || fail 'Set LGTM_WEB_PASSWORD to the fixture website password.'
     read_address && get_server || fail 'The Compose stack did not answer on its published loopback address.'
     mkdir -p -- "${fixture%/*}" && mkdir -m 0700 -- "$fixture" ||
         fail 'The live fixture directory could not be created.'
+    lock_fixture || fail 'The new fixture was removed before it could be used.'
+    ! present "$bin" && ! present "$unit_file" || fail 'The client program or user unit already exists.'
     write_record || fail 'The live fixture record could not be written.'
     signin || fail 'The live test could not sign in.'
 
@@ -460,23 +566,42 @@ run_default() {
 
 run_cleanup() {
     local status=0 active='' since='' deadline=0 observation='skip'
-    unit_owned_by_fixture || fail 'The user unit does not name the fixture state folder.'
-    if ! present "$fixture"; then
+    local old_jar address_verified=0 uninstall=0
+    if ! present "$fixture" || ! lock_fixture; then
         printf '%s\n' 'ok 8 # SKIP no running service'
         return 0
     fi
 
-    if present "$fixture/fixture"; then
-        need docker
-        read_record && read_address && [[ $web_url == "$recorded_address" ]] ||
-            fail 'The fixture record or its published address could not be verified.'
-    elif present "$state"; then
-        fail 'The fixture record is missing and the state folder exists.'
+    if ! present "$fixture/fixture"; then
+        ! present "$state" || fail 'The fixture record is missing and the state folder exists.'
+        rm -rf -- "$fixture" || fail 'The live fixture directory could not be removed.'
+        printf '%s\n' 'ok 8 # SKIP no running service'
+        return 0
+    fi
+    read_record || fail 'The fixture record could not be verified.'
+    read_unit_load
+    unit_owned_by_fixture || fail 'The user unit does not name the fixture state folder.'
+    if fixture_owns_program; then
+        uninstall=1
+    elif present "$unit_file" || [[ $unit_load != not-found ]]; then
+        ! present "$bin" || fail 'The program has no fixture ownership record. Move it aside before cleanup.'
+        uninstall=1
     fi
 
+    for old_jar in "$fixture"/session.*; do
+        private_file "$old_jar" && [[ -s $old_jar ]] || continue
+        if ((address_verified == 0)); then
+            read_recorded_address && get_server || break
+            address_verified=1
+        fi
+        revoke_session "$old_jar" ||
+            printf '%s\n' 'The live test could not sign out an earlier session.' >&2
+    done
     if present "$identity"; then
-        need curl jq journalctl
+        need docker curl jq journalctl
         read_identity || fail 'The fixture machine identifier could not be read.'
+        ((address_verified)) || read_recorded_address ||
+            fail 'The published address could not be verified for machine removal.'
         signin || fail 'The live test could not sign in for removal.'
         if [[ $unit_load != not-found ]]; then
             active=$(unit_property ActiveState) || fail 'The user unit state could not be read.'
@@ -503,8 +628,12 @@ run_cleanup() {
         status=1
     fi
 
-    "$installer" --remove >/dev/null 2>&1 || fail 'The installer could not remove the user unit and program.'
+    if ((uninstall)); then
+        "$installer" --remove >/dev/null 2>&1 || fail 'The installer could not remove the user unit and program.'
+    fi
     signout || fail 'The live test could not sign out before removing the fixture.'
+    remove_staging bin "$bin"
+    remove_staging unit "$unit_file"
     rm -rf -- "$fixture" || fail 'The live fixture directory could not be removed.'
     case $observation in
         skip) printf '%s\n' 'ok 8 # SKIP no running service' ;;
@@ -515,28 +644,20 @@ run_cleanup() {
 }
 
 systemctl --user show-environment >/dev/null 2>&1 || fail 'The systemd user manager is unavailable.'
-unit_load=$(unit_property LoadState) || [[ $unit_load == not-found ]] ||
-    fail 'The user unit load state could not be read.'
 case $part in
     '')
         IFS= read -r boot_id < "$boot_file" || fail 'The boot identifier could not be read.'
         run_default
         ;;
-    --after-reboot | --cleanup)
-        if present "$fixture"; then
-            [[ -d $fixture && ! -L $fixture && -O $fixture && ! -L $state ]] &&
-                [[ $(stat -c '%a' -- "$fixture" 2>/dev/null) == 700 ]] ||
-                fail 'The live fixture is not a private directory owned by this user.'
-        fi
-        if [[ $part == --cleanup ]]; then
-            run_cleanup
-        else
-            need docker curl jq
-            IFS= read -r boot_id < "$boot_file" || fail 'The boot identifier could not be read.'
-            read_record && read_identity || fail 'The fixture record or machine identifier could not be read.'
-            [[ $unit_load == loaded && -f $unit_file ]] && unit_owned_by_fixture ||
-                fail 'The installed user unit does not name the fixture state folder.'
-            run_test 7 live_online_after_reboot
-        fi
+    --cleanup) run_cleanup ;;
+    --after-reboot)
+        lock_fixture || fail 'The live fixture is missing.'
+        need docker curl jq
+        IFS= read -r boot_id < "$boot_file" || fail 'The boot identifier could not be read.'
+        read_record && read_identity || fail 'The fixture record or machine identifier could not be read.'
+        read_unit_load
+        [[ $unit_load == loaded && -f $unit_file ]] && unit_owned_by_fixture ||
+            fail 'The installed user unit does not name the fixture state folder.'
+        run_test 7 live_online_after_reboot
         ;;
 esac
