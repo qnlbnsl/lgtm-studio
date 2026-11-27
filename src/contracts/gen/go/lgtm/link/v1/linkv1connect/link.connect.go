@@ -133,8 +133,12 @@ type LinkServiceClient interface {
 	//     or above any pending boundary. At a tie between unseen runs, the later successful
 	//     admission takes precedence. The server saves the admitted run and its boundary together.
 	//   - The run becomes ready once when the durable mark reaches first_event_number - 1. The
-	//     server checks readiness on admission and whenever the mark advances. Before readiness
-	//     there is no command claim, shared send permit or advance of the command cursor.
+	//     server checks readiness on admission and whenever the mark advances.
+	//     The latest admitted run is ready at admission if the committed mark is at or past
+	//     first_event_number - 1, including on a reconnect after a server restart.
+	//     The server calls the readiness callback within the transaction only on a run's first
+	//     transition to ready. Before readiness there is no command claim, shared send permit or
+	//     advance of the command cursor.
 	//
 	// The current stream:
 	//   - The admission of a stream is one commit of the server's database, after its Proof verified.
@@ -190,8 +194,10 @@ type LinkServiceClient interface {
 	//   - A removal ends every pending command and staged result of the machine as removed.
 	//   - The server ends the machine's current stream with the same code and reason. Every later
 	//     Open of that machine gets a Challenge and then the same code.
-	//   - The server may send SetState with APPROVAL_REMOVED before it ends the stream, and nothing
-	//     waits for its delivery. Welcome.state is never APPROVAL_REMOVED.
+	//   - On removal, the server ends a stream that is still replaying with failed_precondition
+	//     and unknown_machine without sending a command. The server may send a best-effort SetState
+	//     with APPROVAL_REMOVED only to a ready stream before it ends that stream.
+	//     Nothing waits for its delivery. Welcome.state is never APPROVAL_REMOVED.
 	Open(context.Context) *connect.BidiStreamForClient[v1.OpenRequest, v1.OpenResponse]
 }
 
@@ -303,8 +309,12 @@ type LinkServiceHandler interface {
 	//     or above any pending boundary. At a tie between unseen runs, the later successful
 	//     admission takes precedence. The server saves the admitted run and its boundary together.
 	//   - The run becomes ready once when the durable mark reaches first_event_number - 1. The
-	//     server checks readiness on admission and whenever the mark advances. Before readiness
-	//     there is no command claim, shared send permit or advance of the command cursor.
+	//     server checks readiness on admission and whenever the mark advances.
+	//     The latest admitted run is ready at admission if the committed mark is at or past
+	//     first_event_number - 1, including on a reconnect after a server restart.
+	//     The server calls the readiness callback within the transaction only on a run's first
+	//     transition to ready. Before readiness there is no command claim, shared send permit or
+	//     advance of the command cursor.
 	//
 	// The current stream:
 	//   - The admission of a stream is one commit of the server's database, after its Proof verified.
@@ -360,8 +370,10 @@ type LinkServiceHandler interface {
 	//   - A removal ends every pending command and staged result of the machine as removed.
 	//   - The server ends the machine's current stream with the same code and reason. Every later
 	//     Open of that machine gets a Challenge and then the same code.
-	//   - The server may send SetState with APPROVAL_REMOVED before it ends the stream, and nothing
-	//     waits for its delivery. Welcome.state is never APPROVAL_REMOVED.
+	//   - On removal, the server ends a stream that is still replaying with failed_precondition
+	//     and unknown_machine without sending a command. The server may send a best-effort SetState
+	//     with APPROVAL_REMOVED only to a ready stream before it ends that stream.
+	//     Nothing waits for its delivery. Welcome.state is never APPROVAL_REMOVED.
 	Open(context.Context, *connect.BidiStream[v1.OpenRequest, v1.OpenResponse]) error
 }
 

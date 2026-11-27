@@ -8,8 +8,10 @@
 // - A machine numbers its events from 1, with no gaps, and never reuses or changes a number.
 // - The server keeps the last committed event number for each machine. It writes that number in
 //   the same transaction as any event effect and result settlement.
-// - Welcome.last_event_number is the durable replay mark. The machine forgets its events at or
-//   below it and sends the rest from the next one, in order.
+// - Welcome.last_event_number is the durable replay mark. The client checks the Welcome mark
+//   against its saved event history before it forgets any event or advances its saved
+//   acknowledgement. Only after that check passes does the client forget events at or below
+//   the mark and send the rest in order from the next number.
 // - The machine may hand over up to 32 events ahead of Welcome or the latest acknowledgement.
 // - Only the current stream's events count. The server ignores an event of another stream.
 // - The server decides each event of the current stream by this table, which comes before the
@@ -33,9 +35,11 @@
 // - Bad numbers, undecodable frames, failed writes and obsolete streams receive no acknowledgement.
 // - One machine id has one outbox. A Welcome mark at or above local next or below the retained
 //   floor minus one is incompatible. The floor is the first retained number, or local next for
-//   an empty queue. Missing or corrupt required history stops replay without a fabricated
-//   advance. Restore the real prefix or remove the machine and enroll again. A server database
-//   rollback or indistinguishable client history is outside wave 1.
+//   an empty queue. An incompatible Welcome mark leaves all state on disk unchanged, including
+//   the retained event bytes and saved acknowledgement. Missing or corrupt required history
+//   stops replay without a fabricated advance. Restore the real prefix or remove the machine
+//   and enroll again. A server database rollback or indistinguishable client history is outside
+//   wave 1.
 // - When it becomes approved on a stream, by a Welcome or by a SetState, the machine sends its
 //   current Facts and HarnessesFound as new events.
 //

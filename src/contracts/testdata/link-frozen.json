@@ -1,4 +1,4 @@
 [
   {"revision": 1, "files": {"commands.proto": "58d61c6e0c96d1f5aba38a306a0b59aa0961520c93e14504b963a33709e440b4", "events.proto": "a1195291122a29163df5e59e2bce3b3d7ede107885b809aa9bce40a006da806b", "link.proto": "87c3060e128e549a2e2915640b60130c222e2edda72e7165f4386edddbc6b876"}}
-  ,{"revision": 2, "files": {"commands.proto": "04877a9d5eef55c9130d98fd94717bf6eca1d817935dd5b387c79830341b146a", "events.proto": "9d9542dd73f7a6e9c6733bcff81221d549f4d4dcd5df5cec1d50d3be86634fbb", "folders.proto": "30916034956f336ec16567e8da5f15c6f950c1c92c4ed6d4f4a25c2ea168bc9f", "link.proto": "764dd8a9102db9e016082120605b63598ef6da9073e437fe397bb975dc310db1"}}
+  ,{"revision": 2, "files": {"commands.proto": "04877a9d5eef55c9130d98fd94717bf6eca1d817935dd5b387c79830341b146a", "events.proto": "bb8307f02cd47586b2df86bbbba56c2ee466396a0bbca6d43498d06d91690373", "folders.proto": "30916034956f336ec16567e8da5f15c6f950c1c92c4ed6d4f4a25c2ea168bc9f", "link.proto": "d92abcc056d4a075c5e86d4be5ef62e3e5d3bf694a7a3e602fc459642ad5e4b5"}}
 ]
