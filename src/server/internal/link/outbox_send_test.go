@@ -273,7 +273,8 @@ func TestCommandSendRechecksBeforeWrite(t *testing.T) {
 			f.approve(t, m.ID)
 			row := queueSendRestart(t, f.presenceFixture, m.ID, 0)
 			server := commandListener(t, f, map[string]*commandWireProbe{"first": probe})
-			client := linkv1connect.NewLinkServiceClient(handshakeHTTPClient(t), server.URL)
+			// The wrapped writer recognizes only uncompressed response envelopes.
+			client := linkv1connect.NewLinkServiceClient(handshakeHTTPClient(t), server.URL, connect.WithAcceptCompression("gzip", nil, nil))
 			s := openCommandStream(t, f, client, m, key, "first")
 			stream := f.current(t, m.ID).StreamID
 			select {
@@ -571,6 +572,10 @@ func TestCommandSendDeadline(t *testing.T) {
 			}
 			storetest.Receive(t, "Open closing after the write deadline", probe.closed)
 			requireDispatch(t, f.presenceFixture, row, stream, 1, false)
+			// Disconnect takes the same machine lock in a separate transaction.
+			storetest.Poll(t, "the deadline stream's disconnect committing", func() bool {
+				return f.connectionCount(t, m.ID) == 0
+			})
 			requireMachineWritable(t, f.presenceFixture, m.ID)
 			if !cutoff {
 				client := linkv1connect.NewLinkServiceClient(handshakeHTTPClient(t), server.URL)
@@ -759,6 +764,10 @@ func TestCommandSendPoolHeadroom(t *testing.T) {
 	closeAndObserveCleanup := func(label string) {
 		t.Helper()
 		cancels[label]()
+		// The HTTP/2 transport can still be reading the open request body after cancellation.
+		if err := streams[label].CloseRequest(); err != nil {
+			t.Fatal("The pool fixture could not close the canceled stream's request body.")
+		}
 		storetest.Receive(t, "the closed stream's handler exiting", probes[label].closed)
 		storetest.Poll(t, "disconnect cleanup committing while all command permits are held", func() bool {
 			requireHeld("first")
