@@ -23,12 +23,12 @@ func TestLinkCommandAttemptsAcrossReconnect(t *testing.T) {
 	requirePostgres(t)
 	t.Run("active scan", func(t *testing.T) {
 		f := newCommandFixture(t, relayControls{})
-		_, firstLeg := f.startApproved(t, 0)
+		run, firstLeg := f.startApproved(t, 0)
 		firstGeneration := generation(t, f)
 		f.probe.arm(t)
 		requestScan(t, f)
 		first := waitForCommand(t, firstLeg, scanAction, 0)
-		f.probe.heldPID(t)
+		pid := f.probe.heldPID(t)
 		f.probe.setVersion(t, "2.0.0")
 
 		firstLeg.cut()
@@ -36,13 +36,22 @@ func TestLinkCommandAttemptsAcrossReconnect(t *testing.T) {
 		retryLeg := receive(t, f.relay.legs, "a new stream on the same client state")
 		retry := waitForCommand(t, retryLeg, scanAction, 0)
 		requireRetry(t, first, retry)
+		waitForClientToProcessReplies(t, retryLeg)
+		waitForCommittedInventory(t, f, "2.0.0")
+		if unix.Kill(pid, 0) != nil {
+			t.Fatal("The requested scan probe stopped before the pending attempt could be checked.")
+		}
+		if slices.ContainsFunc(retryLeg.observe().results, func(result noticeResult) bool { return result.id == retry.id }) {
+			t.Fatal("The delivered scan attempt sent a result while the probe was held.")
+		}
+		requirePending(t, f.db, retry)
+		f.probe.release(t, "3.0.0")
 		if generation(t, f) <= firstGeneration {
 			t.Fatal("The retried scan did not arrive on a newer stream generation.")
 		}
-		waitForCommittedInventory(t, f, "2.0.0")
-		f.probe.release(t, "3.0.0")
 		waitForResult(t, retryLeg, retry, commandFailed)
 		waitForStoredResult(t, f.db, retry, "failed")
+		receive(t, firstLeg.requestsDone, "the first command stream's last client frame")
 		if slices.ContainsFunc(firstLeg.observe().results, func(result noticeResult) bool { return result.id == first.id }) {
 			t.Fatal("The cut stream received a result for the held scan.")
 		}
@@ -58,6 +67,17 @@ func TestLinkCommandAttemptsAcrossReconnect(t *testing.T) {
 		waitForStoredResult(t, f.db, later, "done")
 		waitForInventory(t, f, "4.0.0")
 		f.probe.requireRuns(t, 4)
+		run.stop(t)
+		receive(t, retryLeg.requestsDone, "the retry stream's last client frame")
+		var results []noticeResult
+		for _, result := range retryLeg.observe().results {
+			if result.id == retry.id {
+				results = append(results, result)
+			}
+		}
+		if !slices.Equal(results, []noticeResult{{id: retry.id, attempt: retry.attempt, outcome: commandFailed}}) {
+			t.Fatal("The scan did not send exactly one result on its latest attempt after probe release.")
+		}
 	})
 	for _, tc := range []struct {
 		name string
@@ -198,7 +218,7 @@ func TestLinkSameStreamApproval(t *testing.T) {
 			reports := make(chan struct{})
 			release := sync.OnceFunc(func() { close(reports) })
 			defer release()
-			f := newCommandFixture(t, relayControls{releaseReports: reports})
+			f := newCommandFixture(t, relayControls{releaseReports: func() <-chan struct{} { return reports }})
 			if tc.age != 0 {
 				ageInsertedCommand(t, f, stateAction, tc.age)
 			}

@@ -18,6 +18,7 @@ import (
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/qnlbnsl/lgtm-studio/src/client/clienttest"
 	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1"
@@ -184,7 +185,7 @@ func requirePending(t *testing.T, db *pgx.Conn, delivery commandDelivery) {
 SELECT count(*) = 1 FROM link_commands
 WHERE id=$1 AND attempt=$2 AND dispatched AND outcome IS NULL
     AND finished_at IS NULL AND payload IS NOT NULL`, delivery.id, delivery.attempt) {
-		t.Fatal("The dropped result changed the server's pending command.")
+		t.Fatal("The delivered attempt did not remain pending in the database.")
 	}
 }
 
@@ -221,6 +222,21 @@ func injectCommand(t *testing.T, leg *relayLeg, command *linkv1.Command) command
 		t.Fatal("The relay did not accept the injected command.")
 	}
 	return commandDelivery{id: command.GetId(), attempt: command.GetAttempt()}
+}
+
+// A reply to the same standing proves processing has reached this point on
+// the stream. The relay keeps this fixture command and its result off the server.
+func waitForClientToProcessReplies(t *testing.T, leg *relayLeg) {
+	t.Helper()
+	welcome := waitForWelcome(t, leg)
+	barrier := injectCommand(t, leg, &linkv1.Command{
+		Id: "0195977c-0000-7000-8000-000000000110", Attempt: 1,
+		ExpiresAt: timestamppb.New(time.Now().Add(time.Minute)),
+		Action: &linkv1.Command_SetState{SetState: &linkv1.SetState{State: &linkv1.MachineState{
+			Approval: welcome.approval, Revision: welcome.revision, Name: welcome.name,
+		}}},
+	})
+	waitForResult(t, leg, barrier, commandDone)
 }
 
 type versionProbe struct {

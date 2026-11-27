@@ -62,7 +62,16 @@ func TestLinkOutboxReplayAfterServerFailure(t *testing.T) {
 		},
 	})
 	page := server.Clients(t)
-	r := startRelay(t, server.Link())
+	var holdDrain atomic.Bool
+	drain := make(chan struct{})
+	releaseDrain := sync.OnceFunc(func() { close(drain) })
+	defer releaseDrain()
+	r := startRelayWithControls(t, server.Link(), relayControls{releaseReports: func() <-chan struct{} {
+		if holdDrain.Load() {
+			return drain
+		}
+		return nil
+	}})
 	logs := new(diagnostics)
 	opts := newClient(t, logs)
 	id := join(t, page, opts, r.address)
@@ -168,26 +177,37 @@ func TestLinkOutboxReplayAfterServerFailure(t *testing.T) {
 	checkPending(t, logs, pending, base)
 
 	// A Welcome carrying the committed mark replaces the lost acknowledgement.
+	// Hold the replay at the relay until both fresh readiness reports
+	// are buffered. On the live link the periodic tick sends only heartbeats.
+	final := pending[len(pending)-1].number + 2
+	holdDrain.Store(true)
 	server.Restart(t)
 	page = server.Clients(t)
 	r.blockNew.Store(false)
 	run = startClient(t, opts)
 	recovered := receive(t, r.legs, "the final recovery stream")
-	waitForClient(t, page, id, webv1.ClientState_CLIENT_STATE_ONLINE)
-	lastOutage := outage[len(outage)-1].number
-	waitFor(t, 10*time.Second, "acknowledgement of a report produced after the cuts", func() bool {
-		trace := recovered.observe()
-		return len(trace.acks) > 0 && trace.acks[len(trace.acks)-1] > pending[len(pending)-1].number
+	waitFor(t, 10*time.Second, "both fresh readiness reports to be buffered", func() bool {
+		return slices.Contains(logs.bufferedAfter(base), final)
 	})
+	releaseDrain()
+	waitForAck(t, recovered, final)
+	waitForClientToProcessReplies(t, recovered)
+	waitForClient(t, page, id, webv1.ClientState_CLIENT_STATE_ONLINE)
 	run.stop(t)
 	receive(t, recovered.done, "the recovered link to close")
-	final := mark(t, db, id)
+	receive(t, recovered.requestsDone, "the recovered link's last client frame")
+	if got := mark(t, db, id); got != final {
+		t.Fatalf("The recovered server application committed mark %d, want %d.", got, final)
+	}
 	trace := recovered.observe()
-	if !trace.welcomed || trace.mark != base+1 || final <= lastOutage ||
+	if !trace.welcomed || trace.mark != base+1 ||
 		!slices.Equal(trace.events, sequenceRange(base+2, final)) ||
 		!slices.Equal(trace.acks, sequenceRange(base+2, final)) {
 		t.Fatalf("Recovery from mark %d through %d sent events %v and received acknowledgements %v.",
 			trace.mark, final, trace.events, trace.acks)
+	}
+	if !slices.Equal(trace.reports[len(trace.reports)-2:], []reportDelivery{{facts: true}, {harnesses: true}}) {
+		t.Fatal("The final drain did not end with one fresh facts report and one fresh inventory report.")
 	}
 	checkAudit(t, db, base, final)
 	if pending := readPending(t, opts); len(pending) != 0 {
@@ -250,7 +270,7 @@ func sequenceRange(first, last uint64) []uint64 {
 
 func waitForAck(t *testing.T, leg *relayLeg, number uint64) {
 	t.Helper()
-	waitFor(t, 10*time.Second, "the baseline report acknowledgement", func() bool {
+	waitFor(t, 10*time.Second, "the expected report acknowledgement", func() bool {
 		return slices.Contains(leg.observe().acks, number)
 	})
 }
@@ -310,27 +330,8 @@ func checkScriptedReplay(t *testing.T, server *servertest.Server, db *pgx.Conn, 
 	stream := server.Link().Open(ctx)
 	defer stream.CloseRequest()
 	defer stream.CloseResponse()
-	nonce := make([]byte, 32)
-	rand.Read(nonce)
-	hello := &linkv1.Hello{MachineId: id, MachineNonce: nonce, LinkRevision: 1}
-	if err := stream.Send(&linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Hello{Hello: hello}}); err != nil {
-		t.Fatal("The scripted peer could not send Hello.")
-	}
-	frame, err := stream.Receive()
-	challenge := frame.GetChallenge()
-	if err != nil || challenge == nil || !ed25519.Verify(server.SigningPublicKey,
-		proofText("server", id, nonce, challenge.GetServerNonce()), challenge.GetServerSignature()) {
-		t.Fatal("The scripted peer did not receive a verifiable Challenge.")
-	}
-	key := readMachineKey(t, opts)
-	signature := ed25519.Sign(key, proofText("machine", id, nonce, challenge.GetServerNonce()))
-	if err := stream.Send(&linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Proof{
-		Proof: &linkv1.Proof{MachineSignature: signature},
-	}}); err != nil {
-		t.Fatal("The scripted peer could not send Proof.")
-	}
-	frame, err = stream.Receive()
-	if err != nil || frame.GetWelcome() == nil || frame.GetWelcome().GetLastEventNumber() != current {
+	welcome := authenticateScriptedLink(t, stream, server.SigningPublicKey, opts, id)
+	if welcome.GetLastEventNumber() != current {
 		t.Fatal("The scripted peer did not see the final committed mark in Welcome.")
 	}
 
@@ -361,7 +362,7 @@ func checkScriptedReplay(t *testing.T, server *servertest.Server, db *pgx.Conn, 
 			}
 		}
 	}
-	frame, err = send(repeat)
+	frame, err := send(repeat)
 	if err != nil || frame.GetEventAck().GetThrough() != current || mark(t, db, id) != current {
 		t.Fatal("The scripted repeat did not get the existing mark without applying an effect.")
 	}
@@ -402,6 +403,36 @@ func checkScriptedReplay(t *testing.T, server *servertest.Server, db *pgx.Conn, 
 	if marked {
 		t.Fatal("An unknown report field reached the server log.")
 	}
+}
+
+func authenticateScriptedLink(t *testing.T, stream *connect.BidiStreamForClient[linkv1.OpenRequest, linkv1.OpenResponse],
+	serverKey ed25519.PublicKey, opts clienttest.Options, id string,
+) *linkv1.Welcome {
+	t.Helper()
+	nonce := make([]byte, 32)
+	rand.Read(nonce)
+	hello := &linkv1.Hello{MachineId: id, MachineNonce: nonce, LinkRevision: 1}
+	if err := stream.Send(&linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Hello{Hello: hello}}); err != nil {
+		t.Fatal("The scripted peer could not send Hello.")
+	}
+	frame, err := stream.Receive()
+	challenge := frame.GetChallenge()
+	if err != nil || challenge == nil || !ed25519.Verify(serverKey,
+		proofText("server", id, nonce, challenge.GetServerNonce()), challenge.GetServerSignature()) {
+		t.Fatal("The scripted peer did not receive a verifiable Challenge.")
+	}
+	key := readMachineKey(t, opts)
+	signature := ed25519.Sign(key, proofText("machine", id, nonce, challenge.GetServerNonce()))
+	if err := stream.Send(&linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Proof{
+		Proof: &linkv1.Proof{MachineSignature: signature},
+	}}); err != nil {
+		t.Fatal("The scripted peer could not send Proof.")
+	}
+	frame, err = stream.Receive()
+	if err != nil || frame.GetWelcome() == nil {
+		t.Fatal("The scripted peer did not receive Welcome.")
+	}
+	return frame.GetWelcome()
 }
 
 func proofText(role, id string, machineNonce, serverNonce []byte) []byte {

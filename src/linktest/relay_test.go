@@ -25,8 +25,9 @@ type joinReceipt struct {
 
 type relayControls struct {
 	beforeReply    func(context.Context, *linkv1.OpenResponse) bool
-	releaseReports <-chan struct{}
+	releaseReports func() <-chan struct{}
 	dropResult     func(noticeResult) bool
+	observeResult  func(*linkv1.CommandResult)
 }
 
 type relay struct {
@@ -83,6 +84,7 @@ type legObservation struct {
 	welcomed        bool
 	mark            uint64
 	revision        uint64
+	name            string
 	approval        linkv1.Approval
 	events          []uint64
 	acks            []uint64
@@ -119,9 +121,10 @@ type noticeResult struct {
 }
 
 type relayLeg struct {
-	cut    context.CancelFunc
-	done   chan struct{}
-	inject chan *linkv1.Command
+	cut          context.CancelFunc
+	done         chan struct{}
+	requestsDone chan struct{}
+	inject       chan *linkv1.Command
 
 	mu       sync.Mutex
 	trace    legObservation
@@ -148,7 +151,10 @@ func (r *relay) Open(ctx context.Context, downstream *connect.BidiStream[linkv1.
 		return disconnected()
 	}
 	ctx, cancel := context.WithCancel(ctx)
-	leg := &relayLeg{cut: cancel, done: make(chan struct{}), inject: make(chan *linkv1.Command, 1), injected: make(map[commandAttempt]struct{})}
+	leg := &relayLeg{
+		cut: cancel, done: make(chan struct{}), requestsDone: make(chan struct{}),
+		inject: make(chan *linkv1.Command, 1), injected: make(map[commandAttempt]struct{}),
+	}
 	defer close(leg.done)
 	select {
 	case r.legs <- leg:
@@ -227,6 +233,7 @@ func (l *relayLeg) forwardRequests(
 	downstream *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse],
 	upstream *connect.BidiStreamForClient[linkv1.OpenRequest, linkv1.OpenResponse],
 ) {
+	defer close(l.requestsDone)
 	defer upstream.CloseRequest()
 	for {
 		frame, err := downstream.Receive()
@@ -262,11 +269,16 @@ func (l *relayLeg) forwardRequests(
 		if skip {
 			continue
 		}
+		if result := frame.GetCommandResult(); result != nil && controls.observeResult != nil {
+			controls.observeResult(result)
+		}
 		if frame.GetEvent() != nil && controls.releaseReports != nil {
-			select {
-			case <-controls.releaseReports:
-			case <-ctx.Done():
-				return
+			if release := controls.releaseReports(); release != nil {
+				select {
+				case <-release:
+				case <-ctx.Done():
+					return
+				}
 			}
 		}
 		if upstream.Send(frame) != nil {
@@ -287,6 +299,7 @@ func (l *relayLeg) recordReply(frame *linkv1.OpenResponse) {
 		l.trace.mark = welcome.GetLastEventNumber()
 		l.trace.revision = welcome.GetState().GetRevision()
 		l.trace.approval = welcome.GetState().GetApproval()
+		l.trace.name = welcome.GetState().GetName()
 	case frame.GetEventAck() != nil:
 		l.trace.acks = append(l.trace.acks, frame.GetEventAck().GetThrough())
 	case frame.GetCommand() != nil:
