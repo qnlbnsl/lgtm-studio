@@ -7914,4 +7914,14 @@ Link revision 2 makes a result wait for the events before it, and gives no comma
 1. When the server's database is restored to an earlier state, the server's mark is behind the client's history, and results and events that the server once applied arrive again. No mechanism reconciles the two stores.
 2. When a client's saved state is replaced by one whose numbering cannot be told from the real one, the server cannot detect the loss.
 
-Neither is promised by a check of wave 1 or of sprint 4. Support needs a design for reconciling history and results across the two stores. A client whose history is behind the server's mark is covered: the Machines page names it, and the owner restores the client's saved state or removes the machine and joins it again.
+3. When the server's database is restored to an earlier state, the website can also hold request keys that the server no longer knows, and repeats a request that the server once answered.
+
+None of these is promised by a check of wave 1 or of sprint 4. Support needs a design for reconciling history and results across the two stores. A client whose history is behind the server's mark is covered: the Machines page names it, and the owner restores the client's saved state or removes the machine and joins it again.
+
+## 1677. A path that the owner types is stored before any filter sees it
+
+Found on 2026-11-27, in the review of the plan `go-s4-server-projects` (threat-r1 04).
+
+The one filter for what leaves a machine runs on the client. A path that the owner types into "Add repository" travels the other way: the website sends it to the server, and the server stores it in the folder operation and in the waiting command before the client reads it.
+What must hold: a credential that is pasted into the path field by mistake is not kept by the server longer than the operation needs it, and never reaches a log or a watch.
+Sprint 4 keeps the stored path as it is. The operation and its command are retired one day after they settle. Protecting the waiting payload needs encryption of stored commands, which is a design of its own.
