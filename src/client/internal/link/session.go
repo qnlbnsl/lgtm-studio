@@ -28,6 +28,8 @@ type RunOptions struct {
 	ScanOptions harness.ScanOptions
 	Version     string
 	Logger      *slog.Logger
+	// Filter is a stub of the test writer for the shared process filter.
+	Filter *OutgoingFilter
 }
 
 type RunOutcome uint8
