@@ -30,6 +30,7 @@ type commandMetadata struct {
 	id, action, streamID string
 	seq, attempt         int64
 	expiresAt            time.Time
+	dispatched           bool
 }
 
 var errStoredCommand = store.NewDomainError("The stored command payload is invalid.")
@@ -55,7 +56,7 @@ func (s *State) claimNext(ctx context.Context, machineID, streamID string, curso
 			return err
 		}
 		cutoff := now.Add(-commandRetryGrace)
-		if err := next.revisitScans(ctx, tx, machineID, cutoff); err != nil {
+		if err := next.revisitScans(ctx, tx, machineID, streamID, cutoff); err != nil {
 			return err
 		}
 		page, err := readClaimPage(ctx, tx, machineID, next.lastSeq)
@@ -68,7 +69,8 @@ func (s *State) claimNext(ctx context.Context, machineID, streamID string, curso
 			if row.action != "set_state" && (!next.approved || !row.expiresAt.After(cutoff)) {
 				continue
 			}
-			if row.action == "scan_harnesses" && next.deferScan(row) {
+			if row.action == "scan_harnesses" &&
+				(row.attempt < math.MaxUint32 || (row.streamID == streamID && row.dispatched)) && next.deferScan(row) {
 				continue
 			}
 			if row.streamID == streamID || row.attempt == math.MaxUint32 {
@@ -88,7 +90,7 @@ func (s *State) claimNext(ctx context.Context, machineID, streamID string, curso
 
 func readClaimPage(ctx context.Context, tx *store.Tx, machineID string, after int64) ([]commandMetadata, error) {
 	rows, err := tx.Query(ctx, `
-SELECT id, action, coalesce(sent_stream_id, ''), seq, attempt, expires_at
+SELECT id, action, coalesce(sent_stream_id, ''), seq, attempt, expires_at, dispatched
 FROM link_commands
 WHERE machine_id = $1 AND outcome IS NULL AND seq > $2
 ORDER BY seq LIMIT $3`, machineID, after, claimPageSize)
@@ -97,12 +99,12 @@ ORDER BY seq LIMIT $3`, machineID, after, claimPageSize)
 	}
 	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (commandMetadata, error) {
 		var entry commandMetadata
-		err := row.Scan(&entry.id, &entry.action, &entry.streamID, &entry.seq, &entry.attempt, &entry.expiresAt)
+		err := row.Scan(&entry.id, &entry.action, &entry.streamID, &entry.seq, &entry.attempt, &entry.expiresAt, &entry.dispatched)
 		return entry, err
 	})
 }
 
-func (cursor *commandCursor) revisitScans(ctx context.Context, tx *store.Tx, machineID string, cutoff time.Time) error {
+func (cursor *commandCursor) revisitScans(ctx context.Context, tx *store.Tx, machineID, streamID string, cutoff time.Time) error {
 	if cursor.scanHead == "" {
 		return nil
 	}
@@ -111,7 +113,8 @@ func (cursor *commandCursor) revisitScans(ctx context.Context, tx *store.Tx, mac
 SELECT EXISTS (
     SELECT FROM link_commands
     WHERE id = $1 AND machine_id = $2 AND outcome IS NULL AND expires_at > $3
-)`, cursor.scanHead, machineID, cutoff).Scan(&pending)
+      AND (attempt < $4 OR (sent_stream_id = $5 AND dispatched))
+)`, cursor.scanHead, machineID, cutoff, int64(math.MaxUint32), streamID).Scan(&pending)
 	if err != nil || pending {
 		return err
 	}
