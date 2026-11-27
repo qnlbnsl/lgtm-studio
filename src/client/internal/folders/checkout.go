@@ -727,7 +727,7 @@ func (v *checkoutView) headSource() ([]byte, error) {
 	if errors.Is(err, errFolderNotLink) {
 		return v.source(path, maxConfigBytes)
 	}
-	if err := v.remember(path, sourceLink, info, err); err != nil || info == nil {
+	if err := v.remember(path, sourceLink, info, err); err != nil || info == nil || target != strings.TrimSpace(target) {
 		return nil, errFolderUnreadable
 	}
 	return []byte("ref: " + target + "\n"), nil

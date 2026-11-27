@@ -7996,13 +7996,6 @@ What must hold: the client and the Git process it starts read no file and no obj
 
 Where: `checkObjectFolder`, `checkoutView.prepare` and `checkoutDirectories` in `src/client/internal/folders/checkout.go`. Item 5 of the plan runs status commands on the same view, so point 2 covers them as well.
 
-## 1686. A broken symbolic branch pointer is reported as a branch
-
-Found on 2026-11-27, in the second review of item 4 of the plan `go-s4-client-folders` (post-4b 4).
-
-When `HEAD` is a link whose target is a branch name followed by white space, the installed Git refuses the checkout. The client reports the branch instead, because it removes the white space when it writes the private view.
-Where: the reading of a linked `HEAD` in `src/client/internal/folders/checkout.go`. The test writer of item 5 adds the test, and the builder of item 5 repairs it.
-
 ## 1687. Some late answers of sample screens can still reach the current workspace
 
 Found on 2026-11-27, in the build of item 2 of the plan `go-s4-web-repositories`.
@@ -8015,3 +8008,13 @@ The website now drops a discovery answer, a sign-in answer and a sample workflow
 4. The Design canvas channel keeps its last state after its view is gone.
 
 Where: `src/frontend/src/screens/` and the shared toast and dialog actions. All of these screens show sample data only in sprint 4. Each must be bound to its workspace before its screen reads real data. Issue 1682 is the same kind of fault in the Files editor.
+
+## 1688. Two gaps in the tests of the server fixture's observers
+
+Found on 2026-11-27, in the review of item 8 of the plan `go-s4-server-link` (post-8 1 and post-8 2). The review's verdict was to ship, and the code is right.
+
+1. No test makes the observer of a claimed send return an error. A change that dropped that error and sent the command anyway would pass.
+2. No test faults an inventory event at the observer before its commit. A change that skipped the observer for such events would pass.
+
+Where: `src/server/servertest/link_v2_test.go`. The tests of the paired fixtures in `src/linktest/` use both observers in a later wave, and are the natural place to close the gaps.
+

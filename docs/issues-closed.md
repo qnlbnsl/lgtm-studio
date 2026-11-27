@@ -16962,3 +16962,12 @@ Found on 2026-11-27, in the review by another vendor of the repairs of issue 166
 The next step is to register the teardown of a stream as soon as the handler owns resources, to note the cleanup before the commit begins, and one test for each point.
 
 Closed on 2026-11-27. The handler of a stream registers its teardown as soon as it owns the stream, so a panic unregisters the exact handle and releases its context. An admission notes the cleanup of its exact stream before the database call, and a panic queues it. The tests are `TestReviewGAdmissionCommitPanicUnregistersFailedHandle` and `TestReviewGCommittedAdmissionPanicCleansExactStream`. The builder did not fence the previous stream on an uncertain panic, as the review proposed, because the earlier test requires that stream to get its commands again after a rollback.
+
+## 1686. A broken symbolic branch pointer is reported as a branch
+
+Found on 2026-11-27, in the second review of item 4 of the plan `go-s4-client-folders` (post-4b 4).
+
+When `HEAD` is a link whose target is a branch name followed by white space, the installed Git refuses the checkout. The client reports the branch instead, because it removes the white space when it writes the private view.
+Where: the reading of a linked `HEAD` in `src/client/internal/folders/checkout.go`. The test writer of item 5 adds the test, and the builder of item 5 repairs it.
+
+Closed on 2026-11-27. Discovery checks the exact target of a linked `HEAD` as a branch reference before it writes the private view, and refuses the checkout otherwise. The test is `TestInspectFolderRefusesWhitespaceInLinkedHead`.
