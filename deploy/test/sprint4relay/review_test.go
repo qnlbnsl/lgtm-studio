@@ -84,10 +84,13 @@ func TestSprintFourRelayRejectsControlForAnotherStream(t *testing.T) {
 		}
 		requireEventDigest(t, replay, eventFrame(7).GetEvent())
 		expectAck(t, next, 7, "The fresh replay did not receive its acknowledgement.")
+		// The fixture announces event 9, so the peer waits for event 8 before sending the command.
+		sendFrame(t, next, eventFrame(8))
+		expectAck(t, next, 8, "The peer did not acknowledge the final event before the new run.")
 		expectAttempt(t, next, 2)
 		sendFrame(t, next, resultFrame(fixtureCommand, 2))
 		heartbeatBarrier(t, next)
-		upstream.requireTraffic(t, 2, "heartbeat", "event:7", "result:scan:2", "heartbeat")
+		upstream.requireTraffic(t, 2, "heartbeat", "event:7", "event:8", "result:scan:2", "heartbeat")
 		for _, record := range observations(t, dir)[retiredRecords:] {
 			if bytes.Equal(record.StreamID, forwarded.StreamID) && (record.Action == "armed" || record.Action == "held") {
 				t.Fatal("The relay applied the retained control after a restart.")
@@ -178,10 +181,9 @@ func TestSprintFourRelayUsesOnlyOneContractualRefusalTrailer(t *testing.T) {
 			upstream.Config.Protocols = protocols
 			upstream.Start()
 			t.Cleanup(upstream.Close)
-			transport := &http.Transport{Protocols: protocols}
-			t.Cleanup(transport.CloseIdleConnections)
-			direct := linkv1connect.NewLinkServiceClient(&http.Client{Transport: transport}, upstream.URL)
-			relayed, _ := startRelay(t, upstream.URL, nil)
+			t.Cleanup(upstream.CloseClientConnections)
+			direct := linkv1connect.NewLinkServiceClient(reviewHTTPClient(t), upstream.URL)
+			relayed := startReviewRelay(t, upstream.URL, t.TempDir()).client
 
 			receiveRefusal := func(client linkv1connect.LinkServiceClient) *wireStream {
 				t.Helper()
@@ -308,6 +310,9 @@ func TestSprintFourRelayFailsWhenTerminalObservationCannotBeWritten(t *testing.T
 			}
 			t.Cleanup(func() { _ = reader.Close() })
 			relay := startReviewRelay(t, upstream.address, dir)
+			if err := reader.SetReadDeadline(time.Now().Add(waitLimit)); err != nil {
+				t.Fatal("Could not bound reads from the observation pipe.")
+			}
 			records := make(chan observation, 32)
 			go func() {
 				defer close(records)
@@ -404,7 +409,8 @@ func TestSprintFourRelayFailsWhenTerminalObservationCannotBeWritten(t *testing.T
 
 func TestSprintFourRelayObservationsExcludePrivateLinkData(t *testing.T) {
 	upstream := newRelayPeer(t, false)
-	client, dir := startRelay(t, upstream.address, nil)
+	dir := t.TempDir()
+	client := startReviewRelay(t, upstream.address, dir).client
 	serverKey := checkJoin(t, client, upstream, true)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 3*waitLimit)
@@ -557,6 +563,7 @@ func startReviewRelay(t *testing.T, upstream, dir string) *reviewRelayProcess {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cmd := relayCommand(t, ctx, address, upstream, dir)
+	cmd.WaitDelay = time.Second
 	relay := &reviewRelayProcess{done: make(chan struct{}), url: "http://" + address}
 	cmd.Stderr = &relay.stderr
 	stdout, err := cmd.StdoutPipe()
@@ -566,7 +573,12 @@ func startReviewRelay(t *testing.T, upstream, dir string) *reviewRelayProcess {
 	}
 	relay.stop = func() {
 		cancel()
-		<-relay.done
+		_ = stdout.Close()
+		select {
+		case <-relay.done:
+		case <-time.After(waitLimit):
+			t.Error("The private relay process did not exit after cancellation.")
+		}
 	}
 	t.Cleanup(relay.stop)
 
@@ -593,11 +605,31 @@ func startReviewRelay(t *testing.T, upstream, dir string) *reviewRelayProcess {
 	case <-time.After(waitLimit):
 		t.Fatal("The private relay did not announce readiness.")
 	}
-	protocols := new(http.Protocols)
-	protocols.SetUnencryptedHTTP2(true)
-	transport := &http.Transport{Protocols: protocols}
-	t.Cleanup(transport.CloseIdleConnections)
-	relay.http = &http.Client{Transport: transport}
+	relay.http = reviewHTTPClient(t)
 	relay.client = linkv1connect.NewLinkServiceClient(relay.http, relay.url)
 	return relay
+}
+
+func reviewHTTPClient(t *testing.T) *http.Client {
+	t.Helper()
+	protocols := new(http.Protocols)
+	protocols.SetUnencryptedHTTP2(true)
+	dialer := net.Dialer{Timeout: waitLimit}
+	transport := &http.Transport{
+		Protocols: protocols,
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			conn, err := dialer.DialContext(ctx, network, address)
+			if err != nil {
+				return nil, err
+			}
+			// Bound socket I/O even when a stream stops responding after the handshake.
+			if err := conn.SetDeadline(time.Now().Add(waitLimit)); err != nil {
+				_ = conn.Close()
+				return nil, err
+			}
+			return conn, nil
+		},
+	}
+	t.Cleanup(transport.CloseIdleConnections)
+	return &http.Client{Transport: transport, Timeout: waitLimit}
 }
