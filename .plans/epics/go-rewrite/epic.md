@@ -4,7 +4,7 @@ kind: epic
 status: active
 parked: false
 ship_branch: master
-updated: 2026-11-26
+updated: 2026-11-27
 ---
 
 # LGTM Studio runs on a Go server and a Go client
@@ -110,7 +110,21 @@ Cutting wave 1 into three sprints was the orchestrator's choice. The owner confi
 | 2. The owner signs in | One command starts the stack. The website opens, and the owner signs in against the Go server. | Server, Stack |
 | 3. A machine joins | A machine joins with a token, the owner approves it, and it stays connected through restarts. All 13 checks pass. | Server, Client, Stack |
 
-Waves 2 and 3 of the design get their sprints when sprint 3 is in review.
+Wave 2 begins with running an agent. Its design is [docs/specs/2026-11-27-running-an-agent-design.md](../../../docs/specs/2026-11-27-running-an-agent-design.md).
+The owner approved it on 2026-11-27, and decided that this unit is cut into sprints of slowly rising difficulty.
+
+| Sprint | What a person can observe at its end | Teams that work in it |
+|---|---|---|
+| 4. A repository on a machine | The owner adds a repository on a machine from the website. With the real server, the website shows no sample project. | Contract, Server, Client, Website, Stack |
+| 5. The first agent | "New project" starts a project lead on Claude Code. The lead's column shows a real agent that answers. | Contract, Server, Client, Website, Stack |
+| 6. A conversation in full | The owner interrupts a running agent with a new instruction, and the agent follows it. | Not planned yet |
+| 7. Permissions | An agent asks before a change, and the owner answers on the website. | Not planned yet |
+| 8. Survival | A conversation continues after a restart of the client, or the thread names what was lost. | Not planned yet |
+| 9. Every harness | An agent starts on each harness, with a sign-in that the server holds. | Not planned yet |
+| 10. Repositories in full | Two agents work in separate clones of one repository. | Not planned yet |
+
+Sprints 6 to 10 each get a section in that design before they are planned.
+Wave 3 of the foundation design gets its sprints later.
 
 ### The teams, and what each may edit
 
@@ -124,6 +138,7 @@ They meet only in the contract, which sprint 0 writes.
 | Server | `src/server/` | `src/contracts/`, the design |
 | Client | `src/client/` | `src/contracts/`, the design |
 | Stack | `deploy/` | `src/server/cmd/`, `src/client/cmd/`, `src/frontend/`, the design |
+| Website, from sprint 4 | `src/frontend/` | `src/contracts/`, `src/mock-server/`, the design |
 
 The link between a server and a machine is frozen when the plan `go-s3-client-link` has cleared its review and the findings of the review of the built contract (issue 1643) and the requests of the other plans are settled, which is before either team builds against it.
 The plans `go-s3-server-stream` and `go-s3-server-commands` are written against the frozen link. A change after the freeze needs a new revision of the contract.
@@ -157,6 +172,12 @@ The work items are listed in the brief of each plan.
 | 9 | go-s3-stack-client | The installer of the client, and the server's own command that makes a join token. | linked | a82e6e16 |
 | 10 | go-s3-server-stream | The server end of the link: admission of a stream, presence, and the events a machine sends. Written on 2026-11-26 against the built code of plans 5 and 7 and the frozen link. | linked | 2b615a11 |
 | 11 | go-s3-server-commands | Stored commands and the calls of the Machines page that send one. Written on 2026-11-26 against plan 10 and the frozen link. | linked | 02f9aab0 |
+| 12 | go-s4-contract | Link revision 2 with the folder messages, and the website's contract for repositories. It is reviewed before any other plan of sprint 4 is written. | planned | |
+| 13 | go-s4-server-link | The link's Go interface for other parts: a stored command returns its identifier, a part is called when its command is settled or its report is applied, a result waits for the events before it, and a new client process gets no command before its past is applied. | planned | |
+| 14 | go-s4-server-projects | The Projects part: repositories, their folders on machines, folder operations that outlive their call, and the cleanup when a machine is removed. | planned | |
+| 15 | go-s4-client-folders | The client's run identifier, the event number on each result, the step from revision 1 on disk, and the Folders part that looks at a folder. | planned | |
+| 16 | go-s4-web-repositories | The website with a real server: repositories from the server, the two dialogs, no sample record, and the four visible changes that the owner approved. | planned | |
+| 17 | go-s4-stack-checks | The checks of sprint 4 against the running stack, and the step of an installed client to the new revision. | planned | |
 
 `planned` — named slice, no `.plans/plans/<slug>/plan.md` yet.
 `linked` — that plan exists and its `epic:` is this slug.

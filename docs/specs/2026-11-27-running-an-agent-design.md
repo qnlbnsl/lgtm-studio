@@ -46,6 +46,7 @@ The tab "Chat" exists only in the mode of the old engine, and this design does n
 | 2026-11-27 | The first agent is shown on the website in the same sprint that builds it. |
 | 2026-11-27 | An agent starts through the "New project" dialog as it is. The project lead runs in the folder of the repository itself, and the goal is its first message. |
 | 2026-11-27 | A repository on a machine and the first agent are two sprints, not one. |
+| 2026-11-27 | The owner approved this design, and the four visible changes of sprint 4 that its section lists. |
 
 ## The sprints
 
@@ -272,7 +273,7 @@ With the in-page sample server, with the mock server, and with a real server of 
 - Each call carries a request key that the website keeps for every retry of the same intent.
 - A sign-out, an expired session and a change of server end every watch of this sprint and clear its records, as they clear the machines.
 
-Four things on these screens change what the owner sees. They need the owner's approval before sprint 4 is built.
+Four things on these screens change what the owner sees. The owner approved them on 2026-11-27.
 
 1. "Add repository" says today, for every folder, that the working tree is clean. With real data, a repository with uncommitted changes needs a second sentence.
 2. "New project" cannot start an agent before sprint 5. In sprint 4 its button is on without a lead choice, and answers that projects are not connected to this server yet, in the way the views Files and Terminal already answer in the mode of the old engine.
@@ -759,6 +760,4 @@ It can write slowly, answer at once, pause before it reads, ask for a permission
 
 ## What waits for the owner
 
-1. The four visible changes of sprint 4, listed in its section.
-2. The five visible changes of sprint 5, listed in its section.
-3. The approval of this design.
+The five visible changes of sprint 5, listed in its section. They are asked before sprint 5 is planned.
