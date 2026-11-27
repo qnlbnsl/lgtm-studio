@@ -144,7 +144,8 @@ func (r *clientRun) attempt(ctx context.Context, welcomed func()) error {
 		retire = sync.OnceFunc(retire)
 		defer retire()
 	}
-	s, err := openSession(ctx, client, r.opts.Server, r.opts.Credential)
+	// The test writer's stub supplies an empty process announcement.
+	s, err := openSession(ctx, client, r.opts.Server, r.opts.Credential, runIdentity{})
 	if err != nil {
 		if r.ctx.Err() == nil {
 			r.reportFailure(linkFailureCode(err))

@@ -79,7 +79,8 @@ func (s *session) close() error {
 
 // openSession proves both ends on a new stream. Its client must be configured
 // with connect.WithReadMaxBytes(64 << 10) when it is constructed.
-func openSession(ctx context.Context, client linkv1connect.LinkServiceClient, server enroll.Server, credential *enroll.Credential) (_ *session, err error) {
+// The test writer's stub accepts the process announcement without using it.
+func openSession(ctx context.Context, client linkv1connect.LinkServiceClient, server enroll.Server, credential *enroll.Credential, _ runIdentity) (_ *session, err error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

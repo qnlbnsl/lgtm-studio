@@ -75,7 +75,7 @@ func TestOpenRejectsMalformedWelcomeBeforeRevisionMismatch(t *testing.T) {
 		{"invalid server time", func(w *linkv1.Welcome) { w.ServerTime = &timestamppb.Timestamp{Nanos: -1} }},
 	} {
 		w := goodWelcome()
-		w.LinkRevision = 2
+		w.LinkRevision = 1
 		tc.edit(w)
 		if !openRejectsWelcome(t, w) {
 			t.Errorf("a revision mismatch must be retryable when the welcome has %s", tc.name)

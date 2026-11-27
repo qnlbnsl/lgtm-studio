@@ -214,13 +214,15 @@ func welcomeFrame(w *linkv1.Welcome) *linkv1.OpenResponse {
 	return &linkv1.OpenResponse{Kind: &linkv1.OpenResponse_Welcome{Welcome: w}}
 }
 
+var fixtureRunIdentity = runIdentity{id: "019ac47a-cc00-7000-8000-000000000001", firstEventNumber: 8}
+
 func goodWelcome() *linkv1.Welcome {
 	return &linkv1.Welcome{
 		ConnectionToken: "fixture-approved-token",
 		State:           &linkv1.MachineState{Approval: linkv1.Approval_APPROVAL_APPROVED, Name: "build-1", Revision: 3},
 		LastEventNumber: 7,
 		ServerTime:      timestamppb.New(time.Date(2026, 11, 26, 12, 0, 0, 0, time.UTC)),
-		LinkRevision:    1,
+		LinkRevision:    linkRevision,
 	}
 }
 
@@ -304,7 +306,7 @@ func open(t *testing.T, client linkv1connect.LinkServiceClient, server enroll.Se
 	var err error
 	go func() {
 		defer close(done)
-		s, err = openSession(sessionCtx, client, server, cred)
+		s, err = openSession(sessionCtx, client, server, cred, fixtureRunIdentity)
 	}()
 	select {
 	case <-done:
@@ -362,16 +364,16 @@ func TestOpenProofFixture(t *testing.T) {
 
 	// The golden texts and signatures of the fixture bind the text format and the signer.
 	if got := proofText(serverLabel, f.MachineID, raw["machine_nonce"], raw["server_nonce"]); !bytes.Equal(got, raw["server_text"]) {
-		t.Fatalf("proofText for the server is\n%x\nwant\n%x", got, raw["server_text"])
+		t.Fatal("the server proof text differs from the contract fixture")
 	}
 	if got := proofText(machineLabel, f.MachineID, raw["machine_nonce"], raw["server_nonce"]); !bytes.Equal(got, raw["machine_text"]) {
-		t.Fatalf("proofText for the machine is\n%x\nwant\n%x", got, raw["machine_text"])
+		t.Fatal("the machine proof text differs from the contract fixture")
 	}
 	if !ed25519.Verify(keys.serverKey.Public().(ed25519.PublicKey), raw["server_text"], raw["server_signature"]) {
 		t.Fatal("the fixture's server signature does not verify")
 	}
 	if got := machine.Sign(proofText(machineLabel, f.MachineID, raw["machine_nonce"], raw["server_nonce"])); !bytes.Equal(got, raw["machine_signature"]) {
-		t.Fatalf("the credential signs %x, the fixture says %x", got, raw["machine_signature"])
+		t.Fatal("the machine signature differs from the contract fixture")
 	}
 	// Swapped nonces give another text.
 	if bytes.Equal(proofText(machineLabel, f.MachineID, raw["server_nonce"], raw["machine_nonce"]), raw["machine_text"]) {
@@ -388,14 +390,18 @@ func TestOpenProofFixture(t *testing.T) {
 			var mu sync.Mutex
 			note := func(s string) { mu.Lock(); order = append(order, s); mu.Unlock() }
 			welcome := goodWelcome()
+			welcome.LinkRevision = 2
 			s, client, server, cred := startScene(t, p, func(s *scene, stream *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse]) error {
 				hello, err := s.readHello(stream)
 				if err != nil {
 					return err
 				}
 				note("hello")
-				if hello.GetMachineId() != f.MachineID || hello.GetLinkRevision() != 1 || len(hello.GetMachineNonce()) != 32 {
+				if hello.GetMachineId() != f.MachineID || hello.GetLinkRevision() != 2 || len(hello.GetMachineNonce()) != 32 {
 					return connect.NewError(connect.CodeInvalidArgument, errors.New("malformed hello"))
+				}
+				if hello.GetRunId() != fixtureRunIdentity.id || hello.GetFirstEventNumber() != fixtureRunIdentity.firstEventNumber {
+					return connect.NewError(connect.CodeInvalidArgument, errors.New("wrong process announcement"))
 				}
 				if bytes.Equal(hello.GetMachineNonce(), make([]byte, 32)) {
 					return connect.NewError(connect.CodeInvalidArgument, errors.New("zero nonce"))
@@ -797,9 +803,9 @@ func TestOpenExpiryAndRefusal(t *testing.T) {
 					useShortHandshake(t, 300*time.Millisecond)
 					_, client, server, cred := startScene(t, p, script)
 					start := time.Now()
-					sess, err := open(t, client, server, cred)
+					_, err := open(t, client, server, cred)
 					if err == nil {
-						t.Fatalf("openSession returned a session although the server went silent: %+v", sess.welcome)
+						t.Fatal("openSession returned a session although the server went silent")
 					}
 					wantRetryable(t, err, name)
 					if time.Since(start) > openCeiling/2 {
@@ -818,7 +824,7 @@ func TestOpenExpiryAndRefusal(t *testing.T) {
 				})
 				ctx, cancel := context.WithCancel(context.Background())
 				done := make(chan error, 1)
-				go func() { _, err := openSession(ctx, client, server, cred); done <- err }()
+				go func() { _, err := openSession(ctx, client, server, cred, fixtureRunIdentity); done <- err }()
 				time.Sleep(50 * time.Millisecond) // lets the hello leave; only a lower bound for the cancel
 				cancel()
 				select {
@@ -944,7 +950,7 @@ func TestOpenExpiryAndRefusal(t *testing.T) {
 				}
 			})
 
-			for _, revision := range []uint32{0, 2, 1 << 31} {
+			for _, revision := range []uint32{0, 1, 1 << 31} {
 				t.Run("a welcome of another revision", func(t *testing.T) {
 					w := goodWelcome()
 					w.LinkRevision = revision

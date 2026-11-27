@@ -169,7 +169,7 @@ func TestRetryBackoffAndSilence(t *testing.T) {
 			go func() {
 				done <- supervise(ctx, func(ctx context.Context, welcomed func()) error {
 					starts <- time.Since(origin)
-					session, err := openSession(ctx, client, server, cred)
+					session, err := openSession(ctx, client, server, cred, fixtureRunIdentity)
 					if err != nil {
 						return err
 					}
@@ -359,8 +359,8 @@ func (l *wireLeg) hello(t *testing.T) *linkv1.Hello {
 		t.Error("the new stream sent a connection token")
 	}
 	hello := l.next(t).GetHello()
-	if hello == nil || hello.GetLinkRevision() != 1 {
-		t.Fatal("the first frame is missing a revision-one hello")
+	if hello == nil || hello.GetLinkRevision() != linkRevision {
+		t.Fatal("the first frame is missing a hello of the active link revision")
 	}
 	return hello
 }
@@ -459,7 +459,7 @@ func checkOpenCodeRow(t *testing.T, row retryCodeRow, code connect.Code, reason 
 		done := make(chan error, 1)
 		go func() {
 			done <- supervise(ctx, func(ctx context.Context, welcomed func()) error {
-				s, err := openSession(ctx, client, server, cred)
+				s, err := openSession(ctx, client, server, cred, fixtureRunIdentity)
 				if err != nil {
 					return err
 				}
@@ -572,7 +572,7 @@ func TestRetryFailedElapsedReadLeavesNoExpiryBound(t *testing.T) {
 		}
 		done := make(chan handshake, 1)
 		go func() {
-			s, err := openSession(t.Context(), client, server, cred)
+			s, err := openSession(t.Context(), client, server, cred, fixtureRunIdentity)
 			done <- handshake{s, err}
 		}()
 		leg := receiveNow(t, peer.opens, "the client did not start the handshake")

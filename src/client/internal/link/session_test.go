@@ -156,7 +156,7 @@ func (f *runPeerFixture) seed(t *testing.T, reports ...[]byte) {
 func runWelcome(approval linkv1.Approval, revision, mark uint64) *linkv1.Welcome {
 	w := &linkv1.Welcome{
 		State:           &linkv1.MachineState{Approval: approval, Revision: revision},
-		LastEventNumber: mark, LinkRevision: 1, ServerTime: timestamppb.Now(),
+		LastEventNumber: mark, LinkRevision: linkRevision, ServerTime: timestamppb.Now(),
 	}
 	if approval == approvedApproval {
 		w.State.Name = "fixture machine"
@@ -360,15 +360,20 @@ func TestRetryReportsOnApprovalAndOutage(t *testing.T) {
 		waitingBeat := receiveWithin(t, first.read(), 10*time.Second, "the waiting stream did not send a heartbeat")
 		beat := waitingBeat.frame.GetHeartbeat()
 		if waitingBeat.err != nil || beat == nil || beat.CpuPercent != nil || beat.MemoryPercent != nil {
-			t.Fatal("the waiting stream did not retain its queue and send a bare heartbeat")
+			t.Fatal("the waiting stream did not send a bare heartbeat")
 		}
 		firstBeat := time.Now()
 		first.send(t, ackHeartbeat())
+		saved := eventOnLeg(t, first)
+		if saved.GetNumber() != 1 || saved.GetFacts().GetClientVersion() != "standing backlog" {
+			t.Fatal("the waiting stream did not send the saved event")
+		}
+		first.send(t, ackEvent(1))
 
 		approval := stateCommand(5, time.Now().Add(time.Minute), 2, approvedApproval, "fixture machine")
 		first.send(t, commandFrame(approval))
 		seenFacts, seenInventory, seenResult := false, false, false
-		for sequence := uint64(1); !seenFacts || !seenInventory || !seenResult; {
+		for sequence := uint64(2); !seenFacts || !seenInventory || !seenResult; {
 			frame := first.next(t)
 			if result := frame.GetCommandResult(); result != nil {
 				wantCommandResult(t, result, approval, commandDone)
@@ -377,13 +382,9 @@ func TestRetryReportsOnApprovalAndOutage(t *testing.T) {
 			}
 			event := frame.GetEvent()
 			if event == nil || event.GetNumber() != sequence || sequence > 3 {
-				t.Fatal("approval did not send the saved prefix and its two fresh reports in order")
+				t.Fatal("approval did not send both fresh reports in order")
 			}
 			switch {
-			case sequence == 1:
-				if event.GetFacts().GetClientVersion() != "standing backlog" {
-					t.Fatal("approval lost the report retained while waiting")
-				}
 			case event.GetFacts() != nil:
 				seenFacts = event.GetFacts().GetClientVersion() == f.opts.Version
 			case event.GetHarnessesFound() != nil:
@@ -534,12 +535,21 @@ func TestRetryFailureExitsAndKeepsStore(t *testing.T) {
 		{
 			name: "impossible live mark for an event in the store",
 			prepare: func(t *testing.T, f *runPeerFixture) {
-				f.seed(t, fixtureFactsPayload(t, "saved"))
+				payload := fixtureFactsPayload(t, "saved")
+				f.seed(t, payload, payload)
+				useSessionIO(t, func(ctx context.Context, _ *session, wire runSessionIO) runSessionIO {
+					// Park the sender so the second saved event stays above the handoff ceiling.
+					wire.send = func(*linkv1.OpenRequest) error {
+						<-ctx.Done()
+						return ctx.Err()
+					}
+					return wire
+				})
 			},
 			onStream: func(t *testing.T, f *runPeerFixture) {
 				leg := f.next(t, 0)
 				f.welcome(t, leg, runWelcome(waitingApproval, 1, 0))
-				leg.send(t, ackEvent(1))
+				leg.send(t, ackEvent(2))
 			},
 			finalCode: "impossible_ack",
 		},

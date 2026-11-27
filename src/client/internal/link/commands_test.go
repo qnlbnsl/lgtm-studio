@@ -939,7 +939,7 @@ func TestCommandRemovalKeepsHeartbeatsUntilVerifiedRefusal(t *testing.T) {
 
 			openCtx, cancel := context.WithTimeout(t.Context(), openCeiling)
 			defer cancel()
-			session, err := openSession(openCtx, client, server, credential)
+			session, err := openSession(openCtx, client, server, credential, fixtureRunIdentity)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -991,13 +991,13 @@ func TestCommandRemovalKeepsHeartbeatsUntilVerifiedRefusal(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			early, err := openSession(openCtx, client, server, credential)
+			early, err := openSession(openCtx, client, server, credential, fixtureRunIdentity)
 			if early != nil {
 				_ = early.close()
 				t.Fatal("pre-challenge refusal unexpectedly opened a session")
 			}
 			wantRetryable(t, err, "unknown machine before challenge")
-			verified, err := openSession(openCtx, client, server, credential)
+			verified, err := openSession(openCtx, client, server, credential, fixtureRunIdentity)
 			if verified != nil {
 				_ = verified.close()
 				t.Fatal("verified refusal unexpectedly opened a session")

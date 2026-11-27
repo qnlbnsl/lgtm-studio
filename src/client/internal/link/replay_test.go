@@ -229,7 +229,7 @@ func TestReplayResumesAboveFreshWelcomeAfterGap(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), openCeiling)
 			defer cancel()
 			for _, last := range []uint64{1, 2} {
-				session, err := openSession(ctx, client, server, credential)
+				session, err := openSession(ctx, client, server, credential, fixtureRunIdentity)
 				if err != nil {
 					t.Fatal(err)
 				}
