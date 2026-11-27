@@ -43,7 +43,7 @@ The application observations in this table are by reading at the checked-out hea
 | `src/frontend/src/server/folders.ts` | Use `server/api.ts` `api` and `server/sync.ts` `createClientToken` and `reason` for generated calls and failure feedback. The generated module comes from the reviewed contract. |
 | `src/frontend/playwright.config.ts` | Use root `playwright.config.ts` for Chromium, test matching and bounded workers. Keep the test directory in the Website team. |
 | `src/frontend/e2e/support/repository-server.ts` | `src/mock-server/src/serve.ts` `handler` hosts Connect on a local listener. `packages/web/e2e/new-project.spec.ts` `replyGate` holds a result while watching another side. Reuse the pattern with generated messages and no application test hooks. |
-| `src/frontend/e2e/{repository-discovery,repository-session,repository-watch,repository-routes,folder-calls,add-repository,repository-entry,machine-recovery}.spec.ts` | `packages/web/e2e/new-project.spec.ts` `fixture` uses a built site and held server replies. `packages/web/e2e/phone-flow.spec.ts` shows the existing narrow-flow browser pattern. The new config and support file belong to item 1. |
+| `src/frontend/e2e/{repository-discovery,repository-session,repository-watch,repository-routes,repository-navigation,folder-calls,add-repository,repository-entry,machine-recovery}.spec.ts` | `packages/web/e2e/new-project.spec.ts` `fixture` uses a built site and held server replies. `packages/web/e2e/phone-flow.spec.ts` shows the existing narrow-flow browser pattern. Item 1 writes the new config and support file. Item 2 extends that fixture for cookies. Item 5's suite imports its module directly. |
 
 ## Probes run during planning
 
@@ -68,3 +68,34 @@ The application observations in this table are by reading at the checked-out hea
 | Template and linkage | Checked the frontmatter, document order, five folds and the existing epic row. The orchestrator changes the epic row to linked. |
 
 The mandated private-text script exited 0 on tracked files. The same script's predicates also exited 0 with the three untracked plan documents as explicit input. The planner reviewed those documents for relative paths, dated decision sources and interface copy. A whitespace check of the tracked diff also exited 0. These are checks of the plan and its handoff. The browser, database and deployed checks in the plan are future build acceptance.
+
+## Round 1 fold evidence
+
+The fold compared the three review reports with the plan snapshot, both approved designs, the Contract handoff and the current source at `22ca76c6`. The observations in this table are by reading, except for the status and freeze commands listed under the self-check.
+
+| File and symbol | Observation used in the fold |
+|---|---|
+| `src/frontend/src/lib.tsx:46` `update`, `src/frontend/src/actions.ts:355` `startSimulation`, `src/frontend/src/screens/messages.tsx:133` `sendPost` and `nudge`, `src/frontend/src/screens/harness-catalog.tsx:47` `install` | Delayed writes resolve the current store. Installation also writes the shared catalog. `startSimulation` has a retained handle and there is no existing stop function. The new export and readers are named in item 1. |
+| `src/frontend/src/server/api.ts:33` `openServer`, `src/frontend/src/server/address.ts:29` `serverUrl`, `src/frontend/src/server/sync.ts:39` `watch`, `src/server/internal/auth/cookie.go:39` `SessionCookie` | The current watch opens only the machine stream. Discovery sends credentials. Cookies are host-only and can cross ports on one hostname. The fixture proves cookie order at request dispatch. |
+| `src/frontend/src/app.tsx:598` `NotConnected` and `app.tsx:603` `App`, `src/frontend/src/screens/auth.tsx:168` `FirstRun`, `src/frontend/src/ui.tsx:1170` `Empty` | The default setup path can bypass Login and read a missing machine. Files and Terminal already reuse an unavailable empty body. Item 4 moves the existing view to the shared module before item 9 reads it. |
+| `src/frontend/src/screens/service.tsx:159` `MachineDetail`, `service.tsx:269` `Machines`, `service.tsx:1135` `Notifications` and `service.tsx:1608` `ServiceSettings` | The expanded offline row includes a command. Removal includes a pairing instruction. Notifications includes real-looking editable settings beside its empty result. The revised cases test both rendered copy and absent sample actions. |
+| `src/frontend/src/dialogs.tsx:55` `Switcher`, `dialogs.tsx:139` `NewProject`, `src/frontend/src/screens/center.tsx:411` `Checkouts`, `src/frontend/src/screens/service.tsx:443` `AddRepository` | The existing views have different absent-remote labels. New project checks a goal and repository before it checks the lead. The Add dialog provides the current footer, path field and inspection rows. |
+| `src/contracts/package.json:8` `exports`, Contract plan item 4 and Server Projects' receipt retention and mounted router | The wildcard export resolves the generated projects module. Exact service membership survives other service entries. Projects guarantees replay while open and for at least one day after settlement. The Website cutoff fits inside that guarantee. |
+| `deploy/test/checks-s4.sh:508` R13 and `checks-s4.sh:533` selector, `deploy/test/checks-s4-browser.mjs:23` `traceSampleRouter` and `checks-s4-browser.mjs:231` `modes`, `deploy/test/README-s4.md:47` R14 | The frozen R13 helper runs three contexts and records both watches on the real server. Its R12 removal check reads `Repo.folders`. The frozen guide saves once, from Machines. The folded Stack browser gate adds a separately recorded second-entry save without altering those checks. |
+| `deploy/website.Dockerfile:15`, Stack item 1 and Stack gate G5, Link `TestSprintFourHistoryRecovery`, and `docs/issues.md` issue 1676 | The deployed image pins the same origin. Stack provides the two named checkout fixtures. The orchestrator records R14 and the real recovery fixture. Database restore is already tracked outside wave 1. |
+
+## Tier M self-check after round 1
+
+| Gate | Fold evidence |
+|---|---|
+| 1. Decisions | Decisions 16 through 23 record the fold and supersede earlier assumptions explicitly. All rows are closed or carry an assumption. Dated design references substitute for private quotations under the repository's writing rules. |
+| 2. Acceptance | The nine item criteria name freeze tests or stack observations. Item 2's gate needs only the existing machine watch. Item 5 has a direct module entrance. |
+| 3. Design | Each workstream still links to its approved text brief or the recovery note and uses existing view components. |
+| 4. Traceability | The named source universe still maps to the three workstreams. Items 4 and 9 share the route assignment. |
+| 5. Risks | Each workstream retains explicit risks, severity and mitigation. |
+| 6. Verification | One rollout order and three verification lines name commands and browser widths or environment. The post-build table records the merged observations. |
+| 7. Review | The register accounts for every scored finding and all review follow-up checks. The plan remains at `attack`. |
+| 8. Anchors | Existing symbols and planned targets have source neighbors in the scouting tables. The shared view, sample writer and repository-navigation anchors were checked directly. |
+| 9. Guardrails | The guardrail rows cite the applicable instructions in `AGENTS.md`. All changed paths are within the assignment. |
+| 10. Sizing | Nine medium units use the assigned work area and scope. The count is 25 launches, with 20 remaining. The scope and allowance check belong to dispatch. |
+| Format and linkage | The status, tier and epic frontmatter and all five folds remain present. The epic still has a planned entry and no Website scope file is present. The result hands both to the orchestrator. |
