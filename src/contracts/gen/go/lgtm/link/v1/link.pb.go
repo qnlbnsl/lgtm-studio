@@ -15,6 +15,10 @@
 //   a SHA-256 exactly 32 bytes. certificate_key_sha256 may also be empty.
 // - Command.attempt, Event.number and MachineState.revision are at least 1. Event.number is at
 //   most 2^63 - 1, which is 9223372036854775807.
+// - Hello.first_event_number is in [1, 2^63], and CommandResult.last_event_number is in
+//   [0, 2^63 - 1].
+// - The 65,536-byte limit covers the complete Protocol Buffers message wrapper after
+//   decompression and excludes transport framing.
 // - Facts.cores is at least 1. HarnessesFound holds at most 16 harnesses. Heartbeat.cpu_percent
 //   and Heartbeat.memory_percent, when present, are 0 to 100.
 // - Command.expires_at, Welcome.state and Welcome.server_time are present.
@@ -523,7 +527,7 @@ type OpenResponse_HeartbeatAck struct {
 }
 
 type OpenResponse_EventAck struct {
-	// The last event number that the server applied.
+	// One cumulative acknowledgement through the last committed event number. See events.proto.
 	EventAck *EventAck `protobuf:"bytes,4,opt,name=event_ack,json=eventAck,proto3,oneof"`
 }
 
@@ -549,11 +553,16 @@ type Hello struct {
 	MachineId string `protobuf:"bytes,1,opt,name=machine_id,json=machineId,proto3" json:"machine_id,omitempty"`
 	// 32 random bytes, new for each stream.
 	MachineNonce []byte `protobuf:"bytes,2,opt,name=machine_nonce,json=machineNonce,proto3" json:"machine_nonce,omitempty"`
-	// The revision of this package that the client speaks, which is 1. A server refuses a
+	// The revision of this package that the client speaks, which is 2. A server refuses a
 	// revision it does not speak with `failed_precondition`.
-	LinkRevision  uint32 `protobuf:"varint,3,opt,name=link_revision,json=linkRevision,proto3" json:"link_revision,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	LinkRevision uint32 `protobuf:"varint,3,opt,name=link_revision,json=linkRevision,proto3" json:"link_revision,omitempty"`
+	// The client chooses a canonical version 7 UUID once per process and repeats it on reconnect.
+	RunId string `protobuf:"bytes,4,opt,name=run_id,json=runId,proto3" json:"run_id,omitempty"`
+	// The client records the next number, in [1, 2^63], before appending any event of this run.
+	// It repeats this immutable boundary on reconnect.
+	FirstEventNumber uint64 `protobuf:"varint,5,opt,name=first_event_number,json=firstEventNumber,proto3" json:"first_event_number,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *Hello) Reset() {
@@ -603,6 +612,20 @@ func (x *Hello) GetMachineNonce() []byte {
 func (x *Hello) GetLinkRevision() uint32 {
 	if x != nil {
 		return x.LinkRevision
+	}
+	return 0
+}
+
+func (x *Hello) GetRunId() string {
+	if x != nil {
+		return x.RunId
+	}
+	return ""
+}
+
+func (x *Hello) GetFirstEventNumber() uint64 {
+	if x != nil {
+		return x.FirstEventNumber
 	}
 	return 0
 }
@@ -722,13 +745,13 @@ type Welcome struct {
 	ConnectionToken string `protobuf:"bytes,1,opt,name=connection_token,json=connectionToken,proto3" json:"connection_token,omitempty"`
 	// The machine's standing now. The machine applies it before any command of this stream.
 	State *MachineState `protobuf:"bytes,2,opt,name=state,proto3" json:"state,omitempty"`
-	// The last event number that the server applied from this machine, or 0 for none. Events.proto
-	// says what the machine does with it.
+	// The durable replay mark for this machine, or 0 before its first committed event.
+	// Events.proto says how the machine resumes from this mark.
 	LastEventNumber uint64 `protobuf:"varint,3,opt,name=last_event_number,json=lastEventNumber,proto3" json:"last_event_number,omitempty"`
 	// The server's clock, read after Proof verified and before Welcome was sent. Commands.proto
 	// says how the machine uses it.
 	ServerTime *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=server_time,json=serverTime,proto3" json:"server_time,omitempty"`
-	// The revision of this package that the server speaks, which is 1.
+	// The revision of this package that the server speaks, which is 2.
 	LinkRevision  uint32 `protobuf:"varint,5,opt,name=link_revision,json=linkRevision,proto3" json:"link_revision,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -832,12 +855,14 @@ const file_lgtm_link_v1_link_proto_rawDesc = "" +
 	"\rheartbeat_ack\x18\x03 \x01(\v2\x1a.lgtm.link.v1.HeartbeatAckH\x00R\fheartbeatAck\x125\n" +
 	"\tevent_ack\x18\x04 \x01(\v2\x16.lgtm.link.v1.EventAckH\x00R\beventAck\x121\n" +
 	"\acommand\x18\x05 \x01(\v2\x15.lgtm.link.v1.CommandH\x00R\acommandB\x06\n" +
-	"\x04kind\"p\n" +
+	"\x04kind\"\xb5\x01\n" +
 	"\x05Hello\x12\x1d\n" +
 	"\n" +
 	"machine_id\x18\x01 \x01(\tR\tmachineId\x12#\n" +
 	"\rmachine_nonce\x18\x02 \x01(\fR\fmachineNonce\x12#\n" +
-	"\rlink_revision\x18\x03 \x01(\rR\flinkRevision\"Y\n" +
+	"\rlink_revision\x18\x03 \x01(\rR\flinkRevision\x12\x15\n" +
+	"\x06run_id\x18\x04 \x01(\tR\x05runId\x12,\n" +
+	"\x12first_event_number\x18\x05 \x01(\x04R\x10firstEventNumber\"Y\n" +
 	"\tChallenge\x12!\n" +
 	"\fserver_nonce\x18\x01 \x01(\fR\vserverNonce\x12)\n" +
 	"\x10server_signature\x18\x02 \x01(\fR\x0fserverSignature\"4\n" +

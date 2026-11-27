@@ -62,6 +62,16 @@ export declare type GetServerResponse = Message<"lgtm.v1.GetServerResponse"> & {
    * @generated from field: bool signed_in = 5;
    */
   signedIn: boolean;
+
+  /**
+   * Each entry is a case-sensitive, fully qualified Protocol Buffers service name without
+   * a slash or method suffix. A real server that advertises lgtm.v1.ProjectService enables
+   * repository mode. An empty or omitted list advertises no opt-in service. The website
+   * ignores unknown entries. A reply with sample=true still selects sample mode.
+   *
+   * @generated from field: repeated string services = 6;
+   */
+  services: string[];
 };
 
 /**

@@ -1,0 +1,191 @@
+// Repositories and the folders that hold them on machines.
+syntax = "proto3";
+
+package lgtm.v1;
+
+import "lgtm/v1/common.proto";
+
+option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1;lgtmv1";
+
+// ProjectService follows stored repositories and asks a machine to inspect a folder.
+// Every call requires a session at entry. The session rules of SessionService apply.
+//
+// Both folder calls require exactly one nonempty Lgtm-Request-Key under the store's text
+// rules and 256-byte limit. Request identity includes the caller, procedure, machine,
+// exact typed path and optional repository choice. A present empty target is invalid.
+// For a fresh request the server stores the operation and its command together under the
+// machine lock. A fresh request to a disconnected machine returns unavailable.
+// The command expires after 20 seconds and the caller waits at most 25 seconds outside the write.
+//
+// An accepted retry reads the original operation before deciding machine availability.
+// A different request using the same caller key returns already_exists throughout replay.
+// The key remains reserved while the operation is open and for at least one day after settlement.
+// An admitted replay keeps the original result even if retirement races the read. If retirement
+// wins, fresh-request rules apply.
+//
+// A call timeout ends the wait. The first valid report or terminal outcome of the command
+// ends the open operation. A valid report applied before settlement in the same write wins. An eligible
+// late report advances the link mark and is acknowledged without changing the operation.
+//
+// At attachment an unknown explicit target returns not_found for both saved and unsaved
+// resolved folders. Return an existing folder for an omitted or matching target even if
+// its origin changed. Refuse a different known target with already_exists.
+// For a new folder an omitted target creates a repository named after the folder. An explicit
+// target requires matching present origins, or equal present first commits when at least one
+// origin is known absent. Withholding is no evidence of absence.
+//
+// The client sends credential-free origin text. Compare network Uniform Resource Locators
+// (URLs) for Hypertext Transfer Protocol (http), its secure form (https), Secure Shell
+// (ssh) or git. Compare independently absolute Secure Shell shorthand like its URL form.
+// Account-relative Secure Shell origins, including home markers after a URL slash, are
+// withheld and never compared. The client withholds local paths, ambiguous forms, queries,
+// fragments, escaped paths and dot segments. Fold scheme and host case and ignore default
+// ports (80, 443, 22 and 9418 respectively). Keep nondefault ports, transport, path case,
+// suffix and trailing slash significant.
+//
+// A refusal uses one Connect code and a fixed display sentence chosen by the server.
+// JSON means JavaScript Object Notation. The FOLDER_REFUSAL names below are link values.
+//
+// | Condition | Connect code | Display sentence |
+// | Session missing or expired at entry | unauthenticated | Sign in to continue. |
+// | Session ends during a watch | unauthenticated | Sign in again to reopen this watch. |
+// | Watch falls behind | aborted | The watch fell behind and must be reopened. |
+// | Malformed JSON body on a protected call | invalid_argument | The request body is invalid. |
+// | Machine is disconnected when starting a new operation | unavailable | The machine is not connected. |
+// | Invalid machine or repository identifier, or invalid typed path | invalid_argument | The machine, repository, or folder path is invalid. |
+// | Invalid or missing request key | invalid_argument | The request key is invalid. |
+// | Same key for a different request | already_exists | That request key was already used for a different request. |
+// | Unknown machine | not_found | The machine was not found. |
+// | Unknown explicit repository at attachment, even if the folder is already saved elsewhere | not_found | The repository was not found. |
+// | FOLDER_REFUSAL_NOT_A_FOLDER | failed_precondition | The path is not a folder. |
+// | FOLDER_REFUSAL_NOT_A_GIT_REPOSITORY | failed_precondition | The folder is not a Git repository. |
+// | FOLDER_REFUSAL_NOT_READABLE | failed_precondition | The folder cannot be read. |
+// | FOLDER_REFUSAL_PATH_NOT_USABLE | failed_precondition | The folder path cannot be used. |
+// | Folder does not match the selected repository | failed_precondition | The folder does not belong to the selected repository. |
+// | Folder is already attached to another repository and the explicit target exists | already_exists | The folder is already saved for another repository. |
+// | Call wait ends or done or failed arrives without a report | deadline_exceeded | The machine did not answer the folder request. |
+// | Expired or unsupported without a report | deadline_exceeded | The machine did not take the folder command. |
+// | Interrupted or timed out without a report | deadline_exceeded | The outcome of the folder request is unknown. |
+// | The machine is removed before the operation finishes | not_found | The machine was removed. |
+service ProjectService {
+  // WatchRepositories requires a session throughout the watch.
+  // The server sends a replacement snapshot first, then full saved repositories with all
+  // their folders or removed identifiers. The shared FeedPosition rules apply.
+  // A caller whose watch ends with aborted reopens it for a replacement snapshot.
+  rpc WatchRepositories(WatchRepositoriesRequest) returns (stream WatchRepositoriesResponse);
+  // InspectFolder requires Lgtm-Request-Key. It stores the folder operation and its result
+  // without saving a repository or folder.
+  rpc InspectFolder(InspectFolderRequest) returns (InspectFolderResponse);
+  // AddRepository requires Lgtm-Request-Key. The add reply contains the saved identities,
+  // and its folder belongs to its repository. The server persists both or neither after
+  // a valid report, even after the call ends.
+  rpc AddRepository(AddRepositoryRequest) returns (AddRepositoryResponse);
+}
+
+// WatchRepositoriesRequest asks for the entire repository collection and its changes.
+message WatchRepositoriesRequest {}
+
+// WatchRepositoriesResponse gives a full initial list or one subsequent change.
+message WatchRepositoriesResponse {
+  // The replacement snapshot or the change at this position.
+  oneof change {
+    // All repositories and their folders, replacing the list the website held.
+    RepositoryList all = 1;
+    // The complete repository record as saved, including all its folders.
+    Repository saved = 2;
+    // The identifier of the repository that was removed.
+    string removed_id = 3;
+  }
+  // The feed position of the snapshot or change.
+  FeedPosition position = 4;
+}
+
+// RepositoryList holds a snapshot of the repository collection.
+message RepositoryList {
+  // Every stored repository and its folders.
+  repeated Repository repositories = 1;
+}
+
+// Repository holds the stored identity and all attached folders of a repository.
+message Repository {
+  // A version 7 universally unique identifier (UUID) generated by the server.
+  string id = 1;
+  // The saved name of the repository.
+  string name = 2;
+  // The saved main branch of the repository.
+  string main_branch = 3;
+  // The saved credential-free origin, absent when unconfigured or withheld.
+  optional string remote = 4;
+  // The saved opaque Git object identifier of its first commit, when available.
+  optional string first_commit = 5;
+  // All folders currently attached to the repository.
+  repeated RepositoryFolder folders = 6;
+  // True when the absent origin was withheld. A present origin requires false.
+  bool remote_omitted = 7;
+}
+
+// RepositoryFolder identifies one saved checkout of a repository.
+message RepositoryFolder {
+  // A version 7 UUID generated by the server.
+  string id = 1;
+  // The Client.id of the machine that holds the folder.
+  string client_id = 2;
+  // The resolved path of the working tree, unique on that machine.
+  string resolved_path = 3;
+}
+
+// InspectFolderRequest identifies a machine and the folder the owner wants to inspect.
+message InspectFolderRequest {
+  // The Client.id of the machine that inspects the folder.
+  string client_id = 1;
+  // The exact typed path, up to 4,096 bytes. It is absolute, a single tilde, or
+  // starts with a tilde and slash.
+  string path = 2;
+}
+
+// InspectFolderResponse returns the facts of one inspection.
+message InspectFolderResponse {
+  // The facts reported by the machine.
+  FolderFacts facts = 1;
+}
+
+// FolderFacts describes the working tree using the same facts as the link's folder report.
+// A present optional string is nonempty.
+message FolderFacts {
+  // The absolute top of the working tree after following links.
+  string resolved_path = 1;
+  // The last component of the resolved path.
+  string name = 2;
+  // The locally known remote head, the checked-out branch, or main, in that order.
+  string main_branch = 3;
+  // The checked-out branch, absent for a detached checkout.
+  optional string checked_out_branch = 4;
+  // The credential-free origin, absent when unconfigured or withheld.
+  optional string remote = 5;
+  // The opaque Git object identifier of the first commit, when available.
+  optional string first_commit = 6;
+  // True when the working tree has no uncommitted changes.
+  bool clean = 7;
+  // True when the absent origin was withheld. A present origin requires false.
+  bool remote_omitted = 8;
+}
+
+// AddRepositoryRequest asks to save a folder under a new or existing repository.
+message AddRepositoryRequest {
+  // The Client.id of the machine that inspects the folder.
+  string client_id = 1;
+  // The exact typed path, with the same rules as InspectFolderRequest.path.
+  string path = 2;
+  // The existing repository to attach to. Omit it to add a new repository or return an
+  // existing saved folder. A present identifier is nonempty.
+  optional string repository_id = 3;
+}
+
+// AddRepositoryResponse returns the saved repository and its requested folder.
+message AddRepositoryResponse {
+  // The full saved repository, including the folder below.
+  Repository repository = 1;
+  // The specific saved folder. It matches its entry in the repository watch by identifier,
+  // machine and resolved path.
+  RepositoryFolder folder = 2;
+}

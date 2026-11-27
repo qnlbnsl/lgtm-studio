@@ -31,6 +31,11 @@ message GetServerResponse {
   bool sample = 4;
   // True when the caller has a session.
   bool signed_in = 5;
+  // Each entry is a case-sensitive, fully qualified Protocol Buffers service name without
+  // a slash or method suffix. A real server that advertises lgtm.v1.ProjectService enables
+  // repository mode. An empty or omitted list advertises no opt-in service. The website
+  // ignores unknown entries. A reply with sample=true still selects sample mode.
+  repeated string services = 6;
 }
 
 message SignInRequest {

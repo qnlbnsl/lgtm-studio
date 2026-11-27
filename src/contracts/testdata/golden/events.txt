@@ -3,6 +3,7 @@ message lgtm.link.v1.Event
   2 happened_at google.protobuf.Timestamp
   10 facts lgtm.link.v1.Facts oneof=report
   11 harnesses_found lgtm.link.v1.HarnessesFound oneof=report
+  12 folder_seen lgtm.link.v1.FolderSeen oneof=report
 message lgtm.link.v1.EventAck
   1 through uint64
 message lgtm.link.v1.Facts

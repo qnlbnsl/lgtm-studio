@@ -1,0 +1,89 @@
+// Read-only folder inspection on a machine.
+//
+// One shared filter covers Facts, HarnessesFound inventory and FolderSeen reports. It screens
+// the client key and connection token in every form the client holds before buffering or
+// logging text. Mask unsafe display text and omit an unsafe Facts workspace or identifier.
+// An unsafe folder path, name, branch or commit yields FOLDER_REFUSAL_PATH_NOT_USABLE.
+// Safe legacy payloads replay unchanged. An unsafe required legacy event stops replay before
+// handoff and preserves its bytes and number.
+syntax = "proto3";
+
+package lgtm.link.v1;
+
+option go_package = "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1;linkv1";
+
+// LookAtFolder performs read-only inspection of local repository facts without network access
+// or execution of repository-controlled programs. The client commits FolderSeen before
+// recording its result.
+// Done means it buffered either the facts or a fixed refusal. Failed without a report means
+// it could not buffer a report and carries the unchanged durable watermark.
+message LookAtFolder {
+  // The server's version 7 UUID for the durable folder operation.
+  string operation_id = 1;
+  // The owner's exact typed path, up to 4,096 bytes. It is absolute, a single tilde, or
+  // starts with a tilde and slash. The website call refuses a longer or invalid path.
+  string path = 2;
+}
+
+// FolderSeen reports one folder operation. The authenticated stream identifies the machine.
+// The server checks the machine, operation and command before applying either arm once.
+// An absent arm, a zero refusal or an unknown refusal is consumed without effect.
+message FolderSeen {
+  // The operation identifier from LookAtFolder.
+  string operation_id = 1;
+  // The identifier of the specific Command that asked for this report.
+  string command_id = 2;
+  // Exactly one arm gives the facts or the fixed refusal.
+  oneof result {
+    // The facts of the inspected repository.
+    FolderFacts facts = 3;
+    // The fixed reason the client could not report facts.
+    FolderRefusal refusal = 4;
+  }
+}
+
+// FolderFacts describes a local Git working tree. A present optional string is nonempty.
+// Branch and commit text share the event budget and follow the link's string rules.
+// If otherwise valid facts exceed the event budget, use the fixed path-not-usable refusal
+// before allocating an event number.
+message FolderFacts {
+  // The resolved path is the absolute top of the working tree after following links.
+  // It is at most 8,192 bytes.
+  // A longer resolved path yields FOLDER_REFUSAL_PATH_NOT_USABLE.
+  string resolved_path = 1;
+  // The last component of the resolved path, within its budget.
+  string name = 2;
+  // The main branch is the locally known remote head, the checked-out branch, or main,
+  // in that order.
+  string main_branch = 3;
+  // The checked-out branch, absent for a detached checkout.
+  optional string checked_out_branch = 4;
+  // Strip user information from the origin before measuring or sending it.
+  // Withheld origins are absent with remote_omitted set to true. Withhold ambiguous,
+  // unsupported or unsafe origins, including those over 2,048 bytes after sanitization.
+  // Withhold account-relative Secure Shell origins, including home markers after the slash
+  // of a Uniform Resource Locator (URL), and set remote_omitted to true.
+  optional string remote = 5;
+  // The opaque Git object identifier of the first commit, absent if unavailable.
+  optional string first_commit = 6;
+  // True when the working tree has no uncommitted changes.
+  bool clean = 7;
+  // True when the origin was withheld. An unconfigured origin is absent with
+  // remote_omitted set to false.
+  // A present remote with this flag set is invalid.
+  bool remote_omitted = 8;
+}
+
+// FolderRefusal gives the server a reason to choose a fixed display sentence.
+enum FolderRefusal {
+  // An unspecified reason is invalid.
+  FOLDER_REFUSAL_UNSPECIFIED = 0;
+  // The path does not name a folder.
+  FOLDER_REFUSAL_NOT_A_FOLDER = 1;
+  // The folder is outside a Git working tree.
+  FOLDER_REFUSAL_NOT_A_GIT_REPOSITORY = 2;
+  // The folder cannot be read.
+  FOLDER_REFUSAL_NOT_READABLE = 3;
+  // The path or resulting facts cannot be used or reported.
+  FOLDER_REFUSAL_PATH_NOT_USABLE = 4;
+}

@@ -5,10 +5,12 @@ message lgtm.link.v1.Command
   10 scan_harnesses lgtm.link.v1.ScanHarnesses oneof=action
   11 set_state lgtm.link.v1.SetState oneof=action
   12 restart lgtm.link.v1.Restart oneof=action
+  13 look_at_folder lgtm.link.v1.LookAtFolder oneof=action
 message lgtm.link.v1.CommandResult
   1 command_id string
   2 attempt uint32
   3 outcome lgtm.link.v1.CommandOutcome
+  5 last_event_number uint64
   reserved 4-4
   reserved message
 message lgtm.link.v1.ScanHarnesses

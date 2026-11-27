@@ -136,6 +136,15 @@ export declare type Client = Message<"lgtm.v1.Client"> & {
    * @generated from field: string token_id = 18;
    */
   tokenId: string;
+
+  /**
+   * The server sets this when it refuses admission because the client's event history is
+   * behind the committed mark. Only a later successful admission that becomes ready or
+   * machine removal clears it. Traffic from a previously admitted stream never clears it.
+   *
+   * @generated from field: bool event_history_needs_recovery = 19;
+   */
+  eventHistoryNeedsRecovery: boolean;
 };
 
 /**

@@ -119,7 +119,12 @@ type GetServerResponse struct {
 	// True for a server that holds sample data only.
 	Sample bool `protobuf:"varint,4,opt,name=sample,proto3" json:"sample,omitempty"`
 	// True when the caller has a session.
-	SignedIn      bool `protobuf:"varint,5,opt,name=signed_in,json=signedIn,proto3" json:"signed_in,omitempty"`
+	SignedIn bool `protobuf:"varint,5,opt,name=signed_in,json=signedIn,proto3" json:"signed_in,omitempty"`
+	// Each entry is a case-sensitive, fully qualified Protocol Buffers service name without
+	// a slash or method suffix. A real server that advertises lgtm.v1.ProjectService enables
+	// repository mode. An empty or omitted list advertises no opt-in service. The website
+	// ignores unknown entries. A reply with sample=true still selects sample mode.
+	Services      []string `protobuf:"bytes,6,rep,name=services,proto3" json:"services,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -187,6 +192,13 @@ func (x *GetServerResponse) GetSignedIn() bool {
 		return x.SignedIn
 	}
 	return false
+}
+
+func (x *GetServerResponse) GetServices() []string {
+	if x != nil {
+		return x.Services
+	}
+	return nil
 }
 
 type SignInRequest struct {
@@ -355,13 +367,14 @@ var File_lgtm_v1_session_proto protoreflect.FileDescriptor
 const file_lgtm_v1_session_proto_rawDesc = "" +
 	"\n" +
 	"\x15lgtm/v1/session.proto\x12\algtm.v1\"\x12\n" +
-	"\x10GetServerRequest\"\x98\x01\n" +
+	"\x10GetServerRequest\"\xb4\x01\n" +
 	"\x11GetServerResponse\x12\x18\n" +
 	"\aproduct\x18\x01 \x01(\tR\aproduct\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12\x1a\n" +
 	"\bcontract\x18\x03 \x01(\rR\bcontract\x12\x16\n" +
 	"\x06sample\x18\x04 \x01(\bR\x06sample\x12\x1b\n" +
-	"\tsigned_in\x18\x05 \x01(\bR\bsignedIn\"+\n" +
+	"\tsigned_in\x18\x05 \x01(\bR\bsignedIn\x12\x1a\n" +
+	"\bservices\x18\x06 \x03(\tR\bservices\"+\n" +
 	"\rSignInRequest\x12\x1a\n" +
 	"\bpassword\x18\x01 \x01(\tR\bpassword\"?\n" +
 	"\x0eSignInResponse\x12-\n" +

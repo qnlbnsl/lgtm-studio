@@ -15,6 +15,8 @@ message lgtm.link.v1.Hello
   1 machine_id string
   2 machine_nonce bytes
   3 link_revision uint32
+  4 run_id string
+  5 first_event_number uint64
 message lgtm.link.v1.Challenge
   1 server_nonce bytes
   2 server_signature bytes

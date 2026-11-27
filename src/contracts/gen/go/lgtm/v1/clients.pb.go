@@ -117,9 +117,13 @@ type Client struct {
 	HarnessesScanned bool                `protobuf:"varint,16,opt,name=harnesses_scanned,json=harnessesScanned,proto3" json:"harnesses_scanned,omitempty"`
 	Harnesses        []*InstalledHarness `protobuf:"bytes,17,rep,name=harnesses,proto3" json:"harnesses,omitempty"`
 	// The token it joined with. Set only while it waits for approval.
-	TokenId       string `protobuf:"bytes,18,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	TokenId string `protobuf:"bytes,18,opt,name=token_id,json=tokenId,proto3" json:"token_id,omitempty"`
+	// The server sets this when it refuses admission because the client's event history is
+	// behind the committed mark. Only a later successful admission that becomes ready or
+	// machine removal clears it. Traffic from a previously admitted stream never clears it.
+	EventHistoryNeedsRecovery bool `protobuf:"varint,19,opt,name=event_history_needs_recovery,json=eventHistoryNeedsRecovery,proto3" json:"event_history_needs_recovery,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *Client) Reset() {
@@ -276,6 +280,13 @@ func (x *Client) GetTokenId() string {
 		return x.TokenId
 	}
 	return ""
+}
+
+func (x *Client) GetEventHistoryNeedsRecovery() bool {
+	if x != nil {
+		return x.EventHistoryNeedsRecovery
+	}
+	return false
 }
 
 // One harness a client looked for, such as "claude" or "codex".
@@ -1142,7 +1153,7 @@ var File_lgtm_v1_clients_proto protoreflect.FileDescriptor
 
 const file_lgtm_v1_clients_proto_rawDesc = "" +
 	"\n" +
-	"\x15lgtm/v1/clients.proto\x12\algtm.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14lgtm/v1/common.proto\"\xad\x05\n" +
+	"\x15lgtm/v1/clients.proto\x12\algtm.v1\x1a\x1fgoogle/protobuf/timestamp.proto\x1a\x14lgtm/v1/common.proto\"\xee\x05\n" +
 	"\x06Client\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12*\n" +
@@ -1164,7 +1175,8 @@ const file_lgtm_v1_clients_proto_rawDesc = "" +
 	"\fconnected_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\vconnectedAt\x12+\n" +
 	"\x11harnesses_scanned\x18\x10 \x01(\bR\x10harnessesScanned\x127\n" +
 	"\tharnesses\x18\x11 \x03(\v2\x19.lgtm.v1.InstalledHarnessR\tharnesses\x12\x19\n" +
-	"\btoken_id\x18\x12 \x01(\tR\atokenIdB\x0e\n" +
+	"\btoken_id\x18\x12 \x01(\tR\atokenId\x12?\n" +
+	"\x1cevent_history_needs_recovery\x18\x13 \x01(\bR\x19eventHistoryNeedsRecoveryB\x0e\n" +
 	"\f_cpu_percentB\x11\n" +
 	"\x0f_memory_percent\"W\n" +
 	"\x10InstalledHarness\x12\x18\n" +

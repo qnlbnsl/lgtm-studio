@@ -15,6 +15,10 @@
 //   a SHA-256 exactly 32 bytes. certificate_key_sha256 may also be empty.
 // - Command.attempt, Event.number and MachineState.revision are at least 1. Event.number is at
 //   most 2^63 - 1, which is 9223372036854775807.
+// - Hello.first_event_number is in [1, 2^63], and CommandResult.last_event_number is in
+//   [0, 2^63 - 1].
+// - The 65,536-byte limit covers the complete Protocol Buffers message wrapper after
+//   decompression and excludes transport framing.
 // - Facts.cores is at least 1. HarnessesFound holds at most 16 harnesses. Heartbeat.cpu_percent
 //   and Heartbeat.memory_percent, when present, are 0 to 100.
 // - Command.expires_at, Welcome.state and Welcome.server_time are present.
@@ -260,7 +264,7 @@ export declare type OpenResponse = Message<"lgtm.link.v1.OpenResponse"> & {
     case: "heartbeatAck";
   } | {
     /**
-     * The last event number that the server applied.
+     * One cumulative acknowledgement through the last committed event number. See events.proto.
      *
      * @generated from field: lgtm.link.v1.EventAck event_ack = 4;
      */
@@ -304,12 +308,27 @@ export declare type Hello = Message<"lgtm.link.v1.Hello"> & {
   machineNonce: Uint8Array;
 
   /**
-   * The revision of this package that the client speaks, which is 1. A server refuses a
+   * The revision of this package that the client speaks, which is 2. A server refuses a
    * revision it does not speak with `failed_precondition`.
    *
    * @generated from field: uint32 link_revision = 3;
    */
   linkRevision: number;
+
+  /**
+   * The client chooses a canonical version 7 UUID once per process and repeats it on reconnect.
+   *
+   * @generated from field: string run_id = 4;
+   */
+  runId: string;
+
+  /**
+   * The client records the next number, in [1, 2^63], before appending any event of this run.
+   * It repeats this immutable boundary on reconnect.
+   *
+   * @generated from field: uint64 first_event_number = 5;
+   */
+  firstEventNumber: bigint;
 };
 
 /**
@@ -393,8 +412,8 @@ export declare type Welcome = Message<"lgtm.link.v1.Welcome"> & {
   state?: MachineState | undefined;
 
   /**
-   * The last event number that the server applied from this machine, or 0 for none. Events.proto
-   * says what the machine does with it.
+   * The durable replay mark for this machine, or 0 before its first committed event.
+   * Events.proto says how the machine resumes from this mark.
    *
    * @generated from field: uint64 last_event_number = 3;
    */
@@ -409,7 +428,7 @@ export declare type Welcome = Message<"lgtm.link.v1.Welcome"> & {
   serverTime?: Timestamp | undefined;
 
   /**
-   * The revision of this package that the server speaks, which is 1.
+   * The revision of this package that the server speaks, which is 2.
    *
    * @generated from field: uint32 link_revision = 5;
    */
@@ -525,6 +544,21 @@ export declare const LinkService: GenService<{
    *   of this package ends the stream with `invalid_argument`.
    * - The server ends the stream with `deadline_exceeded` when Hello is not there 10 seconds after
    *   the stream opened.
+   * - The server validates run history after Proof verifies and the revision check passes.
+   *   It defers validation of the Hello run fields until that history check.
+   *   History refusal uses the existing retryable `invalid_argument` and leaves the incumbent
+   *   stream and command ledger intact.
+   *
+   * Run admission and readiness:
+   * - Only the latest admitted run may reconnect, even while draining. A reconnect repeats the
+   *   exact saved boundary. The server refuses superseded runs before boundary validation, even
+   *   after restart and at equal boundaries.
+   * - An unseen run begins above the committed event mark and staged result watermarks, and at
+   *   or above any pending boundary. At a tie between unseen runs, the later successful
+   *   admission takes precedence. The server saves the admitted run and its boundary together.
+   * - The run becomes ready once when the durable mark reaches first_event_number - 1. The
+   *   server checks readiness on admission and whenever the mark advances. Before readiness
+   *   there is no command claim, shared send permit or advance of the command cursor.
    *
    * The current stream:
    * - The admission of a stream is one commit of the server's database, after its Proof verified.
@@ -540,12 +574,14 @@ export declare const LinkService: GenService<{
    *   removal of its machine commits.
    *
    * After Welcome:
-   * - Either end may send any of its other messages, in any order, except that events keep the
-   *   order that events.proto gives.
+   * - Each encoded message is limited to 65,536 bytes including the outer wrapper, and the
+   *   receive limit applies after decompression. Transport framing is outside this budget.
+   * - Heartbeats and retained events can travel while the run drains. Events keep the order
+   *   that events.proto gives. The server sends replay acknowledgements before gated SetState,
+   *   including when approval arrives while replay is finishing.
    * - A receiver ignores a message of a kind it does not know, because wave 2 adds kinds with
    *   numbers not used yet.
-   * - A newer stream of the same machine whose Proof verified replaces this one, which ends with
-   *   `aborted`.
+   * - A newer stream of the same machine replaces this one only when its admission commits.
    * - A machine that hears nothing from the server for 30 seconds ends the stream and dials again.
    *   HeartbeatAck makes that silence a signal.
    *
@@ -560,10 +596,12 @@ export declare const LinkService: GenService<{
    * - Its Welcome holds an empty connection token. A machine gets a connection token in the
    *   Welcome of a stream that opens after its approval, also when it was approved on a live
    *   stream. No call of wave 1 presents the token.
-   * - The server sends it no command other than SetState, and ignores its command results.
-   * - It may send heartbeats and Facts. At the next number, the server applies and acknowledges
-   *   a valid Facts and shows it in the waiting machine's record, and it sets no readiness. It
-   *   consumes any other event of a waiting machine, with no effect.
+   * - The server sends it only SetState after run readiness and ignores its command results
+   *   while approval is pending.
+   * - A machine waiting for approval can replay retained pre-run events and send heartbeats.
+   *   While it waits, the server applies valid Facts and consumes other eligible events without
+   *   effect. Valid Facts update the waiting machine's record without making it Online.
+   *   Fresh reports wait for approval.
    *
    * Removal:
    * - The server orders the commit of a removal against the commit that admits a stream. A stream
@@ -573,7 +611,7 @@ export declare const LinkService: GenService<{
    *   the removal commits. The server refuses the next frame of that stream with
    *   `failed_precondition` and unknown_machine, sends it no EventAck, and nothing that stream
    *   sends changes the machine. Its connection token opens nothing.
-   * - A removal ends every pending command of the machine.
+   * - A removal ends every pending command and staged result of the machine as removed.
    * - The server ends the machine's current stream with the same code and reason. Every later
    *   Open of that machine gets a Challenge and then the same code.
    * - The server may send SetState with APPROVAL_REMOVED before it ends the stream, and nothing

@@ -20,11 +20,18 @@ The owner chose Protocol Buffers and gRPC on 2026-11-12.
 | `session.proto` | `SessionService` | What answers at an address, signing in and signing out |
 | `clients.proto` | `ClientService` | The clients of a server, and the tokens that let a client join |
 | `common.proto` | | The shape of a `Watch` reply and its position in the change feed |
+| `projects.proto` | `ProjectService` | Watching saved repositories, inspecting a folder, and adding a repository or attaching a folder |
 | `map.proto` | `MapService` | The codebase map of a project, or of a repository's main checkout: its state, a request to build it, and a short-lived address of its page |
 | `preview.proto` | `PreviewService` | The running product of a project, or of a repository's main checkout: its previews, a request to start or stop one, a short-lived address of its page, and a request to add, change or remove a preview |
 
 A browser cannot speak gRPC itself. The website uses the Connect protocol over `fetch`.
 A server that answers Connect can answer gRPC from the same files.
+
+The website contract stays at revision 1. A real server enables repository mode by listing
+`lgtm.v1.ProjectService` in `GetServerResponse.services`. Entries are case-sensitive, fully
+qualified Protocol Buffers service names without slashes or method suffixes. An empty or omitted
+list enables no opt-in service. The website ignores unknown entries and selects sample behavior
+when `sample` is true. Both sample transports leave the repository service unadvertised.
 
 ### The server and client contract in `lgtm.link.v1`
 
@@ -33,6 +40,7 @@ A server that answers Connect can answer gRPC from the same files.
 | `link.proto` | `LinkService` | Joining and opening the stream, including the proof of both ends |
 | `commands.proto` | | Commands the server sends, machine standing, and the results the client sends back |
 | `events.proto` | | Ordered reports from the client, their acknowledgements, and heartbeats |
+| `folders.proto` | | Read-only folder inspection and its facts or refusal |
 
 ## Rules
 
@@ -43,8 +51,9 @@ A server that answers Connect can answer gRPC from the same files.
 - Calls in `lgtm.v1` need a website session, except `SessionService.GetServer` and `SessionService.SignIn`. The session travels in a cookie that the server sets. No message carries it.
 - The shared `Watch` shape in `common.proto` starts with `all`, then sends a `saved` record or a `removed_id` for each change. The first `position` is the highest position the records include, or zero when no change is visible. Each later `position` is higher. `WatchMap` and `WatchPreviews` will adopt this shape when their services are built.
 - `LinkService.Join` needs a join token, and `LinkService.Open` needs the machine's key. Both operate outside the website session.
-- The link `lgtm.link.v1` is frozen at revision 1. A change to `link.proto`, `commands.proto` or `events.proto` needs the next revision and a new entry in `testdata/link-frozen.json`.
-- The server and client speak link revision 1. A later call beside the stream presents the current stream's connection token in the `Lgtm-Link-Token` header.
+- The link `lgtm.link.v1` is frozen at revision 2. A change to any source in `proto/lgtm/link/v1/` needs the next revision and a new entry in `testdata/link-frozen.json`.
+- The contract between the server and the client defines link revision 2. A later call beside the stream presents the current stream's connection token in the `Lgtm-Link-Token` header.
+- The frozen link source hashes include comments. Keep every previous revision line byte for byte at its original line number. The comma belongs on the new revision's line, before the object. Set `LGTM_LINK_BASE` to the previous reviewed commit during review. Advance the baseline to the newly landed revision after review.
 - Every message, field and call has a comment that says what it is for.
 
 ## What a server must do beyond the messages
