@@ -77,7 +77,15 @@ func TestRecoveryWarningFollowsLaterReadyAdmission(t *testing.T) {
 		other, otherKey := f.register(t, "unrelated peer")
 		unrelated := submitAdmission(t, f, client, other.ID, otherKey, fixtureStreamID(t), 1)
 		requireAdmissionWelcome(t, unrelated, 0)
+		awaitAdmissionPublication(t, f, other.ID)
+		snapshot := web.watch(t)
+		requireRecoveryClient(t, recoverySnapshot(t, snapshot, m.ID), m.ID, webv1.ClientState_CLIENT_STATE_JOINING, true)
+		waiting := webv1.ClientState_CLIENT_STATE_WAITING_FOR_APPROVAL
+		requireRecoveryClient(t, recoverySnapshotClient(t, snapshot.Msg(), other.ID), other.ID, waiting, false)
+		closeRecoveryWatch(t, snapshot)
+
 		recoveryHeartbeat(t, unrelated)
+		requireRecoveryClient(t, recoveryWatchAt(t, watch, f.head(t)).GetSaved(), other.ID, waiting, false)
 		requireRecoveryFence(t, f, m.ID, current.Generation)
 		finishAdmissionPeer(t, unrelated)
 
@@ -146,6 +154,30 @@ func TestRecoveryWarningFollowsLaterReadyAdmission(t *testing.T) {
 		}
 		requireRecoveryClient(t, watch.Msg().GetSaved(), m.ID, webv1.ClientState_CLIENT_STATE_WAITING_FOR_APPROVAL, false)
 		requireAdmissionRun(t, f, m.ID, run, run, 11)
+	})
+
+	t.Run("DifferentRunReadyAtAdmissionClears", func(t *testing.T) {
+		f := newServerStreamFixture(t, handshakeFixtureOptions{})
+		m, key := f.register(t, "new ready run peer")
+		seedAdmissionMark(t, f, m.ID, 10)
+		client := steadyWire(t, f, streamTestOptions{timeout: storetest.ObservationTimeout})
+		incumbent := submitAdmission(t, f, client, m.ID, key, fixtureStreamID(t), 11)
+		requireAdmissionWelcome(t, incumbent, 10)
+		awaitAdmissionPublication(t, f, m.ID)
+		current := f.current(t, m.ID)
+		requireOpenEnd(t, submitAdmission(t, f, client, m.ID, key, fixtureStreamID(t), 9), connect.CodeInvalidArgument, openInvalid, "")
+		requireRecoveryFence(t, f, m.ID, current.Generation)
+
+		web := newRecoveryMachinesClient(t, f)
+		watch := web.watch(t)
+		waiting := webv1.ClientState_CLIENT_STATE_WAITING_FOR_APPROVAL
+		requireRecoveryClient(t, recoverySnapshot(t, watch, m.ID), m.ID, waiting, true)
+		run := fixtureStreamID(t)
+		replacement := submitAdmission(t, f, client, m.ID, key, run, 11)
+		requireAdmissionWelcome(t, replacement, 10)
+		requireAdmissionRun(t, f, m.ID, run, run, 11)
+		requireRecoveryFence(t, f, m.ID, -1)
+		requireRecoveryClient(t, recoveryWatchAt(t, watch, f.head(t)).GetSaved(), m.ID, waiting, false)
 	})
 
 	for _, scenario := range []struct {
@@ -402,6 +434,7 @@ func (c *recoveryCommitConn) Write(p []byte) (int, error) {
 	if c.dropWrite.CompareAndSwap(true, false) {
 		_ = c.Conn.Close()
 		c.arrived <- struct{}{}
+		<-c.release
 		return 0, io.ErrClosedPipe
 	}
 	return c.Conn.Write(p)
@@ -553,7 +586,12 @@ func recoverySnapshot(t *testing.T, watch *connect.ServerStreamForClient[webv1.W
 	if !watch.Receive() {
 		t.Fatalf("The Machines watch did not publish a snapshot. The code was %v.", connect.CodeOf(watch.Err()))
 	}
-	for _, row := range watch.Msg().GetAll().GetClients() {
+	return recoverySnapshotClient(t, watch.Msg(), id)
+}
+
+func recoverySnapshotClient(t *testing.T, snapshot *webv1.WatchClientsResponse, id string) *webv1.Client {
+	t.Helper()
+	for _, row := range snapshot.GetAll().GetClients() {
 		if row.GetId() == id {
 			return row
 		}
