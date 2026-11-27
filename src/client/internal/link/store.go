@@ -369,15 +369,19 @@ func (s *Store) checkRunReceipts() error {
 }
 
 func storeOpenError(err error) error {
+	var reason error
 	switch {
 	case errors.Is(err, boltErrors.ErrTimeout):
-		err = state.ErrStoreOpen
-	case errors.Is(err, syscall.ELOOP):
-		err = ErrStoreUnsafe
-	case !errors.Is(err, ErrStoreUnsafe) && !errors.Is(err, ErrStoreDamaged):
-		err = fmt.Errorf("%w: %w", ErrStoreDamaged, err)
+		reason = state.ErrStoreOpen
+	case errors.Is(err, ErrStoreUnsafe), errors.Is(err, syscall.ELOOP):
+		reason = ErrStoreUnsafe
+	case errors.Is(err, ErrStoreDamaged), errors.Is(err, boltErrors.ErrInvalid),
+		errors.Is(err, boltErrors.ErrChecksum), errors.Is(err, boltErrors.ErrVersionMismatch):
+		reason = ErrStoreDamaged
+	default:
+		reason = ErrStoreFailed
 	}
-	return fmt.Errorf("%s: %w", state.StoreFile, err)
+	return fmt.Errorf("%s: %w", state.StoreFile, reason)
 }
 
 // Close closes Changed, the database and the claim.
