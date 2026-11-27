@@ -7877,3 +7877,26 @@ The token then fails to decode, and the join is refused. Nothing reaches a log.
 The fault is older than the repairs that the review covered.
 
 The next step is to trim a final carriage return at the end of input, with one test.
+
+## 1670. A sign-in of Claude Code that the client cannot read is outside the output filter
+
+Found on 2026-11-27, in the second review round of the design for running an agent (`.plans/designs/running-an-agent/round-2-fit.md`, finding fit 2).
+
+The client and the harness run as one user, by the owner's decision of 2026-11-25.
+The client's output filter knows the client's own secrets, and the sign-in of Claude Code where that is a file the client can read.
+On macOS the sign-in is in the keychain, and the filter does not know it.
+An agent that prints that value sends it into the thread on the owner's own server.
+
+This does not stop the build, by the owner's decision of 2026-11-02 on security problems.
+Sprint 9 gives the filter the sign-ins that the server hands out.
+The design of the secrets of tools answers whether the sandbox of Claude Code applies when it is driven through the Agent Client Protocol.
+
+## 1671. A harness process that leaves its process group outlives the client's guard
+
+Found on 2026-11-27, while the design for running an agent was rewritten for its third review round.
+
+The client starts each harness under a guard that ends its whole process group when the client stops or dies.
+A process that moves itself into another group or another session is not ended.
+Nothing in sprint 5 looks for such a process.
+
+The next step belongs to sprint 8: decide whether the service manager's own cleanup covers this on Linux and on macOS, and test it.
