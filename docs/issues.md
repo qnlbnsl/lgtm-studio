@@ -7983,3 +7983,22 @@ Found on 2026-11-27, in the repair of item 4 of the plan `go-s4-client-folders`.
 
 The client refuses a checkout as not readable when its object folder names another object store, or when a folder or file below its Git folders is a link. A clone made with a shared or reference object store is such a checkout. The refusal is deliberate: the client reads no file and no object outside a checkout and its own Git folders.
 Where: `checkObjectFolder` in `src/client/internal/folders/checkout.go`. A linked worktree of a normal repository is still admitted. What is missing is a decision of the owner on whether such clones are ever admitted, and how.
+
+## 1685. Three limits of the rule that a checkout cannot make the client read outside itself
+
+Found on 2026-11-27, in the second review of item 4 of the plan `go-s4-client-folders` (post-4b 1, 2 and 3). The first review's cases are closed and tested. The owner's standing decision is that a security finding does not block the build, so these three are recorded and item 4 is closed.
+
+What must hold: the client and the Git process it starts read no file and no object outside a checkout and its own Git folders, from discovery until the last status command has ended.
+
+1. The check of the object folder must classify every entry, also on a file system that does not report the type of an entry with its name.
+2. The object folder that Git reads must be the one that was checked, for as long as Git reads it. Today the check ends before Git starts.
+3. A Git folder that a checkout names must belong to that checkout before the client reads it. Today only a linked worktree is checked against its main repository; a link at `.git`, a separate Git folder and a submodule are not.
+
+Where: `checkObjectFolder`, `checkoutView.prepare` and `checkoutDirectories` in `src/client/internal/folders/checkout.go`. Item 5 of the plan runs status commands on the same view, so point 2 covers them as well.
+
+## 1686. A broken symbolic branch pointer is reported as a branch
+
+Found on 2026-11-27, in the second review of item 4 of the plan `go-s4-client-folders` (post-4b 4).
+
+When `HEAD` is a link whose target is a branch name followed by white space, the installed Git refuses the checkout. The client reports the branch instead, because it removes the white space when it writes the private view.
+Where: the reading of a linked `HEAD` in `src/client/internal/folders/checkout.go`. The test writer of item 5 adds the test, and the builder of item 5 repairs it.
