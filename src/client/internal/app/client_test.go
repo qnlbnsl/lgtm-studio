@@ -750,8 +750,15 @@ func TestAppRunStoreStatus(t *testing.T) {
 				t.Errorf("fatal store condition returned %d, want 0 before cancellation", got)
 			}
 			record := oneAppLog(t, appLogs(t, log), "link_stopped", tc.code)
-			if record.Level != "ERROR" || record.Message != "An owner must decide how to recover this machine's saved events before restarting." {
-				t.Error("fatal store condition did not log the exact recovery diagnostic")
+			if record.Level != "ERROR" {
+				t.Error("the fatal store condition did not log an error")
+			}
+			if tc.code == "sequence_exhausted" {
+				if record.Message != "An owner must decide how to recover this machine's saved events before restarting." {
+					t.Error("sequence exhaustion changed its diagnostic")
+				}
+			} else {
+				requireAppRecoveryInstruction(t, log)
 			}
 			if !bytes.Equal(before, appFile(t, paths.Store)) {
 				t.Error("fatal store condition changed client.db")

@@ -35,6 +35,8 @@ type RunOutcome uint8
 const (
 	RunStopped RunOutcome = 1
 	RunRestart RunOutcome = 2
+	// RunRecoveryStop is a test writer stub for the terminal history outcome.
+	RunRecoveryStop RunOutcome = 3
 )
 
 const (

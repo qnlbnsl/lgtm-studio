@@ -477,6 +477,7 @@ func TestRetryFailureExitsAndKeepsStore(t *testing.T) {
 		onStream  func(*testing.T, *runPeerFixture)
 		wantErr   error
 		finalCode string
+		recovery  bool
 	}{
 		{
 			name: "open",
@@ -485,7 +486,7 @@ func TestRetryFailureExitsAndKeepsStore(t *testing.T) {
 					t.Fatal("could not write the damaged fixture store")
 				}
 			},
-			wantErr: ErrStoreDamaged,
+			recovery: true,
 		},
 		{
 			name: "read",
@@ -495,7 +496,7 @@ func TestRetryFailureExitsAndKeepsStore(t *testing.T) {
 			onStream: func(t *testing.T, f *runPeerFixture) {
 				f.welcome(t, f.next(t, 0), runWelcome(approvedApproval, 2, 0))
 			},
-			wantErr: ErrStoreDamaged,
+			recovery: true,
 		},
 		{
 			name: "commit",
@@ -531,6 +532,7 @@ func TestRetryFailureExitsAndKeepsStore(t *testing.T) {
 				f.welcome(t, f.next(t, 0), runWelcome(waitingApproval, 1, 2))
 			},
 			finalCode: "impossible_ack",
+			recovery:  true,
 		},
 		{
 			name: "impossible live mark for an event in the store",
@@ -552,6 +554,7 @@ func TestRetryFailureExitsAndKeepsStore(t *testing.T) {
 				leg.send(t, ackEvent(2))
 			},
 			finalCode: "impossible_ack",
+			recovery:  true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -564,7 +567,11 @@ func TestRetryFailureExitsAndKeepsStore(t *testing.T) {
 				if tc.onStream != nil {
 					tc.onStream(t, f)
 				}
-				result := f.stop(t, done, tc.wantErr)
+				if tc.recovery {
+					requireRecoveryStop(t, f, done, false)
+				} else {
+					f.stop(t, done, tc.wantErr)
+				}
 				time.Sleep(15 * time.Second)
 				requireEmpty(t, f.peer.opens, "the client dialled after a store fault")
 				if !bytes.Equal(readBytes(t, f.file()), before) {
@@ -580,18 +587,11 @@ func TestRetryFailureExitsAndKeepsStore(t *testing.T) {
 					t.Fatalf("the client logged %d errors for a store fault, want one", len(errorsLogged))
 				}
 				line := errorsLogged[0]
-				if tc.finalCode != "" && (line.Msg != "link_stopped" ||
-					line.Code != tc.finalCode || line.Message != storeRecoveryMessage) {
+				if tc.finalCode != "" && (line.Msg != "link_stopped" || line.Code != tc.finalCode) {
 					t.Error("the final store diagnostic is missing its required message, code, or recovery instruction")
 				}
-				if tc.onStream == nil {
-					text := line.Msg + " " + line.Message
-					if result.err != nil {
-						text += result.err.Error()
-					}
-					if !strings.Contains(text, "client.db") {
-						t.Error("the store-open failure did not name client.db")
-					}
+				if tc.finalCode == "sequence_exhausted" && line.Message != storeRecoveryMessage {
+					t.Error("sequence exhaustion changed its diagnostic")
 				}
 			})
 		})

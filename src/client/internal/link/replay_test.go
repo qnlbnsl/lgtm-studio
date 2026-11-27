@@ -163,9 +163,8 @@ func TestReplayRejectsDamagedPayload(t *testing.T) {
 			appendLinkFixture(t, store, tc.body)
 			appendLinkFixture(t, store, storedReport(t, wantEvent))
 			before := readBytes(t, folder.Paths().Store)
-			cursor := startReplay(t, store, 0)
-			if event, err := cursor.next(); event != nil || !errors.Is(err, ErrStoreDamaged) {
-				t.Errorf("damaged payload yielded a report or the wrong error: %v", err)
+			if cursor, err := newReplay(store, 0); cursor != nil || !errors.Is(err, ErrStoreDamaged) {
+				t.Error("initial replay validation did not reject the damaged payload")
 			}
 			store = reopen(t, folder, store, StoreOptions{})
 			if !bytes.Equal(before, readBytes(t, folder.Paths().Store)) || store.Len() != 2 {
