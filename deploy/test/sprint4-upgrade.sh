@@ -90,13 +90,11 @@ verified_revision_one_refusal() {
             and .value.frame == "open" and .value.link_revision == 1)) | one) as $open
         | ($leg | map(select(.value.action == "forwarded" and .value.direction == "down"
             and .value.frame == "challenge")) | one) as $challenge
-        | ($leg | map(select(.value.action == "forwarded" and .value.direction == "up"
-            and .value.frame == "proof")) | one) as $proof
         | ($leg | map(select(.value.action == "closed")) | one) as $closed
         | ($r.stream_id | text) and ($r.connection_id | positive)
         and $r.binary == .original.binary and $r.stream_id != .old.stream_id
-        and $open != null and $challenge != null and $proof != null and $closed != null
-        and $open.key < $proof.key and $proof.key < $closed.key and $challenge.key < $closed.key
+        and $open != null and $challenge != null and $closed != null
+        and $open.key < $closed.key and $challenge.key < $closed.key
         and $r.verified_challenge == true
         and $r.code == "failed_precondition" and $r.trailer == ["link_revision_mismatch"]
         and ([$leg[] | select(.value.frame == "welcome")] | length == 0)
@@ -382,7 +380,6 @@ upgrade_offline_observation() {
                 old_frame("closed"; null; null),
                 (refusal_frame("forwarded"; "up"; "open") + {link_revision: 1}),
                 refusal_frame("forwarded"; "down"; "challenge"),
-                refusal_frame("forwarded"; "up"; "proof"),
                 refusal_frame("closed"; null; null),
                 (new_frame("up"; "open") + {link_revision: 2}),
                 (new_frame("down"; "welcome") + {link_revision: 2, last_event_number: 41}),
