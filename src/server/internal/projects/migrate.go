@@ -7,12 +7,12 @@ import (
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/store"
 )
 
-//go:embed migrations/0001_projects.sql
-var projectMigrationStub embed.FS
+//go:embed migrations/*.sql
+var embeddedMigrations embed.FS
 
-// Migrations is a stub of the test writer that supplies an empty Projects migration.
+// Migrations provides the embedded Projects schema to the store.
 func Migrations() store.Migrations {
-	files, err := fs.Sub(projectMigrationStub, "migrations")
+	files, err := fs.Sub(embeddedMigrations, "migrations")
 	if err != nil {
 		panic(err)
 	}
