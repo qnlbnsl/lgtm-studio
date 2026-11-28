@@ -8117,3 +8117,12 @@ Found on 2026-11-27, in the review of item 7 of the plan `go-s4-web-repositories
 On an older server the website keeps the sample workspace. When such a server reports machines and none of them is the sample's default machine, opening New project from a sample repository row used to raise a page error and show no dialog. Since item 7 the dialog opens, with no machine selected and "Create project" disabled.
 The new behavior is better than a page error. It is a change to a compatibility screen that nobody decided, so it is recorded here for the owner.
 Where: the machine selection of `NewProject` in `src/frontend/src/dialogs.tsx`.
+
+## 1701. A machine that is out of sync and still connected counts as online and can be chosen
+
+Found on 2026-11-27, in the review of item 8 of the plan `go-s4-web-repositories` (post-8 1).
+
+The website takes the count "N of M online" and the machine choices of Add repository and New project from the connection standing of a machine alone. The plan says so for item 8: a flagged machine keeps its watched standing for counts and actions, and only a flagged machine that still waits for approval is left out. The build follows the plan.
+The reviewer was given a summary by the orchestrator that said every flagged machine is left out, and rated the difference as major. The summary was wrong, not the build.
+The question that remains is the owner's: whether a machine that shows "Out of sync" and is still connected should count as online and be offered for folder work. The paired test `TestSprintFourHistoryRecovery` will show whether the server lets that combination occur at all.
+Where: the count in `Machines` in `src/frontend/src/screens/service.tsx`, and the machine choices of `WatchedAddRepository` and of `NewProject` in `src/frontend/src/dialogs.tsx`.
