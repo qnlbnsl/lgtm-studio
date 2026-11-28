@@ -2,6 +2,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"path"
@@ -22,11 +23,15 @@ type Options struct {
 	Origins  *auth.OriginPolicy
 	Session  lgtmv1connect.SessionServiceHandler
 	Clients  lgtmv1connect.ClientServiceHandler
+	Projects lgtmv1connect.ProjectServiceHandler
 	Link     linkv1connect.LinkServiceHandler
 }
 
 // sessionReadMaxBytes bounds every message that the Session service reads, after decompression.
 const sessionReadMaxBytes = 32 << 10
+
+// projectReadMaxBytes allows an escaped typed path and bounds each decompressed message.
+const projectReadMaxBytes = 32 << 10
 
 // linkReadLimit bounds each incoming Link message after decompression.
 const linkReadLimit = 64 << 10
@@ -55,7 +60,7 @@ var linkProcedures = map[string]bool{
 	linkv1connect.LinkServiceOpenProcedure: true,
 }
 
-// webProcedures holds every generated procedure of the four web services.
+// webProcedures holds every generated procedure of the web services.
 var webProcedures = map[string]bool{
 	lgtmv1connect.SessionServiceGetServerProcedure: true,
 	lgtmv1connect.SessionServiceSignInProcedure:    true,
@@ -69,6 +74,10 @@ var webProcedures = map[string]bool{
 	lgtmv1connect.ClientServiceScanClientHarnessesProcedure: true,
 	lgtmv1connect.ClientServiceReconnectClientProcedure:     true,
 	lgtmv1connect.ClientServiceRemoveClientProcedure:        true,
+
+	lgtmv1connect.ProjectServiceWatchRepositoriesProcedure: true,
+	lgtmv1connect.ProjectServiceInspectFolderProcedure:     true,
+	lgtmv1connect.ProjectServiceAddRepositoryProcedure:     true,
 
 	lgtmv1connect.MapServiceWatchMapProcedure:   true,
 	lgtmv1connect.MapServiceBuildMapProcedure:   true,
@@ -146,6 +155,14 @@ func NewHandler(options Options) http.Handler {
 			lgtmv1connect.ClientServiceScanClientHarnessesProcedure,
 			lgtmv1connect.ClientServiceReconnectClientProcedure,
 			lgtmv1connect.ClientServiceRemoveClientProcedure)
+	}
+	if options.Projects != nil {
+		_, handler := lgtmv1connect.NewProjectServiceHandler(redactingProjectService{options.Projects},
+			protocol, guard, connect.WithReadMaxBytes(projectReadMaxBytes), redactMalformedJSON(messageMalformed))
+		r.register(transport.WithWriteDeadline(handler),
+			lgtmv1connect.ProjectServiceWatchRepositoriesProcedure,
+			lgtmv1connect.ProjectServiceInspectFolderProcedure,
+			lgtmv1connect.ProjectServiceAddRepositoryProcedure)
 	}
 	r.link = r.unsupported
 	if options.Link != nil {
@@ -311,6 +328,9 @@ func (r *router) serveWeb(w http.ResponseWriter, req *http.Request, procedure st
 	}
 
 	ctx := withCookieMode(req.Context(), mode)
+	if procedure == lgtmv1connect.SessionServiceGetServerProcedure && r.web[lgtmv1connect.ProjectServiceWatchRepositoriesProcedure] != nil {
+		ctx = context.WithValue(ctx, projectDiscoveryKey{}, true)
+	}
 	if handler, ok := r.web[procedure]; ok {
 		handler.ServeHTTP(w, req.WithContext(ctx))
 		return

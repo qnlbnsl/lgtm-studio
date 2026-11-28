@@ -22,6 +22,9 @@ const ContractRevision uint32 = 1
 // Version is the server's own version.
 const Version = "0.1.0"
 
+// projectDiscoveryKey marks GetServer calls on a router that serves Projects.
+type projectDiscoveryKey struct{}
+
 type sessionService struct {
 	password auth.Password
 	sessions *auth.Sessions
@@ -40,12 +43,17 @@ func (s *sessionService) GetServer(ctx context.Context, req *connect.Request[web
 	if err != nil {
 		return nil, err
 	}
+	var services []string
+	if mounted, _ := ctx.Value(projectDiscoveryKey{}).(bool); mounted {
+		services = []string{lgtmv1connect.ProjectServiceName}
+	}
 	return connect.NewResponse(&webv1.GetServerResponse{
 		Product:  Product,
 		Version:  Version,
 		Contract: ContractRevision,
 		Sample:   false,
 		SignedIn: signedIn,
+		Services: services,
 	}), nil
 }
 

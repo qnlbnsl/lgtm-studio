@@ -52,6 +52,17 @@ func (s redactingClientService) WatchClients(ctx context.Context, req *connect.R
 	return s.ClientServiceHandler.WatchClients(ctx, req, stream)
 }
 
+type redactingProjectService struct {
+	lgtmv1connect.ProjectServiceHandler
+}
+
+func (s redactingProjectService) WatchRepositories(ctx context.Context, req *connect.Request[lgtmv1.WatchRepositoriesRequest], stream *connect.ServerStream[lgtmv1.WatchRepositoriesResponse]) error {
+	if isMalformedJSON(req) {
+		return connect.NewError(connect.CodeInvalidArgument, errors.New(messageMalformed))
+	}
+	return s.ProjectServiceHandler.WatchRepositories(ctx, req, stream)
+}
+
 func isMalformedJSON(req connect.AnyRequest) bool {
 	msg, ok := req.Any().(proto.Message)
 	if !ok || string(msg.ProtoReflect().GetUnknown()) != string(malformedMark) {
