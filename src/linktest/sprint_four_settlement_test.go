@@ -276,7 +276,15 @@ SELECT COALESCE(sent_stream_id=$2 AND attempt=$3 AND dispatched,false) FROM link
 		requireStaged()
 		releaseReport()
 		waitForAck(t, reconnect, number)
-		requireAddReply(t, finishAdd(t, call), f.id, root)
+		settled := readProjectOperation(t, f.db, "staged-report")
+		if settled.state != "succeeded" || settled.id != op.id || settled.command != op.command {
+			t.Fatal("The acknowledged report did not settle the original operation.")
+		}
+		reply := requireAddReply(t, addFolder(t.Context(), f.projects, f.id, "staged-report", root), f.id, root)
+		var storedReply webv1.AddRepositoryResponse
+		if err := proto.Unmarshal(settled.reply, &storedReply); err != nil || !proto.Equal(reply, &storedReply) {
+			t.Fatal("The keyed retry did not return the original operation's saved reply.")
+		}
 		waitForStoredResult(t, f.db, command, "done")
 		if inspected.Load() != 1 {
 			t.Fatal("The same process inspected the staged folder more than once.")

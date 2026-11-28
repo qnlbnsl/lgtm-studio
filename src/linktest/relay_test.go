@@ -97,6 +97,7 @@ type legObservation struct {
 	events          []uint64
 	acks            []uint64
 	heartbeats      int
+	heartbeatAcks   int
 	emptyHeartbeats int
 	results         []noticeResult
 	unknownMachine  bool
@@ -429,6 +430,8 @@ func (l *relayLeg) recordReply(frame *linkv1.OpenResponse) {
 		l.trace.name = welcome.GetState().GetName()
 	case frame.GetEventAck() != nil:
 		l.trace.acks = append(l.trace.acks, frame.GetEventAck().GetThrough())
+	case frame.GetHeartbeatAck() != nil:
+		l.trace.heartbeatAcks++
 	case frame.GetCommand() != nil:
 		cmd := frame.GetCommand()
 		delivery := commandDelivery{id: cmd.GetId(), attempt: cmd.GetAttempt(), expiry: cmd.GetExpiresAt().AsTime()}

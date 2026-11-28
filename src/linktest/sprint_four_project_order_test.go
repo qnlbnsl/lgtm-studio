@@ -272,6 +272,10 @@ func testPairedProjectRunGateWithFreePermit(t *testing.T) {
 	if welcome.hello.runID == oldLeg.observe().hello.runID || welcome.hello.first != final+1 || welcome.mark != baseline {
 		t.Fatal("The replacement did not announce the retained prefix on a new run.")
 	}
+	// The server handles heartbeats after it publishes the welcomed stream.
+	waitFor(t, 15*time.Second, "a heartbeat acknowledgement on the replacement stream", func() bool {
+		return leg.observe().heartbeatAcks > 0
+	})
 	call := beginAdd(t, f.projects, f.id, "gated-with-permit", root)
 	op := waitProjectOperation(t, f.db, "gated-with-permit")
 	allowStart()
