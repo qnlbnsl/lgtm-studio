@@ -27,6 +27,13 @@ func TestStagedResultsSettleInReplayOrder(t *testing.T) {
 	m, key := before.register(t, "ordered settlement after restart")
 	before.approve(t, m.ID)
 	seedAdmissionMark(t, before, m.ID, 5)
+	other, otherKey := before.register(t, "independent replay settlement")
+	if err := before.s.Write(t.Context(), func(ctx context.Context, tx *store.Tx) error {
+		return before.r.SetApproved(ctx, tx, other.ID, "Independent replay machine")
+	}); err != nil {
+		t.Fatalf("The fixture could not approve the second replay machine. %v", err)
+	}
+	seedAdmissionMark(t, before, other.ID, 6)
 	runA, runB := fixtureStreamID(t), fixtureStreamID(t)
 	incumbent := submitAdmission(t, before, steadyWire(t, before, streamTestOptions{}), m.ID, key, runA, 6)
 	requireAdmissionWelcome(t, incumbent, 5)
@@ -47,12 +54,14 @@ func TestStagedResultsSettleInReplayOrder(t *testing.T) {
 	eventSQL(t, f.presenceFixture, `ALTER TABLE fixture_settlements ADD COLUMN ordinal bigint GENERATED ALWAYS AS IDENTITY`)
 	eventSQL(t, f.presenceFixture, `CREATE TABLE fixture_settlement_ready (due bigint NOT NULL)`)
 	registerRestartSettlement(t, f.presenceFixture, func(ctx context.Context, tx *store.Tx, settlement Settlement) error {
-		var ready string
-		if err := tx.QueryRow(ctx, "SELECT ready_run_id FROM link_machines WHERE machine_id = $1", m.ID).Scan(&ready); err != nil {
-			return err
-		}
-		if ready != runA {
-			return store.NewDomainError("The replacement was ready before its replay settled the due command.")
+		if settlement.MachineID == m.ID {
+			var ready string
+			if err := tx.QueryRow(ctx, "SELECT ready_run_id FROM link_machines WHERE machine_id = $1", m.ID).Scan(&ready); err != nil {
+				return err
+			}
+			if ready != runA {
+				return store.NewDomainError("The replacement was ready before its replay settled the due command.")
+			}
 		}
 		if settlement.Command.GetId() == earliest.id {
 			var payload []byte
@@ -70,6 +79,9 @@ func TestStagedResultsSettleInReplayOrder(t *testing.T) {
 		return tx.Record(store.ChangeRef{Topic: "fixture_settlements", Key: settlement.Command.GetId(), Change: store.Saved})
 	})
 	if err := f.state.RegisterPart(PartHooks{RunChanged: func(ctx context.Context, tx *store.Tx, change RunChange) error {
+		if change.MachineID == other.ID {
+			return nil
+		}
 		if change.RunID != runB || change.PreviousRunID != runA || change.FirstEventNumber != 10 {
 			return store.NewDomainError("The readiness hook saw the wrong run transition.")
 		}
@@ -86,6 +98,17 @@ func TestStagedResultsSettleInReplayOrder(t *testing.T) {
 	}
 
 	client := steadyWire(t, f, streamTestOptions{})
+	otherPeer := submitAdmission(t, f, client, other.ID, otherKey, fixtureStreamID(t), 7)
+	requireAdmissionWelcome(t, otherPeer, 6)
+	awaitAdmissionPublication(t, f, other.ID)
+	otherStream := f.current(t, other.ID).StreamID
+	otherCommand := seedSettlementCommand(t, f.presenceFixture, other.ID, otherStream, restartAction(), time.Minute)
+	seedJoinedStage(t, f.presenceFixture, otherCommand.id, "failed", 7)
+	readOtherCommand := func() string {
+		return storetest.Scalar[string](t, f.obs, "SELECT to_jsonb(c)::text FROM link_commands c WHERE id = $1", otherCommand.id)
+	}
+	otherBefore := readOtherCommand()
+
 	peer := submitAdmission(t, f, client, m.ID, key, runB, 10)
 	requireAdmissionWelcome(t, peer, 5)
 	requireAdmissionRun(t, f, m.ID, runB, runA, 10)
@@ -96,6 +119,11 @@ func TestStagedResultsSettleInReplayOrder(t *testing.T) {
 	} {
 		sendHandshake(t, peer, eventFrame(event))
 		requireEventAck(t, peer, event.GetNumber())
+		if event.GetNumber() == 7 && (readOtherCommand() != otherBefore ||
+			eventMark(t, f.presenceFixture, other.ID) != 6 ||
+			settlementAuditCount(t, f.presenceFixture, otherCommand.id) != 0) {
+			t.Fatal("The first machine's replay changed the second machine's staged command, mark or callback records.")
+		}
 	}
 	seven, nine := int64(7), int64(9)
 	requireSettlementTerminal(t, f.presenceFixture, earliest.id, "unsupported")
@@ -158,6 +186,18 @@ func TestStagedResultsSettleInReplayOrder(t *testing.T) {
 		t.Error("A repeated event or result changed the original terminal record.")
 	}
 	f.requireSaved(t, head)
+
+	otherEvent := eventFrame(&linkv1.Event{Number: 7})
+	sendHandshake(t, otherPeer, otherEvent)
+	requireEventAck(t, otherPeer, 7)
+	otherFinished := requireSettlementTerminal(t, f.presenceFixture, otherCommand.id, "failed")
+	sendHandshake(t, otherPeer, otherEvent)
+	requireEventAck(t, otherPeer, 7)
+	requireSettlementAudit(t, f.presenceFixture, otherCommand.id, OutcomeFailed, &seven, 7)
+	if settlementAuditCount(t, f.presenceFixture, otherCommand.id) != 1 ||
+		!requireSettlementTerminal(t, f.presenceFixture, otherCommand.id, "failed").Equal(otherFinished) {
+		t.Error("Repeating the second machine's event changed its terminal row or did not leave exactly one settlement.")
+	}
 }
 
 func seedJoinedStage(t *testing.T, f *presenceFixture, id, outcome string, number int64) {
