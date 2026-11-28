@@ -16,6 +16,7 @@ export type Ms = number;
 // ---- the service and its machines -------------------------------------------------
 export interface Machine {
   id: Id; name: string; role: 'master' | 'worker' | string; status: 'online' | 'offline' | 'pairing' | string;
+  eventHistoryNeedsRecovery?: boolean;
   here?: boolean; slots: { used: number; limit: number }; address: string; workspace: string; os?: string;
   /** A missing timestamp in repository mode is represented by NaN. */
   lastSeen: Ms;
@@ -209,7 +210,10 @@ export interface ServerState {
   error?: string | undefined;
 }
 /** A client that used a token and waits for the owner's approval. */
-export interface JoiningClient { id: Id; host: string; address: string; os: string; cores: number; ram: number; tokenId: string }
+export interface JoiningClient {
+  id: Id; host: string; address: string; os: string; cores: number; ram: number; tokenId: string;
+  eventHistoryNeedsRecovery: boolean;
+}
 export interface Session { status: 'checking' | 'in' | 'out' | 'rejected' | 'expired' | 'unavailable' | string; firstRun: boolean; [more: string]: unknown }
 export interface Connection {
   status: 'live' | 'reconnecting' | 'offline' | string; lastHeard: Ms;

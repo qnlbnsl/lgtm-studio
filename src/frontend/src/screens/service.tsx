@@ -4,6 +4,7 @@ import * as liveGit from '../live/git';
 import * as signInUi from '../live/signin';
 // The service pages: Machines, Harnesses, Notifications and Service settings,
 // plus one project's Settings tab and the Add repository dialog.
+import { Fragment } from 'preact';
 import { useState, useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import {
   Icon, cx, update, store, go, href, ago, clock, dayLabel, useNow, uid, plural, MIN, HOUR, DAY, live, refuse,
@@ -173,8 +174,18 @@ function reportedInstallations(m: Machine) {
   return Object.entries(m.harnesses ?? {}).filter(([, version]) => version !== null);
 }
 
+const recoveryStatus = 'Out of sync';
+
+function MachineRecoveryReason() {
+  return <div class="callout warn" style="grid-column:1/-1">
+    <Icon name="circle-alert" size={15} />
+    <span class="grow">This machine's saved history is older than the server's.</span>
+  </div>;
+}
+
 function MachineDetail({ s, m, now }: { s: State; m: Machine; now: Ms }) {
   const repositoryMode = s.server.repositoryMode;
+  const recovering = repositoryMode && m.eventHistoryNeedsRecovery;
   const ags = machineAgents(s, m.id); const runningAgents = ags.filter(running);
   const details = s.machineDetails;
   const folders = s.repos.flatMap((r) => {
@@ -186,7 +197,8 @@ function MachineDetail({ s, m, now }: { s: State; m: Machine; now: Ms }) {
   const trees = s.projects.filter((p) => p.machine === m.id && !p.archived);
   const subs = s.subscriptions.filter((x) => x.machine === m.id);
   return <div class="svc-detail">
-    {m.status === 'offline' && (!repositoryMode || Number.isFinite(m.lastSeen)) && <div class="callout warn" style="grid-column:1/-1">
+    {recovering && <MachineRecoveryReason />}
+    {!recovering && m.status === 'offline' && (!repositoryMode || Number.isFinite(m.lastSeen)) && <div class="callout warn" style="grid-column:1/-1">
       <Icon name="wifi-off" size={15} />
       <span class="grow">
         {m.name}
@@ -301,11 +313,14 @@ function machineAction(scope: server.SessionScope | null, call: (scope: server.S
 export function Machines({ s }: ScreenProps) {
   const now = useNow(10_000);
   useEffect(() => { if (live.on) void mocks.loadMachines(); }, [s.boardRevision]);
+  const repositoryMode = s.server.repositoryMode;
   const online = s.machines.filter((m) => m.status === 'online').length;
-  const remove = (m: Machine) => { const ags = machineAgents(s, m.id).filter(running); const subs = s.subscriptions.filter((x) => x.machine === m.id);
+  const remove = (m: Pick<Machine, 'id' | 'name'>, recovering: boolean) => {
+    const ags = machineAgents(s, m.id).filter(running); const subs = s.subscriptions.filter((x) => x.machine === m.id);
     const scope = server.captureSession();
-    act.confirm({ title: `Remove ${m.name}?`, body: `${m.name} is disconnected and forgotten. Its folders stay on its disk. Pair it again to bring it back.`, action: 'Remove machine',
-      lost: [ags.length ? `${plural(ags.length, 'running agent')} will stop` : null, subs.length ? `${plural(subs.length, 'subscription')} on it will be removed` : null, s.projects.some((p) => p.machine === m.id && !p.archived) ? 'Projects that run here need another machine' : null].filter(Boolean) as string[],
+    const facts = `${m.name} is disconnected and forgotten. Its folders stay on its disk.`;
+    act.confirm({ title: `Remove ${m.name}?`, body: recovering ? facts : `${facts} Pair it again to bring it back.`, action: 'Remove machine',
+      lost: recovering ? [] : [ags.length ? `${plural(ags.length, 'running agent')} will stop` : null, subs.length ? `${plural(subs.length, 'subscription')} on it will be removed` : null, s.projects.some((p) => p.machine === m.id && !p.archived) ? 'Projects that run here need another machine' : null].filter(Boolean) as string[],
       onConfirm: () => machineAction(scope, (scope) => server.removeClient(scope, m.id), () => {
         if (!store.state.server.repositoryMode) update((st) => { st.subscriptions = st.subscriptions.filter((x) => x.machine !== m.id);
           for (const a of st.agents) if (projectOf(st, a.project)?.machine === m.id && running(a)) { a.prevState = a.state; a.state = 'stopped'; a.activity = `Stopped · ${m.name} was removed`; } });
@@ -345,6 +360,9 @@ export function Machines({ s }: ScreenProps) {
           <tbody>
             {s.machines.filter((m) => !live.on || m.id === 'local').map((m) => { const k = 'machine:' + m.id; const open = !!s.expanded[k]; const off = m.status === 'offline'; const n = machineAgents(s, m.id).filter(running).length;
         const full = n >= m.slots.limit;
+        const recovering = repositoryMode && m.eventHistoryNeedsRecovery === true;
+        const warn = off || recovering;
+        const removalBlocked = !live.on && m.role === 'master' && !recovering;
         let lastSeen = '';
         if (!live.on) {
           if (!s.server.repositoryMode) lastSeen = off ? ago(m.lastSeen, now) + ' ago' : 'Now';
@@ -368,9 +386,9 @@ export function Machines({ s }: ScreenProps) {
             <td class="muted c-mid">{live.on ? '' : m.role === 'master' ? 'Master' : 'Worker'}</td>
             <td>
               {!live.on && <span class="row" style="gap:6px">
-              <i class={cx('dot', off ? 'waiting' : m.status === 'pairing' ? 'starting' : 'working')} />
-              <span class={cx(off && 'warn-text')} style={off ? 'font-weight:var(--weight-medium)' : ''}>
-                {off ? 'Offline' : m.status === 'pairing' ? 'Pairing' : 'Online'}
+              <i class={cx('dot', warn ? 'waiting' : m.status === 'pairing' ? 'starting' : 'working')} />
+              <span class={cx(warn && 'warn-text')} style={warn ? 'font-weight:var(--weight-medium)' : ''}>
+                {recovering ? recoveryStatus : off ? 'Offline' : m.status === 'pairing' ? 'Pairing' : 'Online'}
               </span>
             </span>}
             </td>
@@ -397,12 +415,46 @@ export function Machines({ s }: ScreenProps) {
                 { label: 'Add repository', icon: 'folder-git-2', disabled: off, why: off ? `${m.name} is offline.` : null, onSelect: () => act.openDialog({ type: 'add-repository', machine: m.id }) },
                 off && !s.server.repositoryMode && { label: 'Try to reconnect', icon: 'refresh-cw', onSelect: () => { if (act.refused()) return; act.toast(`Calling ${m.name}…`); machineAction(server.captureSession(), (scope) => server.reconnectClient(scope, m.id)); } },
                 { sep: true },
-                { label: 'Remove machine', icon: 'trash-2', danger: true, disabled: !live.on && m.role === 'master', why: !live.on && m.role === 'master' ? 'The master runs the service and cannot be removed.' : null, onSelect: () => live.on ? refuse() : remove(m) },
+                { label: 'Remove machine', icon: 'trash-2', danger: true, disabled: removalBlocked, why: removalBlocked ? 'The master runs the service and cannot be removed.' : null, onSelect: () => live.on ? refuse() : remove(m, recovering) },
               ].filter(Boolean)} />
             </td>
           </tr>
           {open && <tr key={m.id + '-d'} class="svc-detail-row"><td colspan={10}><MachineDetail s={s} m={m} now={now} /></td></tr>}
         </>; })}
+            {repositoryMode && s.joining.filter((j) => j.eventHistoryNeedsRecovery).map((j) => {
+              const k = 'machine:' + j.id;
+              const open = !!s.expanded[k];
+              return <Fragment key={j.id}>
+                <tr class="click s-warn" aria-expanded={open} onClick={() => act.toggleExpanded(k)}>
+                  <td class="state-cell">
+                    <span class="row" style="gap:8px">
+                      <button type="button" class={cx('svc-twist', open && 'open')} aria-expanded={open} aria-label={(open ? 'Hide' : 'Show') + ' details for ' + j.host} onClick={(e) => { e.stopPropagation(); act.toggleExpanded(k); }}>
+                        <Icon name="chevron-right" size={13} />
+                      </button>
+                      <Icon name="server" size={14} class="faint" />
+                      <b>{j.host}</b>
+                    </span>
+                  </td>
+                  <td class="c-mid" />
+                  <td><span class="row" style="gap:6px">
+                    <i class="dot waiting" />
+                    <span class="warn-text" style="font-weight:var(--weight-medium)">{recoveryStatus}</span>
+                  </span></td>
+                  <td class="c-wide" />
+                  <td class="c-wide" />
+                  <td />
+                  <td class="c-mid" />
+                  <td class="c-mid" />
+                  <td class="c-mid" />
+                  <td class="svc-acts" onClick={(e) => e.stopPropagation()}>
+                    <Menu class="icon-btn sm" label={'Actions for ' + j.host} align="end" width={230} trigger={<Icon name="ellipsis" size={15} />} items={[
+                      { label: 'Remove machine', icon: 'trash-2', danger: true, onSelect: () => remove({ id: j.id, name: j.host }, true) },
+                    ]} />
+                  </td>
+                </tr>
+                {open && <tr class="svc-detail-row"><td colspan={10}><div class="svc-detail"><MachineRecoveryReason /></div></td></tr>}
+              </Fragment>;
+            })}
           </tbody>
         </table>
       </div>

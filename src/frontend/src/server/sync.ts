@@ -18,6 +18,7 @@ import { applyRepositoryChange } from './repositories';
 const toMachine = (c: Client, repositoryMode: boolean): Machine => ({
   id: c.id, name: c.name, role: c.hostsServer ? 'master' : 'worker',
   status: c.state === ClientState.ONLINE ? 'online' : c.state === ClientState.OFFLINE ? 'offline' : 'pairing',
+  eventHistoryNeedsRecovery: c.eventHistoryNeedsRecovery,
   here: c.hostsServer, slots: { used: 0, limit: c.agentLimit },
   lastSeen: c.lastSeen ? timestampMs(c.lastSeen) : repositoryMode ? Number.NaN : 0,
   address: c.address, workspace: c.workspace, os: c.os, connectedFor: c.connectedAt ? Date.now() - timestampMs(c.connectedAt) : 0,
@@ -25,7 +26,10 @@ const toMachine = (c: Client, repositoryMode: boolean): Machine => ({
   cores: c.cores, ram: c.memoryGigabytes, version: c.version,
   harnesses: c.harnessesScanned ? Object.fromEntries(c.harnesses.map((h) => [h.harness, h.version ?? null])) : null,
 });
-const toJoining = (c: Client): JoiningClient => ({ id: c.id, host: c.name, address: c.address, os: c.os, cores: c.cores, ram: c.memoryGigabytes, tokenId: c.tokenId });
+const toJoining = (c: Client): JoiningClient => ({
+  id: c.id, host: c.name, address: c.address, os: c.os, cores: c.cores, ram: c.memoryGigabytes, tokenId: c.tokenId,
+  eventHistoryNeedsRecovery: c.eventHistoryNeedsRecovery,
+});
 const waits = (c: Client) => c.state === ClientState.WAITING_FOR_APPROVAL;
 
 /** What a failed call says, as a sentence for the page. */
