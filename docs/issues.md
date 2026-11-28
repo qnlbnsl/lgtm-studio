@@ -8133,7 +8133,7 @@ A client whose saved history is older than the server's gets its history brought
 A client whose saved history is newer reports what the server does not have.
 "Out of sync" then stops being a state that a person has to resolve.
 This changes a rule of the link contract (`src/contracts/proto/lgtm/link/v1/events.proto`, the sentence on an incompatible Welcome mark), the client's stop on an unusable replay, the server's recovery warning and the paired test `TestSprintFourHistoryRecovery`.
-It needs a design of its own, with two points to settle: what happens to a command that the server sent and the client may have run before it lost its receipts, and what happens to events that the client wrote under numbers the server has already used.
+The design and its build come after the release proofs of sprint 4 and before sprint 5 (decided on 2026-11-28). It needs a design of its own, with two points to settle: what happens to a command that the server sent and the client may have run before it lost its receipts, and what happens to events that the client wrote under numbers the server has already used.
 
 ## 1702. Four smaller points of the server's folder route and sweep
 
