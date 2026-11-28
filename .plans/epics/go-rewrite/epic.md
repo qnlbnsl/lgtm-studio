@@ -4,7 +4,7 @@ kind: epic
 status: active
 parked: false
 ship_branch: master
-updated: 2026-11-27
+updated: 2026-11-28
 ---
 
 # LGTM Studio runs on a Go server and a Go client
@@ -186,6 +186,35 @@ The six plans of sprint 4 were checked against each other on 2026-11-27. The rep
 Commit — the commit that landed the plan's build, filled in when the build merges.
 
 Phase 3 turns each brief into a full plan. A plan with `status: attack` is in review.
+
+## Where sprint 4 stands on 2026-11-28
+
+All six plans of sprint 4 are built on the branch `sprint-0`, and every build was reviewed.
+The server and the client speak link revision 2.
+The website shows the repositories of the server and adds a folder of a connected machine.
+
+These proofs passed on 2026-11-28.
+
+| Proof | Result |
+|---|---|
+| `scripts/check-go.sh` with the history base `699ce488`, in a clone of the head commit | It exits 0. Formatting, dependencies, vet, 29 Go packages and the frozen link history pass. |
+| The paired tests of the real server and the real client in `src/linktest/` | 21 tests pass twice with the race detector, and none is skipped. They hold the checks R3 and R5 to R10, and the second half of R11. |
+| The browser tests of the website | 300 tests pass. |
+| `deploy/test/sprint4-compose.sh` | The privately built images serve Projects to a signed-in session. |
+| `deploy/test/checks-s4.sh` against a private stack | R1, R2, R4, R11, R12 and R13 pass. |
+| A dry run of R14 in a browser against a private stack with a real client | Sign-in asks for no server address. The dialog shows the branch, the remote and the uncommitted change of a real checkout. Two repositories are saved from the sidebar and from the Machines page, and both remain after a reload. |
+
+The paired tests were reviewed twice.
+The first review found no fault in a program and six cases that could not fail; all six are closed.
+The second review found three cases that depend on timing; two are repaired, and issue 1712 records the third.
+
+These steps are still open.
+
+- R14 is the owner's own check on the deployed stack with a real machine. The list of steps is in `deploy/test/README.md`.
+- The checks of an installed client run only in live mode and were not run: the restart of the service under systemd and launchd, and the certificate pin away from loopback.
+- The check of an installed upgrade from sprint 3 was not run. No installation of sprint 3 exists, by a decision of 2026-11-28 that nothing has shipped.
+- The client has not been accepted on macOS.
+- The rule of issue 1701, that the server is the authority on a machine's history, is designed next, before sprint 5.
 
 ## Tests that are written before any plan
 

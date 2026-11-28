@@ -8243,3 +8243,12 @@ The test reads its clock after it has received the refusal. A test process that 
 The reviewer needed a pause of six seconds to show it. The bound stays, because it is what catches a server that waits 30 seconds.
 What would close it: a clock that the test controls inside the server's wait, which is a change to the program and not to the test.
 Where: the timing assertion of that case in `src/linktest/sprint_four_settlement_test.go`, and the wait of `src/server/internal/projects`.
+
+## 1713. A long machine name pushes the machine detail off a phone screen
+
+Found on 2026-11-28 in a dry run of the deployed repository check, with a machine whose name was 53 characters long.
+On a phone, the Machines table becomes as wide as the machine's name, and the detail below the row takes the same width.
+The paths of the watched folders then run past the right edge of the screen, although they wrap when the name is short.
+On a desktop the same name pushes the last columns of the table out of view.
+What must hold: a long name wraps or is shortened inside the screen's width, so that the detail stays readable. The form is a visible change.
+Where: the Machines table and `MachineDetail` in `src/frontend/src/screens/service.tsx`.

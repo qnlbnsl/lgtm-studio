@@ -15,15 +15,14 @@ A line is ticked when the feature works against the Go server, or when it needs 
 - When a sprint passes its checks, its lines are ticked in the commit that closes the sprint.
 - When a feature is added to the website, a line is added here.
 
-## Counts on 2026-11-27
+## Counts on 2026-11-28
 
 | State | Lines |
 |---|---:|
-| Real today | 13 |
+| Real today | 14 |
 | Works in the browser, needs no server | 24 |
 | Sample mode only, by design | 3 |
-| Sprint 4 | 1 |
-| Sprint 4, first part of the line | 3 |
+| The sprint 4 part is real, the rest waits for a later sprint | 3 |
 | Sprint 5 | 7 |
 | Sprint 5, first part of the line | 6 |
 | Sprint 6 | 1 |
@@ -62,7 +61,7 @@ A line is ticked when the feature works against the Go server, or when it needs 
 - [x] Open Home, All projects, Usage, and Settings from the sidebar.
       Where: Navigation. When: works in the browser, needs no server.
 - [ ] Open a repository, project, team, or agent from the expandable tree and see its stage, status, or request count.
-      Where: Navigation → Repositories. When: sprint 4 for repositories, sprint 5 for projects and leads, later for teams and request counts.
+      Where: Navigation → Repositories. When: sprint 4 for repositories, sprint 5 for projects and leads, later for teams and request counts. The sprint 4 part is real since 2026-11-28.
 - [ ] Limit the tree to projects with requests you can answer.
       Where: Navigation → Repositories. When: sprint 7.
 - [x] Pin or unpin projects for quick access in the folded sidebar.
@@ -70,7 +69,7 @@ A line is ticked when the feature works against the Go server, or when it needs 
 - [x] Fold, resize, or peek at the sidebar, or open navigation as a drawer on a phone.
       Where: Navigation. When: works in the browser, needs no server.
 - [ ] Find and open a repository, project, agent, or page by keyboard or search.
-      Where: Find project or agent. When: sprint 4 for repositories, sprint 5 for projects and leads.
+      Where: Find project or agent. When: sprint 4 for repositories, sprint 5 for projects and leads. The sprint 4 part is real since 2026-11-28.
 - [x] Navigate through breadcrumbs and use Skip to content to move keyboard focus.
       Where: Where you are, Skip to content. When: works in the browser, needs no server.
 - [x] Open recent destinations through the browser’s back and forward controls, including older addresses that redirect.
@@ -93,7 +92,7 @@ A line is ticked when the feature works against the Go server, or when it needs 
 - [ ] See how many sample accounts are signed in on a machine.
       Where: Settings → Machines → Harnesses. When: sprint 9.
 - [ ] See sample repository checkouts, project worktrees, and running agents for a machine.
-      Where: Settings → Machines → Repositories, Worktrees and agents. When: sprint 4 for folders, sprint 5 for running agents, sprint 10 for clones.
+      Where: Settings → Machines → Repositories, Worktrees and agents. When: sprint 4 for folders, sprint 5 for running agents, sprint 10 for clones. The sprint 4 part is real since 2026-11-28.
 - [ ] See how many sample agents run on a machine and whether it is at capacity.
       Where: Settings → Machines. When: sprint 5.
 - [ ] Change the displayed machine’s agent limit.
@@ -158,8 +157,8 @@ A line is ticked when the feature works against the Go server, or when it needs 
       Where: Add a repository. When: after sprint 10, with following a repository by its remote.
 - [ ] Track a repository by selecting it or pasting a Hypertext Transfer Protocol Secure (HTTPS) or Secure Shell (SSH) link.
       Where: Add a repository. When: after sprint 10, with following a repository by its remote.
-- [ ] Add a repository folder on an online machine after seeing what the machine found in it.
-      Where: Add repository, Add to a machine. When: sprint 4.
+- [x] Add a repository folder on an online machine after seeing what the machine found in it.
+      Where: Add repository, Add to a machine. When: sprint 4, real since 2026-11-28.
 - [ ] Set up a tracked repository on a machine and get a repository agent.
       Where: Repository setup. When: after sprint 10, with the agent of a repository.
 - [ ] Stop tracking a repository that has yet to be set up.
