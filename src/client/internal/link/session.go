@@ -629,22 +629,19 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 	requestClosed := false
 
 	busy, haveEvents := false, true
+	eventScreenDeferred := false
 	canSendEvent := func() bool {
 		retained := handedThrough+1 < l.run.announcement.firstEventNumber
 		return (l.approved() || retained) && haveEvents && handedThrough-ackedThrough < maxUnackedEvents
 	}
 	handoffEvent := func() (bool, error) {
-		unlock := l.run.opts.Filter.lockSecrets()
-		defer unlock()
-		event, err := l.replay.next()
-		if err != nil || event == nil {
-			return false, err
-		}
-		timingMu.Lock()
-		send <- &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Event{Event: event}}
-		handedThrough = event.GetNumber()
-		timingMu.Unlock()
-		return true, nil
+		event, err := l.replay.next(func(event *linkv1.Event) {
+			timingMu.Lock()
+			send <- &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Event{Event: event}}
+			handedThrough = event.GetNumber()
+			timingMu.Unlock()
+		})
+		return event != nil, err
 	}
 	handle := func(reply streamReply) error {
 		if ctx.Err() != nil {
@@ -705,6 +702,9 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 		case <-restartDeadline:
 			return true, nil
 		case <-heartbeats.C:
+			if eventScreenDeferred {
+				eventScreenDeferred, haveEvents = false, true
+			}
 		case <-l.run.store.Changed():
 			haveEvents = true
 		case err := <-reportFailed:
@@ -746,7 +746,10 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 			switch {
 			case len(l.results) != 0:
 				result := l.results[0]
-				unlock := l.run.opts.Filter.lockSecrets()
+				unlock, err := l.run.opts.Filter.lockSecrets(ctx, peerIdentifiers)
+				if err != nil {
+					return false, errInvalidFrame
+				}
 				if l.run.opts.Filter.containsSecret(result.GetCommandId()) {
 					unlock()
 					return false, errInvalidFrame
@@ -762,6 +765,13 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 				send <- &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Heartbeat{Heartbeat: l.run.reports.heartbeat(l.approved())}}
 			case canSendEvent():
 				sent, err := handoffEvent()
+				if errors.Is(err, errScreeningUnavailable) {
+					if handedThrough+1 < l.run.announcement.firstEventNumber {
+						return false, storeFault{ErrStoreDamaged}
+					}
+					eventScreenDeferred, haveEvents = true, false
+					continue
+				}
 				if err != nil {
 					return false, storeFault{err}
 				}

@@ -2,6 +2,7 @@ package link
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"unicode/utf8"
@@ -32,9 +33,15 @@ func newReplay(store *Store, through uint64) (*replay, error) {
 }
 
 func newReplayWithFilter(store *Store, through uint64, filter *OutgoingFilter) (*replay, error) {
-	unlock := filter.lockSecrets()
-	defer unlock()
-	if err := store.validateReplay(through, filter); err != nil {
+	screened := through < store.Next()-1
+	if screened {
+		unlock, err := filter.lockSecrets(context.Background(), localText)
+		if err != nil {
+			return nil, ErrStoreDamaged
+		}
+		defer unlock()
+	}
+	if err := store.validateReplay(through, filter, screened); err != nil {
 		return nil, err
 	}
 	if err := store.Ack(through); err != nil {
@@ -43,7 +50,7 @@ func newReplayWithFilter(store *Store, through uint64, filter *OutgoingFilter) (
 	return &replay{store: store, filter: filter, ceiling: through}, nil
 }
 
-func (s *Store) validateReplay(through uint64, filter *OutgoingFilter) error {
+func (s *Store) validateReplay(through uint64, filter *OutgoingFilter, screened bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ready(); err != nil {
@@ -52,6 +59,9 @@ func (s *Store) validateReplay(through uint64, filter *OutgoingFilter) error {
 	floor := s.events.next - uint64(s.events.count)
 	if through >= s.events.next || through < floor-1 {
 		return ErrAckAhead
+	}
+	if !screened && through < s.events.next-1 {
+		return ErrStoreDamaged
 	}
 	for first := through + 1; first < s.events.next; first += maxUnackedEvents {
 		if err := s.validateReplayBatch(first, maxUnackedEvents, filter); err != nil {
@@ -83,8 +93,8 @@ func (s *Store) validateReplayBatch(first, limit uint64, filter *OutgoingFilter)
 	})
 }
 
-// next checks the next event under the caller's filter lock through handoff.
-func (r *replay) next() (*linkv1.Event, error) {
+// next checks the next event and keeps registration locked through handoff.
+func (r *replay) next(handoff ...func(*linkv1.Event)) (*linkv1.Event, error) {
 	number := r.ceiling + 1
 	rows, err := r.store.Read(number, 1)
 	if err == nil && len(rows) == 0 && number < r.store.Next() {
@@ -101,8 +111,19 @@ func (r *replay) next() (*linkv1.Event, error) {
 		return nil, ErrStoreDamaged
 	}
 	event, err := decodeNumberedReport(number, rows[0].Payload)
-	if err != nil || !r.filter.reportTextSafe(event.ProtoReflect()) {
+	if err != nil {
 		return nil, ErrStoreDamaged
+	}
+	unlock, err := r.filter.lockSecrets(context.Background(), reportScreen(event))
+	if err != nil {
+		return nil, err
+	}
+	defer unlock()
+	if !r.filter.reportTextSafe(event.ProtoReflect()) {
+		return nil, ErrStoreDamaged
+	}
+	if len(handoff) != 0 {
+		handoff[0](event)
 	}
 	r.ceiling = number
 	return event, nil

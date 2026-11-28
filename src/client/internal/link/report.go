@@ -183,7 +183,7 @@ func (r *reporter) publish(ctx context.Context, kind reportKind, order uint64, e
 	}
 	candidate := snapshot{order: order, event: event}
 	committed, err := r.appendSnapshot(ctx, queue, candidate)
-	if err == context.Canceled || err == context.DeadlineExceeded {
+	if err == context.Canceled || err == context.DeadlineExceeded || errors.Is(err, errScreeningUnavailable) {
 		return false, nil
 	}
 	if !committed && err == nil && !requested && order > queue.pending.order {
@@ -204,7 +204,7 @@ func (r *reporter) flush() error {
 	}
 	for _, queue := range []*reportQueue{first, second} {
 		if queue.pending.order != 0 {
-			if _, err := r.appendSnapshot(context.Background(), queue, queue.pending); err != nil {
+			if _, err := r.appendSnapshot(context.Background(), queue, queue.pending); err != nil && !errors.Is(err, errScreeningUnavailable) {
 				return err
 			}
 		}
@@ -218,7 +218,7 @@ func (r *reporter) appendSnapshot(ctx context.Context, queue *reportQueue, candi
 		return false, nil
 	}
 	if err != nil {
-		if err == context.Canceled || err == context.DeadlineExceeded {
+		if err == context.Canceled || err == context.DeadlineExceeded || errors.Is(err, errScreeningUnavailable) {
 			return false, err
 		}
 		if errors.Is(err, ErrStoreFailed) {
