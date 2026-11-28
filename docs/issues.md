@@ -8182,3 +8182,12 @@ The code is right in both points today, and the tests would not notice if it sto
 
 1. The tests pass when the refresh reference of a large removal is committed in a write of its own. It must commit with the removal, so that a removal that fails later leaves no refresh behind. The combined startup case of item 8 should fail a write after the refresh is recorded and require the feed position to stay unchanged.
 2. The case without a pending command leaves an open Add and no open Inspect. Both kinds of open operation must fail with the fixed refusal when their machine is removed.
+
+## 1708. Three smaller points of the Projects routes
+
+Found on 2026-11-27 in the review of the router part of item 8 of the plan `go-s4-server-projects` (`attack/post-build-8a.md`).
+The routes behave as the plan says today.
+
+1. The tests pass when the two unary routes stop requiring the protocol version header. Each unary route needs a case without the header that expects the fixed refusal and no call of the handler.
+2. The tests count that a write deadline is set and cleared, and do not check its length. A case should require the deadline to lie within the shared send budget.
+3. A message above the 32-kibibyte limit is refused only after the transport has read the rest of it. A signed-in sender that pauses after the limit delays the refusal. What must hold: the refusal can be returned before the sender has finished the body. This is hardening, and it does not block the build.
