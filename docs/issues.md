@@ -8174,3 +8174,11 @@ Found on 2026-11-27 in the review of item 7 of the plan `go-s4-server-projects` 
 
 1. A watch that falls behind while a large frame is half written ends with a closed connection, not with the fixed answer that the watch fell behind. The website opens the watch again after either ending, and the new watch gets a complete list, so a person sees no difference. A fixed answer cannot follow a frame that was cut off. The contract should say that a closed connection is also a signal to open the watch again, and a test with the real writer should cover both endings. The test goes into item 8 of the plan; the sentence in the contract waits for the next change to the contract.
 2. The tests of a watch that is opened without a session, or with an old one, check the status and not the sentence. The code sends the right sentence today. The assertion goes into the tests of item 8.
+
+## 1707. Two gaps in the tests of removing a machine's repositories
+
+Found on 2026-11-27 in the review of item 6 of the plan `go-s4-server-projects` (`attack/post-build-6.md`, post-6 1 and post-6 2).
+The code is right in both points today, and the tests would not notice if it stopped being right.
+
+1. The tests pass when the refresh reference of a large removal is committed in a write of its own. It must commit with the removal, so that a removal that fails later leaves no refresh behind. The combined startup case of item 8 should fail a write after the refresh is recorded and require the feed position to stay unchanged.
+2. The case without a pending command leaves an open Add and no open Inspect. Both kinds of open operation must fail with the fixed refusal when their machine is removed.
