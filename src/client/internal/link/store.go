@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"math"
 	"os"
 	"path/filepath"
@@ -266,29 +267,78 @@ func openExistingBolt(path string, info os.FileInfo, readOnly bool) (db *bolt.DB
 		// Suppress bbolt's automatic write on open when it reconstructs a freelist.
 		NoFreelistSync: true,
 		OpenFile: func(path string, flags int, mode os.FileMode) (*os.File, error) {
-			file, err = os.OpenFile(path, flags&^os.O_CREATE|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, mode)
-			if err != nil {
-				return nil, err
-			}
-			current, statErr := file.Stat()
-			if statErr == nil {
-				statErr = checkStoreFile(current)
-			}
-			if statErr == nil && !os.SameFile(info, current) {
-				statErr = ErrStoreUnsafe
-			}
-			if statErr != nil {
-				_ = file.Close()
-				return nil, statErr
-			}
-			size = current.Size()
-			return file, nil
+			var openErr error
+			file, size, openErr = openExistingStoreFile(path, info, flags, mode)
+			return file, openErr
 		},
 	})
+	if isBoltMetadataError(err) {
+		return nil, size, classifyBoltMetadata(path, info)
+	}
 	if err == nil && !readOnly {
 		db.NoFreelistSync = false
 	}
 	return db, size, err
+}
+
+func openExistingStoreFile(path string, expected os.FileInfo, flags int, mode os.FileMode) (*os.File, int64, error) {
+	file, err := os.OpenFile(path, flags&^os.O_CREATE|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, mode)
+	if err != nil {
+		return nil, 0, err
+	}
+	info, err := file.Stat()
+	if err == nil {
+		err = checkStoreFile(info)
+	}
+	if err == nil && !os.SameFile(expected, info) {
+		err = ErrStoreUnsafe
+	}
+	if err != nil {
+		_ = file.Close()
+		return nil, 0, err
+	}
+	return file, info.Size(), nil
+}
+
+// bbolt can report invalid metadata when its positional reads fail. Read the
+// headers independently before treating the error as evidence of damage.
+func classifyBoltMetadata(path string, info os.FileInfo) error {
+	file, size, err := openExistingStoreFile(path, info, os.O_RDONLY, 0)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	const (
+		pageHeaderSize = 16
+		checksumOffset = 56
+		minSecondPage  = 1 << 10
+		maxSecondPage  = 16 << 20
+		boltMagic      = 0xed0cdaed
+		boltVersion    = 2
+	)
+	var meta [checksumOffset + 8]byte
+	// The first metadata page starts at zero. If it is unusable, bbolt
+	// looks for the second page at the supported power-of-two page sizes.
+	for page := int64(0); page <= maxSecondPage && page+pageHeaderSize+int64(len(meta)) <= size; page = max(minSecondPage, page*2) {
+		if _, err := file.ReadAt(meta[:], page+pageHeaderSize); err != nil {
+			return ErrStoreFailed
+		}
+		if binary.NativeEndian.Uint32(meta[:4]) != boltMagic || binary.NativeEndian.Uint32(meta[4:8]) != boltVersion {
+			continue
+		}
+		checksum := fnv.New64a()
+		_, _ = checksum.Write(meta[:checksumOffset])
+		if checksum.Sum64() == binary.NativeEndian.Uint64(meta[checksumOffset:]) {
+			return ErrStoreFailed
+		}
+	}
+	return ErrStoreDamaged
+}
+
+func isBoltMetadataError(err error) bool {
+	return errors.Is(err, boltErrors.ErrInvalid) || errors.Is(err, boltErrors.ErrChecksum) ||
+		errors.Is(err, boltErrors.ErrVersionMismatch)
 }
 
 func inspectStore(path string, info os.FileInfo) (snapshot eventSnapshot, err error) {
@@ -375,8 +425,7 @@ func storeOpenError(err error) error {
 		reason = state.ErrStoreOpen
 	case errors.Is(err, ErrStoreUnsafe), errors.Is(err, syscall.ELOOP):
 		reason = ErrStoreUnsafe
-	case errors.Is(err, ErrStoreDamaged), errors.Is(err, boltErrors.ErrInvalid),
-		errors.Is(err, boltErrors.ErrChecksum), errors.Is(err, boltErrors.ErrVersionMismatch):
+	case errors.Is(err, ErrStoreDamaged), isBoltMetadataError(err):
 		reason = ErrStoreDamaged
 	default:
 		reason = ErrStoreFailed
