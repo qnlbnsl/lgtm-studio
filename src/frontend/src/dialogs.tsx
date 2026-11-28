@@ -12,7 +12,8 @@ import * as act from './actions';
 import * as board from './live/board';
 import * as mocks from './live/mocks';
 import { useProjectLead } from './project-lead';
-import { Dialog, registerDialog, Avatar, MergeFacts } from './ui';
+import { Dialog, registerDialog, Avatar, Empty, MergeFacts } from './ui';
+import { defaultFolderMachine } from './server/folders';
 import type { Agent, DialogState, Id, State } from './types';
 import type { GitFile, GitReview } from './screens/git';
 
@@ -156,32 +157,50 @@ export function SubscriptionTable({ s, machine, value, onPick, name = 'lead-sub'
 }
 interface DialogProps { s: State; d: DialogState }
 function NewProject({ s, d }: DialogProps) {
-  const [machine, setMachine] = useState<string>(live.on ? 'local' : d.machine || 'studio');
+  const repositoryMode = s.server.repositoryMode;
+  const [selectedMachine, setMachine] = useState<string>(() => repositoryMode
+    ? defaultFolderMachine(s.machines, d.machine) : live.on ? 'local' : d.machine || 'studio');
   const [repo, setRepo] = useState<string>(d.repo || s.repos[0]?.id || '__new');
-  const [newRepo, setNewRepo] = useState('');
+  const [newRepo, setNewRepo] = useState<string>(d.newRepo ?? '');
   const [goal, setGoal] = useState<string>(d.goal || '');
+  const [unavailable, setUnavailable] = useState(false);
+  const machine = repositoryMode && !byId(s.machines, selectedMachine)
+    ? defaultFolderMachine(s.machines, d.machine) : selectedMachine;
+  useLayoutEffect(() => {
+    if (machine !== selectedMachine) setMachine(machine);
+  }, [machine, selectedMachine]);
   const selection = useProjectLead(s, machine);
   const creating = live.on && board.busy('create-project');
-  const m = machineOf(s, machine); const r = byId(s.repos, repo);
+  const m = byId(s.machines, machine); const r = byId(s.repos, repo);
   const isNew = repo === '__new';
   const hasRepo = isNew || !!r?.folders[machine];
-  const why = m.status !== 'online' ? `${m.name} is offline.` : !hasRepo ? null : !goal.trim() ? 'Write the goal.' : isNew && !newRepo.trim() ? 'Name the new repository.' : selection.why;
-  const create = () => { if (why || !hasRepo || creating) return; if (!live.on) act.closeDialog(); act.createProject({ repo, goal: goal.trim(), machine, subscription: selection.lead?.account.accountId as Id, lead: selection.lead, newRepo: isNew ? newRepo.trim() : null }); };
+  const why = !m ? null : m.status !== 'online' ? `${m.name} is offline.` : !hasRepo ? null : !goal.trim() ? 'Write the goal.' : isNew && !newRepo.trim() ? 'Name the new repository.' : repositoryMode ? null : selection.why;
+  const blocked = m?.status !== 'online' || !!why || !hasRepo || creating;
+  const create = () => {
+    if (blocked) return;
+    if (repositoryMode) {
+      setUnavailable(true);
+      return;
+    }
+    if (!live.on) act.closeDialog();
+    act.createProject({ repo, goal: goal.trim(), machine, subscription: selection.lead?.account.accountId as Id, lead: selection.lead, newRepo: isNew ? newRepo.trim() : null });
+  };
   return <Dialog title="New project" size="new-project" onClose={act.closeDialog} onSubmit={create} foot={<>
-      {why && <span class="why">{why}</span>}
+      {why && <span class="why" style={repositoryMode ? { overflowWrap: 'anywhere' } : undefined}>{why}</span>}
       <button type="button" class="btn" onClick={act.closeDialog}>Cancel</button>
-      <button type="submit" class="btn primary" disabled={!!why || !hasRepo || creating} aria-busy={creating}>
+      <button type="submit" class="btn primary" disabled={blocked} aria-busy={creating}>
         {creating ? 'Creating…' : 'Create project'}
       </button>
     </>}>
     <div class="field">
       <label for="np-goal">Goal</label>
-      <textarea id="np-goal" class="textarea" rows={3} value={goal} onInput={(e) => setGoal((e.target as HTMLTextAreaElement).value)} placeholder="Make a mock for the LGTM Studio phone app" autofocus onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); create(); } }} />
+      <textarea id="np-goal" class="textarea" rows={3} value={goal} onInput={(e) => { setGoal(e.currentTarget.value); setUnavailable(false); }} placeholder="Make a mock for the LGTM Studio phone app" autofocus onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); create(); } }} />
     </div>
     <div class="new-project-rows">
       <div class="field new-project-row">
         <label for="np-machine">Run on</label>
-        <select id="np-machine" class="select" value={machine} onChange={(e) => setMachine((e.target as HTMLSelectElement).value)}>
+        <select id="np-machine" class="select" value={machine} onChange={(e) => { setMachine(e.currentTarget.value); setUnavailable(false); }}>
+          {repositoryMode && !machine && <option value="" />}
           {s.machines.filter((x) => !live.on || x.id === 'local').map((x) => <option value={x.id} disabled={x.status !== 'online'}>
             {x.name}
             {x.status !== 'online' ? ' (offline)' : x.here ? ' (this computer)' : ''}
@@ -190,25 +209,29 @@ function NewProject({ s, d }: DialogProps) {
       </div>
       <div class="field new-project-row">
         <label for="np-repo">Repository</label>
-        <select id="np-repo" class="select" value={repo} onChange={(e) => setRepo((e.target as HTMLSelectElement).value)}>
-          {s.repos.map((x) => <option value={x.id}>{x.name}{x.folders[machine] ? '' : ` (not on ${m.name})`}</option>)}
+        <select id="np-repo" class="select" value={repo} onChange={(e) => { setRepo(e.currentTarget.value); setUnavailable(false); }}>
+          {s.repos.map((x) => <option value={x.id}>{x.name}{m && !x.folders[machine] ? ` (not on ${m.name})` : ''}</option>)}
           <option value="__new">New repository…</option>
         </select>
       </div>
     </div>
     {isNew && <div class="field new-project-row">
       <label for="np-newrepo">New repository name</label>
-      <input id="np-newrepo" class="input" value={newRepo} onInput={(e) => setNewRepo((e.target as HTMLInputElement).value)} placeholder="notes-site" />
+      <input id="np-newrepo" class="input" value={newRepo} onInput={(e) => { setNewRepo(e.currentTarget.value); setUnavailable(false); }} placeholder="notes-site" />
     </div>}
-    {!hasRepo && r && <div class="callout warn">
+    {!hasRepo && r && m && <div class="callout warn" style={repositoryMode ? { minWidth: 0, overflowWrap: 'anywhere' } : undefined}>
       <Icon name="triangle-alert" size={15} />
       <span class="grow">{r.name} is not on {m.name}.</span>
-      <button type="button" class="btn sm" onClick={() => { act.openDialog({ type: 'add-repository', machine, repo, back: { type: 'new-project', machine, repo, goal } }); }}>
+      <button type="button" class="btn sm" style={repositoryMode ? { maxWidth: '50%', height: 'auto', minHeight: 24, paddingBlock: 4, display: 'block', whiteSpace: 'normal', overflowWrap: 'anywhere' } : undefined} onClick={() => {
+        const back = { type: 'new-project', machine, repo, goal, ...(repositoryMode ? { newRepo } : {}) };
+        act.openDialog({ type: 'add-repository', machine, repo, back });
+      }}>
         {'Add to '}
         {m.name}
       </button>
     </div>}
     {selection.fields}
+    {unavailable && <div role="alert"><Empty title="Projects are not connected to this server yet." /></div>}
   </Dialog>;
 }
 registerDialog('new-project', NewProject);

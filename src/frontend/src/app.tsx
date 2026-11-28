@@ -268,7 +268,7 @@ function Sidebar({ s, route, onNavigate, peek, setPeek, terminalOpen, onTerminal
           ? <button type="button" class="icon-btn sm" aria-label="New project" data-tip="New project" data-tip-side="left" onClick={() => act.openDialog({ type: 'new-project' })}>
             <Icon name="plus" size={14} />
           </button>
-          : <button type="button" class="icon-btn sm" aria-label="Add a repository" data-tip="Add a repository" data-tip-side="left" onClick={() => act.openDialog({ type: 'track-repository' })}>
+          : <button type="button" class="icon-btn sm" aria-label="Add a repository" data-tip="Add a repository" data-tip-side="left" onClick={() => act.openDialog({ type: s.server.repositoryMode ? 'add-repository' : 'track-repository' })}>
             <Icon name="plus" size={14} />
           </button>}
       </div>
