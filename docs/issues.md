@@ -8173,7 +8173,7 @@ What must hold: the permission to start a frame is ordered with sign-out and exp
 Found on 2026-11-27 in the review of item 7 of the plan `go-s4-server-projects` (`attack/post-build-7.md`, post-7 2 and post-7 3).
 
 1. A watch that falls behind while a large frame is half written ends with a closed connection, not with the fixed answer that the watch fell behind. The website opens the watch again after either ending, and the new watch gets a complete list, so a person sees no difference. A fixed answer cannot follow a frame that was cut off. The contract should say that a closed connection is also a signal to open the watch again, and a test with the real writer should cover both endings. The test goes into item 8 of the plan; the sentence in the contract waits for the next change to the contract.
-2. The tests of a watch that is opened without a session, or with an old one, check the status and not the sentence. The code sends the right sentence today. The assertion goes into the tests of item 8.
+2. The tests of a watch that is opened without a session, or with an old one, check the status and not the sentence. The code sends the right sentence today. The assertion goes into the tests of item 8. Closed on 2026-11-28: `TestProjectWatchEntryRefusalSentence` checks the sentence.
 
 ## 1707. Two gaps in the tests of removing a machine's repositories
 
@@ -8181,13 +8181,13 @@ Found on 2026-11-27 in the review of item 6 of the plan `go-s4-server-projects` 
 The code is right in both points today, and the tests would not notice if it stopped being right.
 
 1. The tests pass when the refresh reference of a large removal is committed in a write of its own. It must commit with the removal, so that a removal that fails later leaves no refresh behind. The combined startup case of item 8 should fail a write after the refresh is recorded and require the feed position to stay unchanged.
-2. The case without a pending command leaves an open Add and no open Inspect. Both kinds of open operation must fail with the fixed refusal when their machine is removed.
+2. The case without a pending command leaves an open Add and no open Inspect. Both kinds of open operation must fail with the fixed refusal when their machine is removed. Closed on 2026-11-28: `TestProjectMachineRemovalFailsOpenOperationsWithoutCommands` covers both kinds.
 
 ## 1708. Three smaller points of the Projects routes
 
 Found on 2026-11-27 in the review of the router part of item 8 of the plan `go-s4-server-projects` (`attack/post-build-8a.md`).
 The routes behave as the plan says today.
 
-1. The tests pass when the two unary routes stop requiring the protocol version header. Each unary route needs a case without the header that expects the fixed refusal and no call of the handler.
-2. The tests count that a write deadline is set and cleared, and do not check its length. A case should require the deadline to lie within the shared send budget.
+1. The tests pass when the two unary routes stop requiring the protocol version header. Each unary route needs a case without the header that expects the fixed refusal and no call of the handler. Closed on 2026-11-28: `TestProjectRouterUnaryRequiresProtocolVersion`.
+2. The tests count that a write deadline is set and cleared, and do not check its length. A case should require the deadline to lie within the shared send budget. Closed on 2026-11-28: `TestProjectRouterWatchWriteDeadlineWithinSendBudget`.
 3. A message above the 32-kibibyte limit is refused only after the transport has read the rest of it. A signed-in sender that pauses after the limit delays the refusal. What must hold: the refusal can be returned before the sender has finished the body. This is hardening, and it does not block the build.
