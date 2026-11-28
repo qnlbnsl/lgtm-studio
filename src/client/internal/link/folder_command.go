@@ -71,7 +71,14 @@ func (h *commandHandler) startFolder(ctx context.Context, attempt commandAttempt
 				if hooks.onStart != nil {
 					hooks.onStart(ctx, operationID, attempt.id)
 				}
-				result.facts, result.refusal = inspect(ctx, path, home)
+				// The observer can hold the worker past cancellation or expiry.
+				switch {
+				case ctx.Err() != nil:
+				case !canStart():
+					result.expired = true
+				default:
+					result.facts, result.refusal = inspect(ctx, path, home)
+				}
 			}
 			<-reads
 			read <- result
