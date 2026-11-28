@@ -8200,6 +8200,16 @@ The read is direct.
 While it does not return, for example on a failing disk or on network storage, the client sends nothing and logs nothing.
 The server shows the machine as offline, and its commands time out.
 A restart command from the website does not reach the client in that state; the service manager or a person restarts it.
+A stop request does not end the process in that state either, because the read takes no cancellation; the service manager's own kill after its timeout is the exit.
 This is an accepted limit, not a defect.
 It replaces the bounded screening that the repairs after reviews 6, 9, 10 and 11c built, and it closes the findings post-12 1 and post-12 2 of `attack/post-build-12.md` by removing the code they are about.
 One background reader would lift the limit at the cost of a list that can be a few seconds old; that choice was not taken.
+
+## 1710. The client's filter lock is held during the disk commit and the write of a log line
+
+Found on 2026-11-28 in the review of the client's direct screening (`attack/post-build-13c.md` of the plan `go-s4-client-folders`, post-13c 3).
+The one lock of the filter is held while the store commits a report or a command result, and while the log handler writes a screened record to its output.
+A slow disk, or an error output that nobody reads any more, then stops the heartbeat and every other emission, although the sign-in file reads quickly.
+Issue 1709 accepts a held read of the sign-in file; it does not name a blocked log output.
+The open choice: keep the lock this wide, which is the simplest rule, or release it after the text is screened and before the write.
+Where: `appendFilteredReport` in `src/client/internal/link/outbox.go`, `commandHandler.handle` in `src/client/internal/link/commands.go`, and the log handler in `src/client/internal/app/outgoing.go`.
