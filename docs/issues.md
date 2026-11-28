@@ -8126,3 +8126,14 @@ The website takes the count "N of M online" and the machine choices of Add repos
 The reviewer was given a summary by the orchestrator that said every flagged machine is left out, and rated the difference as major. The summary was wrong, not the build.
 The question that remains is the owner's: whether a machine that shows "Out of sync" and is still connected should count as online and be offered for folder work. The paired test `TestSprintFourHistoryRecovery` will show whether the server lets that combination occur at all.
 Where: the count in `Machines` in `src/frontend/src/screens/service.tsx`, and the machine choices of `WatchedAddRepository` and of `NewProject` in `src/frontend/src/dialogs.tsx`.
+
+## 1702. Four smaller points of the server's folder route and sweep
+
+Found on 2026-11-27, in the review of item 7 of the plan `go-s4-server-link` and of the repair of its item 6 (post-7c 1 to post-7c 4). The review's verdict was to ship.
+
+1. The receive limit of 65,536 bytes is checked against the size on the wire. A request of exactly that size that grows when it is compressed is refused, although the contract says the limit applies after decompression. The client does not compress its requests, and a real event stays near 49,152 bytes. Either the server measures the decoded request, or the contract says that the limit also applies to the size on the wire. A test with padding that does not compress decides it either way.
+2. The retention pass of the sweep stops at the first machine whose delete fails. The timeout pass already goes on to the other machines; the retention pass should do the same, with a test that fails one machine's delete.
+3. No test fails when the sweep tries a failed machine again on every later page. A case with more than 64 due commands for the failing machine closes the gap.
+4. A folder report that is applied does not refresh the time the machine was last heard. Facts and harness reports do. Heartbeats keep the time fresh, so the effect is on the Machines screen only.
+
+Where: `src/server/internal/transport/link_stream.go` and the read limit in `src/server/internal/api/server.go` for point 1; `src/server/internal/link/outbox_sweep.go` and `sweep_review_v2_test.go` for points 2 and 3; `src/server/internal/link/inbox.go` for point 4.
