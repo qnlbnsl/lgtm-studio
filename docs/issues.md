@@ -8127,6 +8127,14 @@ The reviewer was given a summary by the orchestrator that said every flagged mac
 The question that remains is the owner's: whether a machine that shows "Out of sync" and is still connected should count as online and be offered for folder work. The paired test `TestSprintFourHistoryRecovery` will show whether the server lets that combination occur at all.
 Where: the count in `Machines` in `src/frontend/src/screens/service.tsx`, and the machine choices of `WatchedAddRepository` and of `NewProject` in `src/frontend/src/dialogs.tsx`.
 
+Decided on 2026-11-28: the question is answered one level down, and the website stays as built for now.
+The server is the authority on a machine's history.
+A client whose saved history is older than the server's gets its history brought to the server's state, and does not stop.
+A client whose saved history is newer reports what the server does not have.
+"Out of sync" then stops being a state that a person has to resolve.
+This changes a rule of the link contract (`src/contracts/proto/lgtm/link/v1/events.proto`, the sentence on an incompatible Welcome mark), the client's stop on an unusable replay, the server's recovery warning and the paired test `TestSprintFourHistoryRecovery`.
+It needs a design of its own, with two points to settle: what happens to a command that the server sent and the client may have run before it lost its receipts, and what happens to events that the client wrote under numbers the server has already used.
+
 ## 1702. Four smaller points of the server's folder route and sweep
 
 Found on 2026-11-27, in the review of item 7 of the plan `go-s4-server-link` and of the repair of its item 6 (post-7c 1 to post-7c 4). The review's verdict was to ship.
