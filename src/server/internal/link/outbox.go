@@ -2,10 +2,14 @@ package link
 
 import (
 	"context"
+	"math"
+	"path"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/machines"
@@ -49,10 +53,19 @@ func (s *State) EnqueueCommand(ctx context.Context, tx *store.Tx, machineID stri
 		return "", err
 	}
 	lifetime := pgtype.Interval{Microseconds: ttl.Microseconds(), Valid: true}
+	var createdAt, expiresAt time.Time
+	err = tx.QueryRow(ctx, `
+SELECT created_at, created_at + $1::interval
+FROM (SELECT clock_timestamp() AS created_at) AS sampled`, lifetime).Scan(&createdAt, &expiresAt)
+	if err != nil {
+		return "", err
+	}
+	if !commandWithinBudget(clean, id, expiresAt) {
+		return "", ErrInvalidMessage
+	}
 	_, err = tx.Exec(ctx, `
 INSERT INTO link_commands (id, machine_id, action, payload, created_at, expires_at)
-SELECT $1, $2, $3, $4, created_at, created_at + $5::interval
-FROM (SELECT clock_timestamp() AS created_at) AS sampled`, id, machineID, kind, payload, lifetime)
+VALUES ($1, $2, $3, $4, $5, $6)`, id, machineID, kind, payload, createdAt, expiresAt)
 	if err != nil {
 		return "", err
 	}
@@ -94,11 +107,30 @@ func commandAction(command *linkv1.Command) (string, *linkv1.Command, error) {
 				Action: &linkv1.Command_Restart{Restart: &linkv1.Restart{}},
 			}, nil
 		}
+	case *linkv1.Command_LookAtFolder:
+		if action == nil || action.LookAtFolder == nil {
+			break
+		}
+		operationID := action.LookAtFolder.GetOperationId()
+		typedPath := action.LookAtFolder.GetPath()
+		if !runUUID.MatchString(operationID) || !validReportText(typedPath, 4096) ||
+			!(path.IsAbs(typedPath) || typedPath == "~" || strings.HasPrefix(typedPath, "~/")) {
+			break
+		}
+		return string(CommandLookAtFolder), &linkv1.Command{
+			Action: &linkv1.Command_LookAtFolder{LookAtFolder: &linkv1.LookAtFolder{
+				OperationId: operationID, Path: typedPath,
+			}},
+		}, nil
 	}
 	return "", nil, ErrInvalidMessage
 }
 
-// commandWithinBudget is a stub of the test writer.
-func commandWithinBudget(_ *linkv1.Command, _ string, _ time.Time) bool {
-	return false
+func commandWithinBudget(command *linkv1.Command, id string, expiresAt time.Time) bool {
+	return proto.Size(&linkv1.Command{
+		Id:        id,
+		Attempt:   math.MaxUint32,
+		ExpiresAt: timestamppb.New(expiresAt),
+		Action:    command.GetAction(),
+	}) <= commandEventLimit
 }

@@ -149,14 +149,18 @@ func NewHandler(options Options) http.Handler {
 	}
 	r.link = r.unsupported
 	if options.Link != nil {
-		joinDecoding := connect.WithConditionalHandlerOptions(func(spec connect.Spec) []connect.HandlerOption {
-			if spec.Procedure == linkv1connect.LinkServiceJoinProcedure {
+		linkDecoding := connect.WithConditionalHandlerOptions(func(spec connect.Spec) []connect.HandlerOption {
+			switch spec.Procedure {
+			case linkv1connect.LinkServiceJoinProcedure:
 				return []connect.HandlerOption{redactMalformedJSON(messageMalformedJoin)}
+			case linkv1connect.LinkServiceOpenProcedure:
+				return []connect.HandlerOption{connect.WithCodec(linkOpenProto{})}
+			default:
+				return nil
 			}
-			return nil
 		})
 		_, handler := linkv1connect.NewLinkServiceHandler(options.Link,
-			protocol, connect.WithReadMaxBytes(linkReadLimit), joinDecoding)
+			protocol, connect.WithReadMaxBytes(linkReadLimit), linkDecoding)
 		timed := transport.WithWriteDeadline(handler)
 		open := transport.WithLinkStream(timed, linkReadLimit)
 		r.link = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {

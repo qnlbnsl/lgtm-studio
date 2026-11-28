@@ -20,10 +20,12 @@ const (
 )
 
 type commandCursor struct {
-	lastSeq      int64
-	approved     bool
-	scanHead     string
-	deferredScan int64
+	lastSeq        int64
+	approved       bool
+	scanHead       string
+	deferredScan   int64
+	folderHead     string
+	deferredFolder int64
 }
 
 type commandMetadata struct {
@@ -63,6 +65,9 @@ func (s *State) claimNext(ctx context.Context, machineID, streamID string, curso
 		if err := next.revisitScans(ctx, tx, machineID, streamID, cutoff); err != nil {
 			return err
 		}
+		if err := next.revisitCommandHead(ctx, tx, machineID, streamID, cutoff, &next.folderHead, &next.deferredFolder); err != nil {
+			return err
+		}
 		page, err := readClaimPage(ctx, tx, machineID, next.lastSeq)
 		if err != nil {
 			return err
@@ -73,9 +78,17 @@ func (s *State) claimNext(ctx context.Context, machineID, streamID string, curso
 			if row.action != "set_state" && (!next.approved || !row.expiresAt.After(cutoff)) {
 				continue
 			}
-			if row.action == "scan_harnesses" &&
-				(row.attempt < math.MaxUint32 || (row.streamID == streamID && row.dispatched)) && next.deferScan(row) {
-				continue
+			if row.attempt < math.MaxUint32 || (row.streamID == streamID && row.dispatched) {
+				switch row.action {
+				case "scan_harnesses":
+					if next.deferScan(row) {
+						continue
+					}
+				case string(CommandLookAtFolder):
+					if deferCommand(row, &next.folderHead, &next.deferredFolder) {
+						continue
+					}
+				}
 			}
 			if row.streamID == streamID || row.attempt == math.MaxUint32 {
 				continue
@@ -109,7 +122,11 @@ ORDER BY seq LIMIT $3`, machineID, after, claimPageSize)
 }
 
 func (cursor *commandCursor) revisitScans(ctx context.Context, tx *store.Tx, machineID, streamID string, cutoff time.Time) error {
-	if cursor.scanHead == "" {
+	return cursor.revisitCommandHead(ctx, tx, machineID, streamID, cutoff, &cursor.scanHead, &cursor.deferredScan)
+}
+
+func (cursor *commandCursor) revisitCommandHead(ctx context.Context, tx *store.Tx, machineID, streamID string, cutoff time.Time, head *string, deferred *int64) error {
+	if *head == "" {
 		return nil
 	}
 	var pending bool
@@ -118,29 +135,33 @@ SELECT EXISTS (
     SELECT FROM link_commands
     WHERE id = $1 AND machine_id = $2 AND outcome IS NULL AND staged_outcome IS NULL AND expires_at > $3
       AND (attempt < $4 OR (sent_stream_id = $5 AND dispatched))
-)`, cursor.scanHead, machineID, cutoff, int64(math.MaxUint32), streamID).Scan(&pending)
+)`, *head, machineID, cutoff, int64(math.MaxUint32), streamID).Scan(&pending)
 	if err != nil || pending {
 		return err
 	}
-	if cursor.deferredScan != 0 {
-		cursor.lastSeq = cursor.deferredScan - 1
+	if *deferred != 0 {
+		cursor.lastSeq = min(cursor.lastSeq, *deferred-1)
 	}
-	cursor.scanHead = ""
-	cursor.deferredScan = 0
+	*head = ""
+	*deferred = 0
 	return nil
 }
 
 // deferScan reserves the scan slot before checking the stream assignment.
 func (cursor *commandCursor) deferScan(row commandMetadata) bool {
-	if cursor.scanHead == "" {
-		cursor.scanHead = row.id
+	return deferCommand(row, &cursor.scanHead, &cursor.deferredScan)
+}
+
+func deferCommand(row commandMetadata, head *string, deferred *int64) bool {
+	if *head == "" {
+		*head = row.id
 		return false
 	}
-	if cursor.scanHead == row.id {
+	if *head == row.id {
 		return false
 	}
-	if cursor.deferredScan == 0 {
-		cursor.deferredScan = row.seq
+	if *deferred == 0 {
+		*deferred = row.seq
 	}
 	return true
 }
