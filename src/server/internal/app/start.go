@@ -19,6 +19,7 @@ import (
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/config"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/link"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/machines"
+	"github.com/qnlbnsl/lgtm-studio/src/server/internal/projects"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/store"
 	"github.com/qnlbnsl/lgtm-studio/src/server/internal/vault"
 )
@@ -178,7 +179,7 @@ func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logg
 	go st.watchLock()
 
 	migration, cancelMigration := context.WithTimeout(st.life, st.budgets.migration)
-	err = s.Migrate(migration, auth.Migrations(), vault.Migrations(), machines.Migrations(), link.Migrations())
+	err = s.Migrate(migration, auth.Migrations(), vault.Migrations(), machines.Migrations(), link.Migrations(), projects.Migrations())
 	cancelMigration()
 	if err != nil {
 		return nil, st.unreconciled(st.interrupted(migration, lineMigrate))
@@ -247,13 +248,19 @@ func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logg
 		return nil, []string{st.interrupted(prerequisites, lineFeed)}
 	}
 	st.follower = follower
+	sessions := auth.NewSessions(s, password)
+	projectService := projects.NewService(s, sessions, registry, state, follower, st.life)
+	if err := registerProjectHooks(state, projectService); err != nil {
+		return nil, []string{err.Error()}
+	}
+
 	st.workers.Add(1)
 	go func() {
 		defer st.workers.Done()
 		s.RunPruner(st.life, report)
 	}()
+	st.workers.Go(func() { projectService.RunRetirement(st.life, report) })
 
-	sessions := auth.NewSessions(s, password)
 	public := identity.SigningKey.Public().(ed25519.PublicKey)
 	tokens := machines.NewTokens(s, registry, machines.Issuer{PublicURL: cfg.PublicURL, ServerKey: public})
 	streamService := link.NewStreamingService(st.life, s, tokens, registry, state, hub, identity.SigningKey, link.Options{
@@ -271,6 +278,7 @@ func (st *startup) run(cfg config.Config, password auth.Password, log *slog.Logg
 		Session:  api.NewSessionService(password, sessions),
 		Clients:  clients,
 		Link:     streamService,
+		Projects: projectService,
 	})
 
 	// The last probe comes immediately before the listener opens.
