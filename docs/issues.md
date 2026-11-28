@@ -8156,3 +8156,21 @@ Found on 2026-11-27, in the review of item 2 of the plan `go-s4-server-projects`
 2. The test of the 25-second wait starts its clock before the acceptance and allows up to 32 seconds. A wait limit of 30 seconds passes. The test should observe the limit from the first read after the acceptance, with a small allowance.
 
 Where: the error mapping in `src/server/internal/projects/errors.go` and the waiting read in `operations.go` for point 1; `TestProjectOperationDeadlineAndDisconnect` in `operations_test.go` for point 2.
+
+## 1705. A watch can start one more frame after its session has ended
+
+Found on 2026-11-27 in the review of item 7 of the plan `go-s4-server-projects` (`attack/post-build-7.md`, post-7 1).
+The contract says that a watch needs a session for as long as it is open.
+The shared watch checks the session when it reads a change, and then loads the record that it sends.
+A sign-out or an expiry that commits between that check and the first write of the frame does not stop the frame.
+The watch ends with the fixed answer at the next change.
+The point belongs to the shared watch in `src/server/internal/watch/`, so it holds for the machines watch too.
+This is security hardening, and it does not block the build.
+What must hold: the permission to start a frame is ordered with sign-out and expiry, and a record that finishes loading after the session ended is refused before its first write.
+
+## 1706. Two smaller points of the repository watch
+
+Found on 2026-11-27 in the review of item 7 of the plan `go-s4-server-projects` (`attack/post-build-7.md`, post-7 2 and post-7 3).
+
+1. A watch that falls behind while a large frame is half written ends with a closed connection, not with the fixed answer that the watch fell behind. The website opens the watch again after either ending, and the new watch gets a complete list, so a person sees no difference. A fixed answer cannot follow a frame that was cut off. The contract should say that a closed connection is also a signal to open the watch again, and a test with the real writer should cover both endings. The test goes into item 8 of the plan; the sentence in the contract waits for the next change to the contract.
+2. The tests of a watch that is opened without a session, or with an old one, check the status and not the sentence. The code sends the right sentence today. The assertion goes into the tests of item 8.
