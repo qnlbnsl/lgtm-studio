@@ -548,3 +548,63 @@ routeTest('machines-only routes have no sample data on direct setup and after ex
   await same.dispose();
   await assertReadOnly(trace);
 });
+
+routeTest('watched machine folder paths wrap without hiding either suffix', async ({ page, rig }) => {
+  const machine = create(ClientSchema, { ...worker, name: 'Worker' });
+  const directory = '/checkouts/' + 'repository'.repeat(20) + '/shared/workspace/';
+  const copies = [directory + 'first-copy', directory + 'second-copy'];
+  const shortPath = '/checkouts/short';
+  const repository = create(RepositorySchema, {
+    id: checkout.id, name: 'Wrap', mainBranch: 'trunk',
+    folders: [shortPath, ...copies].map((resolvedPath, index) => ({
+      id: '018f2ad2-bcde-7456-8123-00000000042' + index, clientId: machine.id, resolvedPath,
+    })),
+  });
+
+  const { watches } = await signedIn(page, rig, [machine]);
+  watches.repositories.send({ change: { case: 'saved', value: repository }, position: { value: 2n } });
+  await navigate(page, '/machines');
+  await page.getByRole('button', { name: 'Show details for ' + machine.name, ...exact }).click();
+  const details = page.locator('.svc-detail');
+  const measure = async (path: string) => {
+    const row = details.getByRole('listitem').filter({ has: page.getByText(path, exact) });
+    const value = row.getByText(path, exact);
+    await expect(value).toBeVisible();
+    const layout = await value.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const box = element.getBoundingClientRect();
+      const text = range.getBoundingClientRect();
+      const fits = text.left >= box.left - 1 && text.right <= box.right + 1 &&
+        text.top >= box.top - 1 && text.bottom <= box.bottom + 1 &&
+        text.left >= 0 && text.right <= document.documentElement.clientWidth;
+      return {
+        lines: new Set(Array.from(range.getClientRects(), ({ top }) => top)).size,
+        scrollWidth: element.scrollWidth,
+        clientWidth: element.clientWidth,
+        fits,
+        textOverflow: getComputedStyle(element).textOverflow,
+      };
+    });
+    const height = await row.evaluate((element) => Math.round(element.getBoundingClientRect().height));
+    return { ...layout, height };
+  };
+
+  const short = await measure(shortPath);
+  expect(short.lines, 'The short folder path stays on one line.').toBe(1);
+  expect(short.fits, 'The short folder path fits in its box.').toBe(true);
+  for (const path of copies) {
+    await routeTest.step('Folder ' + path.slice(directory.length), async () => {
+      const wrapped = await measure(path);
+      expect.soft(wrapped.scrollWidth, 'The folder path has no horizontal overflow.').toBeLessThanOrEqual(wrapped.clientWidth);
+      expect.soft(wrapped.fits, 'The full folder path fits on screen in its box with text-overflow ' + wrapped.textOverflow + '.').toBe(true);
+      expect.soft(wrapped.lines, 'The folder path wraps onto further lines.').toBeGreaterThan(1);
+      expect.soft(wrapped.height, 'The folder row can grow beyond a single line.').toBeGreaterThan(short.height);
+    });
+  }
+  const table = page.locator('.table-wrap').filter({ has: page.locator('.svc-machines') });
+  const tableOverflow = await table.evaluate((element) => element.scrollWidth - element.clientWidth);
+  expect.soft(tableOverflow, 'The Machines table has no horizontal scroll.').toBeLessThanOrEqual(0);
+  const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(pageOverflow, 'The Machines page has no horizontal scroll.').toBeLessThanOrEqual(0);
+});

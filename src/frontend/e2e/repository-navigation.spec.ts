@@ -467,3 +467,64 @@ navigationTest.describe('saved repositories open from tree and search', () => {
     expectReadOnly(trace);
   });
 });
+
+navigationTest('watched repository origins wrap in the Switcher without hiding either suffix', async ({ page, rig }) => {
+  const group = 'https://example.com/' + 'repository'.repeat(20) + '/shared/workspace/';
+  const fixture = (remote: string, index: number) => ({
+    remote,
+    repository: create(RepositorySchema, {
+      id: id('96' + index), name: 'Wrap ' + index, mainBranch: 'trunk', remote,
+      folders: [folder('97' + index, worker, 'wrap-' + index)],
+    }),
+  });
+  const longOrigins = [fixture(group + 'first.git', 1), fixture(group + 'second.git', 2)];
+  const shortOrigin = fixture('https://example.com/r', 3);
+  const repositories = [...longOrigins, shortOrigin].map(({ repository }) => repository);
+
+  await start(page, rig, repositories, [worker]);
+  const { dialog, search } = await switcher(page);
+  await search.fill('Wrap');
+  const list = dialog.getByRole('listbox');
+  await expect(list.getByRole('option')).toHaveCount(repositories.length);
+
+  const measure = async ({ repository, remote }: ReturnType<typeof fixture>) => {
+    const row = repositoryOption(dialog, repository);
+    const value = row.getByText(remote, exact);
+    await expect(value).toBeVisible();
+    const layout = await value.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const box = element.getBoundingClientRect();
+      const text = range.getBoundingClientRect();
+      const fits = text.left >= box.left - 1 && text.right <= box.right + 1 &&
+        text.top >= box.top - 1 && text.bottom <= box.bottom + 1 &&
+        text.left >= 0 && text.right <= document.documentElement.clientWidth;
+      return {
+        lines: new Set(Array.from(range.getClientRects(), ({ top }) => top)).size,
+        scrollWidth: element.scrollWidth,
+        clientWidth: element.clientWidth,
+        fits,
+        textOverflow: getComputedStyle(element).textOverflow,
+      };
+    });
+    const height = await row.evaluate((element) => Math.round(element.getBoundingClientRect().height));
+    return { ...layout, height };
+  };
+
+  const short = await measure(shortOrigin);
+  expect.soft(short.lines, 'The short origin stays on one line.').toBe(1);
+  expect.soft(short.fits, 'The short origin fits on screen in its box.').toBe(true);
+  for (const origin of longOrigins) {
+    await navigationTest.step('Origin ' + origin.remote.slice(group.length), async () => {
+      const wrapped = await measure(origin);
+      expect.soft(wrapped.scrollWidth, 'The origin has no horizontal overflow.').toBeLessThanOrEqual(wrapped.clientWidth);
+      expect.soft(wrapped.fits, 'The full origin fits on screen in its box with text-overflow ' + wrapped.textOverflow + '.').toBe(true);
+      expect.soft(wrapped.lines, 'The origin wraps onto further lines.').toBeGreaterThan(1);
+      expect.soft(wrapped.height, 'The Switcher option can grow beyond a single line.').toBeGreaterThan(short.height);
+    });
+  }
+  const listOverflow = await list.evaluate((element) => element.scrollWidth - element.clientWidth);
+  expect.soft(listOverflow, 'The Switcher list has no horizontal scroll.').toBeLessThanOrEqual(0);
+  const pageOverflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(pageOverflow, 'The page has no horizontal scroll with the Switcher open.').toBeLessThanOrEqual(0);
+});
