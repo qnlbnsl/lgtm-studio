@@ -178,6 +178,12 @@ The work items are listed in the brief of each plan.
 | 15 | go-s4-client-folders | The client's run identifier, the event number on each result, the step from revision 1 on disk, and the Folders part that looks at a folder. | linked | |
 | 16 | go-s4-web-repositories | The website with a real server: repositories from the server, the two dialogs, no sample record, and the four visible changes that the owner approved. | linked | |
 | 17 | go-s4-stack-checks | The checks of sprint 4 against the running stack, and the step of an installed client to the new revision. | linked | |
+| 18 | go-hist-contract | The contract change of the rule that the server is the authority on a machine's history: two numbers in the client's first message, the amended text of revision 2, and the list of failed commands for the website. | linked | |
+| 19 | go-hist-server | The server compares the numbers when it admits a stream, resets an older client, raises its own mark for a newer one, fails the commands that were handed over, and lists them for the website. | linked | |
+| 20 | go-hist-client | The client reports its numbers, takes a higher mark from the server, starts an empty history when the file is missing, and no longer stops on a mismatch. | linked | |
+| 21 | go-hist-web | "Out of sync" leaves the website, the bell lists a failed command with its retry, and the paired tests H1 to H8 prove the rule with a real server and a real client. | linked | |
+
+The four plans of the history rule (rows 18 to 21) follow the design `docs/specs/2026-11-28-server-authority-on-history-design.md` of 2026-11-28. They are built after sprint 4 and before sprint 5, the contract first, then the server and the client side by side, then the website with the paired tests.
 
 The six plans of sprint 4 were checked against each other on 2026-11-27. The report is [sprint-4-seams.md](sprint-4-seams.md). It holds the eleven disagreements that the plans then settled, the test that proves each check of the sprint, and one build order in thirteen waves.
 

@@ -99,7 +99,7 @@ A machine can raise only its own mark, and only with its own key. The security l
 
 - The client no longer stops on a Welcome mark outside its range. The stop reason `impossible_ack` goes away.
 - A missing history file with an intact key and identity is created empty. The client then dials, and case 2 brings it to the mark.
-- A history file that cannot be read, or that fails its own checks, still stops the client with the log line `link_stopped` and the exit status 0.
+- A history file that cannot be read, or that fails its own checks, still stops the client. The log line and the exit status of each such case stay as they are today.
 - The run's boundary does not change within a process. A reconnect repeats it, as today.
 - Receipts stay as they are on disk. They expire by the rules that hold today.
 
@@ -153,7 +153,7 @@ Each line is one observation. The paired tests run a real server and a real clie
 | H7 | A server whose mark is older than the client's retained floor takes the client's acknowledged number. The client does not stop and becomes Online. |
 | H8 | A client that lost the Welcome of a reset dials again. Nothing more fails, and the bell holds no second entry. |
 | H9 | A Hello whose acknowledged number is above its last number is refused with `invalid_argument`. So is one whose first number is above its last number plus one. |
-| H10 | A history file that fails its own checks stops the client with `link_stopped` and the exit status 0. |
+| H10 | A history file that fails its own checks stops the client with the log line and the exit status that it has today. |
 | H11 | The website shows no "Out of sync" status and no reason line for any machine. |
 | H12 | After H3, the bell counts one and lists the scan. Choosing the entry calls the scan again, and the entry leaves. An entry that nobody chooses leaves after ten minutes. |
 
