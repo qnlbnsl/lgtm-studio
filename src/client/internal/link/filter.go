@@ -89,8 +89,10 @@ func (f *OutgoingFilter) lockSecrets() func() {
 		return func() {}
 	}
 	if f.refresh != nil {
+		// A stalled reader must leave the lock available to other output gates.
+		values := f.refresh()
 		f.mu.Lock()
-		f.addSecrets(f.refresh())
+		f.addSecrets(values)
 		return f.mu.Unlock
 	}
 	f.mu.RLock()

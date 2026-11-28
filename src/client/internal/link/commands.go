@@ -219,7 +219,7 @@ func (h *commandHandler) handle(ctx context.Context, msg *linkv1.Command) (resta
 		return false, err
 	}
 	if decision == DecisionExpired {
-		if folderBusy {
+		if folderBusy && admission.Before(cmd.ExpiresAt) {
 			return false, errFolderBusy
 		}
 		if scanBusy && admission.Before(cmd.ExpiresAt) {
