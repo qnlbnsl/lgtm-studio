@@ -8107,3 +8107,11 @@ Found on 2026-11-27, in the review of item 5 of the plan `go-s4-server-link` (po
 3. The server checks that a stream is still current before it sends an acknowledgement, in a read of its own. A removal that commits between that read and the send still lets one acknowledgement out. An acknowledgement changes nothing on the machine. The contract says that a removed machine receives no acknowledgement after the removal commits; its wording should say that this covers acknowledgements that begin after the commit. The check also costs one database read for each event.
 
 Where: `src/server/internal/link/run_gate_test.go` and `recovery_v2_test.go` for points 1 and 2; `dispatch` in `src/server/internal/link/stream.go` and the Removal section of the link contract for point 3. The test writer of item 7 of the plan makes the changes of points 1 and 2.
+
+## 1700. New project opens on an older server that reports no machine named Studio
+
+Found on 2026-11-27, in the review of item 7 of the plan `go-s4-web-repositories` (post-7 3).
+
+On an older server the website keeps the sample workspace. When such a server reports machines and none of them is the sample's default machine, opening New project from a sample repository row used to raise a page error and show no dialog. Since item 7 the dialog opens, with no machine selected and "Create project" disabled.
+The new behavior is better than a page error. It is a change to a compatibility screen that nobody decided, so it is recorded here for the owner.
+Where: the machine selection of `NewProject` in `src/frontend/src/dialogs.tsx`.
