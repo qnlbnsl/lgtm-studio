@@ -8139,11 +8139,18 @@ A client whose saved history is newer reports what the server does not have.
 This changes a rule of the link contract (`src/contracts/proto/lgtm/link/v1/events.proto`, the sentence on an incompatible Welcome mark), the client's stop on an unusable replay, the server's recovery warning and the paired test `TestSprintFourHistoryRecovery`.
 The design and its build come after the release proofs of sprint 4 and before sprint 5 (decided on 2026-11-28). It needs a design of its own, with two points to settle: what happens to a command that the server sent and the client may have run before it lost its receipts, and what happens to events that the client wrote under numbers the server has already used.
 
+Designed on 2026-11-28 in `docs/specs/2026-11-28-server-authority-on-history-design.md`.
+Both points are settled there.
+A command that was handed over and has no result is failed by the server and never sent again; the person sees it on the bell for ten minutes and can ask for it again.
+Events under numbers the server has already used are dropped, and the client reports its present state as new events.
+The issue closes when the four plans of that design are built.
+
 ## 1702. Four smaller points of the server's folder route and sweep
 
 Found on 2026-11-27, in the review of item 7 of the plan `go-s4-server-link` and of the repair of its item 6 (post-7c 1 to post-7c 4). The review's verdict was to ship.
 
 1. The receive limit of 65,536 bytes is checked against the size on the wire. A request of exactly that size that grows when it is compressed is refused, although the contract says the limit applies after decompression. The client does not compress its requests, and a real event stays near 49,152 bytes. Either the server measures the decoded request, or the contract says that the limit also applies to the size on the wire. A test with padding that does not compress decides it either way.
+   Decided on 2026-11-28: the contract says that the limit applies to both sizes. The wording is changed with the contract plan of `docs/specs/2026-11-28-server-authority-on-history-design.md`.
 2. The retention pass of the sweep stops at the first machine whose delete fails. The timeout pass already goes on to the other machines; the retention pass should do the same, with a test that fails one machine's delete.
 3. No test fails when the sweep tries a failed machine again on every later page. A case with more than 64 due commands for the failing machine closes the gap.
 4. A folder report that is applied does not refresh the time the machine was last heard. Facts and harness reports do. Heartbeats keep the time fresh, so the effect is on the Machines screen only.
@@ -8252,3 +8259,11 @@ The paths of the watched folders then run past the right edge of the screen, alt
 On a desktop the same name pushes the last columns of the table out of view.
 What must hold: a long name wraps or is shortened inside the screen's width, so that the detail stays readable. The form is a visible change.
 Where: the Machines table and `MachineDetail` in `src/frontend/src/screens/service.tsx`.
+
+## 1714. A machine raises its own event mark through the numbers it reports in Hello
+
+Found on 2026-11-28 while designing the rule that the server is the authority on a machine's history.
+The server takes the acknowledged number that a client reports in Hello when its own mark is lower.
+What must hold: only a stream whose Proof verified can raise a mark, a machine can raise only its own mark, and the raise happens under the lock of that machine in the admitting write. The server checks the reported numbers against each other and against the range of event numbers before it uses them.
+A machine that reports a number it never reached harms only its own record. This is security hardening and does not block the build.
+Where: the admission of a stream in `src/server/internal/link/`, once the server plan of `docs/specs/2026-11-28-server-authority-on-history-design.md` is built.
