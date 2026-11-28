@@ -39,6 +39,8 @@ type relay struct {
 	blockNew atomic.Bool
 	joins    chan joinReceipt
 	legs     chan *relayLeg
+	mu       sync.Mutex
+	closing  bool
 	workers  sync.WaitGroup
 }
 
@@ -56,6 +58,9 @@ func startRelayWithControls(t *testing.T, upstream linkv1connect.LinkServiceClie
 	listener.Config.Protocols.SetUnencryptedHTTP2(true)
 	listener.Start()
 	t.Cleanup(func() {
+		r.mu.Lock()
+		r.closing = true
+		r.mu.Unlock()
 		listener.Close()
 		r.workers.Wait()
 	})
@@ -177,6 +182,14 @@ func (r *relay) Open(ctx context.Context, downstream *connect.BidiStream[linkv1.
 	if r.blockNew.Load() {
 		return disconnected()
 	}
+	r.mu.Lock()
+	if r.closing {
+		r.mu.Unlock()
+		return disconnected()
+	}
+	r.workers.Add(1)
+	r.mu.Unlock()
+	defer r.workers.Done()
 	ctx, cancel := context.WithCancel(ctx)
 	leg := &relayLeg{
 		cut: cancel, done: make(chan struct{}), requestsDone: make(chan struct{}),

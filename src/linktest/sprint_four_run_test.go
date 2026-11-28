@@ -86,6 +86,13 @@ func sendPairedFacts(t *testing.T, stream *connect.BidiStreamForClient[linkv1.Op
 
 func TestSprintFourPendingRun(t *testing.T) {
 	requirePostgres(t)
+	t.Run("R8", func(t *testing.T) { t.Run("CommitOrder", testPairedProjectCommitOrder) })
+	t.Run("R9", func(t *testing.T) {
+		t.Run("RunGate", func(t *testing.T) {
+			t.Run("RetainedPrefix", func(t *testing.T) { testPairedProjectRunGate(t, true) })
+			t.Run("EmptyPrefix", func(t *testing.T) { testPairedProjectRunGate(t, false) })
+		})
+	})
 	t.Run("RestartMidDrain", func(t *testing.T) {
 		f := newPairedScript(t, servertest.Options{})
 		execute(t, f.db, "INSERT INTO link_machines (machine_id,event_mark) VALUES ($1,5)", f.id)
@@ -139,6 +146,7 @@ FROM link_machines WHERE machine_id=$1`, f.id, generation) {
 		if scalar[uint64](t, f.db, "SELECT stream_generation FROM link_machines WHERE machine_id=$1", f.id) != generation {
 			t.Fatal("The refused superseded run changed the ready generation.")
 		}
+		t.Run("ProjectsEffect", testPairedEqualProjectReadiness)
 	})
 	t.Run("ReplayWindow", testPairedReplayWindow)
 	t.Run("ReplayWithOccupiedSendPermits", testPairedReplayWithOccupiedPermits)

@@ -125,6 +125,15 @@ SELECT event_mark=11 AND stream_generation=$2 AND recovery_set_generation=$2
 FROM link_machines WHERE machine_id=$1`, f.id, generation) {
 		t.Fatal("Incumbent traffic cleared the warning or lost its generation.")
 	}
+	var add <-chan addResult
+	var open projectOperation
+	var path string
+	if removeInstead {
+		path = t.TempDir()
+		add = beginAdd(t, projectService(f.server), f.id, "remove-flagged-machine", path)
+		open = waitProjectOperation(t, f.db, "remove-flagged-machine")
+		requireOpenProject(t, open)
+	}
 	f.server.Restart(t)
 	page = f.server.Clients(t)
 	watch = pairedMachineWatch(t, page)
@@ -133,7 +142,16 @@ FROM link_machines WHERE machine_id=$1`, f.id, generation) {
 		t.Fatal("The staged result did not survive the refusal and restart.")
 	}
 	if removeInstead {
+		project := projectService(f.server)
 		remove(t, page, f.id)
+		requireAddRefusal(t, addFolder(t.Context(), project, f.id, "remove-flagged-machine", path),
+			connect.CodeNotFound, "The machine was removed.")
+		finishAdd(t, add)
+		removed := readProjectOperation(t, f.db, "remove-flagged-machine")
+		if removed.id != open.id || removed.command != open.command || removed.state != "failed" ||
+			removed.failure != "machine_removed" || removed.reply != nil {
+			t.Fatal("Removing the flagged machine did not fail its original Projects operation.")
+		}
 		for watch.Receive() {
 			if watch.Msg().GetRemovedId() == f.id {
 				if !scalar[bool](t, f.db, "SELECT outcome='removed' AND staged_event_number IS NULL FROM link_commands WHERE id=$1", commandID) {

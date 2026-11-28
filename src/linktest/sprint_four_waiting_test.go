@@ -6,7 +6,9 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"time"
 
+	"connectrpc.com/connect"
 	bolt "go.etcd.io/bbolt"
 	"google.golang.org/protobuf/proto"
 
@@ -65,7 +67,24 @@ func TestSprintFourWaitingReplay(t *testing.T) {
 	opts := newClient(t, new(diagnostics))
 	id := join(t, page, opts, r.address)
 	db := openObserver(t, server)
-	operation, command := newPairedID(), newPairedID()
+	// Accept an operation while approved, then prepare a waiting Welcome for a
+	// retained report carrying that exact operation and command identity.
+	approve(t, page, id, "Waiting replay fixture")
+	script := pairedScript{server: server, opts: opts, id: id, db: db}
+	approved := script.attempt(t, newPairedID(), 1)
+	requirePairedWelcome(t, approved, 0)
+	settlePairedApproval(t, db, approved)
+	projects := projectService(server)
+	call := beginAdd(t, projects, id, "waiting-report", t.TempDir())
+	op := waitProjectOperation(t, db, "waiting-report")
+	readPairedFolderCommand(t, approved, op)
+	waitFor(t, 5*time.Second, "the scripted folder command to be dispatched", func() bool {
+		return scalar[bool](t, db, "SELECT dispatched FROM link_commands WHERE id=$1", op.command)
+	})
+	// Keep the accepted operation open without redelivering its command after approval.
+	execute(t, db, "UPDATE link_commands SET expires_at=clock_timestamp()-interval '25 hours' WHERE id=$1", op.command)
+	execute(t, db, "UPDATE machines SET approval='waiting',state_revision=state_revision+1 WHERE id=$1", id)
+	operation, command := op.id, op.command
 	seedPairedEvents(t, opts,
 		retainedPairedEvent(t, pairedFacts(0, "retained waiting facts")),
 		retainedPairedEvent(t, pairedFolder(0, operation, command)),
@@ -87,6 +106,9 @@ func TestSprintFourWaitingReplay(t *testing.T) {
 		t.Fatal("The retained Facts did not take effect on the waiting stream.")
 	}
 	waitForAck(t, leg, 1)
+	requireOpenProject(t, readProjectOperation(t, db, "waiting-report"))
+	requireProjectRows(t, db, 0)
+	requireProjectSaveCount(t, db, 0)
 	if slices.Contains(leg.observe().acks, uint64(2)) {
 		t.Fatal("The held folder acknowledgement reached the waiting client.")
 	}
@@ -106,4 +128,71 @@ func TestSprintFourWaitingReplay(t *testing.T) {
 	}
 	run.stop(t)
 	requireAcknowledgedOutbox(t, opts, 2)
+	requireOpenProject(t, readProjectOperation(t, db, "waiting-report"))
+	remove(t, page, id)
+	requireAddRefusal(t, finishAdd(t, call), connect.CodeNotFound, "The machine was removed.")
+	t.Run("StreamFencing", testPairedProjectStreamFencing)
+}
+
+func testPairedProjectStreamFencing(t *testing.T) {
+	root, _, _ := gitCheckout(t)
+	f := newProjectFixture(t, servertest.Options{}, relayControls{})
+	run, leg := f.startApproved(t, 0)
+	baseline := drainPairedInventory(t, &f.commandFixture, leg, "1.0.0")
+	run.stop(t)
+	target := pairedScript{server: f.server, opts: f.opts, id: f.id, db: f.db}
+	replaced := target.attempt(t, newPairedID(), baseline+1)
+	requirePairedWelcome(t, replaced, baseline)
+	call := beginAdd(t, f.projects, f.id, "fenced-report", root)
+	op := waitProjectOperation(t, f.db, "fenced-report")
+	readPairedFolderCommand(t, replaced, op)
+
+	otherOptions := newClient(t, new(diagnostics))
+	otherID := join(t, f.page, otherOptions, f.server.URL)
+	approve(t, f.page, otherID, "Other machine fixture")
+	other := pairedScript{server: f.server, opts: otherOptions, id: otherID, db: f.db}
+	otherStream := other.attempt(t, newPairedID(), 1)
+	requirePairedWelcome(t, otherStream, 0)
+	settlePairedApproval(t, f.db, otherStream)
+	sendPairedFrame(t, otherStream, pairedEvent(projectFolderFacts(1, op, root)))
+	requireProjectAck(t, otherStream, 1)
+	requireOpenProject(t, readProjectOperation(t, f.db, "fenced-report"))
+	requireProjectRows(t, f.db, 0)
+
+	current := target.attempt(t, newPairedID(), baseline+1)
+	requirePairedWelcome(t, current, baseline)
+	readPairedFolderCommand(t, current, op)
+	report := projectFolderFacts(baseline+1, op, root)
+	_ = replaced.Send(pairedEvent(report))
+	requirePairedEnd(t, replaced, connect.CodeAborted, "")
+	if mark(t, f.db, f.id) != baseline {
+		t.Fatal("A report on a replaced stream advanced the target machine's mark.")
+	}
+	requireOpenProject(t, readProjectOperation(t, f.db, "fenced-report"))
+	requireProjectRows(t, f.db, 0)
+	sendPairedFrame(t, current, pairedEvent(report))
+	requireProjectAck(t, current, baseline+1)
+	requireAddReply(t, finishAdd(t, call), f.id, root)
+	requireProjectSaveCount(t, f.db, 1)
+
+	// Finish the first Link command so the next one can be delivered.
+	prior := scalar[uint32](t, f.db, "SELECT attempt FROM link_commands WHERE id=$1", op.command)
+	waitFor(t, 5*time.Second, "the replacement's folder dispatch marker", func() bool {
+		return scalar[bool](t, f.db, "SELECT dispatched FROM link_commands WHERE id=$1", op.command)
+	})
+	sendPairedFrame(t, current, pairedResult(op.command, prior, baseline+1))
+	waitForStoredResult(t, f.db, commandDelivery{id: op.command, attempt: prior}, "done")
+	removedCall := beginAdd(t, f.projects, f.id, "removed-stream-report", root)
+	removedOp := waitProjectOperation(t, f.db, "removed-stream-report")
+	readPairedFolderCommand(t, current, removedOp)
+	remove(t, f.page, f.id)
+	_ = current.Send(pairedEvent(projectFolderFacts(baseline+2, removedOp, root)))
+	requirePairedEnd(t, current, connect.CodeFailedPrecondition, "unknown_machine")
+	requireAddRefusal(t, finishAdd(t, removedCall), connect.CodeNotFound, "The machine was removed.")
+	after := readProjectOperation(t, f.db, "removed-stream-report")
+	if after.id != removedOp.id || after.command != removedOp.command || after.state != "failed" || after.failure != "machine_removed" {
+		t.Fatal("A removed stream changed the removed operation's identity or failure.")
+	}
+	requireProjectRows(t, f.db, 0)
+	requireProjectSaveCount(t, f.db, 1)
 }
