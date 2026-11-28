@@ -8147,3 +8147,12 @@ Found on 2026-11-27, in the review of the repair after review 10 of the plan `go
 3. Local text waits while samples overlap. Under a steady stream of overlapping refreshes a log record runs out of time and is dropped without a trace. The client should count dropped records and write one summary line when screening recovers.
 
 Where: `src/client/internal/link/commands.go`, `folder_command.go`, `outbox.go` and `filter.go`, and `Handle` in `src/client/internal/app/outgoing.go`.
+
+## 1704. Two smaller points of the durable Projects operation
+
+Found on 2026-11-27, in the review of item 2 of the plan `go-s4-server-projects` (post-2 1 and post-2 2). The review's verdict was to ship.
+
+1. While a call waits for its result it reads the operation in a read-only transaction. When the database does not confirm that read, the caller is told that the database did not confirm whether the write committed, although the accepting write is committed. A retry with the same key recovers the result. The waiting read should answer with the fixed sentence for an unavailable database.
+2. The test of the 25-second wait starts its clock before the acceptance and allows up to 32 seconds. A wait limit of 30 seconds passes. The test should observe the limit from the first read after the acceptance, with a small allowance.
+
+Where: the error mapping in `src/server/internal/projects/errors.go` and the waiting read in `operations.go` for point 1; `TestProjectOperationDeadlineAndDisconnect` in `operations_test.go` for point 2.
