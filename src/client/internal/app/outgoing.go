@@ -119,10 +119,10 @@ func (h *outgoingHandler) Handle(ctx context.Context, record slog.Record) error 
 		scopes[i].attrs = resolveLogAttrs(scopes[i].attrs)
 	}
 
-	handler := h.handler
-	var screened slog.Record
-	ok := h.filter.WithTextMask(func(mask func(string) string) {
-		screened = slog.NewRecord(record.Time, record.Level, mask(record.Message), record.PC)
+	var err error
+	h.filter.WithTextMask(func(mask func(string) string) {
+		handler := h.handler
+		screened := slog.NewRecord(record.Time, record.Level, mask(record.Message), record.PC)
 		for _, scope := range scopes {
 			if scope.group != "" {
 				handler = handler.WithGroup(mask(scope.group))
@@ -131,11 +131,9 @@ func (h *outgoingHandler) Handle(ctx context.Context, record slog.Record) error 
 			}
 		}
 		screened.AddAttrs(maskLogAttrs(attrs, mask)...)
+		err = handler.Handle(ctx, screened)
 	})
-	if !ok {
-		return nil
-	}
-	return handler.Handle(ctx, screened)
+	return err
 }
 
 func resolveLogAttrs(attrs []slog.Attr) []slog.Attr {

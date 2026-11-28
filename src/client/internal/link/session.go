@@ -323,8 +323,7 @@ func (r *clientRun) queueResult(ctx context.Context, _ *session, result *linkv1.
 	if len(r.live.results) >= maxPendingReplies {
 		return errStream
 	}
-	r.live.results = append(r.live.results, pendingResult{result, r.live.stateConflict})
-	r.live.stateConflict = false
+	r.live.results = append(r.live.results, result)
 	return nil
 }
 
@@ -417,21 +416,10 @@ func stopForStore(logger *slog.Logger, err error) (RunOutcome, error) {
 }
 
 type liveSession struct {
-	run           *clientRun
-	replay        *replay
-	results       []pendingResult
-	stateConflict bool
-	ended         time.Time
-}
-
-type pendingResult struct {
-	wire          *linkv1.CommandResult
-	stateConflict bool
-}
-
-type screenedEvent struct {
-	wire *linkv1.Event
-	err  error
+	run     *clientRun
+	replay  *replay
+	results []*linkv1.CommandResult
+	ended   time.Time
 }
 
 type streamReply struct {
@@ -580,9 +568,6 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 		return false, ctx.Err()
 	}
 	cursor, err := newReplayWithFilter(l.run.store, s.welcome.GetLastEventNumber(), l.run.opts.Filter)
-	if errors.Is(err, errScreeningUnavailable) {
-		return false, err
-	}
 	if err != nil {
 		return false, storeFault{err}
 	}
@@ -597,85 +582,39 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 	}
 	l.replay = cursor
 	if l.run.lastReason != "" {
-		workers.Go(func() { l.run.logger.Info("link_recovered") })
+		l.run.logger.Info("link_recovered")
 		l.run.lastReason = ""
 	}
-	warnStateConflict := l.run.commands.warnStateConflict
-	l.run.commands.warnStateConflict = func() { l.stateConflict = true }
-	defer func() { l.run.commands.warnStateConflict = warnStateConflict }()
 	l.run.commands.setSession(s)
-	if l.stateConflict {
-		workers.Go(warnStateConflict)
-		l.stateConflict = false
-	}
 
-	reportFault := func(err error) {
-		select {
-		case reportFailed <- err:
-		default:
-		}
-	}
-	flushReports := make(chan struct{}, 1)
-	requestFlush := func() {
-		select {
-		case flushReports <- struct{}{}:
-		default:
-		}
-	}
-	workers.Go(func() {
-		for ctx.Err() == nil {
-			select {
-			case <-ctx.Done():
-				return
-			case <-flushReports:
-				if err := l.run.reports.flush(); err != nil {
-					reportFault(err)
-					return
-				}
-			}
-		}
-	})
 	var cancelInventory context.CancelFunc
-	freshReports := func() <-chan struct{} {
+	freshReports := func() {
 		l.run.sawApproval = true
 		scanCtx, stop := context.WithCancel(ctx)
 		cancelInventory = stop
-		done := make(chan struct{})
 		workers.Go(func() {
 			defer stop()
-			defer close(done)
-			if err := l.run.captureFacts(); err != nil {
-				reportFault(err)
-				return
+			err := l.run.captureFacts()
+			if err == nil {
+				_, err = l.run.reports.scanHarnesses(scanCtx, false)
 			}
-			requestFlush()
-			if _, err := l.run.reports.scanHarnesses(scanCtx, false); err != nil {
-				reportFault(err)
+			if err != nil {
+				select {
+				case reportFailed <- err:
+				default:
+				}
 			}
 		})
-		return done
+	}
+	if l.approved() {
+		freshReports()
+	}
+	if err := l.run.reports.flush(); err != nil {
+		return false, storeFault{err}
 	}
 
 	filter := l.run.opts.Filter
-	refreshes := filter != nil && filter.refresh != nil
-	var startupReports <-chan struct{}
-	var firstBeatDelay <-chan time.Time
-	if l.approved() {
-		done := freshReports()
-		if refreshes {
-			// Give startup reports a turn before advertising the stream's
-			// first heartbeat. A read stall cannot delay the first beat
-			// beyond the screening budget.
-			timer := time.NewTimer(secretRefreshBudget)
-			defer timer.Stop()
-			startupReports, firstBeatDelay = done, timer.C
-		}
-	} else {
-		requestFlush()
-	}
-
-	started := time.Now()
-	nextBeat := started
+	nextBeat := time.Now()
 	heartbeats := time.NewTicker(reportInterval)
 	defer heartbeats.Stop()
 	ready := make(chan struct{})
@@ -684,34 +623,15 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 	requestClosed := false
 
 	busy, haveEvents := false, true
-	eventScreenDeferred := false
-	var eventScreen <-chan screenedEvent
-	var preparedEvent *linkv1.Event
-	var resultScreen <-chan struct{}
-	resultReady := false
 	canSendEvent := func() bool {
 		retained := handedThrough+1 < l.run.announcement.firstEventNumber
-		return (l.approved() || retained) && haveEvents && eventScreen == nil && handedThrough-ackedThrough < maxUnackedEvents
-	}
-	heartbeatDue := func(now time.Time) bool {
-		return !now.Before(nextBeat) && (firstBeatDelay == nil ||
-			startupReports == nil && handedThrough+1 == l.run.store.Next())
+		return (l.approved() || retained) && haveEvents && handedThrough-ackedThrough < maxUnackedEvents
 	}
 	sendEvent := func(event *linkv1.Event) {
 		timingMu.Lock()
 		send <- &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Event{Event: event}}
 		handedThrough = event.GetNumber()
 		timingMu.Unlock()
-	}
-	eventError := func(err error) error {
-		if errors.Is(err, errScreeningUnavailable) {
-			if handedThrough+1 < l.run.announcement.firstEventNumber {
-				return err
-			}
-			eventScreenDeferred, haveEvents = true, false
-			return nil
-		}
-		return storeFault{err}
 	}
 	handle := func(reply streamReply) error {
 		if ctx.Err() != nil {
@@ -737,7 +657,9 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 		}
 		if ack != nil {
 			ackedThrough = max(ackedThrough, ack.GetThrough())
-			requestFlush()
+			if err := l.run.reports.flush(); err != nil {
+				return storeFault{err}
+			}
 		}
 		if restart {
 			restartDeadline = time.After(restartSendBudget)
@@ -763,8 +685,8 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 			requestClosed = true
 		}
 		var dispatch <-chan struct{}
-		if !busy && sendErr == nil && (len(l.results) != 0 && resultScreen == nil ||
-			!restarting && (heartbeatDue(time.Now()) || canSendEvent())) {
+		if !busy && sendErr == nil && (len(l.results) != 0 ||
+			!restarting && (!time.Now().Before(nextBeat) || canSendEvent())) {
 			dispatch = ready
 		}
 		select {
@@ -772,34 +694,9 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 			return restarting, ctx.Err()
 		case <-restartDeadline:
 			return true, nil
-		case <-startupReports:
-			startupReports = nil
-		case <-firstBeatDelay:
-			firstBeatDelay, startupReports = nil, nil
 		case <-heartbeats.C:
-			if eventScreenDeferred {
-				eventScreenDeferred, haveEvents = false, true
-			}
 		case <-l.run.store.Changed():
-			haveEvents = !eventScreenDeferred
-		case <-resultScreen:
-			resultScreen, resultReady = nil, true
-		case screened := <-eventScreen:
-			eventScreen = nil
-			if restarting {
-				continue
-			}
-			if screened.err != nil {
-				if err := eventError(screened.err); err != nil {
-					return false, err
-				}
-			} else if screened.wire == nil {
-				// The append notification may have arrived after the worker read
-				// the tail and before the owner received this completion.
-				haveEvents = handedThrough+1 < l.run.store.Next()
-			} else {
-				preparedEvent = screened.wire
-			}
+			haveEvents = true
 		case err := <-reportFailed:
 			return false, storeFault{err}
 		case completion := <-l.run.commands.completions():
@@ -837,59 +734,29 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 			}
 			now := time.Now()
 			switch {
-			case len(l.results) != 0 && resultScreen == nil:
+			case len(l.results) != 0:
 				result := l.results[0]
-				if !resultReady && (result.stateConflict || refreshes) {
-					done := make(chan struct{})
-					resultScreen = done
-					workers.Go(func() {
-						defer close(done)
-						if result.stateConflict {
-							warnStateConflict()
-						}
-						filter.refreshResult(ctx)
-					})
-					continue
-				}
-				unlock := filter.lockRegisteredSecrets()
-				if filter.containsSecret(result.wire.GetCommandId()) {
+				unlock := filter.lockSecrets()
+				if filter.containsSecret(result.GetCommandId()) {
 					unlock()
 					return false, errInvalidFrame
 				}
-				send <- &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_CommandResult{CommandResult: result.wire}}
+				send <- &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_CommandResult{CommandResult: result}}
 				unlock()
-				l.results[0] = pendingResult{}
+				l.results[0] = nil
 				l.results = l.results[1:]
-				resultReady = false
 			case restartDeadline != nil:
 				continue
-			case heartbeatDue(now):
-				firstBeatDelay, startupReports = nil, nil
-				nextBeat = nextBeat.Add((now.Sub(nextBeat)/reportInterval + 1) * reportInterval)
-				send <- &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Heartbeat{Heartbeat: l.run.reports.heartbeat(l.approved())}}
+			case !now.Before(nextBeat):
+				beat := l.run.reports.heartbeat(l.approved())
+				unlock := filter.lockSecrets()
+				nextBeat = nextBeat.Add((time.Since(nextBeat)/reportInterval + 1) * reportInterval)
+				send <- &linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Heartbeat{Heartbeat: beat}}
+				unlock()
 			case canSendEvent():
-				if refreshes && preparedEvent == nil {
-					done := make(chan screenedEvent, 1)
-					eventScreen = done
-					workers.Go(func() {
-						event, err := cursor.prepareNext(ctx)
-						done <- screenedEvent{event, err}
-					})
-					continue
-				}
-				event := preparedEvent
-				var err error
-				if event == nil {
-					event, err = cursor.next(sendEvent)
-				} else {
-					err = cursor.handoff(event, sendEvent)
-					preparedEvent = nil
-				}
+				event, err := cursor.next(sendEvent)
 				if err != nil {
-					if err := eventError(err); err != nil {
-						return false, err
-					}
-					continue
+					return false, storeFault{err}
 				}
 				if event == nil {
 					haveEvents = false

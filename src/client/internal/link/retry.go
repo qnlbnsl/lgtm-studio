@@ -51,7 +51,7 @@ func supervise(ctx context.Context, attempt func(context.Context, func()) error)
 		if errors.As(err, &refusal) && refusal.fromWire {
 			return refusal
 		}
-		if !welcome.IsZero() && !errors.Is(err, errScreeningUnavailable) {
+		if !welcome.IsZero() {
 			ended := time.Now()
 			var closed streamEnd
 			if errors.As(err, &closed) {

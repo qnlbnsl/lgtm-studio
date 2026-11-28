@@ -18,43 +18,17 @@ type Event struct {
 	Payload []byte
 }
 
-type preparedReport func(context.Context) (uint64, error)
-
 // Append stores a payload and returns its number after the commit.
 func (s *Store) Append(payload []byte) (uint64, error) {
 	return s.appendContext(context.Background(), payload)
 }
 
-// A folder settlement can hand the screened append back to the link owner.
-// The refresh worker has no authority to append on that path.
-func (s *Store) appendFilteredReport(ctx context.Context, filter *OutgoingFilter, event *linkv1.Event, prepared ...*preparedReport) (uint64, error) {
-	screen := reportScreen(event)
-	if len(prepared) != 0 {
-		filter.refreshSecrets()
-		unlock, err := filter.lockAfterRefresh(ctx, screen)
-		if err != nil {
-			return 0, err
-		}
-		unlock()
-		*prepared[0] = func(appendCtx context.Context) (uint64, error) {
-			unlock := filter.lockRegisteredSecrets()
-			defer unlock()
-			if ctx.Err() != nil || !filter.canScreen(screen) {
-				return 0, errScreeningUnavailable
-			}
-			return s.appendScreenedReport(appendCtx, filter, event)
-		}
-		return 0, nil
-	}
-	unlock, err := filter.lockSecrets(ctx, screen)
-	if err != nil {
+func (s *Store) appendFilteredReport(ctx context.Context, filter *OutgoingFilter, event *linkv1.Event) (uint64, error) {
+	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
+	unlock := filter.lockSecrets()
 	defer unlock()
-	return s.appendScreenedReport(ctx, filter, event)
-}
-
-func (s *Store) appendScreenedReport(ctx context.Context, filter *OutgoingFilter, event *linkv1.Event) (uint64, error) {
 	payload, err := filter.encodeFilteredReport(event)
 	if err != nil {
 		return 0, err

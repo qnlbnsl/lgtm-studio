@@ -101,7 +101,6 @@ type commandHandler struct {
 	folderHome      string
 	folder          *activeFolder
 	folderReads     chan struct{}
-	folderScreens   chan struct{}
 	folderCompleted chan folderInspection
 }
 
@@ -116,8 +115,8 @@ func newCommandHandler(store *Store, scan func(context.Context, bool) (bool, err
 		store: store, scan: scan, send: send, elapsed: elapsed,
 		warnStateConflict: func() { logger.Warn(conflictingStateMessage) },
 		completed:         make(chan scanCompletion, 1),
-		folderReads:       make(chan struct{}, 2), folderScreens: make(chan struct{}, 1),
-		folderCompleted: make(chan folderInspection, 1),
+		folderReads:       make(chan struct{}, 2),
+		folderCompleted:   make(chan folderInspection, 1),
 	}
 }
 
@@ -167,7 +166,7 @@ func (h *commandHandler) handle(ctx context.Context, msg *linkv1.Command) (resta
 	if h.current == nil {
 		return false, errStream
 	}
-	unlock := sync.OnceFunc(h.filter.lockRegisteredSecrets())
+	unlock := sync.OnceFunc(h.filter.lockSecrets())
 	defer unlock()
 	if h.filter.containsSecret(id) {
 		return false, ErrInvalidCommand

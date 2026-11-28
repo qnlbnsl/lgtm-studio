@@ -28,14 +28,12 @@ type activeFolder struct {
 	operationID string
 	cancel      context.CancelFunc
 	afterReport func(context.Context, uint64) error
-	settling    bool
 }
 
 type folderInspection struct {
-	facts    *linkv1.FolderFacts
-	refusal  linkv1.FolderRefusal
-	expired  bool
-	prepared preparedReport
+	facts   *linkv1.FolderFacts
+	refusal linkv1.FolderRefusal
+	expired bool
 }
 
 func (h *commandHandler) startFolder(ctx context.Context, attempt commandAttempt, action *linkv1.LookAtFolder, clock serverClock, admission, expiry time.Time) {
@@ -100,22 +98,12 @@ func (h *commandHandler) startFolder(ctx context.Context, attempt commandAttempt
 
 func (h *commandHandler) finishFolder(ctx context.Context, inspection folderInspection) error {
 	folder := h.folder
-	if folder.settling {
-		defer folder.cancel()
-		h.folder = nil
-		if ctx.Err() != nil {
-			return nil
-		}
-		return h.settleFolder(ctx, folder, inspection.prepared)
-	}
-
 	folder.cancel()
+	h.folder = nil
 	if ctx.Err() != nil {
-		h.folder = nil
 		return nil
 	}
 	if inspection.expired {
-		h.folder = nil
 		return h.finishCommand(ctx, folder.attempt, outcomeExpired)
 	}
 
@@ -126,51 +114,14 @@ func (h *commandHandler) finishFolder(ctx context.Context, inspection folderInsp
 		seen.Result = &linkv1.FolderSeen_Refusal{Refusal: inspection.refusal}
 	}
 	event := &linkv1.Event{HappenedAt: timestamppb.Now(), Report: &linkv1.Event_FolderSeen{FolderSeen: seen}}
-	screenCtx, cancel := context.WithTimeout(ctx, secretRefreshBudget)
-	folder.cancel = cancel
-	folder.settling = true
-	go h.screenFolderReport(screenCtx, event)
-	return nil
-}
-
-func (h *commandHandler) screenFolderReport(ctx context.Context, event *linkv1.Event) {
-	if ctx.Err() != nil {
-		h.folderCompleted <- folderInspection{}
-		return
-	}
-	select {
-	case h.folderScreens <- struct{}{}:
-	default:
-		h.folderCompleted <- folderInspection{}
-		return
-	}
-	prepared := make(chan preparedReport, 1)
-	go func() {
-		var appendReport preparedReport
-		_, _ = h.store.appendFilteredReport(ctx, h.filter, event, &appendReport)
-		<-h.folderScreens
-		prepared <- appendReport
-	}()
-	var completion folderInspection
-	select {
-	case <-ctx.Done():
-	case completion.prepared = <-prepared:
-	}
-	h.folderCompleted <- completion
-}
-
-func (h *commandHandler) settleFolder(ctx context.Context, folder *activeFolder, prepared preparedReport) error {
-	if prepared == nil {
-		return h.finishCommand(ctx, folder.attempt, outcomeFailed)
-	}
-	number, err := prepared(ctx)
+	number, err := h.store.appendFilteredReport(ctx, h.filter, event)
 	switch {
 	case err == nil:
 		if folder.afterReport != nil && folder.afterReport(ctx, number) != nil {
 			return errFolderReportInterrupted
 		}
 		return h.finishCommand(ctx, folder.attempt, outcomeDone)
-	case errors.Is(err, ErrOutboxFull), errors.Is(err, ErrEventTooLarge), errors.Is(err, errScreeningUnavailable):
+	case errors.Is(err, ErrOutboxFull), errors.Is(err, ErrEventTooLarge):
 		return h.finishCommand(ctx, folder.attempt, outcomeFailed)
 	case ctx.Err() != nil && errors.Is(err, ctx.Err()):
 		return nil
