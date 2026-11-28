@@ -116,7 +116,7 @@ func (cursor *commandCursor) revisitScans(ctx context.Context, tx *store.Tx, mac
 	err := tx.QueryRow(ctx, `
 SELECT EXISTS (
     SELECT FROM link_commands
-    WHERE id = $1 AND machine_id = $2 AND outcome IS NULL AND expires_at > $3
+    WHERE id = $1 AND machine_id = $2 AND outcome IS NULL AND staged_outcome IS NULL AND expires_at > $3
       AND (attempt < $4 OR (sent_stream_id = $5 AND dispatched))
 )`, cursor.scanHead, machineID, cutoff, int64(math.MaxUint32), streamID).Scan(&pending)
 	if err != nil || pending {

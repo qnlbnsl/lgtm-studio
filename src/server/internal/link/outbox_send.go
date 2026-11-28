@@ -150,7 +150,7 @@ func (s *State) sendClaimed(ctx context.Context, machineID, streamID string, com
 SELECT action, expires_at, clock_timestamp()
 FROM link_commands
 WHERE id = $1 AND machine_id = $2 AND sent_stream_id = $3 AND attempt = $4
-  AND outcome IS NULL AND NOT dispatched`,
+  AND outcome IS NULL AND staged_outcome IS NULL AND NOT dispatched`,
 			command.GetId(), machineID, streamID, int64(command.GetAttempt())).Scan(&action, &expiresAt, &databaseNow)
 		if err == pgx.ErrNoRows {
 			return nil

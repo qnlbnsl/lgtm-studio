@@ -135,12 +135,19 @@ DELETE FROM link_commands
 WHERE machine_id = $1 AND seq = ANY ($2) AND outcome IS NOT NULL AND finished_at < $3`, machineID, sequences, cutoff)
 			return err
 		}
-		_, err := tx.Exec(ctx, `
-UPDATE link_commands
-SET outcome = 'timed_out', finished_at = clock_timestamp(), payload = NULL
+		commands, err := readCommandsToSettle(ctx, tx, `
 WHERE machine_id = $1 AND seq = ANY ($2)
-  AND outcome IS NULL AND action <> 'set_state' AND expires_at < $3`, machineID, sequences, cutoff)
-		return err
+  AND outcome IS NULL AND staged_outcome IS NULL AND action <> 'set_state' AND expires_at < $3
+ORDER BY expires_at, seq`, machineID, sequences, cutoff)
+		if err != nil {
+			return err
+		}
+		for _, command := range commands {
+			if err := s.finishCommand(ctx, tx, machineID, command, OutcomeTimedOut, nil, ""); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 

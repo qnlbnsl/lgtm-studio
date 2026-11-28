@@ -306,14 +306,22 @@ WHERE m.machine_id = ANY($1)`, ids)
 }
 
 func (s *State) Forget(ctx context.Context, tx *store.Tx, machineID string) error {
-	if _, err := tx.Exec(ctx, `
-UPDATE link_commands
-SET outcome = 'removed', finished_at = clock_timestamp(), payload = NULL
-WHERE machine_id = $1 AND outcome IS NULL`, machineID); err != nil {
+	commands, err := readCommandsToSettle(ctx, tx, `
+WHERE machine_id = $1 AND outcome IS NULL
+ORDER BY seq`, machineID)
+	if err != nil {
+		return err
+	}
+	for _, command := range commands {
+		if err := s.finishCommand(ctx, tx, machineID, command, OutcomeRemoved, nil, ""); err != nil {
+			return err
+		}
+	}
+	if err := s.dispatchRemoval(ctx, tx, machineID); err != nil {
 		return err
 	}
 	var streamID string
-	err := tx.QueryRow(ctx, `DELETE FROM link_connections WHERE machine_id = $1 RETURNING stream_id`, machineID).Scan(&streamID)
+	err = tx.QueryRow(ctx, `DELETE FROM link_connections WHERE machine_id = $1 RETURNING stream_id`, machineID).Scan(&streamID)
 	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return err
 	}

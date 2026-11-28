@@ -72,6 +72,9 @@ WHERE m.machine_id = $1 AND c.stream_id = $2`, machineID, streamID).Scan(&mark)
 		if _, err := tx.Exec(ctx, `UPDATE link_machines SET event_mark = $2 WHERE machine_id = $1`, machineID, int64(number)); err != nil {
 			return err
 		}
+		if err := s.settleCoveredResults(ctx, tx, machineID, number); err != nil {
+			return err
+		}
 		if err := s.promoteRun(ctx, tx, machineID, number); err != nil {
 			return err
 		}
@@ -82,6 +85,21 @@ WHERE m.machine_id = $1 AND c.stream_id = $2`, machineID, streamID).Scan(&mark)
 		return EventResult{}, err
 	}
 	return result, nil
+}
+
+func (s *State) settleCoveredResults(ctx context.Context, tx *store.Tx, machineID string, mark uint64) error {
+	commands, err := readCommandsToSettle(ctx, tx, `
+WHERE machine_id = $1 AND staged_event_number <= $2
+ORDER BY staged_event_number, seq`, machineID, int64(mark))
+	if err != nil {
+		return err
+	}
+	for _, command := range commands {
+		if err := s.finishCommand(ctx, tx, machineID, command, command.stagedOutcome, command.stagedWatermark, ""); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *State) applyReport(ctx context.Context, tx *store.Tx, machine machines.Machine, event *linkv1.Event) error {
