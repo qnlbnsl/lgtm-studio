@@ -299,8 +299,34 @@ func TestReconnectRetriesUnavailableSignInScreeningReview11(t *testing.T) {
 			}()
 		}
 		// Waiting streams replay the retained prefix without publishing startup reports.
-		if err := p.welcome(stream, 0, leg >= 3); err != nil {
-			return err
+		if leg < 3 {
+			if err := p.welcome(stream, 0, false); err != nil {
+				return err
+			}
+		} else {
+			if err := p.challenge(stream); err != nil {
+				return err
+			}
+			frame, err := stream.Receive()
+			if err != nil {
+				return err
+			}
+			if frame.GetProof() == nil {
+				return errors.New("missing proof")
+			}
+			welcome := &linkv1.Welcome{
+				State: &linkv1.MachineState{
+					Approval: linkv1.Approval_APPROVAL_APPROVED,
+					Name:     "test machine",
+					Revision: 2,
+				},
+				ServerTime:      timestamppb.Now(),
+				LinkRevision:    2,
+				ConnectionToken: "fixture-stream",
+			}
+			if err := stream.Send(&linkv1.OpenResponse{Kind: &linkv1.OpenResponse_Welcome{Welcome: welcome}}); err != nil {
+				return err
+			}
 		}
 
 		var through uint64
