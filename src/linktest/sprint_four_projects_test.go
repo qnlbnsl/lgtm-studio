@@ -158,6 +158,21 @@ func requireProjectCommand(t *testing.T, op projectOperation, command commandDel
 	}
 }
 
+func waitForPairedFolderReport(t *testing.T, leg *relayLeg, op projectOperation) folderReport {
+	t.Helper()
+	var found folderReport
+	waitFor(t, 10*time.Second, "the accepted folder report to reach the relay", func() bool {
+		for _, report := range leg.observe().reports {
+			if report.folder.operationID == op.id && report.folder.commandID == op.command {
+				found = report.folder
+				return true
+			}
+		}
+		return false
+	})
+	return found
+}
+
 func requireAddReply(t *testing.T, got addResult, machineID, path string) *webv1.AddRepositoryResponse {
 	t.Helper()
 	if got.err != nil {

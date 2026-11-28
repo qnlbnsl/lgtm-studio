@@ -15,7 +15,12 @@ import (
 
 func TestSprintFourReceiptReplay(t *testing.T) {
 	requirePostgres(t)
-	t.Run("R5", func(t *testing.T) { t.Run("ServerRestart", testPairedProjectRestart) })
+	t.Run("R5", func(t *testing.T) {
+		t.Run("ServerRestart", func(t *testing.T) {
+			t.Run("RetryWhileOpen", func(t *testing.T) { testPairedProjectRestart(t, true) })
+			t.Run("FirstRetryAfterReport", func(t *testing.T) { testPairedProjectRestart(t, false) })
+		})
+	})
 	t.Run("R6", func(t *testing.T) { t.Run("InterruptedAfterAppend", testPairedProjectInterruption) })
 	t.Run("StandingResult", testPairedStandingReplay)
 	t.Run("ExplicitZero", testPairedZeroReceipt)

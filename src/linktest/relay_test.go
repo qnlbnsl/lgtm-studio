@@ -27,6 +27,7 @@ type relayControls struct {
 	beforeReply    func(context.Context, *linkv1.OpenResponse) bool
 	releaseReports func() <-chan struct{}
 	holdReport     func(reportDelivery) <-chan struct{}
+	holdEvent      func(uint64) <-chan struct{}
 	dropResult     func(noticeResult) bool
 	observeResult  func(*linkv1.CommandResult)
 }
@@ -331,6 +332,9 @@ func (l *relayLeg) forwardRequests(
 				}
 				if release == nil && report.folder.number != 0 && controls.holdReport != nil {
 					release = controls.holdReport(report)
+				}
+				if release == nil && controls.holdEvent != nil {
+					release = controls.holdEvent(frame.GetEvent().GetNumber())
 				}
 				// Keep the numbered suffix in order while results and heartbeats pass.
 				if release != nil {

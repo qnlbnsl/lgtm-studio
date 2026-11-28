@@ -6,11 +6,14 @@ import (
 	"encoding/binary"
 	"errors"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	bolt "go.etcd.io/bbolt"
 	"google.golang.org/protobuf/proto"
 
@@ -18,7 +21,29 @@ import (
 	"github.com/qnlbnsl/lgtm-studio/src/server/servertest"
 )
 
-func testPairedProjectRestart(t *testing.T) {
+type projectRetryTrace struct {
+	operation atomic.Pointer[string]
+	read      chan struct{}
+}
+
+type projectRetryRead struct{}
+
+func (tr *projectRetryTrace) TraceQueryStart(ctx context.Context, _ *pgx.Conn, query pgx.TraceQueryStartData) context.Context {
+	if id := tr.operation.Load(); id != nil && strings.Contains(query.SQL, "SELECT state, reply, COALESCE(failure, '') FROM folder_operations WHERE id = $1") &&
+		len(query.Args) == 1 && query.Args[0] == *id {
+		return context.WithValue(ctx, projectRetryRead{}, id)
+	}
+	return ctx
+}
+
+func (tr *projectRetryTrace) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, result pgx.TraceQueryEndData) {
+	id, _ := ctx.Value(projectRetryRead{}).(*string)
+	if id != nil && result.Err == nil && result.CommandTag.RowsAffected() == 1 && tr.operation.CompareAndSwap(id, nil) {
+		close(tr.read)
+	}
+}
+
+func testPairedProjectRestart(t *testing.T, retryWhileOpen bool) {
 	root, _, _ := gitCheckout(t)
 	starts := make(chan inspectedFolder, 4)
 	reading, report := make(chan struct{}), make(chan struct{})
@@ -26,7 +51,10 @@ func testPairedProjectRestart(t *testing.T) {
 	releaseReport := sync.OnceFunc(func() { close(report) })
 	defer releaseRead()
 	defer releaseReport()
-	f := newProjectFixture(t, servertest.Options{}, relayControls{holdReport: func(observed reportDelivery) <-chan struct{} {
+	trace := &projectRetryTrace{read: make(chan struct{})}
+	f := newProjectFixture(t, servertest.Options{ConfigurePostgres: func(cfg *pgxpool.Config) {
+		cfg.ConnConfig.Tracer = trace
+	}}, relayControls{holdReport: func(observed reportDelivery) <-chan struct{} {
 		if observed.folder.number != 0 {
 			return report
 		}
@@ -58,9 +86,11 @@ func testPairedProjectRestart(t *testing.T) {
 		t.Fatal("The held inspection did not match the accepted operation.")
 	}
 	f.server.Restart(t)
+	// The original caller disconnects with the stopped server.
+	if result := finishAdd(t, call); result.err == nil {
+		t.Fatal("The original caller returned a reply before the report was applied.")
+	}
 	releaseRead()
-	f.page = f.server.Clients(t)
-	retry := beginAdd(t, f.projects, f.id, "restart", root)
 	after := waitProjectOperation(t, f.db, "restart")
 	requireOpenProject(t, after)
 	if after.id != op.id || after.command != op.command {
@@ -86,10 +116,29 @@ func testPairedProjectRestart(t *testing.T) {
 		}
 		return false
 	})
-	if newLeg.observe().hello.runID != leg.observe().hello.runID {
-		t.Fatal("The server restart started a different client process.")
+	if newLeg.observe().hello != leg.observe().hello {
+		t.Fatal("The client did not reconnect with the original run pair after server restart.")
+	}
+	held := waitForPairedFolderReport(t, newLeg, op)
+	var retry <-chan addResult
+	if retryWhileOpen {
+		trace.operation.Store(&op.id)
+		retry = beginAdd(t, f.projects, f.id, "restart", root)
+		receive(t, trace.read, "the keyed retry to finish reading the still-open operation")
+		requireOpenProject(t, readProjectOperation(t, f.db, "restart"))
+		if mark(t, f.db, f.id) >= held.number {
+			t.Fatal("The held report committed ahead of the retry's read.")
+		}
 	}
 	releaseReport()
+	waitForAck(t, newLeg, held.number)
+	if !retryWhileOpen {
+		if settled := readProjectOperation(t, f.db, "restart"); settled.state != "succeeded" || settled.id != op.id || settled.command != op.command {
+			t.Fatal("The acknowledged report did not settle the original operation before its first retry.")
+		}
+		requireProjectSaveCount(t, f.db, 1)
+		retry = beginAdd(t, f.projects, f.id, "restart", root)
+	}
 	reply := requireAddReply(t, finishAdd(t, retry), f.id, root)
 	var reportNumber uint64
 	for _, observed := range newLeg.observe().reports {
@@ -103,9 +152,6 @@ func testPairedProjectRestart(t *testing.T) {
 	if reportNumber == 0 {
 		t.Fatal("The restarted server did not receive the original inspection's report on the reconnected stream.")
 	}
-	waitForAck(t, newLeg, reportNumber)
-	// The original caller disconnects with the stopped server. The same key supplies its durable reply.
-	finishAdd(t, call)
 	replayed := requireAddReply(t, addFolder(t.Context(), f.projects, f.id, "restart", root), f.id, root)
 	final := readProjectOperation(t, f.db, "restart")
 	if !proto.Equal(reply, replayed) || final.id != op.id || final.command != op.command ||

@@ -91,6 +91,7 @@ func TestSprintFourPendingRun(t *testing.T) {
 		t.Run("RunGate", func(t *testing.T) {
 			t.Run("RetainedPrefix", func(t *testing.T) { testPairedProjectRunGate(t, true) })
 			t.Run("EmptyPrefix", func(t *testing.T) { testPairedProjectRunGate(t, false) })
+			t.Run("RetainedPrefixWithFreePermit", testPairedProjectRunGateWithFreePermit)
 		})
 	})
 	t.Run("RestartMidDrain", func(t *testing.T) {

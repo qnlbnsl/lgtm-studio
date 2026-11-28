@@ -143,6 +143,11 @@ FROM link_machines WHERE machine_id=$1`, f.id, generation) {
 	}
 	if removeInstead {
 		project := projectService(f.server)
+		execute(t, f.db, "DELETE FROM link_commands WHERE id=$1", open.command)
+		requireOpenProject(t, readProjectOperation(t, f.db, "remove-flagged-machine"))
+		if scalar[bool](t, f.db, "SELECT EXISTS (SELECT FROM link_commands WHERE id=$1)", open.command) {
+			t.Fatal("The open Projects operation still has a Link command before removal.")
+		}
 		remove(t, page, f.id)
 		requireAddRefusal(t, addFolder(t.Context(), project, f.id, "remove-flagged-machine", path),
 			connect.CodeNotFound, "The machine was removed.")

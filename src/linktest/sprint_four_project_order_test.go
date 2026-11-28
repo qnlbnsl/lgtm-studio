@@ -179,7 +179,7 @@ FROM link_commands WHERE id IN ($1,$2)`, firstOp.command, secondOp.command) || l
 	incumbent.stop(t)
 	requireAcknowledgedOutbox(t, f.opts, baseline)
 	if retained {
-		appendPairedProjectPrefix(t, f.opts, baseline)
+		appendPairedProjectPrefix(t, f.opts, baseline, "first retained project run", "second retained project run")
 		activeReplay.Store(baseline + 2)
 	}
 
@@ -229,10 +229,92 @@ FROM link_commands WHERE id IN ($1,$2)`, firstOp.command, secondOp.command) || l
 	}
 }
 
-func appendPairedProjectPrefix(t *testing.T, opts clienttest.Options, baseline uint64) {
+func testPairedProjectRunGateWithFreePermit(t *testing.T) {
+	root, _, _ := gitCheckout(t)
+	var finalNumber atomic.Uint64
+	startReplay, held, releaseReplay := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	allowStart := sync.OnceFunc(func() { close(startReplay) })
+	allowFinal := sync.OnceFunc(func() { close(releaseReplay) })
+	recordHold := sync.OnceFunc(func() { close(held) })
+	defer allowStart()
+	defer allowFinal()
+	trace := &projectClaimTrace{cursors: make(chan int64, 32)}
+	f := newProjectFixture(t, servertest.Options{ConfigurePostgres: func(cfg *pgxpool.Config) {
+		cfg.ConnConfig.Tracer = trace
+	}}, relayControls{
+		releaseReports: func() <-chan struct{} {
+			if finalNumber.Load() != 0 {
+				return startReplay
+			}
+			return nil
+		},
+		holdEvent: func(number uint64) <-chan struct{} {
+			if number == finalNumber.Load() {
+				recordHold()
+				return releaseReplay
+			}
+			return nil
+		},
+	})
+	trace.machine.Store(&f.id)
+	incumbent, oldLeg := f.startApproved(t, 0)
+	baseline := drainPairedInventory(t, &f.commandFixture, oldLeg, "1.0.0")
+	incumbent.stop(t)
+	receive(t, oldLeg.done, "the incumbent stream to close")
+	requireAcknowledgedOutbox(t, f.opts, baseline)
+	appendPairedProjectPrefix(t, f.opts, baseline, "first retained fact", "second retained fact", "last retained fact")
+	final := baseline + 3
+	finalNumber.Store(final)
+	trace.watch.Store(true)
+	replacement := startClient(t, f.opts)
+	leg := receive(t, f.relay.legs, "the replacement stream with free send permits")
+	welcome := waitForWelcome(t, leg)
+	if welcome.hello.runID == oldLeg.observe().hello.runID || welcome.hello.first != final+1 || welcome.mark != baseline {
+		t.Fatal("The replacement did not announce the retained prefix on a new run.")
+	}
+	call := beginAdd(t, f.projects, f.id, "gated-with-permit", root)
+	op := waitProjectOperation(t, f.db, "gated-with-permit")
+	allowStart()
+	receive(t, held, "the relay to hold the last retained event")
+	// The second acknowledgement proves the writer finished the turn after
+	// the first event with the Projects command already queued.
+	waitForAck(t, leg, final-1)
+	before := leg.observe()
+	if mark(t, f.db, f.id) != final-1 || slices.Contains(before.sends, frameSend{kind: "event", number: final}) {
+		t.Fatal("The final retained event reached the server before release.")
+	}
+	unclaimed := scalar[bool](t, f.db, `
+SELECT sent_stream_id IS NULL AND attempt=1 AND NOT dispatched AND outcome IS NULL
+FROM link_commands WHERE id=$1`, op.command)
+	frames := slices.ContainsFunc(before.sends, func(send frameSend) bool { return send.kind == "command" })
+	if !unclaimed || len(trace.cursors) != 0 || frames {
+		t.Fatalf("Before the last retained event, the command was unclaimed=%t, with %d cursor reads and command frames=%t.",
+			unclaimed, len(trace.cursors), frames)
+	}
+	allowFinal()
+	waitForAck(t, leg, final)
+	command := waitForCommand(t, leg, folderAction, 0)
+	requireProjectCommand(t, op, command)
+	if cursor := receive(t, trace.cursors, "the first cursor read after replay"); cursor != 0 {
+		t.Fatalf("The replacement began with send cursor %d, want zero.", cursor)
+	}
+	sends := leg.observe().sends
+	ack := slices.Index(sends, frameSend{kind: "ack", number: final})
+	offer := slices.Index(sends, frameSend{kind: "command", commandID: command.id, attempt: command.attempt})
+	if ack < 0 || offer <= ack {
+		t.Fatal("The Projects command did not follow the final replay acknowledgement.")
+	}
+	requireAddReply(t, finishAdd(t, call), f.id, root)
+	requireProjectSaveCount(t, f.db, 1)
+	replacement.stop(t)
+}
+
+func appendPairedProjectPrefix(t *testing.T, opts clienttest.Options, baseline uint64, facts ...string) {
 	t.Helper()
-	first := retainedPairedEvent(t, pairedFacts(0, "first retained project run"))
-	second := retainedPairedEvent(t, pairedFacts(0, "second retained project run"))
+	payloads := make([][]byte, len(facts))
+	for i, name := range facts {
+		payloads[i] = retainedPairedEvent(t, pairedFacts(0, name))
+	}
 	withClosedClientDB(t, opts, true, func(db *bolt.DB) error {
 		return db.Update(func(tx *bolt.Tx) error {
 			meta, events := tx.Bucket([]byte("meta")), tx.Bucket([]byte("events"))
@@ -240,13 +322,12 @@ func appendPairedProjectPrefix(t *testing.T, opts clienttest.Options, baseline u
 			if len(next) != 8 || binary.BigEndian.Uint64(next) != baseline+1 {
 				return errors.New("the acknowledged incumbent history does not match the replay fixture")
 			}
-			if err := events.Put(binary.BigEndian.AppendUint64(nil, baseline+1), first); err != nil {
-				return err
+			for i, payload := range payloads {
+				if err := events.Put(binary.BigEndian.AppendUint64(nil, baseline+1+uint64(i)), payload); err != nil {
+					return err
+				}
 			}
-			if err := events.Put(binary.BigEndian.AppendUint64(nil, baseline+2), second); err != nil {
-				return err
-			}
-			return meta.Put([]byte("next"), binary.BigEndian.AppendUint64(nil, baseline+3))
+			return meta.Put([]byte("next"), binary.BigEndian.AppendUint64(nil, baseline+1+uint64(len(payloads))))
 		})
 	})
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1"
+	webv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/v1"
 	"github.com/qnlbnsl/lgtm-studio/src/server/servertest"
 )
 
@@ -23,8 +25,9 @@ func TestSprintFourFolderSettlement(t *testing.T) {
 	t.Run("R3", func(t *testing.T) { t.Run("SimultaneousAliases", testPairedAliases) })
 	t.Run("R7", func(t *testing.T) { t.Run("DisconnectBeforeDelivery", testPairedUndeliveredFolder) })
 	t.Run("R10", func(t *testing.T) {
-		t.Run("StagedAcrossRestart", func(t *testing.T) { testPairedStagedFolder(t, false) })
-		t.Run("RemoveBeforeSettlement", func(t *testing.T) { testPairedStagedFolder(t, true) })
+		t.Run("StagedAcrossRestart", func(t *testing.T) { testPairedStagedFolder(t, stagedRestart) })
+		t.Run("RemoveBeforeSettlement", func(t *testing.T) { testPairedStagedFolder(t, stagedRemoval) })
+		t.Run("StagedOnSameRunReconnect", func(t *testing.T) { testPairedStagedFolder(t, stagedReconnect) })
 	})
 }
 
@@ -98,6 +101,7 @@ func testPairedUndeliveredFolder(t *testing.T) {
 	started := time.Now()
 	call := beginAdd(t, f.projects, f.id, "undelivered", root)
 	op := waitProjectOperation(t, f.db, "undelivered")
+	accepted := time.Now()
 	first := receive(t, tripped, "the relay to cut the first folder command before delivery")
 	requireProjectCommand(t, op, first)
 	f.relay.blockNew.Store(true)
@@ -107,8 +111,10 @@ func testPairedUndeliveredFolder(t *testing.T) {
 		t.Fatal("The relay delivered the folder command before the cut.")
 	}
 	requireAddRefusal(t, finishAdd(t, call), connect.CodeDeadlineExceeded, "The machine did not answer the folder request.")
-	if elapsed := time.Since(started); elapsed < 25*time.Second || elapsed >= 35*time.Second || !time.Now().After(first.expiry) {
-		t.Fatalf("The server answered outside its 25-second wait, before expiry, or at the client deadline: %v.", elapsed)
+	answered := time.Now()
+	if answered.Sub(started) < 25*time.Second || answered.Sub(accepted) >= 28*time.Second || !answered.After(first.expiry) {
+		t.Fatalf("The server answered %v after the call began and %v after observed acceptance, want a 25-second wait and an expired command.",
+			answered.Sub(started), answered.Sub(accepted))
 	}
 	requireOpenProject(t, readProjectOperation(t, f.db, "undelivered"))
 	f.relay.blockNew.Store(false)
@@ -165,9 +171,19 @@ func (tr *projectSweepTrace) TraceQueryEnd(ctx context.Context, _ *pgx.Conn, res
 	}
 }
 
-func testPairedStagedFolder(t *testing.T, removeBefore bool) {
+type stagedFolderScenario int
+
+const (
+	stagedRestart stagedFolderScenario = iota
+	stagedRemoval
+	stagedReconnect
+)
+
+func testPairedStagedFolder(t *testing.T, scenario stagedFolderScenario) {
 	root, _, _ := gitCheckout(t)
 	held := make(chan struct{})
+	releaseReport := sync.OnceFunc(func() { close(held) })
+	defer releaseReport()
 	var reportNumber atomic.Uint64
 	var failReplay atomic.Bool
 	var inspected atomic.Int32
@@ -189,21 +205,25 @@ func testPairedStagedFolder(t *testing.T, removeBefore bool) {
 			},
 		},
 	}, relayControls{holdReport: func(report reportDelivery) <-chan struct{} {
-		if number := report.folder.number; number != 0 && reportNumber.CompareAndSwap(0, number) {
-			return held
+		if number := report.folder.number; number != 0 {
+			if reportNumber.CompareAndSwap(0, number) || (scenario == stagedReconnect && reportNumber.Load() == number) {
+				return held
+			}
 		}
 		return nil
 	}})
 	f.opts.OnFolderInspectionStart = func(context.Context, string, string) { inspected.Add(1) }
 	run, leg := f.startApproved(t, 0)
+	baseline := drainPairedInventory(t, &f.commandFixture, leg, "1.0.0")
 	call := beginAdd(t, f.projects, f.id, "staged-report", root)
 	op := waitProjectOperation(t, f.db, "staged-report")
 	command := waitForCommand(t, leg, folderAction, 0)
 	requireProjectCommand(t, op, command)
 	result := waitForResult(t, leg, command, commandDone)
-	number := reportNumber.Load()
-	if number == 0 || result.lastEventNumber != number {
-		t.Fatal("The folder result did not carry the held report watermark.")
+	report := waitForPairedFolderReport(t, leg, op)
+	number := result.lastEventNumber
+	if number != report.number || report.number != baseline+1 {
+		t.Fatalf("The result watermark is %d and the held report is %d after baseline %d.", number, report.number, baseline)
 	}
 	requireStaged := func() {
 		t.Helper()
@@ -220,9 +240,55 @@ FROM link_commands WHERE id=$1`, op.command, number, command.attempt) {
 		return scalar[bool](t, f.db, "SELECT staged_event_number IS NOT NULL FROM link_commands WHERE id=$1", op.command)
 	})
 	requireStaged()
+	if scenario == stagedReconnect {
+		assigned := scalar[string](t, f.db, "SELECT sent_stream_id FROM link_commands WHERE id=$1", op.command)
+		leg.cut()
+		receive(t, leg.done, "the staged command's original stream to close")
+		reconnect := receive(t, f.relay.legs, "the same client process to reconnect")
+		welcome := waitForWelcome(t, reconnect)
+		if welcome.hello != leg.observe().hello || welcome.mark != baseline {
+			t.Fatal("The same-process reconnect did not preserve its run pair and resume before the held report.")
+		}
+		if replay := waitForPairedFolderReport(t, reconnect, op); replay != report {
+			t.Fatal("The reconnect did not replay the original staged report.")
+		}
+		if !scalar[bool](t, f.db, "SELECT expires_at > clock_timestamp()-interval '23 hours' FROM link_commands WHERE id=$1", op.command) {
+			t.Fatal("The staged command fell outside the retry window before the writer turn.")
+		}
+		// Renaming queues a standing command while the reconnect's fresh reports are held.
+		if _, err := f.page.RenameClient(t.Context(), connect.NewRequest(&webv1.RenameClientRequest{
+			Id: f.id, Name: "Staged reconnect fixture",
+		})); err != nil {
+			t.Fatalf("Could not queue the independent standing command: %v.", err)
+		}
+		if standing := waitForCommand(t, reconnect, stateAction, 0); standing.revision != welcome.revision+1 {
+			t.Fatal("The reconnect did not deliver the independent rename command.")
+		}
+		observed := reconnect.observe()
+		if slices.ContainsFunc(observed.sends, func(send frameSend) bool { return send.kind == "command" && send.commandID == op.command }) ||
+			!scalar[bool](t, f.db, `
+SELECT COALESCE(sent_stream_id=$2 AND attempt=$3 AND dispatched,false) FROM link_commands WHERE id=$1`, op.command, assigned, command.attempt) {
+			t.Fatal("The reconnect assigned or offered the staged folder command before its report was released.")
+		}
+		if mark(t, f.db, f.id) != baseline || slices.Contains(observed.sends, frameSend{kind: "event", number: number}) {
+			t.Fatal("The staged folder report reached the server before release.")
+		}
+		requireStaged()
+		releaseReport()
+		waitForAck(t, reconnect, number)
+		requireAddReply(t, finishAdd(t, call), f.id, root)
+		waitForStoredResult(t, f.db, command, "done")
+		if inspected.Load() != 1 {
+			t.Fatal("The same process inspected the staged folder more than once.")
+		}
+		requireProjectRows(t, f.db, 1)
+		requireProjectSaveCount(t, f.db, 1)
+		run.stop(t)
+		return
+	}
 	run.stop(t)
 	receive(t, leg.done, "the old staged leg to close")
-	if removeBefore {
+	if scenario == stagedRemoval {
 		remove(t, f.page, f.id)
 		requireAddRefusal(t, finishAdd(t, call), connect.CodeNotFound, "The machine was removed.")
 		if !scalar[bool](t, f.db, `
@@ -233,9 +299,8 @@ SELECT outcome='removed' AND staged_event_number IS NULL FROM link_commands WHER
 		requireProjectSaveCount(t, f.db, 0)
 		return
 	}
-	baseline := mark(t, f.db, f.id)
-	if baseline != number-1 {
-		t.Fatalf("The held report changed the committed mark to %d.", baseline)
+	if actual := mark(t, f.db, f.id); actual != baseline {
+		t.Fatalf("The held report changed the committed mark to %d.", actual)
 	}
 	execute(t, f.db, "UPDATE link_commands SET expires_at=clock_timestamp()-interval '25 hours' WHERE id=$1", op.command)
 	sweep = new(projectSweepTrace)
