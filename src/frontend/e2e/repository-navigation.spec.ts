@@ -311,11 +311,10 @@ navigationTest.describe('saved repositories open from tree and search', () => {
     await expect(checkouts.getByText('Remote', exact)).toBeVisible();
     await expect(checkouts.getByText(origin, exact)).toBeVisible();
     await expect(checkouts.getByRole('link', { name: origin, ...exact })).toHaveCount(0);
-    await expect(checkouts.getByText(worker.name, exact).first()).toBeVisible();
-    await expect(checkouts.getByText(survivor.name, exact)).toBeVisible();
-    for (const { resolvedPath } of [first, second, elsewhere]) {
-      await expect.soft(checkouts.getByText(resolvedPath, exact), 'Checkouts shows ' + resolvedPath + '.').toBeVisible(quick);
-    }
+    const cells = checkouts.locator('dl > :is(dt, dd)');
+    await expect(cells, 'Checkouts shows the complete machine and path for each watched folder.').toHaveText([
+      'Remote', origin, worker.name, first.resolvedPath, worker.name, second.resolvedPath, survivor.name, elsewhere.resolvedPath,
+    ], { useInnerText: true });
 
     rig.machines.attempts[0]!.send({ change: { case: 'removedId', value: worker.id }, position: { value: 2n } });
     watch.send({ change: { case: 'removedId', value: absent.id }, position: { value: 3n } });
@@ -323,9 +322,9 @@ navigationTest.describe('saved repositories open from tree and search', () => {
       id: present.id, name: present.name, mainBranch: present.mainBranch, remote: origin, folders: [elsewhere],
     });
     watch.send({ change: { case: 'saved', value: remaining }, position: { value: 4n } });
-    await expect(checkouts.getByText(first.resolvedPath, exact)).toHaveCount(0);
-    await expect(checkouts.getByText(second.resolvedPath, exact)).toHaveCount(0);
-    await expect(checkouts.getByText(elsewhere.resolvedPath, exact)).toBeVisible();
+    await expect(cells, 'Checkouts keeps only the surviving machine and its complete path.').toHaveText([
+      'Remote', origin, survivor.name, elsewhere.resolvedPath,
+    ], { useInnerText: true });
     expect(new URL(page.url()).hash).toBe('#' + repoPath(present, 'center'));
 
     await navigate(page, repoPath(withheld, 'center'));
