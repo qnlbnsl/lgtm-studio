@@ -296,6 +296,16 @@ func TestRunAdmissionPersistsAcrossRestart(t *testing.T) {
 			command := seedResultCommand(t, f.presenceFixture, m.ID, row.StreamID, "restart", 1, true, row.ConnectedAt.Add(2*time.Minute))
 			storetest.Exec(t, f.obs, "UPDATE link_commands SET staged_outcome = 'done', staged_event_number = $2 WHERE id = $1", command, watermark)
 		}
+		other, otherKey := f.register(t, "independent staged watermark peer")
+		if err := f.s.Write(t.Context(), func(ctx context.Context, tx *store.Tx) error {
+			return f.r.SetApproved(ctx, tx, other.ID, "Other staged watermark machine")
+		}); err != nil {
+			t.Fatal("The fixture could not approve the independent signed peer.")
+		}
+		seedAdmissionMark(t, f, other.ID, 5)
+		otherPeer := submitAdmission(t, f, client, other.ID, otherKey, fixtureStreamID(t), 6)
+		requireAdmissionWelcome(t, otherPeer, 5)
+		finishAdmissionPeer(t, otherPeer)
 		head, before := f.head(t), readAdmissionRows(t, f, m.ID)
 		requireOpenEnd(t, submitAdmission(t, f, client, m.ID, key, b, 8), connect.CodeInvalidArgument, openInvalid, "")
 		requireAdmissionUnchanged(t, f, m.ID, head, before)
