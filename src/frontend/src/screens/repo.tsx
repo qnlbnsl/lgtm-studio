@@ -30,6 +30,35 @@ const REPO_TABS: TabItem[] = [
   { id: 'git', label: 'Git' },
 ];
 
+function isWatchedRepositoryPage(parts: Route['parts'], child: string): boolean {
+  switch (child) {
+    case 'center':
+    case 'board':
+    case 'terminal':
+      return parts.length <= 3;
+    case 'files':
+    case 'git':
+      return true;
+    case 'design':
+      switch (parts[3]) {
+        case undefined:
+        case 'file':
+          return true;
+        case 'screens':
+        case 'browser':
+        case 'architecture':
+          return parts.length === 4;
+        case 'screen':
+          return parts.length === 5;
+        default:
+          // Older Design file links put the category and optional item directly under Design.
+          return parts.length <= 5;
+      }
+    default:
+      return false;
+  }
+}
+
 export function RepoView({ s, repoId, route }: { s: State; repoId: Id; route: Route }) {
   const r = byId(s.repos, repoId);
   const child = route.parts[2] || 'center';
@@ -51,7 +80,7 @@ export function RepoView({ s, repoId, route }: { s: State; repoId: Id; route: Ro
 
   if (s.server.repositoryMode) {
     if (!r.folderRecords?.length) return <div class="view-body"><NotConnected what="This page" /></div>;
-    if (child !== tab) return <div class="view-body"><div class="page">
+    if (!isWatchedRepositoryPage(route.parts, child)) return <div class="view-body"><div class="page">
       <Empty title="This page does not exist"><a class="link" href={href('/home')}>Go to Home</a></Empty>
     </div></div>;
 

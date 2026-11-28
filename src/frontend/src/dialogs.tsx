@@ -2,7 +2,7 @@ import * as liveGit from './live/git';
 import { live, refuse } from './lib';
 // Dialogs that belong to no single screen: the quick switcher, New project,
 // the merge review, and provider sign-in.
-import { useState, useEffect, useRef } from 'preact/hooks';
+import { useState, useEffect, useLayoutEffect, useRef } from 'preact/hooks';
 import { Icon, cx, go, update, useKey } from './lib';
 import {
   usableSubscription, projectOf, repoOf, agentOf, teamOf, teamName, machineOf, subOf, byId, HARNESSES, openRequests, agentStatus, projectStatus, routeForAgent,
@@ -54,6 +54,8 @@ export function searchScore(query: string, item: Pick<SearchItem, 'label' | 'tex
 }
 function Switcher({ s }: { s: State }) {
   const [q, setQ] = useState(''); const [i, setI] = useState(0); const list = useRef<HTMLDivElement>(null);
+  const [selectedTo, setSelectedTo] = useState<string>();
+  const repositoryMode = s.server.repositoryMode;
   const all: SearchItem[] = [];
   const text = live.on ? mocks.searchText(s) : null;
   for (const r of s.repos) {
@@ -74,25 +76,39 @@ function Switcher({ s }: { s: State }) {
     ? all.map((x): [number, SearchItem] => [searchScore(ql, x), x]).filter(([n]) => n > 0).sort((a, b) => b[0] - a[0] || KIND_ORDER[a[1].kind]! - KIND_ORDER[b[1].kind]!).map(([, x]) => x)
     : all.filter((x) => x.kind === 'Repository' || x.kind === 'Project' || (x.kind === 'Agent' && x.tone === 'warn'));
   const shown = found.slice(0, 14);
+  const activeIndex = repositoryMode ? Math.max(0, shown.findIndex((x) => x.to === selectedTo)) : i;
+  const active = shown[activeIndex];
+  const watchedActiveTo = repositoryMode ? active?.to : undefined;
+  useLayoutEffect(() => {
+    if (repositoryMode && selectedTo !== watchedActiveTo) setSelectedTo(watchedActiveTo);
+  }, [repositoryMode, selectedTo, watchedActiveTo]);
   useEffect(() => setI(0), [q]);
-  useEffect(() => { list.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' }); }, [i]);
+  useEffect(() => { list.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' }); }, [activeIndex, watchedActiveTo]);
+  const search = (value: string) => {
+    if (repositoryMode && value !== q) setSelectedTo(undefined);
+    setQ(value);
+  };
+  const select = (index: number) => {
+    if (repositoryMode) setSelectedTo(shown[index]?.to);
+    else setI(index);
+  };
   const pick = (x: SearchItem) => { act.closeDialog(); go(x.to); };
   const key = (e: KeyboardEvent) => {
-    if (e.key === 'ArrowDown') { e.preventDefault(); setI((n) => Math.min(shown.length - 1, n + 1)); }
-    else if (e.key === 'ArrowUp') { e.preventDefault(); setI((n) => Math.max(0, n - 1)); }
-    else if (e.key === 'Enter' && shown[i]) { e.preventDefault(); pick(shown[i]); }
+    if (e.key === 'ArrowDown') { e.preventDefault(); select(Math.min(shown.length - 1, activeIndex + 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); select(Math.max(0, activeIndex - 1)); }
+    else if (e.key === 'Enter' && active) { e.preventDefault(); pick(active); }
     else if (e.key === 'Escape') act.closeDialog();
   };
   return <div class="scrim" style="place-items:start center;padding-top:12vh" onPointerDown={(e) => { if (e.target === e.currentTarget) act.closeDialog(); }}>
     <div class="dialog" role="dialog" aria-modal="true" aria-label="Find project or agent" style="width:min(620px,100%)">
       <div class="search" style="padding:10px 12px;border-bottom:1px solid var(--color-line)">
         <Icon name="search" size={16} class="faint" />
-        <input autofocus class="input lg" style="border:0;box-shadow:none;padding-left:34px;font-size:var(--text-lg)" placeholder="Search repositories, projects and agents" aria-label="Find project or agent" value={q} onInput={(e) => setQ((e.target as HTMLInputElement).value)} onKeyDown={key} ref={(el) => { el && setTimeout(() => el.focus(), 0); }} />
+        <input autofocus class="input lg" style="border:0;box-shadow:none;padding-left:34px;font-size:var(--text-lg)" placeholder="Search repositories, projects and agents" aria-label="Find project or agent" value={q} onInput={(e) => search(e.currentTarget.value)} onKeyDown={key} ref={(el) => { el && setTimeout(() => el.focus(), 0); }} />
         <kbd>Esc</kbd>
       </div>
       <div ref={list} style="overflow:auto;padding:4px;max-height:min(52vh,460px)" role="listbox">
         {shown.length === 0 && <div class="empty" data-empty><strong>Nothing matches "{q}"</strong></div>}
-        {shown.map((x, n) => <button type="button" key={x.kind + x.to} role="option" aria-selected={n === i} data-active={n === i} class="menu-item" style="min-height:34px" onMouseEnter={() => setI(n)} onClick={() => pick(x)}>
+        {shown.map((x, n) => <button type="button" key={x.kind + x.to} role="option" aria-selected={n === activeIndex} data-active={n === activeIndex} class="menu-item" style="min-height:34px" onMouseEnter={() => select(n)} onClick={() => pick(x)}>
           {x.agent ? <Avatar agent={x.agent} s={s} size="sm" /> : <Icon name={x.icon!} size={15} class="faint" />}
           <span class={cx(x.mono && 'mono')} style="font-weight:var(--weight-medium)">{x.label}</span>
           <span class="muted truncate grow">{x.sub}</span>
