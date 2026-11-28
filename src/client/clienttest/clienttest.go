@@ -16,6 +16,9 @@ type Options struct {
 	Version  string
 	Getenv   func(string) string
 	Stderr   io.Writer
+	// These callback declarations are stubs from the test writer.
+	OnFolderInspectionStart func(context.Context, string, string)
+	AfterFolderReport       func(context.Context, uint64) error
 }
 
 // Join enrolls a client using the supplied state folder.

@@ -30,6 +30,9 @@ type RunOptions struct {
 	Logger      *slog.Logger
 	// Filter shares known secrets with the process that owns this link.
 	Filter *OutgoingFilter
+	// These callback declarations are stubs from the test writer.
+	OnFolderInspectionStart func(context.Context, string, string)
+	AfterFolderReport       func(context.Context, uint64) error
 }
 
 type RunOutcome uint8

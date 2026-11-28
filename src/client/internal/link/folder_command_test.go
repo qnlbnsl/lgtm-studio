@@ -346,6 +346,35 @@ func requireFolderStart(t *testing.T, calls <-chan *folderReadCall, cmd *linkv1.
 	return call
 }
 
+type folderStartObservation struct {
+	ctx                    context.Context
+	operationID, commandID string
+}
+
+func observeFolderStarts(f *runPeerFixture) <-chan folderStartObservation {
+	starts := make(chan folderStartObservation, 16)
+	f.opts.OnFolderInspectionStart = func(ctx context.Context, operationID, commandID string) {
+		starts <- folderStartObservation{ctx, operationID, commandID}
+	}
+	return starts
+}
+
+func requireFolderStartObservation(t *testing.T, start folderStartObservation, cmd *linkv1.Command, call *folderReadCall) {
+	t.Helper()
+	if start.operationID != cmd.GetLookAtFolder().GetOperationId() || start.commandID != cmd.GetId() {
+		t.Error("the inspection start observer received the wrong operation or command identifier")
+	}
+	if start.ctx == nil || start.ctx.Done() != call.ctx.Done() || start.ctx.Err() != nil {
+		t.Error("the inspection start observer did not receive the live read context")
+		return
+	}
+	gotDeadline, gotOK := start.ctx.Deadline()
+	wantDeadline, wantOK := call.ctx.Deadline()
+	if !gotOK || !wantOK || !gotDeadline.Equal(wantDeadline) {
+		t.Error("the inspection start observer did not receive the worker deadline")
+	}
+}
+
 func requireFolderStreamClosed(t *testing.T, leg *wireLeg) {
 	t.Helper()
 	receiveNow(t, leg.closed, "the client kept a stream open after rejecting an invalid or blocked folder command")
@@ -373,6 +402,16 @@ func watchFolderDataHandoffs(t *testing.T) <-chan struct{} {
 func testFolderRetryAcrossStreams(t *testing.T) {
 	withFolderInspector(t, func(t *testing.T, calls <-chan *folderReadCall) {
 		f := newFolderPeer(t, 1, 1)
+		starts := observeFolderStarts(f)
+		observe := f.opts.OnFolderInspectionStart
+		allowRead := make(chan struct{})
+		f.opts.OnFolderInspectionStart = func(ctx context.Context, operationID, commandID string) {
+			observe(ctx, operationID, commandID)
+			select {
+			case <-allowRead:
+			case <-ctx.Done():
+			}
+		}
 		cmd := folderTestCommand(1)
 		p := observeFolderDisk(t, "", cmd)
 		cancel, done := f.start(t)
@@ -385,6 +424,7 @@ func testFolderRetryAcrossStreams(t *testing.T) {
 		waiting.send(t, commandFrame(cmd))
 		requireFolderStreamClosed(t, waiting)
 		requireEmpty(t, calls, "the waiting client inspected a folder")
+		requireEmpty(t, starts, "the waiting command notified the inspection start observer")
 		if record := p.record(t, cmd); record.receipt.State != "" || record.reportCommits != 0 {
 			t.Fatal("the waiting client wrote a receipt or report")
 		}
@@ -396,7 +436,11 @@ func testFolderRetryAcrossStreams(t *testing.T) {
 		}
 		time.Sleep(reportInterval - time.Second)
 		approved.send(t, commandFrame(cmd))
+		start := receiveNow(t, starts, "the start observer did not run before the inspection")
+		requireEmpty(t, calls, "the read began while the start observer was held")
+		close(allowRead)
 		call := requireFolderStart(t, calls, cmd)
+		requireFolderStartObservation(t, start, cmd, call)
 		approved.send(t, ackEvent(1))
 		if p.position(t).first != 2 || p.record(t, cmd).receipt.State != receiptStarted {
 			t.Fatal("the held read blocked the acknowledgement or did not have a started receipt")
@@ -414,6 +458,7 @@ func testFolderRetryAcrossStreams(t *testing.T) {
 		replacement.send(t, commandFrame(latest))
 		replacement.send(t, commandFrame(attemptCommand(cmd, 2)))
 		requireEmpty(t, calls, "another attempt started the held inspection a second time")
+		requireEmpty(t, starts, "another attempt counted the held read a second time")
 		if call.ctx.Err() != nil {
 			t.Fatal("disconnect canceled the process-scoped inspection")
 		}
@@ -431,6 +476,7 @@ func testFolderRetryAcrossStreams(t *testing.T) {
 		got, report = nextFolderResult(t, replacement, replay)
 		requireFolderCommandResult(t, got, replay, commandDone, 2)
 		requireEmpty(t, calls, "replaying the finished folder receipt started an inspection")
+		requireEmpty(t, starts, "replaying the finished folder receipt counted as an inspection start")
 		if report != nil || p.record(t, replay).reportCommits != 1 || p.position(t).next != 3 {
 			t.Fatal("replaying the finished folder receipt appended a second report")
 		}
@@ -461,6 +507,7 @@ func testFolderExpiryBeforeWorker(t *testing.T) {
 
 		// The authenticated stream must also decline work already stale on arrival.
 		peer := newFolderPeer(t, 1, 0)
+		starts := observeFolderStarts(peer)
 		stale := folderTestCommand(2)
 		stale.ExpiresAt = timestamppb.New(time.Now().Add(-time.Second))
 		fresh := folderTestCommand(3)
@@ -472,12 +519,16 @@ func testFolderExpiryBeforeWorker(t *testing.T) {
 		leg.send(t, commandFrame(stale))
 		got, report := nextFolderResult(t, leg, stale)
 		requireEmpty(t, calls, "an expired folder command reached the worker")
+		requireEmpty(t, starts, "an expired command counted as an inspection start")
 		requireFolderCommandResult(t, got, stale, commandExpired, 0)
 		if report != nil || p.record(t, stale).reportCommits != 0 {
 			t.Fatal("an expired folder command produced a report")
 		}
 		leg.send(t, commandFrame(fresh))
 		call := requireFolderStart(t, calls, fresh)
+		start := receiveNow(t, starts, "the fresh command did not notify the inspection start observer")
+		requireFolderStartObservation(t, start, fresh, call)
+		requireEmpty(t, starts, "the fresh command counted as more than one inspection")
 		want := folderReadResult{refusal: folderNotGit}
 		call.result <- want
 		got, report = nextFolderResult(t, leg, fresh)
@@ -602,6 +653,16 @@ func testFullFolderBuffer(t *testing.T, timeout bool) {
 		}
 		capacity := uint64(opts.MaxEvents)
 		f := newFolderPeer(t, 1, opts.MaxEvents)
+		var starts <-chan folderStartObservation
+		var appends chan uint64
+		if timeout {
+			starts = observeFolderStarts(f)
+			appends = make(chan uint64, 1)
+			f.opts.AfterFolderReport = func(_ context.Context, number uint64) error {
+				appends <- number
+				return nil
+			}
+		}
 		cmd := folderTestCommand(1)
 		p := observeFolderDisk(t, "", cmd)
 		cancel, done := f.start(t)
@@ -611,6 +672,8 @@ func testFullFolderBuffer(t *testing.T, timeout bool) {
 		leg.send(t, commandFrame(cmd))
 		call := requireFolderStart(t, calls, cmd)
 		if timeout {
+			start := receiveNow(t, starts, "a full outbox suppressed the inspection start observation")
+			requireFolderStartObservation(t, start, cmd, call)
 			time.Sleep(folderReadBudget)
 		} else {
 			call.result <- folderReadResult{facts: folderTestFacts()}
@@ -620,6 +683,10 @@ func testFullFolderBuffer(t *testing.T, timeout bool) {
 		requireFolderReceipt(t, p.record(t, cmd), commandFailed, capacity)
 		if report != nil || p.record(t, cmd).reportCommits != 0 || p.position(t).next != capacity+1 {
 			t.Fatal("a full outbox consumed a number or held a folder report")
+		}
+		if timeout {
+			requireEmpty(t, starts, "the full-outbox command counted as more than one inspection")
+			requireEmpty(t, appends, "the append callback ran without a durable folder report")
 		}
 		leg.send(t, ackEvent(1))
 		if position := p.position(t); position.first != 2 || position.next != capacity+1 {
@@ -694,6 +761,170 @@ func testFolderUncertainCommit(t *testing.T) {
 		requireEmpty(t, handoffs, "an uncertain commit produced a result or handed off a report")
 		requireEmpty(t, f.peer.opens, "the client redialed after an uncertain folder commit")
 	})
+}
+
+func TestAfterFolderReport(t *testing.T) {
+	withFolderInspector(t, func(t *testing.T, calls <-chan *folderReadCall) {
+		const oldInventory = "1.0.0"
+		const newInventory = "2.0.0"
+		f := newFolderPeer(t, 1, 0)
+		starts := observeFolderStarts(f)
+		inventoryStarted, allowInventory := make(chan struct{}), make(chan struct{})
+		var scans atomic.Int32
+		runReportProbes.scan = func(ctx context.Context, _ harness.ScanOptions) []harness.Found {
+			version := newInventory
+			if scans.Add(1) == 1 {
+				close(inventoryStarted)
+				select {
+				case <-allowInventory:
+				case <-ctx.Done():
+					return nil
+				}
+				version = oldInventory
+			}
+			return []harness.Found{{Harness: harness.Claude, Installed: true, Version: version}}
+		}
+		appends := make(chan uint64, 2)
+		interrupt := make(chan struct{})
+		f.opts.AfterFolderReport = func(ctx context.Context, number uint64) error {
+			appends <- number
+			select {
+			case <-interrupt:
+				return errors.New("fixture interruption after the durable report")
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+
+		cmd := folderTestCommand(1)
+		probe := observeFolderDisk(t, "", cmd)
+		handoffs := watchFolderDataHandoffs(t)
+		cancel, done := f.start(t)
+		defer cancel()
+		leg := f.next(t, 0)
+		f.welcome(t, leg, runWelcome(approvedApproval, 1, 0))
+		receiveNow(t, inventoryStarted, "the startup inventory probe did not arm")
+		leg.send(t, commandFrame(cmd))
+		call := requireFolderStart(t, calls, cmd)
+		want := folderReadResult{facts: folderTestFacts()}
+		call.result <- want
+		reportNumber := receiveNow(t, appends, "the append callback did not observe the folder report")
+		if reportNumber != 1 {
+			t.Fatal("the append callback did not receive the durable folder report number")
+		}
+		requireFolderDiskReport(t, probe, cmd, reportNumber, want)
+		if record := probe.record(t, cmd); record.receipt.State != receiptStarted || record.receipt.LastEventNumber != nil {
+			t.Fatal("the receipt was no longer an unsealed start during the append callback")
+		}
+		requireEmpty(t, handoffs, "a folder report or command result was handed off while the append callback was held")
+
+		close(allowInventory)
+		position := probe.position(t)
+		bufferedInventory := false
+		for _, entry := range f.diagnostics(t) {
+			bufferedInventory = bufferedInventory || entry.Msg == "link_event_buffered" && entry.Sequence == reportNumber+1
+		}
+		if !bufferedInventory || position.next != reportNumber+2 {
+			t.Fatal("startup inventory could not append while the folder callback was held")
+		}
+		requireEmpty(t, handoffs, "a report or result was handed off before the interruption")
+		close(interrupt)
+		stopped := receiveNow(t, done, "the append callback error did not stop the client run")
+		if stopped.outcome == RunRestart {
+			t.Error("the append callback error requested a restart")
+		}
+		if stopped.err != nil {
+			f.checkOutput(t, stopped.err.Error())
+		}
+		requireEmpty(t, handoffs, "the interrupted run handed off a report or result")
+		requireEmpty(t, appends, "the interrupted run invoked the append callback twice")
+		requireEmpty(t, f.peer.opens, "the append callback error caused a reconnect")
+		start := receiveNow(t, starts, "the interrupted run missed its inspection start observation")
+		if start.operationID != cmd.GetLookAtFolder().GetOperationId() || start.commandID != cmd.GetId() {
+			t.Error("the interrupted run reported the wrong inspection start identifiers")
+		}
+		requireEmpty(t, starts, "the interrupted run counted more than one inspection")
+
+		watermark := readInterruptedFolderWatermark(t, f.file(), cmd, reportNumber, oldInventory)
+		f.opts.AfterFolderReport = nil
+		var mark uint64
+		for _, attempt := range []uint32{3, 5} {
+			retry := attemptCommand(cmd, attempt)
+			// Stop each process before the next one opens the same durable store.
+			func() {
+				cancel, done := f.start(t)
+				defer cancel()
+				leg := f.next(t, 0)
+				f.welcome(t, leg, runWelcome(approvedApproval, 1, mark))
+				if mark == 0 {
+					requireFolderWireReport(t, leg, retry, nil, reportNumber, want)
+					leg.send(t, ackEvent(reportNumber))
+					old := eventOnLeg(t, leg)
+					if old.GetNumber() != watermark || !folderInventoryHasVersion(old, oldInventory) {
+						t.Fatal("the reopened run did not replay the old inventory at the dead process watermark")
+					}
+					leg.send(t, ackEvent(watermark))
+					mark = watermark
+				}
+				fresh := eventOnLeg(t, leg)
+				if fresh.GetNumber() != mark+1 || !folderInventoryHasVersion(fresh, newInventory) {
+					t.Fatal("the reopened run did not append fresh inventory beyond the dead process watermark")
+				}
+				mark = fresh.GetNumber()
+				leg.send(t, ackEvent(mark))
+				leg.send(t, commandFrame(retry))
+				result, report := nextFolderResult(t, leg, retry)
+				requireFolderCommandResult(t, result, retry, commandInterrupted, watermark)
+				if report != nil || probe.record(t, cmd).reportCommits != 1 {
+					t.Fatal("recovering an interrupted command produced another folder report")
+				}
+				requireEmpty(t, calls, "recovering an interrupted command started another inspection")
+				requireEmpty(t, starts, "recovering an interrupted command counted as another inspection start")
+				cancel()
+				f.stop(t, done, nil)
+			}()
+		}
+	})
+}
+
+func readInterruptedFolderWatermark(t *testing.T, path string, cmd *linkv1.Command, reportNumber uint64, version string) uint64 {
+	t.Helper()
+	db, err := bolt.Open(path, 0o600, &bolt.Options{ReadOnly: true, Timeout: time.Second})
+	if err != nil {
+		t.Fatal("the stopped run did not release its database")
+	}
+	defer db.Close()
+	var watermark uint64
+	if err := db.View(func(tx *bolt.Tx) error {
+		var saved receipt
+		if err := json.Unmarshal(tx.Bucket(receiptsBucket).Get([]byte(cmd.GetId())), &saved); err != nil ||
+			saved.Version != 2 || saved.State != receiptStarted || saved.LastEventNumber != nil || len(saved.Result) != 0 {
+			return errors.New("the closed store did not contain an unsealed started receipt")
+		}
+		next := tx.Bucket(metaBucket).Get(nextKey)
+		if len(next) != 8 || binary.BigEndian.Uint64(next) != reportNumber+2 {
+			return errors.New("the closed store counter did not distinguish the folder report from the last durable event")
+		}
+		watermark = binary.BigEndian.Uint64(next) - 1
+		key := numberKey(watermark)
+		inventory, err := decodeReportCandidate(tx.Bucket(eventsBucket).Get(key[:]))
+		if err != nil || !folderInventoryHasVersion(inventory, version) {
+			return errors.New("the closed store lacked the expected inventory at the dead process watermark")
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return watermark
+}
+
+func folderInventoryHasVersion(event *linkv1.Event, version string) bool {
+	for _, item := range event.GetHarnessesFound().GetHarnesses() {
+		if item.GetName() == string(harness.Claude) && item.GetVersion() == version {
+			return true
+		}
+	}
+	return false
 }
 
 func testFolderRefusalsAndFilter(t *testing.T) {

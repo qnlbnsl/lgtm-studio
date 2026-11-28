@@ -30,21 +30,24 @@ import (
 )
 
 const (
-	machineID = "0195977c-0000-7000-8000-000000000008"
-	tokenID   = "0195977c-0000-7000-8000-000000000009"
+	machineID             = "0195977c-0000-7000-8000-000000000008"
+	tokenID               = "0195977c-0000-7000-8000-000000000009"
+	folderConnectionToken = "fixture-folder-connection-token"
 )
 
 var runIDPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
 
 type testClientPeer struct {
 	linkv1connect.UnimplementedLinkServiceHandler
-	public  ed25519.PublicKey
-	private ed25519.PrivateKey
-	secret  []byte
-	open    chan struct{}
-	joins   atomic.Int32
-	refuse  atomic.Bool
-	machine atomic.Pointer[linkv1.JoinRequest]
+	public         ed25519.PublicKey
+	private        ed25519.PrivateKey
+	secret         []byte
+	open           chan struct{}
+	joins          atomic.Int32
+	refuse         atomic.Bool
+	machine        atomic.Pointer[linkv1.JoinRequest]
+	folderCommand  atomic.Pointer[linkv1.Command]
+	folderAnswered chan struct{}
 }
 
 func (p *testClientPeer) Join(_ context.Context, request *connect.Request[linkv1.JoinRequest]) (*connect.Response[linkv1.JoinResponse], error) {
@@ -95,10 +98,16 @@ func (p *testClientPeer) Open(ctx context.Context, stream *connect.BidiStream[li
 	if !ed25519.Verify(p.machine.Load().GetMachinePublicKey(), proofText("machine"), frame.GetProof().GetMachineSignature()) {
 		return connect.NewError(connect.CodeUnauthenticated, errors.New("wrong machine proof"))
 	}
-	if err := stream.Send(&linkv1.OpenResponse{Kind: &linkv1.OpenResponse_Welcome{Welcome: &linkv1.Welcome{
+	command := p.folderCommand.Load()
+	welcome := &linkv1.Welcome{
 		State:      &linkv1.MachineState{Approval: linkv1.Approval_APPROVAL_WAITING, Revision: 1},
 		ServerTime: timestamppb.Now(), LinkRevision: 2,
-	}}}); err != nil {
+	}
+	if command != nil {
+		welcome.State.Approval = linkv1.Approval_APPROVAL_APPROVED
+		welcome.ConnectionToken = folderConnectionToken
+	}
+	if err := stream.Send(&linkv1.OpenResponse{Kind: &linkv1.OpenResponse_Welcome{Welcome: welcome}}); err != nil {
 		return err
 	}
 	frame, err = stream.Receive()
@@ -112,6 +121,34 @@ func (p *testClientPeer) Open(ctx context.Context, stream *connect.BidiStream[li
 	case p.open <- struct{}{}:
 	default:
 	}
+	if command != nil {
+		if err := stream.Send(&linkv1.OpenResponse{Kind: &linkv1.OpenResponse_Command{Command: command}}); err != nil {
+			return err
+		}
+		for {
+			frame, err := stream.Receive()
+			if err != nil {
+				return err
+			}
+			var reply *linkv1.OpenResponse
+			switch {
+			case frame.GetHeartbeat() != nil:
+				reply = &linkv1.OpenResponse{Kind: &linkv1.OpenResponse_HeartbeatAck{HeartbeatAck: &linkv1.HeartbeatAck{}}}
+			case frame.GetEvent() != nil:
+				reply = &linkv1.OpenResponse{Kind: &linkv1.OpenResponse_EventAck{EventAck: &linkv1.EventAck{Through: frame.GetEvent().GetNumber()}}}
+			case frame.GetCommandResult().GetCommandId() == command.GetId():
+				select {
+				case p.folderAnswered <- struct{}{}:
+				default:
+				}
+			}
+			if reply != nil {
+				if err := stream.Send(reply); err != nil {
+					return err
+				}
+			}
+		}
+	}
 	<-ctx.Done()
 	return ctx.Err()
 }
@@ -123,7 +160,10 @@ func TestClienttestSharesApp(t *testing.T) {
 	if err != nil {
 		t.Fatal("could not generate the fixture key")
 	}
-	p := &testClientPeer{public: public, private: private, secret: make([]byte, 32), open: make(chan struct{}, 1)}
+	p := &testClientPeer{
+		public: public, private: private, secret: make([]byte, 32), open: make(chan struct{}, 1),
+		folderAnswered: make(chan struct{}, 1),
+	}
 	rand.Read(p.secret)
 	_, handler := linkv1connect.NewLinkServiceHandler(p)
 	server := httptest.NewUnstartedServer(handler)
@@ -232,6 +272,82 @@ func TestClienttestSharesApp(t *testing.T) {
 		}
 	})
 
+	t.Run("folder callbacks reach the real run", func(t *testing.T) {
+		command := &linkv1.Command{
+			Id: "0195977c-0000-7000-8000-000000000010", Attempt: 1,
+			ExpiresAt: timestamppb.New(time.Now().Add(time.Minute)),
+			Action: &linkv1.Command_LookAtFolder{LookAtFolder: &linkv1.LookAtFolder{
+				OperationId: "0195977c-0000-7000-8000-000000000011", Path: home,
+			}},
+		}
+		p.folderCommand.Store(command)
+		defer p.folderCommand.Store(nil)
+
+		folderOpts := opts
+		var folderLog bytes.Buffer
+		folderOpts.Stderr = &folderLog
+		type start struct{ operationID, commandID string }
+		starts := make(chan start, 2)
+		appends := make(chan uint64, 2)
+		folderOpts.OnFolderInspectionStart = func(_ context.Context, operationID, commandID string) {
+			select {
+			case starts <- start{operationID, commandID}:
+			default:
+				t.Error("the app called the inspection start callback too many times")
+			}
+		}
+		folderOpts.AfterFolderReport = func(_ context.Context, number uint64) error {
+			select {
+			case appends <- number:
+			default:
+				t.Error("the app called the durable append callback too many times")
+			}
+			return errors.New("fixture interruption after the folder report")
+		}
+
+		runCtx, stop := context.WithCancel(ctx)
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			clienttest.Run(runCtx, folderOpts)
+		}()
+		defer func() {
+			stop()
+			select {
+			case <-done:
+				assertClienttestRedaction(t, p, token, folderLog.String())
+			case <-ctx.Done():
+				t.Error("the folder callback run did not return after cancellation")
+			}
+		}()
+		select {
+		case <-done:
+		case <-p.folderAnswered:
+			t.Error("the real client answered the folder command despite the interruption callback")
+		case <-ctx.Done():
+			t.Error("the folder append callback did not stop the real client")
+		}
+		select {
+		case got := <-starts:
+			if got.operationID != command.GetLookAtFolder().GetOperationId() || got.commandID != command.GetId() {
+				t.Error("the app changed the inspection start identifiers")
+			}
+		default:
+			t.Error("the app did not forward the inspection start callback")
+		}
+		select {
+		case number := <-appends:
+			if number == 0 {
+				t.Error("the app reported a zero durable folder event number")
+			}
+		default:
+			t.Error("the app did not forward the durable append callback")
+		}
+		if len(starts) != 0 || len(appends) != 0 {
+			t.Error("the app called a folder callback more than once")
+		}
+	})
+
 	t.Run("refusal matches the command diagnostic", func(t *testing.T) {
 		p.refuse.Store(true)
 		log.Reset()
@@ -263,7 +379,7 @@ func TestClienttestSharesApp(t *testing.T) {
 
 func assertClienttestRedaction(t *testing.T, p *testClientPeer, token, text string) {
 	t.Helper()
-	if strings.Contains(text, token) {
+	if strings.Contains(text, token) || strings.Contains(text, folderConnectionToken) {
 		t.Error("the in-process entry exposed the token")
 	}
 	for _, value := range [][]byte{p.secret, p.private, p.private.Seed()} {
