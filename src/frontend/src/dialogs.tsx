@@ -76,15 +76,19 @@ function Switcher({ s }: { s: State }) {
   const found = ql
     ? all.map((x): [number, SearchItem] => [searchScore(ql, x), x]).filter(([n]) => n > 0).sort((a, b) => b[0] - a[0] || KIND_ORDER[a[1].kind]! - KIND_ORDER[b[1].kind]!).map(([, x]) => x)
     : all.filter((x) => x.kind === 'Repository' || x.kind === 'Project' || (x.kind === 'Agent' && x.tone === 'warn'));
-  const shown = found.slice(0, 14);
-  const activeIndex = repositoryMode ? Math.max(0, shown.findIndex((x) => x.to === selectedTo)) : i;
+  const limit = 14;
+  const watchedIndex = repositoryMode ? found.findIndex((x) => x.to === selectedTo) : -1;
+  const shown = found.slice(0, limit);
+  if (watchedIndex >= limit) shown[limit - 1] = found[watchedIndex]!;
+  const activeIndex = repositoryMode ? Math.max(0, Math.min(watchedIndex, limit - 1)) : i;
   const active = shown[activeIndex];
   const watchedActiveTo = repositoryMode ? active?.to : undefined;
+  const watchedRepos = repositoryMode ? s.repos : undefined;
   useLayoutEffect(() => {
     if (repositoryMode && selectedTo !== watchedActiveTo) setSelectedTo(watchedActiveTo);
   }, [repositoryMode, selectedTo, watchedActiveTo]);
   useEffect(() => setI(0), [q]);
-  useEffect(() => { list.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' }); }, [activeIndex, watchedActiveTo]);
+  useEffect(() => { list.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' }); }, [activeIndex, watchedActiveTo, watchedRepos]);
   const search = (value: string) => {
     if (repositoryMode && value !== q) setSelectedTo(undefined);
     setQ(value);
@@ -160,15 +164,18 @@ function NewProject({ s, d }: DialogProps) {
   const repositoryMode = s.server.repositoryMode;
   const [selectedMachine, setMachine] = useState<string>(() => repositoryMode
     ? defaultFolderMachine(s.machines, d.machine) : live.on ? 'local' : d.machine || 'studio');
-  const [repo, setRepo] = useState<string>(d.repo || s.repos[0]?.id || '__new');
+  const [selectedRepo, setRepo] = useState<string>(d.repo || s.repos[0]?.id || '__new');
   const [newRepo, setNewRepo] = useState<string>(d.newRepo ?? '');
   const [goal, setGoal] = useState<string>(d.goal || '');
   const [unavailable, setUnavailable] = useState(false);
   const machine = repositoryMode && !byId(s.machines, selectedMachine)
     ? defaultFolderMachine(s.machines, d.machine) : selectedMachine;
+  const repo = repositoryMode && selectedRepo !== '__new' && !byId(s.repos, selectedRepo)
+    ? s.repos[0]?.id ?? '__new' : selectedRepo;
   useLayoutEffect(() => {
     if (machine !== selectedMachine) setMachine(machine);
-  }, [machine, selectedMachine]);
+    if (repo !== selectedRepo) setRepo(repo);
+  }, [machine, selectedMachine, repo, selectedRepo]);
   const selection = useProjectLead(s, machine);
   const creating = live.on && board.busy('create-project');
   const m = byId(s.machines, machine); const r = byId(s.repos, repo);
