@@ -24,6 +24,7 @@ const (
 
 var (
 	errScanBusy            = errors.New("link: another command scan is running")
+	errFolderBusy          = errors.New("link: another folder command is running")
 	errCommandWhileWaiting = errors.New("link: received work while waiting for approval")
 )
 
@@ -81,8 +82,7 @@ type scanCompletion struct {
 	err     error
 }
 
-// commandHandler belongs to the owner of the stream and scan slot. The scan
-// worker reports completion to the owner, which writes receipts and sends replies.
+// commandHandler belongs to the link owner, which settles commands and sends replies.
 type commandHandler struct {
 	store   *Store
 	scan    func(context.Context, bool) (bool, error)
@@ -96,6 +96,11 @@ type commandHandler struct {
 	clock     serverClock
 	active    *activeScan
 	completed chan scanCompletion
+
+	folderHome      string
+	folder          *activeFolder
+	folderReads     chan struct{}
+	folderCompleted chan folderInspection
 }
 
 func newCommandHandler(store *Store, scan func(context.Context, bool) (bool, error), send func(context.Context, *session, *linkv1.CommandResult) error, elapsed func() (time.Duration, error), logger *slog.Logger) *commandHandler {
@@ -107,7 +112,8 @@ func newCommandHandler(store *Store, scan func(context.Context, bool) (bool, err
 	}
 	return &commandHandler{
 		store: store, scan: scan, send: send, elapsed: elapsed, logger: logger,
-		completed: make(chan scanCompletion, 1),
+		completed:   make(chan scanCompletion, 1),
+		folderReads: make(chan struct{}, 2), folderCompleted: make(chan folderInspection, 1),
 	}
 }
 
@@ -148,10 +154,10 @@ func (h *commandHandler) standing() *linkv1.MachineState {
 	return state
 }
 
-// handle uses the process context so scans can finish across stream changes.
+// handle uses the process context so work can finish across stream changes.
 func (h *commandHandler) handle(ctx context.Context, msg *linkv1.Command) (restart bool, err error) {
 	id, expiry := msg.GetId(), msg.GetExpiresAt()
-	if !validLinkCommandID(id) || msg.GetAttempt() == 0 || !expiry.IsValid() {
+	if !validLinkCommandID(id) || msg.GetAttempt() == 0 || !expiry.IsValid() || proto.Size(msg) > eventWireLimit {
 		return false, ErrInvalidCommand
 	}
 	if h.current == nil {
@@ -161,6 +167,16 @@ func (h *commandHandler) handle(ctx context.Context, msg *linkv1.Command) (resta
 	defer unlock()
 	if h.filter.containsSecret(id) {
 		return false, ErrInvalidCommand
+	}
+	folderAction, isFolder := msg.GetAction().(*linkv1.Command_LookAtFolder)
+	if isFolder {
+		if folderAction == nil {
+			return false, ErrInvalidCommand
+		}
+		operation := folderAction.LookAtFolder.GetOperationId()
+		if !validLinkCommandID(operation) || h.filter.containsSecret(operation) {
+			return false, ErrInvalidCommand
+		}
 	}
 	attempt := commandAttempt{id: id, number: msg.GetAttempt(), session: h.current}
 	cmd := Command{ID: id, ExpiresAt: expiry.AsTime()}
@@ -192,27 +208,21 @@ func (h *commandHandler) handle(ctx context.Context, msg *linkv1.Command) (resta
 	}
 
 	lookupTime := admission
-	var reserved *activeScan
-	if isScan {
-		if h.active == nil {
-			reserved = &activeScan{attempt: attempt}
-			h.active = reserved
-			defer func() {
-				if reserved.cancel == nil {
-					h.active = nil
-				}
-			}()
-		} else {
-			// At expiry, Begin can find a receipt without starting another scan.
-			lookupTime = cmd.ExpiresAt
-		}
+	scanBusy := isScan && h.active != nil
+	folderBusy := isFolder && h.folder != nil
+	if scanBusy || folderBusy {
+		// At expiry, begin can find a receipt without reserving another worker.
+		lookupTime = cmd.ExpiresAt
 	}
 	decision, saved, err := h.store.begin(cmd, lookupTime)
 	if err != nil {
 		return false, err
 	}
 	if decision == DecisionExpired {
-		if isScan && reserved == nil && admission.Before(cmd.ExpiresAt) {
+		if folderBusy {
+			return false, errFolderBusy
+		}
+		if scanBusy && admission.Before(cmd.ExpiresAt) {
 			return false, errScanBusy
 		}
 		decision, saved, err = h.store.recordResult(cmd, []byte{byte(outcomeExpired)}, false, clock.lowerBound())
@@ -228,14 +238,22 @@ func (h *commandHandler) handle(ctx context.Context, msg *linkv1.Command) (resta
 	case DecisionReplay, DecisionInterrupted:
 		return false, h.reply(ctx, attempt, saved)
 	case DecisionRunning:
-		if scan := h.active; scan != nil && scan != reserved &&
-			scan.attempt.id == id && attempt.number >= scan.attempt.number {
+		if scan := h.active; scan != nil && scan.attempt.id == id && attempt.number >= scan.attempt.number {
 			scan.attempt = attempt
+		}
+		if folder := h.folder; folder != nil && folder.attempt.id == id && attempt.number >= folder.attempt.number {
+			folder.attempt = attempt
 		}
 		return false, nil
 	case DecisionRun:
-		if reserved != nil {
-			h.startScan(ctx, reserved, clock, admission, cmd.ExpiresAt)
+		if isScan {
+			h.active = &activeScan{attempt: attempt}
+			h.startScan(ctx, h.active, clock, admission, cmd.ExpiresAt)
+			return false, nil
+		}
+		if isFolder {
+			unlock()
+			h.startFolder(ctx, attempt, folderAction.LookAtFolder, clock, admission, cmd.ExpiresAt)
 			return false, nil
 		}
 		if !clock.canStart(admission, cmd.ExpiresAt) {
@@ -310,6 +328,7 @@ func (h *commandHandler) stopScan() scanCompletion {
 }
 
 func (h *commandHandler) restart(ctx context.Context, attempt commandAttempt) (bool, error) {
+	h.stopFolder()
 	completion := h.stopScan()
 	scanAttempt, scanResult, err := h.settleScan(completion)
 	if err != nil {

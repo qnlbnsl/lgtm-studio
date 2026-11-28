@@ -62,7 +62,8 @@ var newRunLinkClient = func(server enroll.Server) (linkv1connect.LinkServiceClie
 	if err != nil {
 		return nil, nil, err
 	}
-	client := linkv1connect.NewLinkServiceClient(httpClient, server.Address, connect.WithReadMaxBytes(64<<10))
+	client := linkv1connect.NewLinkServiceClient(httpClient, server.Address,
+		connect.WithReadMaxBytes(linkMessageLimit), connect.WithSendMaxBytes(linkMessageLimit))
 	return client, retire, nil
 }
 
@@ -108,6 +109,7 @@ func Run(ctx context.Context, opts RunOptions) (RunOutcome, error) {
 	r.reports = newReporterWithEventAppend(opts.Settings, opts.Version, opts.ScanOptions, r.appendEvent, logger, runReportProbes)
 	r.commands = newCommandHandler(store, r.reports.scanHarnesses, r.queueResult, nil, logger)
 	r.commands.filter = opts.Filter
+	r.commands.folderHome = opts.ScanOptions.Home
 	linkErr := supervise(ctx, r.attempt)
 	revisionStop := isRevisionRefusal(linkErr)
 	if revisionStop {
@@ -115,6 +117,7 @@ func Run(ctx context.Context, opts RunOptions) (RunOutcome, error) {
 	}
 
 	outageErr := r.stopOutage()
+	r.commands.stopFolder()
 	completion := r.commands.stopScan()
 	recoveryErr := errors.Join(r.fault, outageErr)
 	var scanErr error
@@ -136,7 +139,7 @@ func Run(ctx context.Context, opts RunOptions) (RunOutcome, error) {
 }
 
 // clientRun owns process-wide state. During an outage the disconnected worker
-// may settle the command scan. The next session joins it before using commands.
+// may settle commands. The next session joins it before using commands.
 type clientRun struct {
 	ctx      context.Context
 	cancel   context.CancelFunc
@@ -232,12 +235,7 @@ func (r *clientRun) appendReport(ctx context.Context, payload []byte) (uint64, e
 }
 
 func (r *clientRun) appendEvent(ctx context.Context, event *linkv1.Event) (uint64, error) {
-	number, err := r.store.appendFilteredReport(ctx, r.opts.Filter, event)
-	if errors.Is(err, ErrSequenceExhausted) && r.store.Len() != 0 {
-		// Keep pending reports queued until the last legal event drains.
-		return 0, ErrOutboxFull
-	}
-	return number, err
+	return r.store.appendFilteredReport(ctx, r.opts.Filter, event)
 }
 
 func (r *clientRun) captureFacts() error {
@@ -283,6 +281,13 @@ func (r *clientRun) watchOutage(ctx context.Context, ticks <-chan time.Time) err
 			}
 		case completion := <-r.commands.completions():
 			if err := r.commands.finishScan(ctx, completion); err != nil {
+				return err
+			}
+		case completion := <-r.commands.folderCompleted:
+			err := r.commands.finishFolder(r.ctx, completion)
+			if errors.Is(err, ErrInvalidCommand) {
+				r.logger.Warn("link_disconnected", "code", linkFailureCode(err))
+			} else if err != nil {
 				return err
 			}
 		}
@@ -694,6 +699,10 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 			if err := l.run.commands.finishScan(l.run.ctx, completion); err != nil {
 				return false, commandError(err)
 			}
+		case completion := <-l.run.commands.folderCompleted:
+			if err := l.run.commands.finishFolder(l.run.ctx, completion); err != nil {
+				return false, commandError(err)
+			}
 		case err := <-sent:
 			busy = false
 			if err != nil {
@@ -784,7 +793,7 @@ func (l *liveSession) receive(frame *linkv1.OpenResponse) (bool, error) {
 
 func commandError(err error) error {
 	switch {
-	case err == nil, errors.Is(err, ErrInvalidCommand), errors.Is(err, errScanBusy),
+	case err == nil, errors.Is(err, ErrInvalidCommand), errors.Is(err, errScanBusy), errors.Is(err, errFolderBusy),
 		errors.Is(err, errCommandWhileWaiting), errors.Is(err, errStream), errors.Is(err, context.Canceled):
 		return err
 	default:

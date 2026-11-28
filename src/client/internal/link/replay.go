@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	reportVersion  byte = 1
-	eventWireLimit      = 48 << 10
+	reportVersion    byte = 1
+	eventWireLimit        = 48 << 10
+	linkMessageLimit      = 64 << 10
 )
 
 var errInvalidReport = errors.New("link: invalid report")
@@ -205,10 +206,9 @@ func validFolderReport(seen *linkv1.FolderSeen) bool {
 		}
 		facts := result.Facts
 		return facts.GetResolvedPath() != "" && validReportString(facts.GetResolvedPath(), 8192) &&
-			facts.GetName() != "" && validReportString(facts.GetName(), eventWireLimit) &&
-			facts.GetMainBranch() != "" && validReportString(facts.GetMainBranch(), eventWireLimit) &&
-			validOptionalReportString(facts.CheckedOutBranch, eventWireLimit) &&
-			validOptionalReportString(facts.FirstCommit, eventWireLimit) &&
+			facts.GetName() != "" && validReportText(facts.GetName()) &&
+			facts.GetMainBranch() != "" && validReportText(facts.GetMainBranch()) &&
+			optionalReportText(facts.CheckedOutBranch) && optionalReportText(facts.FirstCommit) &&
 			validOptionalReportString(facts.Remote, 2048) && (facts.Remote == nil || !facts.GetRemoteOmitted())
 	case *linkv1.FolderSeen_Refusal:
 		return result != nil && result.Refusal >= linkv1.FolderRefusal_FOLDER_REFUSAL_NOT_A_FOLDER &&
@@ -222,6 +222,14 @@ func validOptionalReportString(value *string, limit int) bool {
 	return value == nil || *value != "" && validReportString(*value, limit)
 }
 
+func optionalReportText(value *string) bool {
+	return value == nil || *value != "" && validReportText(*value)
+}
+
 func validReportString(value string, limit int) bool {
-	return len(value) <= limit && utf8.ValidString(value) && !strings.ContainsRune(value, 0)
+	return len(value) <= limit && validReportText(value)
+}
+
+func validReportText(value string) bool {
+	return utf8.ValidString(value) && !strings.ContainsRune(value, 0)
 }

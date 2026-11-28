@@ -4,10 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"errors"
 	"math"
 
 	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1"
 	bolt "go.etcd.io/bbolt"
+	"google.golang.org/protobuf/proto"
 )
 
 // Event is one numbered event waiting to be sent.
@@ -28,10 +30,39 @@ func (s *Store) appendFilteredReport(ctx context.Context, filter *OutgoingFilter
 	if err != nil {
 		return 0, err
 	}
-	return s.appendContext(ctx, payload)
+	report, err := decodeReportCandidate(payload)
+	if err != nil {
+		return 0, errInvalidReport
+	}
+	number, err := s.appendAtNext(ctx, func(number uint64) ([]byte, error) {
+		report.Number = number
+		if proto.Size(report) <= eventWireLimit {
+			return payload, nil
+		}
+		seen := report.GetFolderSeen()
+		if seen.GetFacts() == nil {
+			return nil, ErrEventTooLarge
+		}
+		seen.Result = &linkv1.FolderSeen_Refusal{Refusal: linkv1.FolderRefusal_FOLDER_REFUSAL_PATH_NOT_USABLE}
+		if proto.Size(report) > eventWireLimit {
+			return nil, ErrEventTooLarge
+		}
+		report.Number = 0
+		return encodeReport(report)
+	})
+	if errors.Is(err, ErrSequenceExhausted) && s.Len() != 0 {
+		// Let the last legal event drain before stopping for exhaustion.
+		return 0, ErrOutboxFull
+	}
+	return number, err
 }
 
 func (s *Store) appendContext(ctx context.Context, payload []byte) (uint64, error) {
+	return s.appendAtNext(ctx, func(uint64) ([]byte, error) { return payload, nil })
+}
+
+// appendAtNext prepares and commits a payload using the same proposed number.
+func (s *Store) appendAtNext(ctx context.Context, prepare func(uint64) ([]byte, error)) (uint64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ready(); err != nil {
@@ -40,10 +71,14 @@ func (s *Store) appendContext(ctx context.Context, payload []byte) (uint64, erro
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
+	n := s.events.next
+	payload, err := prepare(n)
+	if err != nil {
+		return 0, err
+	}
 	if len(payload) > s.opts.MaxEventBytes {
 		return 0, ErrEventTooLarge
 	}
-	n := s.events.next
 	if n > math.MaxInt64 {
 		return 0, ErrSequenceExhausted
 	}
