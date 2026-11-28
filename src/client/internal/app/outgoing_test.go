@@ -118,9 +118,8 @@ func TestOutgoingFilterExecutable(t *testing.T) {
 					seen.result = result
 				}
 				if len(seen.events) == 2 && !scanRequested {
-					if replaceOutgoingCredentials(credentials, outgoingRefresh, "outgoing-new-refresh") != nil ||
-						writeOutgoingProbe(bin, "codex", "codex-cli 2.3.4-before."+outgoingRefresh+"."+outgoingSignIn+".after") != nil {
-						return errors.New("could not replace the sign-in file and harness version")
+					if stageOutgoingRotation(credentials, bin) != nil {
+						return errors.New("could not stage the sign-in replacement for the requested scan")
 					}
 					if err := sendOutgoingScan(stream, outgoingScanID); err != nil {
 						return err
@@ -148,6 +147,10 @@ func TestOutgoingFilterExecutable(t *testing.T) {
 			t.Error("the approved client did not run through the refresh on one stream and exit cleanly")
 		}
 		checkOutgoingStartup(t, stderr, filepath.Join(home, "workspace-before-"+outgoingMask+"-after"))
+		if _, err := os.Stat(credentials + ".next"); !errors.Is(err, os.ErrNotExist) {
+			t.Error("the requested scan did not replace the staged sign-in file")
+		}
+		checkOutgoingRotationOnDisk(t, opts.StateDir)
 		select {
 		case seen := <-traces:
 			if seen.err != nil || len(seen.events) != 3 {
@@ -197,7 +200,7 @@ func TestOutgoingFilterExecutable(t *testing.T) {
 				return errors.New("could not replace the sign-in after process startup")
 			}
 			replacement.Store(true)
-			if err := sendOutgoingWelcome(stream, false); err != nil {
+			if err := sendOutgoingWelcome(stream, false, 1); err != nil {
 				return err
 			}
 			for {
@@ -216,6 +219,10 @@ func TestOutgoingFilterExecutable(t *testing.T) {
 		seedApp(t, opts, p, false)
 		paths := state.PathsIn(opts.StateDir)
 		seedOutgoingHistory(t, opts.StateDir)
+		beforeRows := readOutgoingRows(t, opts.StateDir, 1, 3)
+		if len(beforeRows) != 2 || beforeRows[0].Seq != 1 || beforeRows[1].Seq != 2 {
+			t.Fatal("the fixture did not retain the acknowledged and required reports before replay")
+		}
 		before := appFile(t, paths.Store)
 		stdout, stderr, status := runOutgoingProcess(t, binary, opts, "", nil, "run")
 		checkOutgoingStreams(t, p, stdout, stderr, appFile(t, paths.Key), outgoingSignIn, outgoingRefresh, outgoingPeerToken)
@@ -223,8 +230,14 @@ func TestOutgoingFilterExecutable(t *testing.T) {
 			t.Error("the rotated credential did not stop required replay before any event or result was sent")
 		}
 		requireAppRecoveryInstruction(t, stderr)
+		afterRows := readOutgoingRows(t, opts.StateDir, 1, 3)
+		if !slices.EqualFunc(beforeRows, afterRows, func(a, b link.Event) bool {
+			return a.Seq == b.Seq && bytes.Equal(a.Payload, b.Payload)
+		}) {
+			t.Error("the client did not preserve both the acknowledged and required reports")
+		}
 		if !bytes.Equal(before, appFile(t, paths.Store)) {
-			t.Error("the client rewrote the database containing the disputed event")
+			t.Error("the client rewrote the database containing the disputed history")
 		}
 	})
 
@@ -407,6 +420,18 @@ func writeOutgoingProbe(bin, name, versionLine string) error {
 	return os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\nprintf '%s\\n' '"+versionLine+"'\n"), 0o700)
 }
 
+func stageOutgoingRotation(credentials, bin string) error {
+	if err := replaceOutgoingCredentials(credentials+".next", outgoingRefresh, "outgoing-new-refresh"); err != nil {
+		return err
+	}
+	// The version probe runs after command admission and before the report append.
+	script := `#!/bin/sh
+/bin/mv -f "$HOME/claude-config/.credentials.json.next" "$HOME/claude-config/.credentials.json" || exit 1
+printf '%s\n' 'codex-cli 2.3.4-before.` + outgoingRefresh + `.` + outgoingSignIn + `.after'
+`
+	return os.WriteFile(filepath.Join(bin, "codex"), []byte(script), 0o700)
+}
+
 func welcomeOutgoingPeer(p *appPeer, stream *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse], approved bool) error {
 	if err := p.challenge(stream); err != nil {
 		return err
@@ -415,12 +440,12 @@ func welcomeOutgoingPeer(p *appPeer, stream *connect.BidiStream[linkv1.OpenReque
 	if err != nil || frame.GetProof() == nil {
 		return errors.New("the outgoing-filter peer did not receive proof")
 	}
-	return sendOutgoingWelcome(stream, approved)
+	return sendOutgoingWelcome(stream, approved, 0)
 }
 
-func sendOutgoingWelcome(stream *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse], approved bool) error {
+func sendOutgoingWelcome(stream *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse], approved bool, through uint64) error {
 	standing := &linkv1.MachineState{Approval: linkv1.Approval_APPROVAL_WAITING, Revision: 1}
-	welcome := &linkv1.Welcome{State: standing, ServerTime: timestamppb.New(outgoingServerTime), LinkRevision: 2}
+	welcome := &linkv1.Welcome{State: standing, ServerTime: timestamppb.New(outgoingServerTime), LinkRevision: 2, LastEventNumber: through}
 	if approved {
 		standing.Approval, standing.Name = linkv1.Approval_APPROVAL_APPROVED, "filter fixture"
 		welcome.ConnectionToken = outgoingPeerToken
@@ -552,15 +577,8 @@ func checkOutgoingReportLogs(t *testing.T, log *bytes.Buffer, numbers ...uint64)
 
 func checkOutgoingReports(t *testing.T, peer *appPeer, dir string, key []byte, events []*linkv1.Event, values ...string) {
 	t.Helper()
-	folder := appFolder(t, dir)
-	defer closeAppFolder(t, folder)
-	store, err := link.OpenStore(folder, link.StoreOptions{})
-	if err != nil {
-		t.Fatal("could not open the closed process outbox")
-	}
-	defer store.Close()
-	rows, err := store.Read(1, len(events)+1)
-	if err != nil || len(rows) != len(events) {
+	rows := readOutgoingRows(t, dir, 1, len(events)+1)
+	if len(rows) != len(events) {
 		t.Fatal("the closed outbox did not retain every unacknowledged report")
 	}
 	for i, row := range rows {
@@ -580,6 +598,38 @@ func checkOutgoingReports(t *testing.T, peer *appPeer, dir string, key []byte, e
 	}
 }
 
+func checkOutgoingRotationOnDisk(t *testing.T, dir string) {
+	t.Helper()
+	rows := readOutgoingRows(t, dir, 3, 1)
+	if len(rows) != 1 || rows[0].Seq != 3 {
+		t.Fatal("the requested inventory was not appended to the outbox")
+	}
+	payload := rows[0].Payload
+	requireOutgoingSafe(t, "durable scan report", payload, outgoingSignIn, outgoingRefresh)
+	var event linkv1.Event
+	if len(payload) < 2 || payload[0] != 1 || proto.Unmarshal(payload[1:], &event) != nil {
+		t.Fatal("the appended inventory could not be decoded")
+	}
+	if inventoryVersion(&event, "codex") != "2.3.4-before.[redacted].[redacted].after" {
+		t.Error("the appended inventory did not mask both sign-ins on disk")
+	}
+}
+
+func readOutgoingRows(t *testing.T, dir string, first uint64, limit int) []link.Event {
+	t.Helper()
+	folder := appFolder(t, dir)
+	defer closeAppFolder(t, folder)
+	store, err := link.OpenStore(folder, link.StoreOptions{})
+	if err != nil {
+		t.Fatal("could not open the closed outbox to inspect its rows")
+	}
+	rows, err := store.Read(first, limit)
+	if closeErr := store.Close(); err != nil || closeErr != nil {
+		t.Fatal("could not read the outbox rows and close the store")
+	}
+	return rows
+}
+
 func seedOutgoingHistory(t *testing.T, dir string) {
 	t.Helper()
 	folder := appFolder(t, dir)
@@ -588,20 +638,25 @@ func seedOutgoingHistory(t *testing.T, dir string) {
 	if err != nil {
 		t.Fatal("could not open the retained-history fixture")
 	}
-	event := &linkv1.Event{
-		HappenedAt: timestamppb.New(outgoingServerTime),
-		Report: &linkv1.Event_Facts{Facts: &linkv1.Facts{
-			Os: "fixture", Cores: 1, ClientVersion: "before-" + outgoingRefresh + "-after",
-		}},
-	}
-	payload, err := proto.Marshal(event)
-	if err != nil {
-		_ = store.Close()
-		t.Fatal("could not encode the retained-history fixture")
-	}
-	number, err := store.Append(append([]byte{1}, payload...))
-	if closeErr := store.Close(); err != nil || closeErr != nil || number != 1 {
-		t.Fatal("could not seed the disputed event at the expected sequence")
+	defer func() {
+		if err := store.Close(); err != nil {
+			t.Error("could not close the retained-history fixture")
+		}
+	}()
+	for i, version := range []string{"safe-version", "before-" + outgoingRefresh + "-after"} {
+		event := &linkv1.Event{
+			HappenedAt: timestamppb.New(outgoingServerTime),
+			Report: &linkv1.Event_Facts{Facts: &linkv1.Facts{
+				Os: "fixture", Cores: 1, ClientVersion: version,
+			}},
+		}
+		payload, err := proto.Marshal(event)
+		if err != nil {
+			t.Fatal("could not encode the retained-history fixture")
+		}
+		if number, err := store.Append(append([]byte{1}, payload...)); err != nil || number != uint64(i+1) {
+			t.Fatal("could not seed a retained event at the expected sequence")
+		}
 	}
 }
 
