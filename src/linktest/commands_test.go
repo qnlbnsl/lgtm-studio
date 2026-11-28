@@ -79,7 +79,7 @@ func TestLinkCommandAttemptsAcrossReconnect(t *testing.T) {
 				results = append(results, result)
 			}
 		}
-		if !slices.Equal(results, []noticeResult{{id: retry.id, attempt: retry.attempt, outcome: commandFailed}}) {
+		if len(results) != 1 || results[0].attempt != retry.attempt || results[0].outcome != commandFailed {
 			t.Fatal("The scan did not send exactly one result on its latest attempt after probe release.")
 		}
 	})
@@ -204,15 +204,8 @@ func testLegacyScanReplay(t *testing.T) {
 		t.Fatal("Could not copy the genuine revision 1 client database.")
 	}
 	expiry := time.Date(2099, 1, 1, 1, 0, 0, 0, time.UTC)
-	command := &linkv1.Command{Action: &linkv1.Command_ScanHarnesses{ScanHarnesses: &linkv1.ScanHarnesses{}}}
-	payload, err := proto.Marshal(command)
-	if err != nil {
-		t.Fatal("Could not encode the queued scan action.")
-	}
-	// Restore the previously delivered attempt so the real server sends attempt 2.
-	execute(t, f.db, `
-INSERT INTO link_commands (id, machine_id, action, payload, created_at, expires_at, sent_stream_id, dispatched)
-VALUES ($1, $2, 'scan_harnesses', $3, clock_timestamp(), $4, $1, true)`, id, f.id, payload, expiry)
+	seedDispatchedScan(t, f, id, expiry)
+	installAudit(t, f.db, f.id, 0)
 
 	run, leg := f.startApproved(t, 0)
 	retry := waitForCommand(t, leg, scanAction, 0)
@@ -224,7 +217,19 @@ VALUES ($1, $2, 'scan_harnesses', $3, clock_timestamp(), $4, $1, true)`, id, f.i
 		t.Fatal("The legacy receipt did not replay its done outcome with a zero watermark.")
 	}
 	waitForStoredResult(t, f.db, retry, "done")
+	waitForAck(t, leg, 5)
+	waitForClientToProcessReplies(t, leg)
 	run.stop(t)
+	if trace := leg.observe(); trace.hello.first != 4 ||
+		!slices.Equal(trace.events, []uint64{1, 2, 3, 4, 5}) ||
+		!slices.Equal(trace.acks, []uint64{1, 2, 3, 4, 5}) {
+		t.Fatal("The legacy outbox did not replay each retained event before the new process reports.")
+	}
+	if got := mark(t, f.db, f.id); got != 5 {
+		t.Fatalf("The legacy replay advanced through %d, want 5.", got)
+	}
+	checkAudit(t, f.db, 0, 5)
+	requireAcknowledgedOutbox(t, f.opts, 5)
 	f.probe.requireRuns(t, 1)
 	withClosedClientDB(t, f.opts, false, func(db *bolt.DB) error {
 		return db.View(func(tx *bolt.Tx) error {
@@ -234,6 +239,20 @@ VALUES ($1, $2, 'scan_harnesses', $3, clock_timestamp(), $4, $1, true)`, id, f.i
 			return nil
 		})
 	})
+}
+
+func seedDispatchedScan(t *testing.T, f *commandFixture, id string, expiry time.Time) {
+	t.Helper()
+	command := &linkv1.Command{Action: &linkv1.Command_ScanHarnesses{ScanHarnesses: &linkv1.ScanHarnesses{}}}
+	payload, err := proto.Marshal(command)
+	if err != nil {
+		t.Fatal("Could not encode the queued scan action.")
+	}
+	// Restore the previously delivered attempt so the real server sends attempt 2.
+	execute(t, f.db, `
+INSERT INTO link_commands (id, machine_id, action, payload, created_at, expires_at, sent_stream_id, dispatched)
+VALUES ($1, $2, 'scan_harnesses', $3, clock_timestamp(), $4, $1, true)`, id, f.id, payload, expiry)
+
 }
 
 func TestLinkRestartReplaysAfterDroppedResult(t *testing.T) {

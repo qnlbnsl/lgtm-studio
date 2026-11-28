@@ -62,6 +62,7 @@ type diagnostic struct {
 	Message  string `json:"msg"`
 	Code     string `json:"code"`
 	Sequence uint64 `json:"sequence"`
+	Remedy   string `json:"message"`
 }
 
 type diagnostics struct {

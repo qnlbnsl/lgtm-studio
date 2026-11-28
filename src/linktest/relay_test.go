@@ -26,6 +26,7 @@ type joinReceipt struct {
 type relayControls struct {
 	beforeReply    func(context.Context, *linkv1.OpenResponse) bool
 	releaseReports func() <-chan struct{}
+	holdReport     func(reportDelivery) <-chan struct{}
 	dropResult     func(noticeResult) bool
 	observeResult  func(*linkv1.CommandResult)
 }
@@ -79,6 +80,7 @@ func (r *relay) Join(ctx context.Context, call *connect.Request[linkv1.JoinReque
 }
 
 type legObservation struct {
+	hello           helloObservation
 	challenges      int
 	proofs          int
 	welcomed        bool
@@ -94,19 +96,42 @@ type legObservation struct {
 	unknownMachine  bool
 	commands        []commandDelivery
 	reports         []reportDelivery
+	sends           []frameSend
+}
+
+type helloObservation struct {
+	machineID, runID string
+	revision         uint32
+	first            uint64
+}
+
+// frameSend records the start of a relay send. A successful send or a
+// subsequent acknowledgement is separately observed by the caller.
+type frameSend struct {
+	kind      string
+	number    uint64
+	commandID string
+	attempt   uint32
 }
 
 type commandDelivery struct {
-	id       string
-	attempt  uint32
-	expiry   time.Time
-	kind     string
-	revision uint64
+	id          string
+	attempt     uint32
+	expiry      time.Time
+	kind        string
+	revision    uint64
+	operationID string
 }
 
 type reportDelivery struct {
 	facts     bool
 	harnesses bool
+	folder    folderReport
+}
+
+type folderReport struct {
+	number                 uint64
+	operationID, commandID string
 }
 
 type commandAttempt struct {
@@ -115,9 +140,10 @@ type commandAttempt struct {
 }
 
 type noticeResult struct {
-	id      string
-	attempt uint32
-	outcome linkv1.CommandOutcome
+	id              string
+	attempt         uint32
+	outcome         linkv1.CommandOutcome
+	lastEventNumber uint64
 }
 
 type relayLeg struct {
@@ -140,6 +166,7 @@ func (l *relayLeg) observe() legObservation {
 	trace.results = append([]noticeResult(nil), trace.results...)
 	trace.commands = append([]commandDelivery(nil), trace.commands...)
 	trace.reports = append([]reportDelivery(nil), trace.reports...)
+	trace.sends = append([]frameSend(nil), trace.sends...)
 	return trace
 }
 
@@ -166,7 +193,22 @@ func (r *relay) Open(ctx context.Context, downstream *connect.BidiStream[linkv1.
 	// Return the downstream status before joining the upstream reader. The
 	// client may still need that status to close its request side.
 	defer cancel()
-	r.workers.Go(func() { leg.forwardRequests(ctx, r.controls, downstream, upstream) })
+	requests := make(chan *linkv1.OpenRequest)
+	r.workers.Go(func() {
+		defer close(requests)
+		for {
+			frame, err := downstream.Receive()
+			if err != nil {
+				return
+			}
+			select {
+			case requests <- frame:
+			case <-ctx.Done():
+				return
+			}
+		}
+	})
+	r.workers.Go(func() { leg.forwardRequests(ctx, r.controls, requests, upstream) })
 
 	type reply struct {
 		frame *linkv1.OpenResponse
@@ -196,7 +238,9 @@ func (r *relay) Open(ctx context.Context, downstream *connect.BidiStream[linkv1.
 			leg.mu.Lock()
 			leg.injected[commandAttempt{notice.GetId(), notice.GetAttempt()}] = struct{}{}
 			leg.mu.Unlock()
-			if err := downstream.Send(&linkv1.OpenResponse{Kind: &linkv1.OpenResponse_Command{Command: notice}}); err != nil {
+			later := &linkv1.OpenResponse{Kind: &linkv1.OpenResponse_Command{Command: notice}}
+			leg.recordReplySend(later)
+			if err := downstream.Send(later); err != nil {
 				return err
 			}
 		case next := <-replies:
@@ -220,6 +264,7 @@ func (r *relay) Open(ctx context.Context, downstream *connect.BidiStream[linkv1.
 			if r.controls.beforeReply != nil && !r.controls.beforeReply(ctx, next.frame) {
 				return disconnected()
 			}
+			leg.recordReplySend(next.frame)
 			if err := downstream.Send(next.frame); err != nil {
 				return err
 			}
@@ -230,61 +275,126 @@ func (r *relay) Open(ctx context.Context, downstream *connect.BidiStream[linkv1.
 
 func (l *relayLeg) forwardRequests(
 	ctx context.Context, controls relayControls,
-	downstream *connect.BidiStream[linkv1.OpenRequest, linkv1.OpenResponse],
+	requests <-chan *linkv1.OpenRequest,
 	upstream *connect.BidiStreamForClient[linkv1.OpenRequest, linkv1.OpenResponse],
 ) {
 	defer close(l.requestsDone)
 	defer upstream.CloseRequest()
+	var release <-chan struct{}
+	var held []*linkv1.OpenRequest
 	for {
-		frame, err := downstream.Receive()
-		if err != nil {
+		select {
+		case <-ctx.Done():
 			return
-		}
-		skip := false
-		l.mu.Lock()
-		switch {
-		case frame.GetProof() != nil:
-			l.trace.proofs++
-		case frame.GetEvent() != nil:
-			event := frame.GetEvent()
-			l.trace.events = append(l.trace.events, event.GetNumber())
-			l.trace.reports = append(l.trace.reports, reportDelivery{
-				facts: event.GetFacts() != nil, harnesses: event.GetHarnessesFound() != nil,
-			})
-		case frame.GetHeartbeat() != nil:
-			l.trace.heartbeats++
-			beat := frame.GetHeartbeat()
-			if beat.CpuPercent == nil && beat.MemoryPercent == nil {
-				l.trace.emptyHeartbeats++
-			}
-		case frame.GetCommandResult() != nil:
-			reply := frame.GetCommandResult()
-			result := noticeResult{reply.GetCommandId(), reply.GetAttempt(), reply.GetOutcome()}
-			l.trace.results = append(l.trace.results, result)
-			_, skip = l.injected[commandAttempt{result.id, result.attempt}]
-			// Only results for injected commands or deliberate cuts stay in the relay.
-			skip = skip || (controls.dropResult != nil && controls.dropResult(result))
-		}
-		l.mu.Unlock()
-		if skip {
-			continue
-		}
-		if result := frame.GetCommandResult(); result != nil && controls.observeResult != nil {
-			controls.observeResult(result)
-		}
-		if frame.GetEvent() != nil && controls.releaseReports != nil {
-			if release := controls.releaseReports(); release != nil {
-				select {
-				case <-release:
-				case <-ctx.Done():
+		case <-release:
+			for _, frame := range held {
+				if !l.sendRequest(ctx, upstream, frame) {
 					return
 				}
 			}
-		}
-		if upstream.Send(frame) != nil {
-			return
+			release, held = nil, nil
+		case frame, ok := <-requests:
+			if !ok {
+				return
+			}
+			report, result, injected := l.recordRequest(frame)
+			if raw := frame.GetCommandResult(); raw != nil {
+				if controls.observeResult != nil {
+					controls.observeResult(raw)
+				}
+				if injected || (controls.dropResult != nil && controls.dropResult(result)) {
+					continue
+				}
+			}
+			if frame.GetEvent() != nil {
+				if controls.releaseReports != nil {
+					if all := controls.releaseReports(); all != nil {
+						select {
+						case <-all:
+						case <-ctx.Done():
+							return
+						}
+					}
+				}
+				if release == nil && report.folder.number != 0 && controls.holdReport != nil {
+					release = controls.holdReport(report)
+				}
+				// Keep the numbered suffix in order while results and heartbeats pass.
+				if release != nil {
+					held = append(held, frame)
+					continue
+				}
+			}
+			if !l.sendRequest(ctx, upstream, frame) {
+				return
+			}
 		}
 	}
+}
+
+func (l *relayLeg) recordRequest(frame *linkv1.OpenRequest) (reportDelivery, noticeResult, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	var report reportDelivery
+	var result noticeResult
+	var injected bool
+	switch {
+	case frame.GetHello() != nil:
+		hello := frame.GetHello()
+		l.trace.hello = helloObservation{hello.GetMachineId(), hello.GetRunId(), hello.GetLinkRevision(), hello.GetFirstEventNumber()}
+	case frame.GetProof() != nil:
+		l.trace.proofs++
+	case frame.GetEvent() != nil:
+		event := frame.GetEvent()
+		report = reportDelivery{facts: event.GetFacts() != nil, harnesses: event.GetHarnessesFound() != nil}
+		if folder := event.GetFolderSeen(); folder != nil {
+			report.folder = folderReport{event.GetNumber(), folder.GetOperationId(), folder.GetCommandId()}
+		}
+		l.trace.events = append(l.trace.events, event.GetNumber())
+		l.trace.reports = append(l.trace.reports, report)
+	case frame.GetHeartbeat() != nil:
+		l.trace.heartbeats++
+		beat := frame.GetHeartbeat()
+		if beat.CpuPercent == nil && beat.MemoryPercent == nil {
+			l.trace.emptyHeartbeats++
+		}
+	case frame.GetCommandResult() != nil:
+		reply := frame.GetCommandResult()
+		result = noticeResult{reply.GetCommandId(), reply.GetAttempt(), reply.GetOutcome(), reply.GetLastEventNumber()}
+		l.trace.results = append(l.trace.results, result)
+		_, injected = l.injected[commandAttempt{result.id, result.attempt}]
+	}
+	return report, result, injected
+}
+
+func (l *relayLeg) sendRequest(ctx context.Context, stream *connect.BidiStreamForClient[linkv1.OpenRequest, linkv1.OpenResponse], frame *linkv1.OpenRequest) bool {
+	if ctx.Err() != nil {
+		return false
+	}
+	switch {
+	case frame.GetEvent() != nil:
+		l.recordSend(frameSend{kind: "event", number: frame.GetEvent().GetNumber()})
+	case frame.GetCommandResult() != nil:
+		reply := frame.GetCommandResult()
+		l.recordSend(frameSend{kind: "result", number: reply.GetLastEventNumber(), commandID: reply.GetCommandId(), attempt: reply.GetAttempt()})
+	}
+	return stream.Send(frame) == nil
+}
+
+func (l *relayLeg) recordReplySend(frame *linkv1.OpenResponse) {
+	switch {
+	case frame.GetEventAck() != nil:
+		l.recordSend(frameSend{kind: "ack", number: frame.GetEventAck().GetThrough()})
+	case frame.GetCommand() != nil:
+		command := frame.GetCommand()
+		l.recordSend(frameSend{kind: "command", commandID: command.GetId(), attempt: command.GetAttempt()})
+	}
+}
+
+func (l *relayLeg) recordSend(send frameSend) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.trace.sends = append(l.trace.sends, send)
 }
 
 func (l *relayLeg) recordReply(frame *linkv1.OpenResponse) {
@@ -313,6 +423,9 @@ func (l *relayLeg) recordReply(frame *linkv1.OpenResponse) {
 			delivery.kind = "scan_harnesses"
 		case cmd.GetRestart() != nil:
 			delivery.kind = "restart"
+		case cmd.GetLookAtFolder() != nil:
+			delivery.kind = "look_at_folder"
+			delivery.operationID = cmd.GetLookAtFolder().GetOperationId()
 		}
 		l.trace.commands = append(l.trace.commands, delivery)
 	}

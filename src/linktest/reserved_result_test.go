@@ -62,6 +62,10 @@ func TestLinkReservedCommandResult(t *testing.T) {
 		t.Fatal("The relay did not deliver the stored approval notice to the scripted machine.")
 	}
 	delivery := commandDelivery{id: notice.GetId(), attempt: notice.GetAttempt()}
+	// The command can reach the peer before the server commits its dispatch marker.
+	waitFor(t, 5*time.Second, "the delivered approval notice to commit its dispatch marker", func() bool {
+		return scalar[bool](t, db, "SELECT dispatched FROM link_commands WHERE id=$1", delivery.id)
+	})
 	requirePending(t, db, delivery)
 
 	sendResult := func(attempt uint32) {

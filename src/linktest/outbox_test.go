@@ -409,6 +409,11 @@ func checkScriptedReplay(t *testing.T, server *servertest.Server, db *pgx.Conn, 
 
 func TestLinkRevisionOneRefusal(t *testing.T) {
 	requirePostgres(t)
+	testRevisionOneRefusal(t)
+}
+
+func testRevisionOneRefusal(t *testing.T) {
+	t.Helper()
 	server := servertest.Start(t, servertest.Options{Password: fixturePassword})
 	opts := newClient(t, new(diagnostics))
 	id := join(t, server.Clients(t), opts, server.URL)
@@ -444,24 +449,32 @@ func authenticateScriptedLink(t *testing.T, stream *connect.BidiStreamForClient[
 	serverKey ed25519.PublicKey, opts clienttest.Options, id string, firstEventNumber uint64,
 ) *linkv1.Welcome {
 	t.Helper()
-	var run [16]byte
-	binary.BigEndian.PutUint64(run[:8], uint64(time.Now().UnixMilli())<<16)
-	rand.Read(run[6:])
-	run[6] = 0x70 | run[6]&0x0f
-	run[8] = 0x80 | run[8]&0x3f
-	hello := &linkv1.Hello{
-		MachineId: id, LinkRevision: 2, FirstEventNumber: firstEventNumber,
-		RunId: fmt.Sprintf("%x-%x-%x-%x-%x", run[:4], run[4:6], run[6:8], run[8:10], run[10:]),
-	}
-	challenge := scriptedChallenge(t, stream, serverKey, hello)
-	if err := sendScriptedProof(stream, readMachineKey(t, opts), hello, challenge); err != nil {
-		t.Fatal("The scripted peer could not send Proof.")
-	}
+	hello := &linkv1.Hello{MachineId: id, LinkRevision: 2, FirstEventNumber: firstEventNumber, RunId: newPairedID()}
+	submitScriptedHello(t, stream, serverKey, opts, hello)
 	frame, err := stream.Receive()
 	if err != nil || frame.GetWelcome().GetLinkRevision() != 2 {
 		t.Fatalf("The scripted peer did not receive a revision 2 Welcome (%s).", connect.CodeOf(err))
 	}
 	return frame.GetWelcome()
+}
+
+func newPairedID() string {
+	var run [16]byte
+	binary.BigEndian.PutUint64(run[:8], uint64(time.Now().UnixMilli())<<16)
+	rand.Read(run[6:])
+	run[6] = 0x70 | run[6]&0x0f
+	run[8] = 0x80 | run[8]&0x3f
+	return fmt.Sprintf("%x-%x-%x-%x-%x", run[:4], run[4:6], run[6:8], run[8:10], run[10:])
+}
+
+func submitScriptedHello(t *testing.T, stream *connect.BidiStreamForClient[linkv1.OpenRequest, linkv1.OpenResponse],
+	serverKey ed25519.PublicKey, opts clienttest.Options, hello *linkv1.Hello,
+) {
+	t.Helper()
+	challenge := scriptedChallenge(t, stream, serverKey, hello)
+	if err := sendScriptedProof(stream, readMachineKey(t, opts), hello, challenge); err != nil {
+		t.Fatal("The scripted peer could not send Proof.")
+	}
 }
 
 func scriptedChallenge(t *testing.T, stream *connect.BidiStreamForClient[linkv1.OpenRequest, linkv1.OpenResponse],

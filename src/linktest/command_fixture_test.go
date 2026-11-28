@@ -152,7 +152,7 @@ func waitForCommand(t *testing.T, leg *relayLeg, action string, ordinal int) com
 	return found
 }
 
-func waitForResult(t *testing.T, leg *relayLeg, delivery commandDelivery, outcome linkv1.CommandOutcome) {
+func waitForResult(t *testing.T, leg *relayLeg, delivery commandDelivery, outcome linkv1.CommandOutcome) noticeResult {
 	t.Helper()
 	var result noticeResult
 	waitFor(t, 12*time.Second, "the command result on the expected stream and attempt", func() bool {
@@ -167,6 +167,7 @@ func waitForResult(t *testing.T, leg *relayLeg, delivery commandDelivery, outcom
 	if result.outcome != outcome {
 		t.Fatalf("The command result was %s, want %s.", result.outcome, outcome)
 	}
+	return result
 }
 
 func waitForStoredResult(t *testing.T, db *pgx.Conn, delivery commandDelivery, outcome string) {
@@ -230,7 +231,7 @@ func waitForClientToProcessReplies(t *testing.T, leg *relayLeg) {
 	t.Helper()
 	welcome := waitForWelcome(t, leg)
 	barrier := injectCommand(t, leg, &linkv1.Command{
-		Id: "0195977c-0000-7000-8000-000000000110", Attempt: 1,
+		Id: newPairedID(), Attempt: 1,
 		ExpiresAt: timestamppb.New(time.Now().Add(time.Minute)),
 		Action: &linkv1.Command_SetState{SetState: &linkv1.SetState{State: &linkv1.MachineState{
 			Approval: welcome.approval, Revision: welcome.revision, Name: welcome.name,

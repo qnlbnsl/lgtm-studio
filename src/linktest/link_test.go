@@ -274,7 +274,7 @@ func sendRemovalNotice(t *testing.T, leg *relayLeg, id string, bump uint64) {
 	want := noticeResult{id: id, attempt: 1, outcome: linkv1.CommandOutcome_COMMAND_OUTCOME_DONE}
 	waitFor(t, 5*time.Second, "a done result for the removal notice", func() bool {
 		for _, result := range leg.observe().results {
-			if result == want {
+			if result.id == want.id && result.attempt == want.attempt && result.outcome == want.outcome {
 				return true
 			}
 		}
