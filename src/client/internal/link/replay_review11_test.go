@@ -141,8 +141,16 @@ func TestFolderPathSampleIsRegisteredBeforeTextEmissionReview11(t *testing.T) {
 
 		input := "before " + first + " / " + replacement + " after"
 		emitted := make(chan string, 1)
-		go func() { emitted <- filter.MaskText(input) }()
-		synctest.Wait()
+		textStarted := make(chan struct{})
+		pathOwnsLock := signInReadHoldsFilterLock(filter)
+		go func() {
+			close(textStarted)
+			emitted <- filter.MaskText(input)
+		}()
+		<-textStarted
+		if !pathOwnsLock {
+			synctest.Wait()
+		}
 		releaseSample()
 		if got := <-emitted; strings.Contains(got, first) || strings.Contains(got, replacement) {
 			t.Error("the text gate emitted a value sampled by the folder path check before its registration")

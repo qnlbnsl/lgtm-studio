@@ -64,12 +64,18 @@ func TestOutgoingFilterScreensTextDuringOverlappingSignInRefreshes(t *testing.T)
 
 		input := "before " + first + " / " + replacement + " after"
 		emitted := make(chan string, 1)
+		secondStarted := make(chan struct{})
 		secondDone := make(chan struct{})
+		firstOwnsLock := signInReadHoldsFilterLock(filter)
 		go func() {
 			defer close(secondDone)
+			close(secondStarted)
 			filter.WithTextMask(func(mask func(string) string) { emitted <- mask(input) })
 		}()
-		synctest.Wait()
+		<-secondStarted
+		if !firstOwnsLock {
+			synctest.Wait()
+		}
 		checkEmission := func() {
 			t.Helper()
 			select {
@@ -93,4 +99,14 @@ func TestOutgoingFilterScreensTextDuringOverlappingSignInRefreshes(t *testing.T)
 			t.Error("after both refreshes, the filter did not mask both sign-in values and preserve the surrounding text")
 		}
 	})
+}
+
+// A caller blocked on a mutex prevents synctest.Wait from returning. If the
+// reader holds no lock, let the second caller run to quiescence before release.
+func signInReadHoldsFilterLock(filter *OutgoingFilter) bool {
+	if filter.mu.TryLock() {
+		filter.mu.Unlock()
+		return false
+	}
+	return true
 }
