@@ -8097,3 +8097,13 @@ Found on 2026-11-27, in the review of item 9 of the plan `go-s4-web-repositories
 3. With the sample data, a malformed repository address such as one ending in `constructor` now shows the Command center with its tab selected and a correct browser title. Before, no tab was selected and the title showed program text. The new behavior is better, and it is a change to a compatibility screen that nobody decided.
 
 Where: the switcher in `src/frontend/src/dialogs.tsx`, the sidebar filter in `src/frontend/src/app.tsx`, and the route lookup in `src/frontend/src/screens/repo.tsx`.
+
+## 1699. Three smaller points of the server's replay and promotion
+
+Found on 2026-11-27, in the review of item 5 of the plan `go-s4-server-link` (post-5c 1 to post-5c 3). The review's verdict was to ship, and the code is right.
+
+1. The tests of the claim fence and of the send fence use a machine that never had a ready run. A change of the readiness query to "some run was ready once" would pass. The case that matters is a machine whose earlier run is ready and whose newer run is admitted and still replays.
+2. The recovery test promotes the run in its own fixture unless the variable `LGTM_TEST_LINK_STREAM_PROMOTION` is set to 1, and nothing sets it. Since item 5 the event write promotes the run, so the fixture promotion and the variable can go, and the test then always requires the strict order.
+3. The server checks that a stream is still current before it sends an acknowledgement, in a read of its own. A removal that commits between that read and the send still lets one acknowledgement out. An acknowledgement changes nothing on the machine. The contract says that a removed machine receives no acknowledgement after the removal commits; its wording should say that this covers acknowledgements that begin after the commit. The check also costs one database read for each event.
+
+Where: `src/server/internal/link/run_gate_test.go` and `recovery_v2_test.go` for points 1 and 2; `dispatch` in `src/server/internal/link/stream.go` and the Removal section of the link contract for point 3. The test writer of item 7 of the plan makes the changes of points 1 and 2.
