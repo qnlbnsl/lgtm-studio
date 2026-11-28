@@ -1,6 +1,7 @@
 package link
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"time"
@@ -56,14 +57,15 @@ func (s *State) SweepCommands(ctx context.Context) error {
 	}
 
 	busy := make(map[string]bool)
-	if err := s.sweepCommandPages(ctx, expiredCommandPage, now.Add(-CommandGrace), false, busy); err != nil {
-		return err
-	}
-	return s.sweepCommandPages(ctx, finishedCommandPage, now.Add(-CommandRetention), true, busy)
+	timeoutErr := s.sweepCommandPages(ctx, expiredCommandPage, now.Add(-CommandGrace), false, busy)
+	retentionErr := s.sweepCommandPages(ctx, finishedCommandPage, now.Add(-CommandRetention), true, busy)
+	return cmp.Or(timeoutErr, retentionErr)
 }
 
 func (s *State) sweepCommandPages(ctx context.Context, query string, cutoff time.Time, prune bool, busy map[string]bool) error {
 	after := commandSweepKey{dueAt: pgtype.Timestamptz{InfinityModifier: pgtype.NegativeInfinity, Valid: true}}
+	failedTimeouts := make(map[string]bool)
+	var firstTimeoutErr error
 	for ctx.Err() == nil {
 		var page []commandSweepKey
 		err := s.store.Read(ctx, func(ctx context.Context, tx *store.ReadTx) error {
@@ -79,13 +81,13 @@ func (s *State) sweepCommandPages(ctx context.Context, query string, cutoff time
 			return err
 		})
 		if err != nil {
-			return err
+			return cmp.Or(firstTimeoutErr, err)
 		}
 
 		groups := make(map[string][]int64)
 		var machinesInOrder []string
 		for _, ref := range page {
-			if busy[ref.machineID] {
+			if busy[ref.machineID] || failedTimeouts[ref.machineID] {
 				continue
 			}
 			if groups[ref.machineID] == nil {
@@ -95,7 +97,7 @@ func (s *State) sweepCommandPages(ctx context.Context, query string, cutoff time
 		}
 		for _, machineID := range machinesInOrder {
 			if err := ctx.Err(); err != nil {
-				return err
+				return cmp.Or(firstTimeoutErr, err)
 			}
 			err := s.sweepCommandBatch(ctx, machineID, groups[machineID], cutoff, prune)
 			switch err {
@@ -103,7 +105,12 @@ func (s *State) sweepCommandPages(ctx context.Context, query string, cutoff time
 			case errCommandSweepBusy:
 				busy[machineID] = true
 			default:
-				return err
+				if prune {
+					return err
+				}
+				// Retry this machine's timeouts on the next sweep.
+				failedTimeouts[machineID] = true
+				firstTimeoutErr = cmp.Or(firstTimeoutErr, err)
 			}
 		}
 		if len(page) < commandSweepPageSize {
@@ -111,7 +118,7 @@ func (s *State) sweepCommandPages(ctx context.Context, query string, cutoff time
 		}
 		after = page[len(page)-1]
 	}
-	return ctx.Err()
+	return cmp.Or(firstTimeoutErr, ctx.Err())
 }
 
 func (s *State) sweepCommandBatch(ctx context.Context, machineID string, sequences []int64, cutoff time.Time, prune bool) error {
