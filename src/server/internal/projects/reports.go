@@ -69,6 +69,10 @@ FOR UPDATE`, seen.GetOperationId(), seen.GetCommandId(), machineID).Scan(&id, &k
 		response = &webv1.InspectFolderResponse{Facts: facts}
 	case "add":
 		add, err := s.attachRepository(ctx, tx, machineID, targetID, facts)
+		if refusal, ok := err.(attachmentRefusal); ok {
+			_, err := tx.Exec(ctx, `UPDATE folder_operations SET state = 'failed', reply = NULL, failure = $2 WHERE id = $1`, id, string(refusal))
+			return err
+		}
 		if err != nil {
 			return err
 		}
@@ -153,7 +157,68 @@ func validFolderFactText(value string) bool {
 	return value != "" && utf8.ValidString(value) && !strings.ContainsRune(value, 0)
 }
 
-// attachRepository rolls back the report until repository attachment is supplied by item 5.
-func (s *Service) attachRepository(context.Context, *store.Tx, string, *string, *webv1.FolderFacts) (*webv1.AddRepositoryResponse, error) {
-	return nil, store.NewDomainError("The repository could not be attached.")
+// attachRepository reuses or saves a checkout while Link holds the reporting machine lock.
+func (s *Service) attachRepository(ctx context.Context, tx *store.Tx, machineID string, targetID *string, facts *webv1.FolderFacts) (*webv1.AddRepositoryResponse, error) {
+	folder := &webv1.RepositoryFolder{ClientId: machineID, ResolvedPath: facts.GetResolvedPath()}
+	var repositoryID string
+	err := tx.QueryRow(ctx, `
+SELECT id, repository_id FROM repository_folders
+WHERE machine_id = $1 AND resolved_path = $2`, machineID, folder.ResolvedPath).Scan(&folder.Id, &repositoryID)
+	if err != nil && err != pgx.ErrNoRows {
+		return nil, err
+	}
+	saved := err == nil
+
+	if targetID != nil {
+		// Lock the explicit target before deciding path ownership so that an unknown
+		// target gets the same refusal for either path state.
+		var target webv1.Repository
+		err := tx.QueryRow(ctx, `
+SELECT remote, first_commit, remote_omitted FROM repositories WHERE id = $1 FOR UPDATE`, *targetID).
+			Scan(&target.Remote, &target.FirstCommit, &target.RemoteOmitted)
+		if err == pgx.ErrNoRows {
+			return nil, repositoryNotFound
+		}
+		if err != nil {
+			return nil, err
+		}
+		if saved && repositoryID != *targetID {
+			return nil, folderOwnedElsewhere
+		}
+		if !saved && !repositoryMatchesFolder(&target, facts) {
+			return nil, repositoryMismatch
+		}
+		repositoryID = *targetID
+	}
+
+	if !saved {
+		if targetID == nil {
+			repositoryID, err = insertRepository(ctx, tx, facts)
+			if err != nil {
+				return nil, err
+			}
+		}
+		folder.Id, err = store.NewID()
+		if err != nil {
+			return nil, err
+		}
+		_, err = tx.Exec(ctx, `
+INSERT INTO repository_folders (id, repository_id, machine_id, resolved_path) VALUES ($1, $2, $3, $4)`,
+			folder.Id, repositoryID, folder.ClientId, folder.ResolvedPath)
+		if err != nil {
+			return nil, err
+		}
+		if err := tx.Record(store.ChangeRef{Topic: "repositories", Key: repositoryID, Change: store.Saved}); err != nil {
+			return nil, err
+		}
+	}
+
+	repository, found, err := loadRepository(ctx, tx, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, errInvalidFolderReply
+	}
+	return &webv1.AddRepositoryResponse{Repository: repository, Folder: folder}, nil
 }
