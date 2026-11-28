@@ -80,7 +80,7 @@ func normalizeOrigin(raw string) (string, bool) {
 			return "", false
 		}
 		if value != defaultPort {
-			host += ":" + port
+			host += ":" + strconv.FormatUint(value, 10)
 		}
 	}
 	return scheme + "://" + strings.ToLower(host) + "/" + originPath, true

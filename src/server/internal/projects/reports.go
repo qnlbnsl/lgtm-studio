@@ -125,7 +125,8 @@ func translateFolderFacts(facts *linkv1.FolderFacts) *webv1.FolderFacts {
 		return nil
 	}
 	resolved := facts.GetResolvedPath()
-	if len(resolved) > maxResolvedPathBytes || !path.IsAbs(resolved) || !validFolderFactText(resolved) ||
+	if len(resolved) > maxResolvedPathBytes || !path.IsAbs(resolved) ||
+		path.Clean(resolved) != resolved || !validFolderFactText(resolved) ||
 		facts.GetName() != path.Base(resolved) || !validFolderFactText(facts.GetMainBranch()) ||
 		(facts.CheckedOutBranch != nil && !validFolderFactText(*facts.CheckedOutBranch)) ||
 		(facts.FirstCommit != nil && !validFolderFactText(*facts.FirstCommit)) {
