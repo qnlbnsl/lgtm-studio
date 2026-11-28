@@ -706,6 +706,7 @@ func testFullFolderBuffer(t *testing.T, timeout bool) {
 func testFolderRetiredReadLimit(t *testing.T) {
 	withFolderInspector(t, func(t *testing.T, calls <-chan *folderReadCall) {
 		f := newFolderPeer(t, 1, 0)
+		starts := observeFolderStarts(f)
 		first, second, third, fourth := folderTestCommand(1), folderTestCommand(2), folderTestCommand(3), folderTestCommand(4)
 		p := observeFolderDisk(t, "", first, second, third, fourth)
 		cancel, done := f.start(t)
@@ -717,7 +718,10 @@ func testFolderRetiredReadLimit(t *testing.T) {
 		for i, cmd := range []*linkv1.Command{first, second, third} {
 			leg.send(t, commandFrame(cmd))
 			if i < 2 {
-				retired = append(retired, requireFolderStart(t, calls, cmd))
+				call := requireFolderStart(t, calls, cmd)
+				start := receiveNow(t, starts, "the admitted read did not notify the start observer")
+				requireFolderStartObservation(t, start, cmd, call)
+				retired = append(retired, call)
 				time.Sleep(folderReadBudget)
 			} else {
 				requireEmpty(t, calls, "a third unresolved read reached the worker")
@@ -729,6 +733,7 @@ func testFolderRetiredReadLimit(t *testing.T) {
 			requireFolderWireReport(t, leg, cmd, report, number, want)
 			leg.send(t, ackEvent(number))
 		}
+		requireEmpty(t, starts, "the declined third command notified the start observer")
 		retired[0].result <- folderReadResult{facts: folderTestFacts()}
 		receiveNow(t, retired[0].returned, "the fixture could not release one retired read")
 		requireEmpty(t, retired[1].returned, "the other retired read returned early")
