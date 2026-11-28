@@ -8223,6 +8223,7 @@ The one lock of the filter is held while the store commits a report or a command
 A slow disk, or an error output that nobody reads any more, then stops the heartbeat and every other emission, although the sign-in file reads quickly.
 Issue 1709 accepts a held read of the sign-in file; it does not name a blocked log output.
 The open choice: keep the lock this wide, which is the simplest rule, or release it after the text is screened and before the write.
+Decided on 2026-11-28: the lock stays this wide. The rule is the simplest one, and a blocked log output is a fault of the installation.
 Where: `appendFilteredReport` in `src/client/internal/link/outbox.go`, `commandHandler.handle` in `src/client/internal/link/commands.go`, and the log handler in `src/client/internal/app/outgoing.go`.
 
 ## 1711. Two gaps in the startup tests of Projects
@@ -8232,3 +8233,12 @@ The code is right in both points today.
 
 1. The startup tests pass when the server's startup discards the error of registering the Projects routes with the link. A case should make a route overlap inside the assembled startup and require the fixed diagnostic, no worker started and no listener opened.
 2. The case of lag during a half-written frame on a real socket accepts a frame that is completed before the fixed answer. The watch's own held-writer test does catch a send that ignores cancellation. The socket case should also observe that lag interrupts the write that is in progress.
+
+## 1712. A paired test bounds the server's wait by the test's own clock
+
+Found on 2026-11-28 in the second review of the paired tests of sprint 4 (`attack/post-build-p4.md` of the plan `go-s4-server-projects`, post-p4 2).
+The case `TestSprintFourFolderSettlement/R7/DisconnectBeforeDelivery` requires the refusal within 28 seconds of the accepted row, while the server waits 25 seconds.
+The test reads its clock after it has received the refusal. A test process that is held for more than three seconds at that moment fails the case, although the server is right.
+The reviewer needed a pause of six seconds to show it. The bound stays, because it is what catches a server that waits 30 seconds.
+What would close it: a clock that the test controls inside the server's wait, which is a change to the program and not to the test.
+Where: the timing assertion of that case in `src/linktest/sprint_four_settlement_test.go`, and the wait of `src/server/internal/projects`.
