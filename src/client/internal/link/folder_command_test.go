@@ -493,16 +493,22 @@ func testFolderExpiryBeforeWorker(t *testing.T) {
 		f := newCommandFixture(t, store, nil, nil, nil)
 		cmd := folderTestCommand(1)
 		cmd.ExpiresAt = timestamppb.New(tNow.Add(time.Second))
+		var earlyStarts atomic.Int32
+		hooks := folderInspectionHooks{onStart: func(context.Context, string, string) { earlyStarts.Add(1) }}
+		ctx := context.WithValue(t.Context(), folderInspectionHooksKey{}, hooks)
 		restore := sync.OnceFunc(swapCommit(func(db *bolt.DB, write func(*bolt.Tx) error) error {
 			err := db.Update(write)
 			f.elapsed.Add(int64(time.Second))
 			return err
 		}))
 		defer restore()
-		if restart, err := f.handler.handle(t.Context(), cmd); restart || err != nil {
+		if restart, err := f.handler.handle(ctx, cmd); restart || err != nil {
 			t.Fatal("the folder command could not reach the worker expiry check")
 		}
 		requireEmpty(t, calls, "a folder command that expired during admission reached the worker")
+		if got := earlyStarts.Load(); got != 0 {
+			t.Fatalf("a folder command that expired during admission notified the observer %d times, want zero", got)
+		}
 		restore()
 
 		// The authenticated stream must also decline work already stale on arrival.
@@ -958,6 +964,7 @@ func testFolderRefusalsAndFilter(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			withFolderInspector(t, func(t *testing.T, calls <-chan *folderReadCall) {
 				f := newFolderPeer(t, 1, 0)
+				starts := observeFolderStarts(f)
 				f.opts.Filter = NewOutgoingFilter()
 				if tc.input.facts == nil {
 					f.opts.Filter.AddSecrets(tc.secret)
@@ -986,6 +993,9 @@ func testFolderRefusalsAndFilter(t *testing.T) {
 					call.result <- tc.input
 				}
 				got, report := nextFolderResult(t, leg, cmd)
+				if tc.input == (folderReadResult{}) {
+					requireEmpty(t, starts, "an unsafe typed or expanded path notified the inspection start observer")
+				}
 				requireFolderDiskReport(t, p, cmd, 1, tc.want)
 				requireFolderCommandResult(t, got, cmd, commandDone, 1)
 				requireFolderWireReport(t, leg, cmd, report, 1, tc.want)

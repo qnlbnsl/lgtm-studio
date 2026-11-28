@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"os"
@@ -17,6 +18,8 @@ import (
 	"time"
 	"unsafe"
 
+	bolt "go.etcd.io/bbolt"
+	boltErrors "go.etcd.io/bbolt/errors"
 	"golang.org/x/sys/unix"
 
 	"github.com/qnlbnsl/lgtm-studio/src/client/internal/enroll"
@@ -27,6 +30,7 @@ import (
 const (
 	storeReadChildMode = "LGTM_TEST_STORE_READ_MODE"
 	storeReadClient    = "LGTM_TEST_STORE_READ_CLIENT"
+	storeReadPageSize  = 16 << 10
 )
 
 func TestRevisionTwoStoreMetadataRead(t *testing.T) {
@@ -85,6 +89,48 @@ func TestRevisionTwoStoreMetadataRead(t *testing.T) {
 		requireStoreReadOpen(t, dir, nil)
 	})
 
+	t.Run("readable second header", func(t *testing.T) {
+		home := t.TempDir()
+		if err := os.Chmod(home, 0o700); err != nil {
+			t.Fatalf("could not make the fixture home private: %v", err)
+		}
+		dir := filepath.Join(home, "state")
+		if err := os.Mkdir(dir, 0o700); err != nil {
+			t.Fatalf("could not make the fixture state folder: %v", err)
+		}
+		path := state.PathsIn(dir).Store
+		db, err := bolt.Open(path, 0o600, &bolt.Options{PageSize: storeReadPageSize})
+		if err != nil {
+			t.Fatalf("could not create the database with a 16-kibibyte page size: %v", err)
+		}
+		if err := db.Close(); err != nil {
+			t.Fatalf("could not close the fixture database: %v", err)
+		}
+		data := storeReadBytes(t, path)
+		clear(data[:storeReadPageSize])
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatalf("could not clear the first metadata page: %v", err)
+		}
+		db, err = bolt.Open(path, 0o600, &bolt.Options{ReadOnly: true})
+		if err != nil {
+			t.Fatalf("bbolt could not open the database through its second header: %v", err)
+		}
+		if err := db.Close(); err != nil {
+			t.Fatalf("could not close the control database: %v", err)
+		}
+
+		ctx, cancel := context.WithTimeout(t.Context(), 8*time.Second)
+		defer cancel()
+		child := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestRevisionTwoStoreMetadataRead$")
+		child.Env = []string{"LGTM_CLIENT_STATE_DIR=" + dir, storeReadChildMode + "=second-header"}
+		if output, err := child.CombinedOutput(); err != nil {
+			t.Errorf("opening the store with a surviving second header failed its check: %v\n%s", err, output)
+		}
+		if !bytes.Equal(data, storeReadBytes(t, path)) {
+			t.Error("the metadata read fault changed the database with a surviving second header")
+		}
+	})
+
 	t.Run("readable invalid metadata", func(t *testing.T) {
 		dir := filepath.Join(t.TempDir(), "state")
 		path := seedStoreReadFixture(t, dir)
@@ -111,10 +157,26 @@ func runStoreReadFaultChild(t *testing.T, mode string) {
 	filter := []unix.SockFilter{
 		// The first word of seccomp_data is the syscall number.
 		{Code: unix.BPF_LD | unix.BPF_W | unix.BPF_ABS, K: 0},
-		{Code: unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K, K: unix.SYS_PREAD64, Jf: 1},
+	}
+	if mode == "second-header" {
+		// The third syscall argument is the buffer length. Fail bbolt's
+		// 4-kibibyte probes and allow the shorter fallback header reads.
+		lengthOffset := uint32(16 + 2*8)
+		if binary.NativeEndian.Uint16([]byte{0, 1}) == 1 {
+			lengthOffset += 4
+		}
+		filter = append(filter,
+			unix.SockFilter{Code: unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K, K: unix.SYS_PREAD64, Jf: 3},
+			unix.SockFilter{Code: unix.BPF_LD | unix.BPF_W | unix.BPF_ABS, K: lengthOffset},
+			unix.SockFilter{Code: unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K, K: 4096, Jf: 1},
+		)
+	} else {
+		filter = append(filter, unix.SockFilter{Code: unix.BPF_JMP | unix.BPF_JEQ | unix.BPF_K, K: unix.SYS_PREAD64, Jf: 1})
+	}
+	filter = append(filter, []unix.SockFilter{
 		{Code: unix.BPF_RET | unix.BPF_K, K: unix.SECCOMP_RET_ERRNO | uint32(unix.EIO)},
 		{Code: unix.BPF_RET | unix.BPF_K, K: unix.SECCOMP_RET_ALLOW},
-	}
+	}...)
 	program := unix.SockFprog{Len: uint16(len(filter)), Filter: &filter[0]}
 	thread, _, errno := unix.Syscall(unix.SYS_SECCOMP, unix.SECCOMP_SET_MODE_FILTER, unix.SECCOMP_FILTER_FLAG_TSYNC, uintptr(unsafe.Pointer(&program)))
 	if errno != 0 || thread != 0 {
@@ -131,7 +193,16 @@ func runStoreReadFaultChild(t *testing.T, mode string) {
 		t.Fatalf("the metadata control read returned %d bytes and %v, want an input/output error", n, err)
 	}
 
-	if mode == "open" {
+	if mode == "second-header" {
+		db, err := bolt.Open(state.PathsIn(dir).Store, 0o600, &bolt.Options{ReadOnly: true})
+		if db != nil {
+			_ = db.Close()
+		}
+		if !errors.Is(err, boltErrors.ErrInvalid) {
+			t.Fatalf("bbolt returned %v under the metadata read fault, want invalid metadata", err)
+		}
+	}
+	if mode == "open" || mode == "second-header" {
 		requireStoreReadOpen(t, dir, link.ErrStoreFailed)
 		return
 	}
