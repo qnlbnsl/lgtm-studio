@@ -14,10 +14,20 @@ const folderInspectionBudget = 5 * time.Second
 
 var inspectFolder = folders.Inspect
 
+var errFolderReportInterrupted = errors.New("link: folder inspection fixture interrupted the run")
+
+type folderInspectionHooksKey struct{}
+
+type folderInspectionHooks struct {
+	onStart     func(context.Context, string, string)
+	afterReport func(context.Context, uint64) error
+}
+
 type activeFolder struct {
 	attempt     commandAttempt
 	operationID string
 	cancel      context.CancelFunc
+	afterReport func(context.Context, uint64) error
 }
 
 type folderInspection struct {
@@ -28,7 +38,9 @@ type folderInspection struct {
 
 func (h *commandHandler) startFolder(ctx context.Context, attempt commandAttempt, action *linkv1.LookAtFolder, clock serverClock, admission, expiry time.Time) {
 	ctx, cancel := context.WithTimeout(ctx, folderInspectionBudget)
-	h.folder = &activeFolder{attempt: attempt, operationID: action.GetOperationId(), cancel: cancel}
+	hooks, _ := ctx.Value(folderInspectionHooksKey{}).(folderInspectionHooks)
+	operationID := action.GetOperationId()
+	h.folder = &activeFolder{attempt: attempt, operationID: operationID, cancel: cancel, afterReport: hooks.afterReport}
 	path, home, filter := action.GetPath(), h.folderHome, h.filter
 	reads, completed, inspect := h.folderReads, h.folderCompleted, inspectFolder
 	canStart := func() bool { return clock.canStart(admission, expiry) }
@@ -56,6 +68,9 @@ func (h *commandHandler) startFolder(ctx context.Context, attempt commandAttempt
 			case unsafePath:
 				result.refusal = linkv1.FolderRefusal_FOLDER_REFUSAL_PATH_NOT_USABLE
 			default:
+				if hooks.onStart != nil {
+					hooks.onStart(ctx, operationID, attempt.id)
+				}
 				result.facts, result.refusal = inspect(ctx, path, home)
 			}
 			<-reads
@@ -92,9 +107,12 @@ func (h *commandHandler) finishFolder(ctx context.Context, inspection folderInsp
 		seen.Result = &linkv1.FolderSeen_Refusal{Refusal: inspection.refusal}
 	}
 	event := &linkv1.Event{HappenedAt: timestamppb.Now(), Report: &linkv1.Event_FolderSeen{FolderSeen: seen}}
-	_, err := h.store.appendFilteredReport(ctx, h.filter, event)
+	number, err := h.store.appendFilteredReport(ctx, h.filter, event)
 	switch {
 	case err == nil:
+		if folder.afterReport != nil && folder.afterReport(ctx, number) != nil {
+			return errFolderReportInterrupted
+		}
 		return h.finishCommand(ctx, folder.attempt, outcomeDone)
 	case errors.Is(err, ErrOutboxFull), errors.Is(err, ErrEventTooLarge):
 		return h.finishCommand(ctx, folder.attempt, outcomeFailed)

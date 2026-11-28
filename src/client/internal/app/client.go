@@ -26,7 +26,7 @@ type Options struct {
 	Version  string
 	Getenv   func(string) string
 	Stderr   io.Writer
-	// These callback declarations are stubs from the test writer.
+
 	OnFolderInspectionStart func(context.Context, string, string)
 	AfterFolderReport       func(context.Context, uint64) error
 }
@@ -123,7 +123,9 @@ func Run(ctx context.Context, opts Options) (status int) {
 	outcome, err = runLink(ctx, link.RunOptions{
 		Server: server, Credential: credential, Folder: folder, Settings: settings,
 		ScanOptions: harness.DefaultScanOptions(opts.Getenv), Version: opts.Version, Logger: logger,
-		Filter: filter,
+		Filter:                  filter,
+		OnFolderInspectionStart: opts.OnFolderInspectionStart,
+		AfterFolderReport:       opts.AfterFolderReport,
 	})
 	if err != nil {
 		return 1

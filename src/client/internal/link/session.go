@@ -30,7 +30,7 @@ type RunOptions struct {
 	Logger      *slog.Logger
 	// Filter shares known secrets with the process that owns this link.
 	Filter *OutgoingFilter
-	// These callback declarations are stubs from the test writer.
+
 	OnFolderInspectionStart func(context.Context, string, string)
 	AfterFolderReport       func(context.Context, uint64) error
 }
@@ -105,6 +105,11 @@ func Run(ctx context.Context, opts RunOptions) (RunOutcome, error) {
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	if opts.OnFolderInspectionStart != nil || opts.AfterFolderReport != nil {
+		ctx = context.WithValue(ctx, folderInspectionHooksKey{}, folderInspectionHooks{
+			onStart: opts.OnFolderInspectionStart, afterReport: opts.AfterFolderReport,
+		})
+	}
 	r := clientRun{
 		ctx: ctx, cancel: cancel, opts: opts, logger: logger, store: store,
 		announcement: newRunIdentity(store.Next()),
@@ -123,14 +128,18 @@ func Run(ctx context.Context, opts RunOptions) (RunOutcome, error) {
 	r.commands.stopFolder()
 	completion := r.commands.stopScan()
 	recoveryErr := errors.Join(r.fault, outageErr)
+	interrupted := errors.Is(recoveryErr, errFolderReportInterrupted)
 	var scanErr error
-	if !revisionStop && recoveryStoreCode(recoveryErr) == "" {
+	if !revisionStop && !interrupted && recoveryStoreCode(recoveryErr) == "" {
 		_, _, scanErr = r.commands.settleScan(completion)
 	}
 	closeErr := store.Close()
 	if revisionStop {
 		r.reportFailure(linkFailureCode(linkErr))
 		return RunRecoveryStop, nil
+	}
+	if interrupted {
+		return RunStopped, errFolderReportInterrupted
 	}
 	if err := errors.Join(r.fault, outageErr, scanErr, closeErr); err != nil {
 		return stopForStore(logger, err)
@@ -460,7 +469,9 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 
 	defer func() {
 		var local storeFault
-		recovering := errors.As(err, &local) && recoveryStoreCode(local.err) != ""
+		localFault := errors.As(err, &local)
+		recovering := localFault && recoveryStoreCode(local.err) != ""
+		interrupted := localFault && errors.Is(local.err, errFolderReportInterrupted)
 		if recovering {
 			l.run.stopLocal(local.err)
 		} else if isRevisionRefusal(err) {
@@ -493,7 +504,7 @@ func (l *liveSession) serve(ctx context.Context, s *session, retire func()) (res
 		s.welcome.ConnectionToken = ""
 		select {
 		case reportErr := <-reportFailed:
-			if !recovering && !isRevisionRefusal(err) {
+			if !recovering && !interrupted && !isRevisionRefusal(err) {
 				err = storeFault{reportErr}
 			}
 		default:

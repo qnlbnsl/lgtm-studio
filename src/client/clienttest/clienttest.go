@@ -16,9 +16,11 @@ type Options struct {
 	Version  string
 	Getenv   func(string) string
 	Stderr   io.Writer
-	// These callback declarations are stubs from the test writer.
+	// OnFolderInspectionStart observes a read with its context, operation ID and command ID.
 	OnFolderInspectionStart func(context.Context, string, string)
-	AfterFolderReport       func(context.Context, uint64) error
+	// AfterFolderReport receives the durable event number before handoff or receipt completion.
+	// Returning an error stops the client and leaves the receipt started.
+	AfterFolderReport func(context.Context, uint64) error
 }
 
 // Join enrolls a client using the supplied state folder.
