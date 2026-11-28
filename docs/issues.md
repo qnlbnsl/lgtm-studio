@@ -8213,3 +8213,11 @@ A slow disk, or an error output that nobody reads any more, then stops the heart
 Issue 1709 accepts a held read of the sign-in file; it does not name a blocked log output.
 The open choice: keep the lock this wide, which is the simplest rule, or release it after the text is screened and before the write.
 Where: `appendFilteredReport` in `src/client/internal/link/outbox.go`, `commandHandler.handle` in `src/client/internal/link/commands.go`, and the log handler in `src/client/internal/app/outgoing.go`.
+
+## 1711. Two gaps in the startup tests of Projects
+
+Found on 2026-11-28 in the review of the startup part of item 8 of the plan `go-s4-server-projects` (`attack/post-build-8b.md`).
+The code is right in both points today.
+
+1. The startup tests pass when the server's startup discards the error of registering the Projects routes with the link. A case should make a route overlap inside the assembled startup and require the fixed diagnostic, no worker started and no listener opened.
+2. The case of lag during a half-written frame on a real socket accepts a frame that is completed before the fixed answer. The watch's own held-writer test does catch a send that ignores cancellation. The socket case should also observe that lag interrupts the write that is in progress.
