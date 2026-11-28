@@ -45,6 +45,9 @@ VALUES ($1, $2, $3, $4, $5, $6)`, id, facts.Name, facts.MainBranch, facts.Remote
 
 // loadRepository reads a complete repository projection from a single database snapshot.
 func loadRepository(ctx context.Context, q machines.Querier, id string) (*webv1.Repository, bool, error) {
+	if id == repositoryRefreshKey {
+		return nil, false, store.ErrWatchLagged
+	}
 	rows, err := q.Query(ctx, `
 SELECT r.name, r.main_branch, r.remote, r.first_commit, r.remote_omitted,
        f.id, f.machine_id, f.resolved_path
