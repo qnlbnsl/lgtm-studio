@@ -12,6 +12,8 @@ export const folderRepositoryMissing = 'The repository was not found.';
 export const folderRejected = 'The server refused the request.';
 export const folderNetwork = 'The server did not answer.';
 const folderWait = 'The machine did not answer the folder request.';
+// The server can wait 25 seconds for the machine. Allow five more seconds for transport.
+const folderAttemptTimeout = 30_000;
 
 // The build contract pairs each public sentence with its Connect code.
 const folderRefusals: Partial<Record<Code, readonly string[]>> = {
@@ -71,7 +73,7 @@ async function callFolder<T>(
   if (!isCurrent()) return undefined;
   let reply: T;
   try {
-    reply = await call({ signal, headers: { 'Lgtm-Request-Key': intent.key } });
+    reply = await call({ signal, timeoutMs: folderAttemptTimeout, headers: { 'Lgtm-Request-Key': intent.key } });
   } catch (error) {
     if (!isCurrent()) return undefined;
     throw error;

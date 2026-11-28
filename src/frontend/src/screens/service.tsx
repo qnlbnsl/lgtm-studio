@@ -622,7 +622,7 @@ function WatchedAddRepository({ s, d }: DialogProps) {
             client: scope.clients.projects, isCurrent: current,
             signal: AbortSignal.any([controller.signal, scope.signal]),
           });
-          if (!reply) return;
+          if (!reply || !current()) return;
           if (reply.facts) {
             started.facts = reply.facts;
             setFacts(reply.facts);
@@ -717,7 +717,7 @@ function WatchedAddRepository({ s, d }: DialogProps) {
         client: scope.clients.projects, isCurrent: current,
         signal: AbortSignal.any([controller.signal, scope.signal]),
       });
-      if (!reply) return;
+      if (!reply || !current()) return;
       if (!reply.repository?.id || !reply.folder?.id || reply.folder.clientId !== save.intent.clientId) {
         setProgress({ phase: 'replay', save });
         setFeedback(folderRejected);
