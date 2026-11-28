@@ -73,7 +73,7 @@ candidate.
 (
     set -e
     set +x
-    export S4_CONTRACT_COMMIT=89506b7c
+    export S4_CONTRACT_COMMIT=699ce488
     export S4_CANDIDATE_COMMIT="$(git rev-parse HEAD)"
     export LGTM_REV1_COMMIT=f6cbea30
     git merge-base --is-ancestor "$S4_CONTRACT_COMMIT" "$S4_CANDIDATE_COMMIT"
