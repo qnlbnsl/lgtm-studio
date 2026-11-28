@@ -15,11 +15,12 @@ import (
 )
 
 const (
-	outcomeDone        = linkv1.CommandOutcome_COMMAND_OUTCOME_DONE
-	outcomeFailed      = linkv1.CommandOutcome_COMMAND_OUTCOME_FAILED
-	outcomeExpired     = linkv1.CommandOutcome_COMMAND_OUTCOME_EXPIRED
-	outcomeUnsupported = linkv1.CommandOutcome_COMMAND_OUTCOME_UNSUPPORTED
-	outcomeInterrupted = linkv1.CommandOutcome_COMMAND_OUTCOME_INTERRUPTED
+	outcomeDone             = linkv1.CommandOutcome_COMMAND_OUTCOME_DONE
+	outcomeFailed           = linkv1.CommandOutcome_COMMAND_OUTCOME_FAILED
+	outcomeExpired          = linkv1.CommandOutcome_COMMAND_OUTCOME_EXPIRED
+	outcomeUnsupported      = linkv1.CommandOutcome_COMMAND_OUTCOME_UNSUPPORTED
+	outcomeInterrupted      = linkv1.CommandOutcome_COMMAND_OUTCOME_INTERRUPTED
+	conflictingStateMessage = "The server sent conflicting machine states at the same revision."
 )
 
 var (
@@ -84,12 +85,12 @@ type scanCompletion struct {
 
 // commandHandler belongs to the link owner, which settles commands and sends replies.
 type commandHandler struct {
-	store   *Store
-	scan    func(context.Context, bool) (bool, error)
-	send    func(context.Context, *session, *linkv1.CommandResult) error
-	elapsed func() (time.Duration, error)
-	logger  *slog.Logger
-	filter  *OutgoingFilter
+	store             *Store
+	scan              func(context.Context, bool) (bool, error)
+	send              func(context.Context, *session, *linkv1.CommandResult) error
+	elapsed           func() (time.Duration, error)
+	warnStateConflict func()
+	filter            *OutgoingFilter
 
 	current   *session
 	state     *linkv1.MachineState
@@ -112,9 +113,10 @@ func newCommandHandler(store *Store, scan func(context.Context, bool) (bool, err
 		logger = slog.New(slog.DiscardHandler)
 	}
 	return &commandHandler{
-		store: store, scan: scan, send: send, elapsed: elapsed, logger: logger,
-		completed:   make(chan scanCompletion, 1),
-		folderReads: make(chan struct{}, 2), folderScreens: make(chan struct{}, 1),
+		store: store, scan: scan, send: send, elapsed: elapsed,
+		warnStateConflict: func() { logger.Warn(conflictingStateMessage) },
+		completed:         make(chan scanCompletion, 1),
+		folderReads:       make(chan struct{}, 2), folderScreens: make(chan struct{}, 1),
 		folderCompleted: make(chan folderInspection, 1),
 	}
 }
@@ -143,7 +145,7 @@ func (h *commandHandler) applyState(state *linkv1.MachineState) {
 	case state.GetRevision() > h.state.GetRevision():
 		h.state = proto.CloneOf(state)
 	case state.GetRevision() == h.state.GetRevision() && !proto.Equal(state, h.state):
-		h.logger.Warn("The server sent conflicting machine states at the same revision.")
+		h.warnStateConflict()
 	}
 }
 
@@ -165,11 +167,7 @@ func (h *commandHandler) handle(ctx context.Context, msg *linkv1.Command) (resta
 	if h.current == nil {
 		return false, errStream
 	}
-	release, err := h.filter.lockSecrets(ctx, peerIdentifiers)
-	if err != nil {
-		return false, ErrInvalidCommand
-	}
-	unlock := sync.OnceFunc(release)
+	unlock := sync.OnceFunc(h.filter.lockRegisteredSecrets())
 	defer unlock()
 	if h.filter.containsSecret(id) {
 		return false, ErrInvalidCommand

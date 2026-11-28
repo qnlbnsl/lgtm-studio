@@ -33,15 +33,7 @@ func newReplay(store *Store, through uint64) (*replay, error) {
 }
 
 func newReplayWithFilter(store *Store, through uint64, filter *OutgoingFilter) (*replay, error) {
-	screened := through < store.Next()-1
-	if screened {
-		unlock, err := filter.lockSecrets(context.Background(), localText)
-		if err != nil {
-			return nil, ErrStoreDamaged
-		}
-		defer unlock()
-	}
-	if err := store.validateReplay(through, filter, screened); err != nil {
+	if err := store.screenReplay(through, filter); err != nil {
 		return nil, err
 	}
 	if err := store.Ack(through); err != nil {
@@ -50,7 +42,32 @@ func newReplayWithFilter(store *Store, through uint64, filter *OutgoingFilter) (
 	return &replay{store: store, filter: filter, ceiling: through}, nil
 }
 
+func (s *Store) screenReplay(through uint64, filter *OutgoingFilter) error {
+	if filter != nil && filter.refresh != nil {
+		// A verified mark at the tail needs no sample. The validator decides
+		// under the store lock so it cannot miss an append at that boundary.
+		err := s.validateReplayWithScreen(through, filter, errScreeningUnavailable)
+		if !errors.Is(err, errScreeningUnavailable) {
+			return err
+		}
+	}
+	unlock, err := filter.lockSecrets(context.Background(), localText)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return s.validateReplay(through, filter, true)
+}
+
 func (s *Store) validateReplay(through uint64, filter *OutgoingFilter, screened bool) error {
+	var unscreened error
+	if !screened {
+		unscreened = ErrStoreDamaged
+	}
+	return s.validateReplayWithScreen(through, filter, unscreened)
+}
+
+func (s *Store) validateReplayWithScreen(through uint64, filter *OutgoingFilter, unscreened error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.ready(); err != nil {
@@ -60,8 +77,8 @@ func (s *Store) validateReplay(through uint64, filter *OutgoingFilter, screened 
 	if through >= s.events.next || through < floor-1 {
 		return ErrAckAhead
 	}
-	if !screened && through < s.events.next-1 {
-		return ErrStoreDamaged
+	if unscreened != nil && through < s.events.next-1 {
+		return unscreened
 	}
 	for first := through + 1; first < s.events.next; first += maxUnackedEvents {
 		if err := s.validateReplayBatch(first, maxUnackedEvents, filter); err != nil {
@@ -95,6 +112,21 @@ func (s *Store) validateReplayBatch(first, limit uint64, filter *OutgoingFilter)
 
 // next checks the next event and keeps registration locked through handoff.
 func (r *replay) next(handoff ...func(*linkv1.Event)) (*linkv1.Event, error) {
+	event, err := r.prepareNext(context.Background())
+	if err != nil || event == nil {
+		return nil, err
+	}
+	var send func(*linkv1.Event)
+	if len(handoff) != 0 {
+		send = handoff[0]
+	}
+	if err := r.handoff(event, send); err != nil {
+		return nil, err
+	}
+	return event, nil
+}
+
+func (r *replay) prepareNext(ctx context.Context) (*linkv1.Event, error) {
 	number := r.ceiling + 1
 	rows, err := r.store.Read(number, 1)
 	if err == nil && len(rows) == 0 && number < r.store.Next() {
@@ -114,19 +146,28 @@ func (r *replay) next(handoff ...func(*linkv1.Event)) (*linkv1.Event, error) {
 	if err != nil {
 		return nil, ErrStoreDamaged
 	}
-	unlock, err := r.filter.lockSecrets(context.Background(), reportScreen(event))
+	unlock, err := r.filter.lockSecrets(ctx, reportScreen(event))
 	if err != nil {
 		return nil, err
 	}
+	unlock()
+	return event, nil
+}
+
+func (r *replay) handoff(event *linkv1.Event, send func(*linkv1.Event)) error {
+	unlock := r.filter.lockRegisteredSecrets()
 	defer unlock()
 	if !r.filter.reportTextSafe(event.ProtoReflect()) {
-		return nil, ErrStoreDamaged
+		return ErrStoreDamaged
 	}
-	if len(handoff) != 0 {
-		handoff[0](event)
+	if !r.filter.canScreen(reportScreen(event)) {
+		return errScreeningUnavailable
 	}
-	r.ceiling = number
-	return event, nil
+	if send != nil {
+		send(event)
+	}
+	r.ceiling = event.GetNumber()
+	return nil
 }
 
 func (r *replay) ack(through uint64) error {

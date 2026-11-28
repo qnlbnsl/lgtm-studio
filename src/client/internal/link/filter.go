@@ -33,7 +33,7 @@ type OutgoingFilter struct {
 	refresh  func() []string
 	sampling int
 	idle     chan struct{}
-	slots    [2]chan struct{}
+	slots    chan struct{}
 }
 
 // NewOutgoingFilter starts with no known secrets.
@@ -44,12 +44,7 @@ func NewOutgoingFilter() *OutgoingFilter { return &OutgoingFilter{} }
 func NewRefreshingOutgoingFilter(read func() []string) *OutgoingFilter {
 	return &OutgoingFilter{
 		refresh: read,
-		// Reserve capacity for checking peer identifiers even if local text
-		// cannot be screened. Folder reads and settlement have their own limits.
-		slots: [2]chan struct{}{
-			localText:       make(chan struct{}, 2),
-			peerIdentifiers: make(chan struct{}, 1),
-		},
+		slots:   make(chan struct{}, 2),
 	}
 }
 
@@ -124,34 +119,54 @@ func (f *OutgoingFilter) lockSecrets(ctx context.Context, screen secretScreen) (
 	}
 	ctx, cancel := context.WithTimeout(ctx, secretRefreshBudget)
 	defer cancel()
-	if err := f.refreshWithin(ctx, screen); err != nil {
+	if err := f.refreshWithin(ctx); err != nil {
 		return nil, err
 	}
 	return f.lockAfterRefresh(ctx, screen)
 }
 
-func (f *OutgoingFilter) refreshWithin(ctx context.Context, screen secretScreen) error {
-	if f == nil || f.refresh == nil {
-		return nil
-	}
-	slot := f.slots[screen]
+func (f *OutgoingFilter) refreshWithin(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
 		return errScreeningUnavailable
-	case slot <- struct{}{}:
+	case f.slots <- struct{}{}:
 	}
+	select {
+	case <-ctx.Done():
+		return errScreeningUnavailable
+	case <-f.sample():
+		return nil
+	}
+}
+
+// refreshResult samples when capacity is available. A signed peer's identifiers
+// can still be checked against registered values when the read stalls.
+func (f *OutgoingFilter) refreshResult(ctx context.Context) {
+	if f == nil || f.refresh == nil || ctx.Err() != nil {
+		return
+	}
+	select {
+	case f.slots <- struct{}{}:
+	default:
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, secretRefreshBudget)
+	defer cancel()
+	select {
+	case <-ctx.Done():
+	case <-f.sample():
+	}
+}
+
+// sample takes ownership of a slot until the sampled values are registered.
+func (f *OutgoingFilter) sample() <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		f.refreshSecrets()
-		<-slot
+		<-f.slots
 		close(done)
 	}()
-	select {
-	case <-ctx.Done():
-		return errScreeningUnavailable
-	case <-done:
-		return nil
-	}
+	return done
 }
 
 func (f *OutgoingFilter) refreshSecrets() {
@@ -304,18 +319,11 @@ func (f *OutgoingFilter) maskPrefix(text string, final bool) (string, string) {
 }
 
 func (f *OutgoingFilter) folderPathUnsafe(path, home string) bool {
-	if f == nil {
-		return false
-	}
-	var values []string
-	if f.refresh != nil {
-		// This read checks input before inspection. Any resulting report will
-		// take its own ordered sample at append and again at handoff.
-		values = f.refresh()
-	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.addSecrets(values)
+	// The inspection worker owns the read permit. Count this sample until its
+	// values are registered so overlapping text gates account for it.
+	f.refreshSecrets()
+	unlock := f.lockRegisteredSecrets()
+	defer unlock()
 	if f.containsSecret(path) {
 		return true
 	}
