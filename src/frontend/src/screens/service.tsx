@@ -315,12 +315,17 @@ export function Machines({ s }: ScreenProps) {
   useEffect(() => { if (live.on) void mocks.loadMachines(); }, [s.boardRevision]);
   const repositoryMode = s.server.repositoryMode;
   const online = s.machines.filter((m) => m.status === 'online').length;
-  const remove = (m: Pick<Machine, 'id' | 'name'>, recovering: boolean) => {
+  const remove = (m: Pick<Machine, 'id' | 'name'>) => {
     const ags = machineAgents(s, m.id).filter(running); const subs = s.subscriptions.filter((x) => x.machine === m.id);
     const scope = server.captureSession();
     const facts = `${m.name} is disconnected and forgotten. Its folders stay on its disk.`;
-    act.confirm({ title: `Remove ${m.name}?`, body: recovering ? facts : `${facts} Pair it again to bring it back.`, action: 'Remove machine',
-      lost: recovering ? [] : [ags.length ? `${plural(ags.length, 'running agent')} will stop` : null, subs.length ? `${plural(subs.length, 'subscription')} on it will be removed` : null, s.projects.some((p) => p.machine === m.id && !p.archived) ? 'Projects that run here need another machine' : null].filter(Boolean) as string[],
+    const pairingBody = `${facts} Pair it again to bring it back.`;
+    const body = repositoryMode ? (state: State) => {
+      const machine = state.machines.find((x) => x.id === m.id) ?? state.joining.find((x) => x.id === m.id);
+      return !machine || machine.eventHistoryNeedsRecovery ? facts : pairingBody;
+    } : pairingBody;
+    act.confirm({ title: `Remove ${m.name}?`, body, action: 'Remove machine',
+      lost: repositoryMode ? [] : [ags.length ? `${plural(ags.length, 'running agent')} will stop` : null, subs.length ? `${plural(subs.length, 'subscription')} on it will be removed` : null, s.projects.some((p) => p.machine === m.id && !p.archived) ? 'Projects that run here need another machine' : null].filter(Boolean) as string[],
       onConfirm: () => machineAction(scope, (scope) => server.removeClient(scope, m.id), () => {
         if (!store.state.server.repositoryMode) update((st) => { st.subscriptions = st.subscriptions.filter((x) => x.machine !== m.id);
           for (const a of st.agents) if (projectOf(st, a.project)?.machine === m.id && running(a)) { a.prevState = a.state; a.state = 'stopped'; a.activity = `Stopped · ${m.name} was removed`; } });
@@ -415,7 +420,7 @@ export function Machines({ s }: ScreenProps) {
                 { label: 'Add repository', icon: 'folder-git-2', disabled: off, why: off ? `${m.name} is offline.` : null, onSelect: () => act.openDialog({ type: 'add-repository', machine: m.id }) },
                 off && !s.server.repositoryMode && { label: 'Try to reconnect', icon: 'refresh-cw', onSelect: () => { if (act.refused()) return; act.toast(`Calling ${m.name}…`); machineAction(server.captureSession(), (scope) => server.reconnectClient(scope, m.id)); } },
                 { sep: true },
-                { label: 'Remove machine', icon: 'trash-2', danger: true, disabled: removalBlocked, why: removalBlocked ? 'The master runs the service and cannot be removed.' : null, onSelect: () => live.on ? refuse() : remove(m, recovering) },
+                { label: 'Remove machine', icon: 'trash-2', danger: true, disabled: removalBlocked, why: removalBlocked ? 'The master runs the service and cannot be removed.' : null, onSelect: () => live.on ? refuse() : remove(m) },
               ].filter(Boolean)} />
             </td>
           </tr>
@@ -448,7 +453,7 @@ export function Machines({ s }: ScreenProps) {
                   <td class="c-mid" />
                   <td class="svc-acts" onClick={(e) => e.stopPropagation()}>
                     <Menu class="icon-btn sm" label={'Actions for ' + j.host} align="end" width={230} trigger={<Icon name="ellipsis" size={15} />} items={[
-                      { label: 'Remove machine', icon: 'trash-2', danger: true, onSelect: () => remove({ id: j.id, name: j.host }, true) },
+                      { label: 'Remove machine', icon: 'trash-2', danger: true, onSelect: () => remove({ id: j.id, name: j.host }) },
                     ]} />
                   </td>
                 </tr>

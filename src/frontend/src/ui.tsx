@@ -260,8 +260,9 @@ export function Dialog({ title, onClose, children, foot, size, onSubmit }: Dialo
 export type DialogComponent = ComponentType<{ d: DialogState; s: State }>;
 const dialogTypes: Record<string, DialogComponent> = {};
 export function registerDialog(type: string, component: DialogComponent): void { dialogTypes[type] = component; }
-function ConfirmDialog({ d }: { d: DialogState }) {
+function ConfirmDialog({ d, s }: { d: DialogState; s: State }) {
   const [pending, setPending] = useState(false);
+  const body = typeof d.body === 'function' ? d.body(s) : d.body;
   const close = () => { if (!pending) act.closeDialog(); };
   const confirm = async () => {
     if (pending) return;
@@ -276,7 +277,7 @@ function ConfirmDialog({ d }: { d: DialogState }) {
         {pending ? d.pendingLabel || 'Working…' : d.action}
       </button>
     </>}>
-    {d.body && <p style="line-height:1.55">{d.body}</p>}
+    {body && <p style="line-height:1.55">{body}</p>}
     {d.lost?.length > 0 && <ul class="col" style="gap:4px">
       {d.lost.map((l: string) => <li class="row"><Icon name="triangle-alert" size={14} class="warn-text" /><span>{l}</span></li>)}
     </ul>}

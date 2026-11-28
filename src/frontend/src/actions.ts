@@ -54,7 +54,7 @@ export function openDialog(dialog: DialogState): void { if (['pair-machine', 'si
 export function closeDialog(): void { update((s) => { s.dialog = null; }); }
 // Asks before a destructive change. `onConfirm` runs only after the owner agrees.
 /** `second` is another way to do the same thing, drawn as a second button before the first. */
-export interface ConfirmOptions { title: string; body?: string; lost?: string[]; action: string; danger?: boolean; waitForReply?: boolean; pendingLabel?: string; onConfirm: () => unknown; second?: { action: string; onConfirm: () => unknown } }
+export interface ConfirmOptions { title: string; body?: string | ((s: State) => string); lost?: string[]; action: string; danger?: boolean; waitForReply?: boolean; pendingLabel?: string; onConfirm: () => unknown; second?: { action: string; onConfirm: () => unknown } }
 export function confirm({ title, body, lost = [], action, danger = true, onConfirm, second }: ConfirmOptions): void {
   openDialog({ type: 'confirm', title, body, lost, action, danger, onConfirm, second });
 }
