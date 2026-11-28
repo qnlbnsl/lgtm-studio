@@ -8108,6 +8108,8 @@ Found on 2026-11-27, in the review of item 5 of the plan `go-s4-server-link` (po
 
 Where: `src/server/internal/link/run_gate_test.go` and `recovery_v2_test.go` for points 1 and 2; `dispatch` in `src/server/internal/link/stream.go` and the Removal section of the link contract for point 3. The test writer of item 7 of the plan makes the changes of points 1 and 2.
 
+Points 1 and 2 were closed on 2026-11-27 by the tests of item 7 of the plan. Point 3 stays open.
+
 ## 1700. New project opens on an older server that reports no machine named Studio
 
 Found on 2026-11-27, in the review of item 7 of the plan `go-s4-web-repositories` (post-7 3).

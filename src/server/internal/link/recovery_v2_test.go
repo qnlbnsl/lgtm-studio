@@ -6,7 +6,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -245,7 +244,6 @@ func TestRecoveryWarningFollowsLaterReadyAdmission(t *testing.T) {
 			}
 			requireEventAck(t, pending, 12)
 			f.requireSaved(t, head, m.ID)
-			requireRecoveryReplayReady(t, f, m.ID, current.StreamID)
 			requireAdmissionRun(t, f, m.ID, run, run, 13)
 
 			if scenario.refuseBeforeReplay && !scenario.refreshDuringReplay {
@@ -473,45 +471,6 @@ func requireRecoveryFence(t *testing.T, f *handshakeFixture, id string, want int
 		"SELECT COALESCE(recovery_set_generation, -1) FROM link_machines WHERE machine_id = $1", id)
 	if got != want {
 		t.Fatalf("The saved recovery generation was %d, want %d. A generation of -1 represents a clear flag.", got, want)
-	}
-}
-
-func requireRecoveryReplayReady(t *testing.T, f *handshakeFixture, machineID, streamID string) {
-	t.Helper()
-	head := f.head(t)
-	requireStreamPromotion := os.Getenv("LGTM_TEST_LINK_STREAM_PROMOTION") == "1"
-	var alreadyReady bool
-	err := f.s.Write(t.Context(), func(ctx context.Context, tx *store.Tx) error {
-		if _, err := f.r.Lock(ctx, tx, machineID); err != nil {
-			return err
-		}
-		if err := checkCurrentStream(ctx, tx, machineID, streamID); err != nil {
-			return err
-		}
-		var mark uint64
-		if err := tx.QueryRow(ctx, "SELECT event_mark, COALESCE(admitted_run_id = ready_run_id, false) FROM link_machines WHERE machine_id = $1", machineID).
-			Scan(&mark, &alreadyReady); err != nil {
-			return err
-		}
-		if alreadyReady || requireStreamPromotion {
-			return nil
-		}
-		// Item 4 exercises the shared promotion before the event path calls it in item 5.
-		if err := f.state.promoteRun(ctx, tx, machineID, mark); err != nil {
-			return err
-		}
-		return f.r.Touch(ctx, tx, machineID)
-	})
-	if err != nil {
-		t.Fatal("The fixture could not promote the current stream under the machine lock.")
-	}
-	if requireStreamPromotion && !alreadyReady {
-		t.Fatal("The stream acknowledged the final replay event before committing run readiness.")
-	}
-	if alreadyReady {
-		f.requireSaved(t, head)
-	} else {
-		f.requireSaved(t, head, machineID)
 	}
 }
 

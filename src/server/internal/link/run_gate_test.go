@@ -223,12 +223,16 @@ func pendingCommandFixture(t *testing.T) (*presenceFixture, string, string, clai
 	m, _ := f.register(t, "pending command fence")
 	f.approve(t, m.ID)
 	seedAdmissionMark(t, f, m.ID, 5)
+	readyRun := fixtureStreamID(t)
+	if _, err := f.state.BecomeCurrent(t.Context(), m.ID, fixtureStreamID(t), presenceAddress, RunAnnouncement{ID: readyRun, FirstEventNumber: 6}); err != nil {
+		t.Fatal("The pending command fixture could not admit its earlier ready run.")
+	}
 	stream := fixtureStreamID(t)
 	run := fixtureStreamID(t)
 	if _, err := f.state.BecomeCurrent(t.Context(), m.ID, stream, presenceAddress, RunAnnouncement{ID: run, FirstEventNumber: 10}); err != nil {
 		t.Fatal("The pending command fixture could not admit its stream.")
 	}
-	requireAdmissionRun(t, f, m.ID, run, "", 10)
+	requireAdmissionRun(t, f, m.ID, run, readyRun, 10)
 	return f.presenceFixture, m.ID, stream, queueSendRestart(t, f.presenceFixture, m.ID, 0)
 }
 

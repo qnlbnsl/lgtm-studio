@@ -97,3 +97,8 @@ func commandAction(command *linkv1.Command) (string, *linkv1.Command, error) {
 	}
 	return "", nil, ErrInvalidMessage
 }
+
+// commandWithinBudget is a stub of the test writer.
+func commandWithinBudget(_ *linkv1.Command, _ string, _ time.Time) bool {
+	return false
+}
