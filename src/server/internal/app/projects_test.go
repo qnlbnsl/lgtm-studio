@@ -1244,7 +1244,8 @@ func openProjectSocket(t *testing.T, f *projectApp) (*net.TCPConn, io.ReadCloser
 	}
 	tcp := conn.(*net.TCPConn)
 	t.Cleanup(func() { _ = tcp.Close() })
-	if tcp.SetReadBuffer(4<<10) != nil || tcp.SetDeadline(time.Now().Add(15*time.Second)) != nil {
+	// This window keeps the large frame blocked without throttling the drain to a few packets at a time.
+	if tcp.SetReadBuffer(64<<10) != nil || tcp.SetDeadline(time.Now().Add(15*time.Second)) != nil {
 		t.Fatal("The fixture could not bound the socket's receive buffer and deadline.")
 	}
 	req, err := http.NewRequest(http.MethodPost, f.cfg.PublicURL+projectWatchRoute, bytes.NewReader(make([]byte, 5)))
@@ -1273,6 +1274,52 @@ func projectEnvelope(t *testing.T, body io.Reader) (byte, int64) {
 		t.Fatal("The HTTP/1.1 stream ended before its next envelope header.")
 	}
 	return header[0], int64(binary.BigEndian.Uint32(header[1:]))
+}
+
+func boundProjectSocketRead(t *testing.T, tcp *net.TCPConn) {
+	t.Helper()
+	if err := tcp.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		t.Fatalf("The fixture could not bound the socket read. %v", err)
+	}
+}
+
+func projectSocketClosed(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, syscall.ECONNRESET)
+}
+
+func requireProjectSocketEOF(t *testing.T, reader io.Reader) {
+	t.Helper()
+	var extra [1]byte
+	if n, err := io.ReadFull(reader, extra[:]); n != 0 || !projectSocketClosed(err) {
+		t.Fatalf("The lagged watch did not end. Read %d bytes with error %v.", n, err)
+	}
+}
+
+func requireProjectSocketEnd(t *testing.T, tcp *net.TCPConn, body io.Reader) {
+	t.Helper()
+	var header [5]byte
+	n, err := io.ReadFull(body, header[:])
+	if n == 0 && projectSocketClosed(err) {
+		boundProjectSocketRead(t, tcp)
+		requireProjectSocketEOF(t, tcp)
+		return
+	}
+	if err != nil {
+		t.Fatalf("The lagged socket did not close or send a complete terminal header. %v", err)
+	}
+	size := binary.BigEndian.Uint32(header[1:])
+	if header[0] != 2 || size > 4096 {
+		t.Fatal("The lagged socket sent another data frame instead of its terminal response.")
+	}
+	var end struct {
+		Error struct{ Code, Message string }
+	}
+	payload := make([]byte, size)
+	if _, err := io.ReadFull(body, payload); err != nil || json.Unmarshal(payload, &end) != nil ||
+		end.Error.Code != "aborted" || end.Error.Message != projectLagSentence {
+		t.Fatal("The lagged socket did not return the fixed aborted response.")
+	}
+	requireProjectSocketEOF(t, body)
 }
 
 func testProjectAppSocketLag(t *testing.T) {
@@ -1310,36 +1357,30 @@ func testProjectAppSocketLag(t *testing.T) {
 		})
 	}
 	f.publish(t, []store.ChangeRef{{Topic: "repositories", Key: large.GetId(), Change: store.Saved}})
+	boundProjectSocketRead(t, tcp)
 	flags, size = projectEnvelope(t, body)
 	if flags != 0 || size < 10<<20 {
 		t.Fatal("The real HTTP/1.1 stream did not begin its oversized saved frame.")
 	}
-	if err := tcp.SetReadDeadline(time.Now().Add(9 * time.Second)); err != nil {
-		t.Fatal("The fixture could not bound observation of the socket interruption.")
-	}
 
 	// The in-flight saved reference counts toward lag, and 2,047 later references reach the limit.
 	f.fillProjectLag(t, 2048)
+	// A watch that stays open after lag has a repository change it could send.
+	f.publish(t, []store.ChangeRef{{Topic: "repositories", Key: projectTestID(t), Change: store.Removed}})
 
 	if err := tcp.SetReadBuffer(1 << 20); err != nil {
 		t.Fatal("The fixture could not restore the socket's receive capacity.")
 	}
-	if _, err := io.CopyN(io.Discard, body, size); err != nil {
-		if !errors.Is(err, io.EOF) && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, syscall.ECONNRESET) {
-			t.Fatal("The partially written watch frame did not end with a closed connection.")
+	boundProjectSocketRead(t, tcp)
+	if n, err := io.CopyN(io.Discard, body, size); err != nil {
+		if !projectSocketClosed(err) {
+			t.Fatalf("The partially written watch frame did not end with a closed connection. Read %d of %d bytes with error %v.", n, size, err)
 		}
+		boundProjectSocketRead(t, tcp)
+		requireProjectSocketEOF(t, tcp)
 	} else {
-		flags, size := projectEnvelope(t, body)
-		if flags != 2 || size > 4096 {
-			t.Fatal("The lagged socket sent another data frame instead of its terminal response.")
-		}
-		var end struct {
-			Error struct{ Code, Message string }
-		}
-		if json.NewDecoder(io.LimitReader(body, size)).Decode(&end) != nil ||
-			end.Error.Code != "aborted" || end.Error.Message != projectLagSentence {
-			t.Fatal("The lagged socket did not return the fixed aborted response.")
-		}
+		boundProjectSocketRead(t, tcp)
+		requireProjectSocketEnd(t, tcp, body)
 	}
 	requireProjectSnapshot(t, f.watch(t), f.head(t), []*webv1.Repository{large})
 }
