@@ -1,9 +1,12 @@
 package linktest
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -13,6 +16,7 @@ import (
 	"connectrpc.com/connect"
 	bolt "go.etcd.io/bbolt"
 	"golang.org/x/sys/unix"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	linkv1 "github.com/qnlbnsl/lgtm-studio/src/contracts/gen/go/lgtm/link/v1"
@@ -91,6 +95,7 @@ func TestLinkCommandAttemptsAcrossReconnect(t *testing.T) {
 			testCompletedScanReplay(t, tc.age)
 		})
 	}
+	t.Run("revision one receipt", testLegacyScanReplay)
 }
 
 func testCompletedScanReplay(t *testing.T, age time.Duration) {
@@ -131,16 +136,22 @@ UPDATE link_commands SET expires_at=clock_timestamp()-($2 * interval '1 second')
 WHERE id=$1 RETURNING expires_at`, first.id, age.Seconds())
 		withClosedClientDB(t, f.opts, true, func(db *bolt.DB) error {
 			return db.Update(func(tx *bolt.Tx) error {
-				receipt, err := commandReceipt(tx, first.id)
+				bucket := tx.Bucket([]byte("receipts"))
+				key := []byte(first.id)
+				var fields map[string]json.RawMessage
+				if err := json.Unmarshal(bucket.Get(key), &fields); err != nil {
+					return err
+				}
+				expiry, err := json.Marshal(first.expiry)
 				if err != nil {
 					return err
 				}
-				receipt.ExpiresAt = first.expiry
-				data, err := json.Marshal(receipt)
+				fields["expires_at"] = expiry
+				data, err := json.Marshal(fields)
 				if err != nil {
 					return err
 				}
-				return tx.Bucket([]byte("receipts")).Put([]byte(first.id), data)
+				return bucket.Put(key, data)
 			})
 		})
 		requireReceipt(t, f.opts, first, commandDone)
@@ -172,6 +183,57 @@ WHERE id=$1 RETURNING expires_at`, first.id, age.Seconds())
 	run.stop(t)
 	requireReceipt(t, f.opts, retry, commandDone)
 	f.probe.requireRuns(t, 3)
+}
+
+func testLegacyScanReplay(t *testing.T) {
+	t.Helper()
+	// The archived revision 1 client finished this scan at attempt 1.
+	const id = "00000065-0000-7000-8000-000000000065"
+	const originalReceipt = `{"version":1,"expires_at":"2099-01-01T01:00:00Z","state":"finished","result":"AQ=="}`
+	result := make(chan *linkv1.CommandResult, 1)
+	f := newCommandFixture(t, relayControls{observeResult: func(reply *linkv1.CommandResult) {
+		if reply.GetCommandId() == id {
+			select {
+			case result <- proto.CloneOf(reply):
+			default:
+			}
+		}
+	}})
+	legacy, err := os.ReadFile(filepath.Join("..", "client", "internal", "link", "testdata", "client-v1.db"))
+	if err != nil || os.WriteFile(filepath.Join(f.opts.StateDir, "client.db"), legacy, 0o600) != nil {
+		t.Fatal("Could not copy the genuine revision 1 client database.")
+	}
+	expiry := time.Date(2099, 1, 1, 1, 0, 0, 0, time.UTC)
+	command := &linkv1.Command{Action: &linkv1.Command_ScanHarnesses{ScanHarnesses: &linkv1.ScanHarnesses{}}}
+	payload, err := proto.Marshal(command)
+	if err != nil {
+		t.Fatal("Could not encode the queued scan action.")
+	}
+	// Restore the previously delivered attempt so the real server sends attempt 2.
+	execute(t, f.db, `
+INSERT INTO link_commands (id, machine_id, action, payload, created_at, expires_at, sent_stream_id, dispatched)
+VALUES ($1, $2, 'scan_harnesses', $3, clock_timestamp(), $4, $1, true)`, id, f.id, payload, expiry)
+
+	run, leg := f.startApproved(t, 0)
+	retry := waitForCommand(t, leg, scanAction, 0)
+	if retry.id != id || retry.attempt != 2 {
+		t.Fatal("The server did not retry the legacy scan as attempt 2.")
+	}
+	reply := receive(t, result, "the legacy scan result on the wire")
+	if reply.GetAttempt() != retry.attempt || reply.GetOutcome() != commandDone || reply.GetLastEventNumber() != 0 {
+		t.Fatal("The legacy receipt did not replay its done outcome with a zero watermark.")
+	}
+	waitForStoredResult(t, f.db, retry, "done")
+	run.stop(t)
+	f.probe.requireRuns(t, 1)
+	withClosedClientDB(t, f.opts, false, func(db *bolt.DB) error {
+		return db.View(func(tx *bolt.Tx) error {
+			if !bytes.Equal(tx.Bucket([]byte("receipts")).Get([]byte(id)), []byte(originalReceipt)) {
+				return errors.New("the revision 1 receipt bytes changed")
+			}
+			return nil
+		})
+	})
 }
 
 func TestLinkRestartReplaysAfterDroppedResult(t *testing.T) {

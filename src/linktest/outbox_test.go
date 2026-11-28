@@ -9,6 +9,8 @@ import (
 	"encoding/binary"
 	"encoding/pem"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -330,7 +332,7 @@ func checkScriptedReplay(t *testing.T, server *servertest.Server, db *pgx.Conn, 
 	stream := server.Link().Open(ctx)
 	defer stream.CloseRequest()
 	defer stream.CloseResponse()
-	welcome := authenticateScriptedLink(t, stream, server.SigningPublicKey, opts, id)
+	welcome := authenticateScriptedLink(t, stream, server.SigningPublicKey, opts, id, current+1)
 	if welcome.GetLastEventNumber() != current {
 		t.Fatal("The scripted peer did not see the final committed mark in Welcome.")
 	}
@@ -405,34 +407,88 @@ func checkScriptedReplay(t *testing.T, server *servertest.Server, db *pgx.Conn, 
 	}
 }
 
+func TestLinkRevisionOneRefusal(t *testing.T) {
+	requirePostgres(t)
+	server := servertest.Start(t, servertest.Options{Password: fixturePassword})
+	opts := newClient(t, new(diagnostics))
+	id := join(t, server.Clients(t), opts, server.URL)
+	db := openObserver(t, server)
+	const priorMark = 5
+	execute(t, db, "INSERT INTO link_machines (machine_id, event_mark) VALUES ($1, $2)", id, priorMark)
+	priorGeneration := scalar[uint64](t, db, "SELECT stream_generation FROM link_machines WHERE machine_id=$1", id)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	stream := server.Link().Open(ctx)
+	defer stream.CloseRequest()
+	defer stream.CloseResponse()
+	hello := &linkv1.Hello{MachineId: id, LinkRevision: 1}
+	challenge := scriptedChallenge(t, stream, server.SigningPublicKey, hello)
+	if err := sendScriptedProof(stream, readMachineKey(t, opts), hello, challenge); err != nil && !errors.Is(err, io.EOF) {
+		t.Fatalf("The revision 1 peer could not send Proof (%s).", connect.CodeOf(err))
+	}
+	frame, err := stream.Receive()
+	if frame != nil || connect.CodeOf(err) != connect.CodeFailedPrecondition ||
+		!slices.Equal(stream.ResponseTrailer().Values("Lgtm-Link-Refusal"), []string{"link_revision_mismatch"}) {
+		t.Fatalf("After the signed Challenge the revision 1 stream got another frame or the wrong refusal (%s).", connect.CodeOf(err))
+	}
+	if mark(t, db, id) != priorMark ||
+		scalar[uint64](t, db, "SELECT stream_generation FROM link_machines WHERE machine_id=$1", id) != priorGeneration ||
+		scalar[bool](t, db, "SELECT EXISTS (SELECT FROM link_connections WHERE machine_id=$1)", id) ||
+		scalar[bool](t, db, "SELECT EXISTS (SELECT FROM link_runs WHERE machine_id=$1)", id) {
+		t.Fatal("The refused revision 1 stream changed admission or event state.")
+	}
+}
+
 func authenticateScriptedLink(t *testing.T, stream *connect.BidiStreamForClient[linkv1.OpenRequest, linkv1.OpenResponse],
-	serverKey ed25519.PublicKey, opts clienttest.Options, id string,
+	serverKey ed25519.PublicKey, opts clienttest.Options, id string, firstEventNumber uint64,
 ) *linkv1.Welcome {
 	t.Helper()
-	nonce := make([]byte, 32)
-	rand.Read(nonce)
-	hello := &linkv1.Hello{MachineId: id, MachineNonce: nonce, LinkRevision: 1}
+	var run [16]byte
+	binary.BigEndian.PutUint64(run[:8], uint64(time.Now().UnixMilli())<<16)
+	rand.Read(run[6:])
+	run[6] = 0x70 | run[6]&0x0f
+	run[8] = 0x80 | run[8]&0x3f
+	hello := &linkv1.Hello{
+		MachineId: id, LinkRevision: 2, FirstEventNumber: firstEventNumber,
+		RunId: fmt.Sprintf("%x-%x-%x-%x-%x", run[:4], run[4:6], run[6:8], run[8:10], run[10:]),
+	}
+	challenge := scriptedChallenge(t, stream, serverKey, hello)
+	if err := sendScriptedProof(stream, readMachineKey(t, opts), hello, challenge); err != nil {
+		t.Fatal("The scripted peer could not send Proof.")
+	}
+	frame, err := stream.Receive()
+	if err != nil || frame.GetWelcome().GetLinkRevision() != 2 {
+		t.Fatalf("The scripted peer did not receive a revision 2 Welcome (%s).", connect.CodeOf(err))
+	}
+	return frame.GetWelcome()
+}
+
+func scriptedChallenge(t *testing.T, stream *connect.BidiStreamForClient[linkv1.OpenRequest, linkv1.OpenResponse],
+	serverKey ed25519.PublicKey, hello *linkv1.Hello,
+) *linkv1.Challenge {
+	t.Helper()
+	hello.MachineNonce = make([]byte, 32)
+	rand.Read(hello.MachineNonce)
 	if err := stream.Send(&linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Hello{Hello: hello}}); err != nil {
 		t.Fatal("The scripted peer could not send Hello.")
 	}
 	frame, err := stream.Receive()
 	challenge := frame.GetChallenge()
-	if err != nil || challenge == nil || !ed25519.Verify(serverKey,
-		proofText("server", id, nonce, challenge.GetServerNonce()), challenge.GetServerSignature()) {
+	if err != nil || len(challenge.GetServerNonce()) != 32 || !ed25519.Verify(serverKey,
+		proofText("server", hello.GetMachineId(), hello.GetMachineNonce(), challenge.GetServerNonce()), challenge.GetServerSignature()) {
 		t.Fatal("The scripted peer did not receive a verifiable Challenge.")
 	}
-	key := readMachineKey(t, opts)
-	signature := ed25519.Sign(key, proofText("machine", id, nonce, challenge.GetServerNonce()))
-	if err := stream.Send(&linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Proof{
+	return challenge
+}
+
+func sendScriptedProof(stream *connect.BidiStreamForClient[linkv1.OpenRequest, linkv1.OpenResponse],
+	key ed25519.PrivateKey, hello *linkv1.Hello, challenge *linkv1.Challenge,
+) error {
+	signature := ed25519.Sign(key, proofText("machine", hello.GetMachineId(), hello.GetMachineNonce(), challenge.GetServerNonce()))
+	return stream.Send(&linkv1.OpenRequest{Kind: &linkv1.OpenRequest_Proof{
 		Proof: &linkv1.Proof{MachineSignature: signature},
-	}}); err != nil {
-		t.Fatal("The scripted peer could not send Proof.")
-	}
-	frame, err = stream.Receive()
-	if err != nil || frame.GetWelcome() == nil {
-		t.Fatal("The scripted peer did not receive Welcome.")
-	}
-	return frame.GetWelcome()
+	}})
 }
 
 func proofText(role, id string, machineNonce, serverNonce []byte) []byte {

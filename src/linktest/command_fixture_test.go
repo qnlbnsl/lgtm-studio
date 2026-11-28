@@ -345,10 +345,12 @@ func (p *versionProbe) requireRuns(t *testing.T, want int) {
 }
 
 type savedCommandReceipt struct {
-	Version   int       `json:"version"`
-	ExpiresAt time.Time `json:"expires_at"`
-	State     string    `json:"state"`
-	Result    []byte    `json:"result,omitempty"`
+	Version         int       `json:"version"`
+	ExpiresAt       time.Time `json:"expires_at"`
+	State           string    `json:"state"`
+	Standing        *bool     `json:"standing"`
+	LastEventNumber *uint64   `json:"last_event_number"`
+	Result          []byte    `json:"result"`
 }
 
 func withClosedClientDB(t *testing.T, opts clienttest.Options, writable bool, inspect func(*bolt.DB) error) {
@@ -380,7 +382,8 @@ func requireReceipt(t *testing.T, opts clienttest.Options, delivery commandDeliv
 	withClosedClientDB(t, opts, false, func(db *bolt.DB) error {
 		return db.View(func(tx *bolt.Tx) error {
 			receipt, err := commandReceipt(tx, delivery.id)
-			if err != nil || receipt.Version != 1 || receipt.State != "finished" ||
+			if err != nil || receipt.Version != 2 || receipt.State != "finished" ||
+				receipt.Standing == nil || *receipt.Standing || receipt.LastEventNumber == nil ||
 				!receipt.ExpiresAt.Equal(delivery.expiry) || !slices.Equal(receipt.Result, []byte{byte(outcome)}) {
 				return errors.New("the finished command receipt differs")
 			}

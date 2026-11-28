@@ -52,7 +52,7 @@ func TestLinkReservedCommandResult(t *testing.T) {
 	stream := peer.Open(ctx)
 	defer stream.CloseRequest()
 	defer stream.CloseResponse()
-	welcome := authenticateScriptedLink(t, stream, server.SigningPublicKey, opts, id)
+	welcome := authenticateScriptedLink(t, stream, server.SigningPublicKey, opts, id, 1)
 	if welcome.GetState().GetApproval() != linkv1.Approval_APPROVAL_APPROVED {
 		t.Fatal("The scripted machine did not connect as approved.")
 	}
