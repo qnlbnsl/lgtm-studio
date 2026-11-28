@@ -8067,6 +8067,7 @@ The machine detail shows every watched folder of a machine with its path. A long
 Where: the folder row of the machine detail in `src/frontend/src/screens/service.tsx`, and its tests in `src/frontend/e2e/repository-routes.spec.ts`, which use short paths.
 What must hold: the part of the path that tells two folders apart is readable on a phone. Wrapping the path changes how the screen looks, so the owner decides the form.
 Decided on 2026-11-28: a long path wraps onto further lines. The same holds for the origin in the switcher of issue 1698, point 1.
+Built on 2026-11-28 for both places, with a real server. The sample data keeps the cut-off form.
 
 ## 1696. Two smaller points of the client's stop for recovery
 

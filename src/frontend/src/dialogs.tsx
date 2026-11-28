@@ -39,7 +39,7 @@ const words = (t: string | null | undefined) => (t || '').toLowerCase().split(/[
 /** One row of the quick switcher. */
 export interface SearchItem {
   kind: string; label: string; sub: string; text: string; to: string; icon?: string; mono?: boolean; note?: string; tone?: string | null;
-  boost?: number; agent?: Agent;
+  boost?: number; agent?: Agent; wrapOrigin?: boolean;
 }
 export function searchScore(query: string, item: Pick<SearchItem, 'label' | 'text' | 'kind'> & { boost?: number | undefined }): number {
   const qw = words(query); if (!qw.length) return 0;
@@ -61,7 +61,11 @@ function Switcher({ s }: { s: State }) {
   const text = live.on ? mocks.searchText(s) : null;
   for (const r of s.repos) {
     const missingRemote = live.on ? '' : s.server.repositoryMode && r.remoteOmitted ? '—' : 'No remote';
-    all.push({ kind: 'Repository', label: r.name, sub: r.remote || missingRemote, text: live.on ? text.repositories[r.id] : `${r.description || ''} ${r.remote || ''}`, to: '/r/' + r.id, icon: 'folder-git-2', mono: true });
+    all.push({
+      kind: 'Repository', label: r.name, sub: r.remote || missingRemote,
+      text: live.on ? text.repositories[r.id] : `${r.description || ''} ${r.remote || ''}`,
+      to: '/r/' + r.id, icon: 'folder-git-2', mono: true, wrapOrigin: repositoryMode && Boolean(r.remote),
+    });
   }
   for (const p of s.projects.filter((x) => !x.archived)) {
     const st = projectStatus(s, p); const sp = s.sprints.filter((x) => x.project === p.id);
@@ -116,7 +120,10 @@ function Switcher({ s }: { s: State }) {
         {shown.map((x, n) => <button type="button" key={x.kind + x.to} role="option" aria-selected={n === activeIndex} data-active={n === activeIndex} class="menu-item" style="min-height:34px" onMouseEnter={() => select(n)} onClick={() => pick(x)}>
           {x.agent ? <Avatar agent={x.agent} s={s} size="sm" /> : <Icon name={x.icon!} size={15} class="faint" />}
           <span class={cx(x.mono && 'mono')} style="font-weight:var(--weight-medium)">{x.label}</span>
-          <span class="muted truncate grow">{x.sub}</span>
+          <span
+            class={cx('muted grow', !x.wrapOrigin && 'truncate')}
+            style={x.wrapOrigin ? { whiteSpace: 'normal', overflowWrap: 'anywhere' } : undefined}
+          >{x.sub}</span>
           {x.note && <span class={cx(x.tone === 'warn' && 'warn-text', x.tone === 'error' && 'error-text', !x.tone && 'faint')} style="font-size:var(--text-sm)">
             {x.note}
           </span>}

@@ -262,7 +262,11 @@ function MachineDetail({ s, m, now }: { s: State; m: Machine; now: Ms }) {
         {folders.map(({ key, repo, path }) => <li key={key}>
         <Icon name="folder-git-2" size={14} class="faint" />
         <a class="link mono" href={href('/r/' + repo.id)}>{repo.name}</a>
-        <span class="mono muted truncate" title={repositoryMode ? path : undefined}>{path}</span>
+        <span
+          class={cx('mono muted', !repositoryMode && 'truncate')}
+          style={repositoryMode ? { whiteSpace: 'normal', overflowWrap: 'anywhere', overflow: 'visible', textOverflow: 'clip' } : undefined}
+          title={repositoryMode ? path : undefined}
+        >{path}</span>
       </li>)}
         {folders.length === 0 && <li class="muted">No repositories</li>}
       </ul>
