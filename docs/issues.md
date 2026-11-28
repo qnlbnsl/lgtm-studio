@@ -8191,3 +8191,15 @@ The routes behave as the plan says today.
 1. The tests pass when the two unary routes stop requiring the protocol version header. Each unary route needs a case without the header that expects the fixed refusal and no call of the handler. Closed on 2026-11-28: `TestProjectRouterUnaryRequiresProtocolVersion`.
 2. The tests count that a write deadline is set and cleared, and do not check its length. A case should require the deadline to lie within the shared send budget. Closed on 2026-11-28: `TestProjectRouterWatchWriteDeadlineWithinSendBudget`.
 3. A message above the 32-kibibyte limit is refused only after the transport has read the rest of it. A signed-in sender that pauses after the limit delays the refusal. What must hold: the refusal can be returned before the sender has finished the body. This is hardening, and it does not block the build.
+
+## 1709. The client waits while a read of the sign-in file does not return
+
+Decided on 2026-11-28 (decision 39 of the plan `go-s4-client-folders`).
+The client reads the Claude Code sign-in file before each emission, so that it never sends or logs a current sign-in value.
+The read is direct.
+While it does not return, for example on a failing disk or on network storage, the client sends nothing and logs nothing.
+The server shows the machine as offline, and its commands time out.
+A restart command from the website does not reach the client in that state; the service manager or a person restarts it.
+This is an accepted limit, not a defect.
+It replaces the bounded screening that the repairs after reviews 6, 9, 10 and 11c built, and it closes the findings post-12 1 and post-12 2 of `attack/post-build-12.md` by removing the code they are about.
+One background reader would lift the limit at the cost of a list that can be a few seconds old; that choice was not taken.
