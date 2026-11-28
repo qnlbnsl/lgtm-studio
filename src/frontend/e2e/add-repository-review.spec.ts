@@ -29,7 +29,8 @@ const inspectionReply = (mainBranch: string, clean = true) =>
 const originalFacts = inspectionReply('original-branch');
 const currentFacts = inspectionReply('current-branch', false);
 const noAnswer = 'The server did not answer.';
-const upperBoundMs = 60_000;
+const deadlineMs = 30_000;
+const boundaryMarginMs = 50;
 
 type Procedure = 'inspect' | 'add';
 type InputEdit = { control: 'path' | 'machine'; value: string };
@@ -185,9 +186,11 @@ async function startSave(page: Page) {
   return callAt(page, 1, 'add');
 }
 
-async function advanceToAttemptLimit(page: Page, attempt: FolderCall) {
+async function advanceToBeforeDeadline(page: Page, attempt: FolderCall) {
   const elapsed = await page.evaluate((startedAt) => performance.now() - startedAt, attempt.startedAt);
-  await page.clock.runFor(Math.max(0, upperBoundMs - elapsed));
+  const beforeDeadline = deadlineMs - boundaryMarginMs;
+  expect(elapsed).toBeLessThan(beforeDeadline);
+  await page.clock.runFor(beforeDeadline - elapsed);
 }
 
 reviewTest.beforeEach(async ({ page, rig }) => {
@@ -249,35 +252,52 @@ for (const edit of [{ control: 'path', value: editedPath }, { control: 'machine'
   });
 }
 
-reviewTest('a silent inspection retries once and both attempts settle within 60 seconds each', async ({ page }) => {
+reviewTest('a silent inspection retries once and both attempts settle at the 30-second deadline', async ({ page }) => {
   const original = await firstInspection(page);
+  await advanceToBeforeDeadline(page, original);
   await expect(feedback(page)).toHaveText('Looking at the folder…');
-  await advanceToAttemptLimit(page, original);
+  await expect(submit(page)).toBeDisabled();
+  expect(await calls(page)).toHaveLength(1);
+
+  await page.clock.runFor(2 * boundaryMarginMs);
   await expect.poll(async () => (await calls(page)).length, {
-    message: 'A silent inspection dispatches its one automatic retry within 60 seconds of browser time.',
+    message: 'A silent inspection dispatches its automatic retry as browser time crosses 30 seconds.',
   }).toBe(2);
   const retry = await callAt(page, 1, 'inspect');
   expect(retry.keyClass).toBe(original.keyClass);
 
-  await advanceToAttemptLimit(page, retry);
+  await advanceToBeforeDeadline(page, retry);
+  await expect(feedback(page)).toHaveText('Looking at the folder…');
+  await expect(submit(page)).toBeDisabled();
+  expect(await calls(page)).toHaveLength(2);
+
+  await page.clock.runFor(2 * boundaryMarginMs);
   await expect(feedback(page)).toHaveText(noAnswer);
   await expect(submit(page)).toBeDisabled();
   expect(await calls(page)).toHaveLength(2);
 });
 
-reviewTest('a silent save unlocks within 60 seconds per attempt and replays with the same key', async ({ page }) => {
+reviewTest('a silent save unlocks at the 30-second deadline per attempt and replays with the same key', async ({ page }) => {
   const original = await startSave(page);
+  await advanceToBeforeDeadline(page, original);
   await expect(submit(page)).toHaveText('Adding…');
   await expect(submit(page)).toBeDisabled();
-  await advanceToAttemptLimit(page, original);
-  await expect(submit(page), 'A silent save releases Add within 60 seconds of browser time.').toBeEnabled();
+  expect(await calls(page)).toHaveLength(2);
+
+  await page.clock.runFor(2 * boundaryMarginMs);
+  await expect(submit(page), 'A silent save releases Add as browser time crosses 30 seconds.').toBeEnabled();
   await expect(feedback(page)).toHaveText(noAnswer);
   expect(await calls(page)).toHaveLength(2);
 
   await submit(page).click();
   const retry = await callAt(page, 2, 'add');
   expect(retry.keyClass).toBe(original.keyClass);
-  await advanceToAttemptLimit(page, retry);
+  await advanceToBeforeDeadline(page, retry);
+  await expect(submit(page)).toHaveText('Adding…');
+  await expect(submit(page)).toBeDisabled();
+  expect(await calls(page)).toHaveLength(3);
+
+  await page.clock.runFor(2 * boundaryMarginMs);
   await expect(submit(page)).toBeEnabled();
   await expect(feedback(page)).toHaveText(noAnswer);
   expect(await calls(page)).toHaveLength(3);
