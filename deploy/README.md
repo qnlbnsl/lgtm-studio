@@ -105,6 +105,72 @@ the service with the same machine identity. If a coding agent is installed
 in a new directory, add that directory to your shell's search path and run
 the installer again so the service can find it.
 
+### Upgrade an existing Sprint 3 installation to Sprint 4
+
+Update the server and website together before updating the clients. The
+website can be unavailable during the cutover. After it returns, a client
+that still uses link revision 1 is refused with `link_revision_mismatch`.
+Its machine may show as offline until the compatible client reconnects.
+
+1. Run the [Sprint 4 release checks](test/README.md#run-the-sprint-4-release-checks)
+   on a disposable stack before changing the installation.
+2. Record the installed Compose project, PostgreSQL volume, stack state
+   directory, published loopback address, and source of the website password.
+   Record both installed image tags and the tags and image identifiers of the
+   candidate pair. Keep the installed images available through the cutover.
+3. Verify privately that the candidate resolves the same valid website password
+   and the same stores. Build the candidate server and website from the same
+   checkout while the old stack serves. Set `LGTM_IMAGE_TAG` to a separate
+   candidate tag and use the installed Compose settings. With the default
+   Compose file, run `docker compose -f deploy/compose.yaml build server web`
+   from the candidate checkout. If the installation sets `COMPOSE_FILE`,
+   select the corresponding candidate files and run
+   `docker compose build server web`.
+4. Record the Sprint 3 migration ledger. Take a consistent backup of
+   PostgreSQL and the stack state directory. Stop each installed client
+   before backing up its state directory. Keep those clients stopped through
+   the cutover. Proceed only when the credentials, backups, and image build
+   have all been verified.
+5. Run the candidate checkout's `deploy/up.sh` with the same project, volume,
+   state directory, address, and password source. Select the candidate image
+   tag. Wait for `phase server done` and `phase web done`. Verify the reported
+   address, the original signed-in session, and that `GetServer` advertises
+   `lgtm.v1.ProjectService` at website contract revision 1.
+6. Run the candidate checkout's `deploy/install-client.sh` as each installed
+   service user. The installer reuses the state directory recorded in the
+   service and restarts the client. On the Machines page, verify that the
+   original approved machine comes back online.
+7. Follow the [deployed repository checklist](test/README.md#run-the-deployed-sprint-4-repository-check)
+   on the updated website.
+
+#### Recover from an interrupted cutover
+
+If startup leaves the migration outcome unclear, stop the candidate server
+in the selected Compose project. Read the migration ledger in that
+installation's PostgreSQL database.
+
+```sql
+SELECT part, version FROM schema_migrations ORDER BY part;
+```
+
+Compare the ledger with the record from Sprint 3 and the reviewed candidate
+migration list. If the ledger is verified unchanged, the prior server and
+website can start with the original settings. Once any candidate migration
+commits, preserve both stores and rerun the candidate's `deploy/up.sh` with
+the same settings. Use that recovery path even if only the website failed to
+start. Keep clients stopped while the migration outcome is unknown.
+
+If the installer stops after replacing the binary, check the recorded service
+definition, the installed binary, and the running process before rerunning
+the same candidate installer as the installed service user. Keep using a
+compatible client with the saved state once it has written revision 2
+receipts.
+
+For a revision mismatch, install a compatible client and keep its state.
+For damaged client history, restore the original saved client history or
+remove the machine and enroll it again with fresh state. Keep backups and
+credentials private throughout recovery.
+
 ### Linux service and logs
 
 The systemd user unit is installed at

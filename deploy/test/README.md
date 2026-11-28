@@ -62,6 +62,94 @@ separate databases for tests. The wrapper returns the command's exit status
 and removes the container, storage, and password files when the command exits
 or the wrapper receives an interrupt or termination signal.
 
+## Run the Sprint 4 release checks
+
+Use the [Sprint 4 runner prerequisites](README-s4.md#run-the-automated-checks).
+Run these commands from the repository root. Use the reviewed revision 2
+contract commit as the history base and the integrated release commit as the
+candidate.
+
+```bash
+(
+    set -e
+    set +x
+    export S4_CONTRACT_COMMIT=89506b7c
+    export S4_CANDIDATE_COMMIT="$(git rev-parse HEAD)"
+    export LGTM_REV1_COMMIT=f6cbea30
+    git merge-base --is-ancestor "$S4_CONTRACT_COMMIT" "$S4_CANDIDATE_COMMIT"
+    bash deploy/test/sprint4-fixture-test.sh
+    bash deploy/test/sprint4-fixture-review-test.sh
+    bash deploy/test/sprint4-compose.sh "$S4_CANDIDATE_COMMIT"
+
+    source deploy/test/sprint4-fixture.sh
+    umask 022
+    sprint4_fixture_open "$PWD" "$S4_CANDIDATE_COMMIT"
+    sprint4_select 4
+    sprint4_fixture_run bash "$S4_CANDIDATE_ROOT/deploy/up.sh"
+    cd "$S4_CANDIDATE_ROOT"
+    pnpm install --frozen-lockfile
+    sprint4_fixture_ready
+    sprint4_fixture_run bash deploy/test/checks-s4.sh --only R1,R2,R4,R11,R12
+    sprint4_fixture_ready
+    sprint4_fixture_run bash deploy/test/checks-s4.sh --only R13
+    sprint4_fixture_close
+)
+```
+
+The Compose check must print `ok 1 - s4_projects_uses_existing_stack`.
+It verifies the Compose model and signed-in Projects discovery through the
+deployed website. Record the candidate commit, both private image tags and
+their image identifiers. Record `phase server done`, `phase web done`, and
+the selected loopback address before running the repository checks.
+
+Keep the exit status and the result line for each of R1, R2, R4, R11, R12,
+and R13. R12 observes removal while the deployed page is open. R13 compares
+one website build in the in-page sample, the mock server, and the real
+candidate contexts. The [joint release plan](../../.plans/plans/go-s4-stack-checks/plan.md#rollout-order)
+lists the remaining release gates.
+
+## Run the deployed Sprint 4 repository check
+
+The owner runs R14 on the candidate's deployed `web` image. That image
+builds the website with `VITE_LGTM_SERVER=/`. Use a real, approved machine
+and two distinct Git checkouts on it. Choose checkouts that will save as
+separate repositories. Give one checkout an uncommitted change.
+
+1. Open the address printed by the launcher and sign in. The deployed
+   website should open without a **Server address** prompt. In the browser's
+   network panel, confirm that `GetServer` uses the same scheme, host, and
+   port as the page. Confirm that its response advertises
+   `lgtm.v1.ProjectService` at website contract revision 1.
+2. Wait for the approved machine to show as online on the Machines page.
+   Open **Add repository** from the sidebar. Choose that machine and enter
+   the first checkout's path.
+3. Compare **Base branch**, **Remote**, and **Status** with the first
+   checkout. **Base branch** uses the remote's default branch when the
+   checkout knows it. Otherwise it uses the checked-out branch or falls
+   back to `main`. **Remote** shows the `origin` address without credentials
+   when available. **Status** distinguishes a clean working tree from one
+   with uncommitted changes. Save the repository.
+4. On the Machines page, open **Add repository** from that machine's menu.
+   Check that the dialog has selected the machine. Enter the second
+   checkout's path. Compare the same three rows with the second checkout,
+   then save it.
+5. For each save, record the repository identifier and the folder identifier
+   from `AddRepository`. Record the machine identifier and resolved checkout
+   path from the saved folder.
+6. Reload the website. Verify that both repositories appear in the sidebar
+   tree. Match both saved identities, their machine, and their resolved paths
+   against the new authenticated `WatchRepositories` snapshot.
+
+For the post-build removal observation, use the same disposable stack and a
+second disposable machine. Attach a folder for one saved repository to the
+second machine before removing the first machine. Reopen the authenticated
+repository watch after removal. Verify that the replacement snapshot keeps
+the repository and folder on the second machine. Verify that it omits the
+two folders from the removed machine and the repository left without a
+folder or project. Keep the snapshot with the browser observations.
+Record the owner's R14 result with the candidate commit and the deployed
+same-origin request. Keep credentials out of the evidence.
+
 ## Names and observations the checks expect
 
 Chosen names are provisional. The sprint plans can adopt them or update this
