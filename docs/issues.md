@@ -8137,3 +8137,13 @@ Found on 2026-11-27, in the review of item 7 of the plan `go-s4-server-link` and
 4. A folder report that is applied does not refresh the time the machine was last heard. Facts and harness reports do. Heartbeats keep the time fresh, so the effect is on the Machines screen only.
 
 Where: `src/server/internal/transport/link_stream.go` and the read limit in `src/server/internal/api/server.go` for point 1; `src/server/internal/link/outbox_sweep.go` and `sweep_review_v2_test.go` for points 2 and 3; `src/server/internal/link/inbox.go` for point 4.
+
+## 1703. Three smaller points of the client's bounded screening
+
+Found on 2026-11-27, in the review of the repair after review 10 of the plan `go-s4-client-folders` (post-11c 5 to post-11c 7). The three major points and the test gaps of that review go through a repair.
+
+1. One stalled read of the sign-in file holds the only screening slot. Every later folder command then fails at once until the read returns, and the owner sees no reason. The plan should say that this is the intended bound, the client should give a diagnostic code, and a test should show that the next command recovers after the read returns.
+2. The one-second limit for screening a folder report starts before the link's loop picks up the finished screening. A busy loop can fail a report that was screened in time. The result is safe and needlessly lossy.
+3. Local text waits while samples overlap. Under a steady stream of overlapping refreshes a log record runs out of time and is dropped without a trace. The client should count dropped records and write one summary line when screening recovers.
+
+Where: `src/client/internal/link/commands.go`, `folder_command.go`, `outbox.go` and `filter.go`, and `Handle` in `src/client/internal/app/outgoing.go`.
